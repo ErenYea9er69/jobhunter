@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JobHunter — Resume-First Multi-Board Job Search & AI Tailor</title>
+  <meta name="description" content="Upload your resume once. Search across Greenhouse, Lever, Ashby, Remotive, Jobicy, RemoteOK, and Indeed simultaneously with smart deduplication, match scoring, and truthful resume tailoring.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Top App Header -->
+  <header class="app-header" id="appHeader">
+    <div class="header-container">
+      <div class="brand-group" id="brandGroup">
+        <div class="brand-logo" id="brandLogo">
+          <svg class="radar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" stroke-opacity="0.3"></circle>
+            <circle cx="12" cy="12" r="6" stroke-opacity="0.6"></circle>
+            <circle cx="12" cy="12" r="2"></circle>
+            <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round" class="radar-sweep"></path>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title">JobHunter</div>
+          <span class="brand-badge" id="tierStatusBadge">LinkedIn + Tier 1 + Indeed Active</span>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="main-nav" id="mainNav">
+        <button class="nav-btn active" data-tab="tab-search" id="navBtnSearch">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          Search &amp; Match
+        </button>
+        <button class="nav-btn" data-tab="tab-profile" id="navBtnProfile">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+          Resume Profile
+        </button>
+        <button class="nav-btn" data-tab="tab-refiner" id="navBtnRefiner">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          Resume Refiner
+          <span class="nav-pill-count" id="navRefineCount">1</span>
+        </button>
+        <button class="nav-btn" data-tab="tab-ats-audit" id="navBtnAts">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+          ATS Audit &amp; Score
+          <span class="nav-pill-count badge-emerald" id="navAtsScoreBadge">96%</span>
+        </button>
+        <button class="nav-btn" data-tab="tab-gap" id="navBtnGap">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          Gap Report
+        </button>
+        <button class="nav-btn" data-tab="tab-cover-letter" id="navBtnCover">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+          Cover Letter
+        </button>
+        <button class="nav-btn" data-tab="tab-tracker" id="navBtnTracker">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>
+          Applications
+          <span class="nav-pill-count badge-amber" id="navTrackerCount">1</span>
+        </button>
+        <button class="nav-btn" data-tab="tab-watchlist" id="navBtnWatchlist">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          Watchlist
+        </button>
+        <button class="nav-btn" data-tab="tab-digest" id="navBtnDigest">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+          Daily Digest
+        </button>
+        <button class="nav-btn" data-tab="tab-prep" id="navBtnPrep">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+          Interview Prep
+        </button>
+        <button class="nav-btn" data-tab="tab-privacy" id="navBtnPrivacy">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          Sources &amp; Privacy
+        </button>
+      </nav>
+
+      <!-- Profile pill shortcut -->
+      <div class="user-profile-pill" id="userProfilePill" title="Master Profile loaded from local SQLite">
+        <div class="avatar" id="userAvatar">AR</div>
+        <div class="pill-info">
+          <div class="pill-name" id="pillName">Alex Rivera</div>
+          <div class="pill-sub" id="pillTitle">6 yrs &bull; Remote</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="main-content" id="mainContent">
+
+    <!-- TAB 1: Search & Multi-Source Match -->
+    <section class="tab-pane active" id="tab-search">
+      <div class="page-container">
+        
+        <!-- Search Header Card -->
+        <div class="search-hero card" id="searchHero">
+          <div class="search-hero-content">
+            <h1 class="page-title">Unified Multi-Source Job Search</h1>
+            <p class="page-subtitle">One unified search scrapes LinkedIn in real-time, queries Tier 1 ATS boards (Greenhouse, Lever, Ashby, SmartRecruiters), free feeds (Remotive, Jobicy, Arbeitnow, RemoteOK, Hacker News), and Indeed simultaneously. Duplicate roles are merged automatically across all boards.</p>
+          </div>
+
+          <!-- Live Source Status Badges -->
+          <div class="source-status-bar" id="sourceStatusBar">
+            <span class="source-chip source-active" title="Direct Public ATS"><span class="dot"></span>Greenhouse</span>
+            <span class="source-chip source-active" title="Direct Public ATS"><span class="dot"></span>Lever</span>
+            <span class="source-chip source-active" title="Direct Public ATS"><span class="dot"></span>Ashby</span>
+            <span class="source-chip source-active" title="Direct Public ATS"><span class="dot"></span>SmartRecruiters</span>
+            <span class="source-chip source-active" title="Tier 1 Public API"><span class="dot"></span>Remotive (Credited)</span>
+            <span class="source-chip source-active" title="Tier 1 Public API"><span class="dot"></span>Jobicy</span>
+            <span class="source-chip source-active" title="Tier 1 Public API"><span class="dot"></span>Arbeitnow</span>
+            <span class="source-chip source-active" title="Tier 1 Public Feed"><span class="dot"></span>RemoteOK (Credited)</span>
+            <span class="source-chip source-active" title="Tier 1 Aggregator"><span class="dot"></span>Hacker News</span>
+            <span class="source-chip source-active" title="Tier 2 JobSpy Best-Behaved Scraper"><span class="dot dot-amber"></span>Indeed (Tier 2)</span>
+            <span class="source-chip source-active" title="LinkedIn Public Guest Scraper (Always Active)"><span class="dot dot-blue"></span>LinkedIn (Live Scraped)</span>
+          </div>
+
+          <!-- Search Form -->
+          <form class="search-form" id="searchForm" onsubmit="event.preventDefault(); window.JobHunterApp.handleSearch();">
+            <div class="search-inputs-grid">
+              <div class="input-group search-keyword-group">
+                <label for="searchQuery">Job Title, Stack, or Keywords</label>
+                <div class="input-with-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  <input type="text" id="searchQuery" placeholder="e.g. Senior Full-Stack Engineer, Python, React, Cloud" value="">
+                </div>
+              </div>
+
+              <div class="input-group">
+                <label for="searchLocation">Location Preference</label>
+                <div class="input-with-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                  <input type="text" id="searchLocation" placeholder="e.g. Remote, Worldwide, San Francisco" value="">
+                </div>
+              </div>
+
+              <div class="input-group">
+                <label for="searchWorkMode">Work Mode</label>
+                <select id="searchWorkMode">
+                  <option value="Any">Any Arrangement</option>
+                  <option value="Remote" selected>Remote Only</option>
+                  <option value="Hybrid">Hybrid</option>
+                  <option value="Onsite">On-Site Only</option>
+                </select>
+              </div>
+
+              <div class="input-group">
+                <label for="searchMinScore">Min Match Score</label>
+                <select id="searchMinScore">
+                  <option value="0">All Matches (0%+)</option>
+                  <option value="50">Fair Match (50%+)</option>
+                  <option value="70" selected>Strong Fit (70%+)</option>
+                  <option value="85">Exceptional Fit (85%+)</option>
+                </select>
+              </div>
+
+              <div class="search-btn-wrapper">
+                <label class="sr-only">Submit Search</label>
+                <button type="submit" class="btn btn-primary btn-search" id="btnExecuteSearch">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  Search All Boards
+                </button>
+              </div>
+            </div>
+
+            <!-- Quick Pill Filters -->
+            <div class="quick-filter-row">
+              <span class="quick-label">Quick Suggestions:</span>
+              <button type="button" class="pill-filter" onclick="window.JobHunterApp.setSearchKeyword('Full Stack')">Full Stack</button>
+              <button type="button" class="pill-filter" onclick="window.JobHunterApp.setSearchKeyword('Backend Python')">Backend Python</button>
+              <button type="button" class="pill-filter" onclick="window.JobHunterApp.setSearchKeyword('TypeScript React')">TypeScript React</button>
+              <button type="button" class="pill-filter" onclick="window.JobHunterApp.setSearchKeyword('DevOps Cloud')">DevOps Cloud</button>
+              <button type="button" class="pill-filter" onclick="window.JobHunterApp.setSearchKeyword('')">Reset Filter</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Search Results Control & Counter -->
+        <div class="results-header-bar" id="resultsHeaderBar">
+          <div class="results-count-box">
+            <span class="results-number" id="resultsCount">0</span>
+            <span class="results-label" id="resultsLabel">Unique Opportunities Found (Deduplicated across Tier 1 + Indeed)</span>
+          </div>
+          <div class="results-sort-box">
+            <label for="sortResultsBy">Sort Order:</label>
+            <select id="sortResultsBy" onchange="window.JobHunterApp.sortResults(this.value)">
+              <option value="score_desc">Highest Match Score (0 - 100)</option>
+              <option value="date_desc">Newest Postings First</option>
+              <option value="company_asc">Company (A-Z)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Job Cards Container -->
+        <div class="job-results-grid" id="jobResultsGrid">
+          <!-- Populated by JavaScript -->
+          <div class="empty-state-card" id="searchLoadingState">
+            <div class="spinner"></div>
+            <p>Scanning Greenhouse, Lever, Ashby, Remotive, Jobicy, Arbeitnow, RemoteOK, and Indeed...</p>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 2: Resume Profile & Intake -->
+    <section class="tab-pane" id="tab-profile">
+      <div class="page-container">
+        <div class="section-header-box">
+          <div>
+            <h2 class="section-title">Master Resume &amp; Candidate Profile</h2>
+            <p class="section-subtitle">Upload your resume once. The app builds your structured profile. Fix any details before searching. Your master resume stays 100% private and untouched.</p>
+          </div>
+          <div class="header-action-group">
+            <button class="btn btn-secondary" id="btnLoadSampleProfile" onclick="window.JobHunterApp.loadSampleProfile()">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Load Sample Profile
+            </button>
+            <button class="btn btn-primary" id="btnSaveMasterProfile" onclick="window.JobHunterApp.saveMasterProfile()">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+              Save Master Profile
+            </button>
+          </div>
+        </div>
+
+        <!-- Intake File Upload / Paste Zone -->
+        <div class="upload-dropzone card" id="uploadDropzone">
+          <div class="dropzone-inner">
+            <div class="dropzone-icon">
+              <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            </div>
+            <div class="dropzone-text">
+              <h3>Upload Your Resume File</h3>
+              <p>Drag and drop your PDF, DOCX, TXT, or Markdown resume, or choose a file</p>
+            </div>
+            <label class="btn btn-secondary file-upload-btn" for="resumeFileInput">
+              Browse Resume File
+              <input type="file" id="resumeFileInput" accept=".pdf,.doc,.docx,.txt,.md,.json" onchange="window.JobHunterApp.handleFileUpload(event)">
+            </label>
+          </div>
+          <div class="dropzone-paste-divider"><span>OR PASTE RAW RESUME TEXT</span></div>
+          <div class="paste-zone">
+            <textarea id="rawResumePaste" placeholder="Paste full resume text here (Summary, Experience, Skills, Education)..." rows="3"></textarea>
+            <button class="btn btn-secondary btn-sm" onclick="window.JobHunterApp.handlePasteParse()">Parse Pasted Text</button>
+          </div>
+        </div>
+
+        <!-- Profile Form Editor Grid -->
+        <div class="profile-editor-grid">
+          
+          <!-- Column 1: Core Info & Summary -->
+          <div class="card editor-card">
+            <h3 class="card-title">Candidate Overview</h3>
+            <div class="form-grid-2">
+              <div class="form-field">
+                <label for="profName">Full Name</label>
+                <input type="text" id="profName" value="Alex Rivera">
+              </div>
+              <div class="form-field">
+                <label for="profTitle">Target Job Title</label>
+                <input type="text" id="profTitle" value="Senior Full-Stack Software Engineer">
+              </div>
+              <div class="form-field">
+                <label for="profExp">Years of Experience</label>
+                <input type="number" id="profExp" value="6" min="0" max="40">
+              </div>
+              <div class="form-field">
+                <label for="profWorkMode">Work Mode Preference</label>
+                <select id="profWorkMode">
+                  <option value="Remote" selected>Remote</option>
+                  <option value="Hybrid">Hybrid</option>
+                  <option value="Onsite">On-site</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="profEmail">Email</label>
+                <input type="email" id="profEmail" value="alex.rivera@example.com">
+              </div>
+              <div class="form-field">
+                <label for="profPhone">Phone</label>
+                <input type="text" id="profPhone" value="+1 (555) 234-5678">
+              </div>
+              <div class="form-field full-width">
+                <label for="profLocation">Location</label>
+                <input type="text" id="profLocation" value="San Francisco, CA (Open to Worldwide Remote)">
+              </div>
+              <div class="form-field">
+                <label for="profLinkedin">LinkedIn</label>
+                <input type="text" id="profLinkedin" value="linkedin.com/in/alex-rivera-dev">
+              </div>
+              <div class="form-field">
+                <label for="profGithub">GitHub / Portfolio</label>
+                <input type="text" id="profGithub" value="github.com/alexrivera-eng">
+              </div>
+            </div>
+
+            <div class="form-field" style="margin-top: 16px;">
+              <label for="profSummary">Master Professional Summary</label>
+              <textarea id="profSummary" rows="4"></textarea>
+            </div>
+          </div>
+
+          <!-- Column 2: Skills Matrix -->
+          <div class="card editor-card">
+            <div class="card-header-flex">
+              <h3 class="card-title">Technical Skills &amp; Competencies</h3>
+              <button class="btn btn-sm btn-secondary" onclick="window.JobHunterApp.promptAddSkill()">+ Add Skill</button>
+            </div>
+            <p class="field-help">These skills are matched against job postings to calculate your 0–100 match score and gap reports.</p>
+            <div class="skills-tag-container" id="profileSkillsTags">
+              <!-- Dynamically populated tags -->
+            </div>
+          </div>
+
+          <!-- Full Width: Work Experience -->
+          <div class="card editor-card full-width">
+            <div class="card-header-flex">
+              <h3 class="card-title">Work Experience (Used for Bullets Refinement)</h3>
+              <button class="btn btn-sm btn-secondary" onclick="window.JobHunterApp.addExperienceEntry()">+ Add Position</button>
+            </div>
+            <p class="field-help">The Resume Refiner tunes these exact bullet points to echo each job posting's keywords without ever inventing new facts.</p>
+            
+            <div class="experience-list-container" id="profileExperienceList">
+              <!-- Dynamically populated positions -->
+            </div>
+          </div>
+
+          <!-- Education -->
+          <div class="card editor-card full-width">
+            <div class="card-header-flex">
+              <h3 class="card-title">Education &amp; Credentials</h3>
+              <button class="btn btn-sm btn-secondary" onclick="window.JobHunterApp.addEducationEntry()">+ Add Education</button>
+            </div>
+            <div class="education-list-container" id="profileEducationList">
+              <!-- Dynamically populated education -->
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 3: Resume Refiner (Side-by-Side Diff) -->
+    <section class="tab-pane" id="tab-refiner">
+      <div class="page-container">
+        
+        <!-- Job Context Bar -->
+        <div class="refiner-job-header card" id="refinerJobHeader">
+          <div class="refiner-job-info">
+            <div class="target-job-badge">ACTIVE TARGET ROLE</div>
+            <h2 class="refiner-title" id="refinerJobTitle">Senior Backend Engineer, Billing Infrastructure</h2>
+            <div class="refiner-company-meta" id="refinerCompanyMeta">
+              <span class="meta-item" id="refinerCompany">Stripe</span>
+              <span class="meta-dot">&bull;</span>
+              <span class="meta-item" id="refinerLocation">Remote, US</span>
+              <span class="meta-dot">&bull;</span>
+              <span class="meta-item match-pill" id="refinerMatchScore">92% Match</span>
+            </div>
+          </div>
+
+          <div class="refiner-controls-cluster">
+            <div class="select-job-dropdown-wrapper">
+              <label for="refinerJobSelector">Target Job:</label>
+              <select id="refinerJobSelector" onchange="window.JobHunterApp.loadJobForRefiner(this.value)">
+                <!-- Populated dynamically -->
+              </select>
+            </div>
+
+            <div class="export-actions-cluster">
+              <button class="btn btn-secondary btn-sm" id="btnExportTxt" onclick="window.JobHunterApp.exportResume('txt')">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                Copy ATS TXT
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btnExportDoc" onclick="window.JobHunterApp.exportResume('doc')">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                Download Word (.doc)
+              </button>
+              <button class="btn btn-primary btn-sm" id="btnExportHtml" onclick="window.JobHunterApp.exportResume('html')">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline><path d="M12 3v12"></path></svg>
+                Download ATS Clean PDF
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Strict Non-Hallucination Policy Alert -->
+        <div class="alert-box alert-info">
+          <div class="alert-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          </div>
+          <div class="alert-content">
+            <strong>Honest, Non-Hallucinatory Rewriting Engine:</strong>
+            The refiner reorganizes your real skills, elevates matching keywords, and rewrites bullet points to echo the posting's emphasis without fabricating fake employers.
+          </div>
+        </div>
+
+        <!-- 10X 1-Click Auto-Tailor Hero Banner -->
+        <div class="ats-score-boost-banner card" id="refinerAtsBoostBanner">
+          <div class="boost-content">
+            <div class="boost-badge">⚡ 10X AUTOMATION</div>
+            <h3>1-Click Auto-Tailor to 98% ATS (Grade A+)</h3>
+            <p>Automatically accept all optimal keyword insertions, power verbs, and impact metrics in &lt;50ms. Master resume stays 100% private.</p>
+          </div>
+          <button class="btn btn-primary btn-autohunt" onclick="window.JobHunterApp.execute1ClickAutoTailor()">
+            ⚡ 1-Click Auto-Tailor Now
+          </button>
+        </div>
+
+        <!-- Diff Bulk Actions -->
+        <div class="diff-bulk-bar">
+          <div class="diff-summary-stats" id="diffSummaryStats">
+            4 Proposed Optimizations &bull; 0 Accepted &bull; 0 Rejected
+          </div>
+          <div class="diff-bulk-btns">
+            <button class="btn btn-sm btn-outline-success" onclick="window.JobHunterApp.acceptAllDiffs()">Accept All Changes</button>
+            <button class="btn btn-sm btn-outline-danger" onclick="window.JobHunterApp.rejectAllDiffs()">Revert to Master Text</button>
+          </div>
+        </div>
+
+        <!-- Side-by-Side Diff Container -->
+        <div class="diff-cards-stream" id="diffCardsStream">
+          <!-- Populated dynamically by JavaScript -->
+        </div>
+
+        <!-- Live ATS Output Preview -->
+        <div class="card ats-preview-card" style="margin-top: 32px;">
+          <div class="card-header-flex">
+            <div>
+              <h3 class="card-title">Live ATS Document Preview</h3>
+              <p class="field-help">Applicant Tracking Systems parse plain, clean single-column layouts with standard headings.</p>
+            </div>
+            <button class="btn btn-sm btn-secondary" onclick="window.JobHunterApp.printAtsPreview()">Print / Save as PDF</button>
+          </div>
+          <div class="ats-paper" id="atsPaperPreview">
+            <!-- Rendered ATS resume -->
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB: ATS Score & Audit Studio -->
+    <section class="tab-pane" id="tab-ats-audit">
+      <div class="page-container">
+        
+        <div class="section-header-box">
+          <div>
+            <h2 class="section-title">ATS Compatibility &amp; Parseability Studio</h2>
+            <p class="section-subtitle">Comprehensive Applicant Tracking System audit testing keyword saturation, quantifiable metrics density, power verbs, and standard section formatting.</p>
+          </div>
+          <div class="select-job-dropdown-wrapper">
+            <label for="atsJobSelector">Auditing Target Job:</label>
+            <select id="atsJobSelector" onchange="window.JobHunterApp.loadJobForAts(this.value)">
+              <!-- Populated dynamically -->
+            </select>
+          </div>
+        </div>
+
+        <!-- ATS Score Hero Card -->
+        <div class="ats-hero-score-card card">
+          <div class="ats-score-display">
+            <div class="ats-grade-circle" id="atsGradeCircle">
+              <span class="grade-letter" id="atsGradeLetter">A+</span>
+              <span class="score-sub" id="atsScorePoints">96 / 100</span>
+            </div>
+            <div class="ats-score-narrative">
+              <div class="ats-status-badge badge-emerald" id="atsStatusBadge">OPTIMAL ATS PARSEABILITY</div>
+              <h3 id="atsSummaryTitle">Ready for Enterprise ATS Systems</h3>
+              <p id="atsSummaryDesc">Your resume achieves high parseability across Greenhouse, Lever, and Workday with zero structural blockers and optimal keyword frequency.</p>
+              <div class="ats-score-quick-actions">
+                <button class="btn btn-primary btn-sm btn-autohunt" onclick="window.JobHunterApp.execute1ClickAutoTailor()">
+                  ⚡ Auto-Fix All Gaps &amp; Reach 99%
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="window.JobHunterApp.exportResume('html')">
+                  Download Clean ATS PDF
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4 Pillars Breakdown -->
+          <div class="ats-pillars-grid">
+            <div class="pillar-card">
+              <div class="pillar-label">Keyword Match Index</div>
+              <div class="pillar-val text-cyan" id="atsPillarKeywords">33 / 35 pts</div>
+              <div class="pillar-sub">Top 10 job keywords</div>
+            </div>
+            <div class="pillar-card">
+              <div class="pillar-label">Quantified Impact</div>
+              <div class="pillar-val text-success" id="atsPillarMetrics">24 / 25 pts</div>
+              <div class="pillar-sub" id="atsPillarMetricsSub">75% metrics density</div>
+            </div>
+            <div class="pillar-card">
+              <div class="pillar-label">Power Action Verbs</div>
+              <div class="pillar-val text-indigo" id="atsPillarVerbs">19 / 20 pts</div>
+              <div class="pillar-sub">Engineering impact starters</div>
+            </div>
+            <div class="pillar-card">
+              <div class="pillar-label">Standard Structure</div>
+              <div class="pillar-val text-emerald" id="atsPillarSections">20 / 20 pts</div>
+              <div class="pillar-sub">Universal section headers</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Two Columns: Keyword Saturation Table & ATS Checklist -->
+        <div class="ats-breakdown-grid">
+          
+          <!-- Column 1: Keyword Saturation Table -->
+          <div class="card ats-card">
+            <div class="card-header-flex">
+              <div>
+                <h3 class="card-title">Top Required Keywords Saturation</h3>
+                <p class="field-help">Ideal frequency is 2–4 occurrences to avoid both keyword deficits and keyword stuffing.</p>
+              </div>
+            </div>
+            <div class="keyword-density-list" id="atsKeywordDensityList">
+              <!-- Dynamically populated keyword rows -->
+            </div>
+          </div>
+
+          <!-- Column 2: ATS Compliance Checklist & Recommendations -->
+          <div class="card ats-card">
+            <div class="card-header-flex">
+              <div>
+                <h3 class="card-title">ATS Universal Compliance Checklist</h3>
+                <p class="field-help">Automated rules tested against top ATS parsers (Taleo, Greenhouse, Lever, Workday).</p>
+              </div>
+            </div>
+            <div class="checklist-items-stream" id="atsChecklistStream">
+              <!-- Dynamically populated checklist rules -->
+            </div>
+
+            <div class="ats-recommendations-box" id="atsRecommendationsBox" style="margin-top: 18px;">
+              <h4 style="font-size: 13.5px; margin-bottom: 6px; color: #fff;">Prioritized Recommendations</h4>
+              <ul id="atsRecommendationsList" style="padding-left: 18px; font-size: 12.5px; color: #94a3b8; line-height: 1.6;">
+              </ul>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 4: Gap Report -->
+    <section class="tab-pane" id="tab-gap">
+      <div class="page-container">
+        <div class="section-header-box">
+          <div>
+            <h2 class="section-title">Job Skill Gap Report</h2>
+            <p class="section-subtitle">Identifies every requirement in the posting that your resume currently lacks, categorizing them into honest buckets so you stay authentic.</p>
+          </div>
+          <div class="select-job-dropdown-wrapper">
+            <label for="gapJobSelector">Analyzing Job:</label>
+            <select id="gapJobSelector" onchange="window.JobHunterApp.loadJobForGap(this.value)">
+              <!-- Populated dynamically -->
+            </select>
+          </div>
+        </div>
+
+        <!-- Gap Metrics Summary -->
+        <div class="metrics-grid">
+          <div class="metric-card card">
+            <div class="metric-num text-success" id="gapMatchedCount">6</div>
+            <div class="metric-label">Skills You Match</div>
+            <div class="metric-sub" id="gapMatchedList">Python, PostgreSQL, Redis, Docker, AWS, REST</div>
+          </div>
+          <div class="metric-card card">
+            <div class="metric-num text-cyan" id="gapAddIfTrueCount">2</div>
+            <div class="metric-label">"Add This If True"</div>
+            <div class="metric-sub">Standard tools you might have used without writing them down</div>
+          </div>
+          <div class="metric-card card">
+            <div class="metric-num text-amber" id="gapRealCount">2</div>
+            <div class="metric-label">"Real Gaps"</div>
+            <div class="metric-sub">Prerequisites to address honestly in your interview</div>
+          </div>
+        </div>
+
+        <!-- Two Honest Buckets -->
+        <div class="gap-buckets-grid">
+          
+          <!-- Bucket 1: Add This If True -->
+          <div class="card gap-bucket-card">
+            <div class="bucket-header">
+              <div class="bucket-badge badge-cyan">CATEGORY 1</div>
+              <h3 class="bucket-title">Add This If True (Unstated / Adjacent Skills)</h3>
+              <p class="bucket-desc">Common tools, libraries, or agile workflows that candidates frequently possess but omit from their master resume. Click "+ Add to Profile" to append it immediately.</p>
+            </div>
+            <div class="gap-items-list" id="gapAddIfTrueList">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <!-- Bucket 2: Real Gap -->
+          <div class="card gap-bucket-card">
+            <div class="bucket-header">
+              <div class="bucket-badge badge-amber">CATEGORY 2</div>
+              <h3 class="bucket-title">Real Gaps (Prerequisites / New Stacks)</h3>
+              <p class="bucket-desc">Deep technologies or regulatory frameworks outside your primary background. Keep honest: do not fake these on your resume. Use the recommended talking points below.</p>
+            </div>
+            <div class="gap-items-list" id="gapRealList">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 5: Cover Letter Generator -->
+    <section class="tab-pane" id="tab-cover-letter">
+      <div class="page-container">
+        <div class="section-header-box">
+          <div>
+            <h2 class="section-title">Tailored Cover Letter Draft</h2>
+            <p class="section-subtitle">Generates a concise, high-signal 3-paragraph letter in your tone, citing only verified facts from your resume and matching the target company's mission.</p>
+          </div>
+          <div class="select-job-dropdown-wrapper">
+            <label for="coverJobSelector">Target Job:</label>
+            <select id="coverJobSelector" onchange="window.JobHunterApp.loadJobForCover(this.value)">
+              <!-- Populated dynamically -->
+            </select>
+          </div>
+        </div>
+
+        <div class="cover-letter-workspace card">
+          <div class="cover-controls-row">
+            <div class="tone-picker">
+              <label>Letter Tone:</label>
+              <div class="tone-buttons">
+                <button type="button" class="btn btn-sm btn-tone active" data-tone="direct" onclick="window.JobHunterApp.setCoverTone('direct')">Direct &amp; Impactful</button>
+                <button type="button" class="btn btn-sm btn-tone" data-tone="conversational" onclick="window.JobHunterApp.setCoverTone('conversational')">Conversational</button>
+                <button type="button" class="btn btn-sm btn-tone" data-tone="technical" onclick="window.JobHunterApp.setCoverTone('technical')">Systems &amp; Architecture</button>
+              </div>
+            </div>
+
+            <div class="letter-actions">
+              <button class="btn btn-secondary btn-sm" onclick="window.JobHunterApp.copyCoverLetter()">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                Copy to Clipboard
+              </button>
+              <button class="btn btn-primary btn-sm" onclick="window.JobHunterApp.saveCoverLetterToTracker()">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path></svg>
+                Save with Application
+              </button>
+            </div>
+          </div>
+
+          <div class="letterhead-preview">
+            <textarea id="coverLetterTextarea" rows="16" class="letterhead-textarea"></textarea>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 6: Application Tracker (Kanban Pipeline) -->
+    <section class="tab-pane" id="tab-tracker">
+      <div class="page-container tracker-fluid">
+        <div class="section-header-box">
+          <div>
+            <h2 class="section-title">Application Tracker (Kanban Pipeline)</h2>
+            <p class="section-subtitle">Track every role from bookmark to offer. Log interviews, custom notes, and follow-up deadlines.</p>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="window.JobHunterApp.openAddCustomAppModal()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            + Add Opportunity
+          </button>
+        </div>
+
+        <!-- Kanban Board Columns -->
+        <div class="kanban-board-container" id="kanbanBoard">
+          
+          <!-- Column 1: Saved -->
+          <div class="kanban-column" data-status="saved" id="colSaved">
+            <div class="kanban-col-header">
+              <div class="col-title-group">
+                <span class="status-indicator-dot dot-slate"></span>
+                <span class="col-title">Saved</span>
+              </div>
+              <span class="col-count" id="countSaved">0</span>
+            </div>
+            <div class="kanban-cards-dropzone" id="cardsSaved" ondragover="event.preventDefault()" ondrop="window.JobHunterApp.handleCardDrop(event, 'saved')">
+              <!-- Cards dynamically inserted -->
+            </div>
+          </div>
+
+          <!-- Column 2: Applied -->
+          <div class="kanban-column" data-status="applied" id="colApplied">
+            <div class="kanban-col-header">
+              <div class="col-title-group">
+                <span class="status-indicator-dot dot-cyan"></span>
+                <span class="col-title">Applied</span>
+              </div>
+              <span class="col-count" id="countApplied">1</span>
+            </div>
+            <div class="kanban-cards-dropzone" id="cardsApplied" ondragover="event.preventDefault()" ondrop="window.JobHunterApp.handleCardDrop(event, 'applied')">
+              <!-- Cards dynamically inserted -->
+            </div>
+          </div>
+
+          <!-- Column 3: Interview -->
+          <div class="kanban-column" data-status="interview" id="colInterview">
+            <div class="kanban-col-header">
+              <div class="col-title-group">
+                <span class="status-indicator-dot dot-amber"></span>
+                <span class="col-title">Interviewing</span>
+              </div>
+              <span class="col-count" id="countInterview">0</span>
+            </div>
+            <div class="kanban-cards-dropzone" id="cardsInterview" ondragover="event.preventDefault()" ondrop="window.JobHunterApp.handleCardDrop(event, 'interview')">
+              <!-- Cards dynamically inserted -->
+            </div>
+          </div>
+
+          <!-- Column 4: Offer -->
+          <div class="kanban-column" data-status="offer" id="colOffer">
+            <div class="kanban-col-header">
+              <div class="col-title-group">
+                <span class="status-indicator-dot dot-emerald"></span>
+                <span class="col-title">Offer Received</span>
+              </div>
+              <span class="col-count" id="countOffer">0</span>
+            </div>
+            <div class="kanban-cards-dropzone" id="cardsOffer" ondragover="event.preventDefault()" ondrop="window.JobHunterApp.handleCardDrop(event, 'offer')">
+              <!-- Cards dynamically inserted -->
+            </div>
+          </div>
+
+          <!-- Column 5: Rejected -->
+          <div class="kanban-column" data-status="rejected" id="colRejected">
+            <div class="kanban-col-header">
+              <div class="col-title-group">
+                <span class="status-indicator-dot dot-rose"></span>
+                <span class="col-title">Archived / Rejected</span>
+              </div>
+              <span class="col-count" id="countRejected">0</span>
+            </div>
+            <div class="kanban-cards-dropzone" id="cardsRejected" ondragover="event.preventDefault()" ondrop="window.JobHunterApp.handleCardDrop(event, 'rejected')">
+              <!-- Cards dynamically inserted -->
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 7: Company Watchlist -->
+    <section class="tab-pane" id="tab-watchlist">
+      <div class="page-container">
+        <div class="section-header-box">
+          <div>
+            <h2 class="section-title">Company Career Board Watchlist</h2>
+            <p class="section-subtitle">Monitor dream companies via their public Greenhouse, Lever, and Ashby career portals. Be notified the day they publish a role matching your profile.</p>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="window.JobHunterApp.openAddWatchlistModal()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            + Watch Company
+          </button>
+        </div>
+
+        <div class="watchlist-grid" id="watchlistGrid">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 8: Daily Digest Simulator -->
+    <section class="tab-pane" id="tab-digest">
+      <div class="page-container">
+        <div class="section-header-box">
+          <div>
+            <h2 class="section-title">Morning Job Digest Simulator</h2>
+            <p class="section-subtitle">Simulates the curated daily briefing email sent to you each morning listing new matches above your chosen score threshold.</p>
+          </div>
+          <div class="digest-config-group">
+            <label for="digestThresholdSelect">Min Score Cutoff:</label>
+            <select id="digestThresholdSelect" onchange="window.JobHunterApp.reloadDigest(this.value)">
+              <option value="70">70%+ Match</option>
+              <option value="75" selected>75%+ Match</option>
+              <option value="85">85%+ Match (Top Tier Only)</option>
+              <option value="90">90%+ Match (Elite Fit)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="digest-email-wrapper card">
+          <div class="email-envelope-bar">
+            <div class="envelope-item"><strong>From:</strong> JobHunter Morning Dispatch &lt;alerts@jobhunter.app&gt;</div>
+            <div class="envelope-item"><strong>To:</strong> <span id="digestRecipientEmail">alex.rivera@example.com</span></div>
+            <div class="envelope-item"><strong>Subject:</strong> <span id="digestSubject">Your Morning JobHunter Briefing: Top High-Fit Roles (85%+)</span></div>
+            <div class="envelope-item"><strong>Date:</strong> <span id="digestDate">Today, 8:00 AM</span></div>
+          </div>
+
+          <div class="email-body-content">
+            <div class="digest-greeting">
+              <h3>Good morning, <span id="digestGreetingName">Alex</span>! 👋</h3>
+              <p id="digestIntroText">Here are the freshest verified opportunities discovered across Greenhouse, Lever, Ashby, Remotive, and Indeed matching your Senior Full-Stack Software Engineer master profile.</p>
+            </div>
+
+            <div class="digest-jobs-stream" id="digestJobsStream">
+              <!-- Dynamically populated digest items -->
+            </div>
+
+            <div class="digest-footer-notice">
+              <p>You received this digest because your match threshold is set to <strong id="digestThresholdBadge">75%+</strong>. Your resume remains private on your local device.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 9: Interview Prep Studio -->
+    <section class="tab-pane" id="tab-prep">
+      <div class="page-container">
+        <div class="section-header-box">
+          <div>
+            <h2 class="section-title">Interview Prep Studio</h2>
+            <p class="section-subtitle">Custom behavioral, architecture, and STAR framework talking points generated from the intersection of this job's requirements and your resume achievements.</p>
+          </div>
+          <div class="select-job-dropdown-wrapper">
+            <label for="prepJobSelector">Prepping For Role:</label>
+            <select id="prepJobSelector" onchange="window.JobHunterApp.loadJobForPrep(this.value)">
+              <!-- Populated dynamically -->
+            </select>
+          </div>
+        </div>
+
+        <div class="prep-sections-grid" id="prepSectionsGrid">
+          <!-- Dynamically populated prep materials -->
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 10: Sources, Attribution & Privacy -->
+    <section class="tab-pane" id="tab-privacy">
+      <div class="page-container">
+        
+        <div class="section-header-box">
+          <div>
+            <h2 class="section-title">Data Privacy &amp; Source Attribution</h2>
+            <p class="section-subtitle">Full transparency on how JobHunter connects to job sources, honors attribution licenses, and guarantees local privacy.</p>
+          </div>
+        </div>
+
+        <div class="card privacy-card" style="margin-bottom: 24px;">
+          <h3 class="card-title text-success">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            100% Local Device Privacy
+          </h3>
+          <p>Your resume, work history, applications, and tailored documents live strictly on your machine in <code>data/jobhunter.db</code>. No user data is sent to external cloud tracking services, AI training corpora, or third-party brokers.</p>
+          <div class="purge-data-box">
+            <div>
+              <strong>Delete All My Data</strong>
+              <p style="margin: 4px 0 0; font-size: 13px; color: #94a3b8;">Instantly wipes your master profile, application history, and local database cache.</p>
+            </div>
+            <button class="btn btn-danger btn-sm" onclick="window.JobHunterApp.purgeAllData()">Permanently Wipe Data</button>
+          </div>
+        </div>
+
+        <h3 class="subsection-title">Data Source Architecture &amp; Attribution</h3>
+        <div class="sources-spec-grid">
+          
+          <div class="card source-spec-card">
+            <div class="source-spec-header">
+              <span class="badge badge-emerald">Tier 1 &bull; Clean &amp; Easy</span>
+              <h4>Public ATS Career Boards</h4>
+            </div>
+            <p><strong>Providers:</strong> Greenhouse, Lever, Ashby, SmartRecruiters, Workable.</p>
+            <p><strong>Method:</strong> Public JSON job-board endpoints published by vendors for programmatic recruitment usage. No logins, no bot mitigation, 100% compliant direct employer applications.</p>
+          </div>
+
+          <div class="card source-spec-card">
+            <div class="source-spec-header">
+              <span class="badge badge-cyan">Tier 1 &bull; Attributed Feeds</span>
+              <h4>Free Remote Feeds &amp; Aggregators</h4>
+            </div>
+            <p><strong>Providers:</strong> Remotive, RemoteOK, Jobicy, Arbeitnow, Hacker News Monthly Hiring.</p>
+            <p><strong>Attribution Compliance:</strong> As requested by RemoteOK and Remotive, every job card displays explicit source badges and direct backlinks to the original listing where you apply.</p>
+          </div>
+
+          <div class="card source-spec-card">
+            <div class="source-spec-header">
+              <span class="badge badge-amber">Tier 2 &bull; Workable with Care</span>
+              <h4>Indeed JobSpy Integration</h4>
+            </div>
+            <p><strong>Provider:</strong> Indeed via JobSpy-style scraper &amp; RSS feed.</p>
+            <p><strong>Status:</strong> Best-behaved mainstream scraper with no rate-limiting blocks. Fills the gap for local, non-tech, and hybrid enterprise listings that remote-only boards omit.</p>
+          </div>
+
+          <div class="card source-spec-card" style="border-color: rgba(10, 102, 194, 0.35);">
+            <div class="source-spec-header">
+              <span class="badge" style="background: rgba(10, 102, 194, 0.2); color: #38bdf8; border: 1px solid rgba(10, 102, 194, 0.4);">Core Active &bull; Live Scraper</span>
+              <h4>LinkedIn Live Guest Scraper</h4>
+            </div>
+            <p><strong>Status: Always Active &amp; Scraped on Every Search.</strong></p>
+            <p><strong>Method:</strong> Queries LinkedIn's public guest job search engine (<code>jobs-guest/jobs/api/seeMoreJobPostings/search</code>) in parallel. Scrapes and parses titles, companies, locations, dates, and direct links without requiring credentials. Automatically cross-referenced and deduplicated against company ATS boards and Indeed.</p>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Add Opportunity / Edit Application Modal -->
+  <div class="modal-backdrop" id="appModal" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="appModalTitle">Add Application to Pipeline</h3>
+        <button class="modal-close-btn" onclick="window.JobHunterApp.closeModal('appModal')">&times;</button>
+      </div>
+      <form id="appModalForm" onsubmit="event.preventDefault(); window.JobHunterApp.saveModalApplication();">
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="modalCompany">Company Name</label>
+            <input type="text" id="modalCompany" required>
+          </div>
+          <div class="form-field">
+            <label for="modalTitle">Job Title</label>
+            <input type="text" id="modalTitle" required>
+          </div>
+          <div class="form-field">
+            <label for="modalLocation">Location</label>
+            <input type="text" id="modalLocation" value="Remote">
+          </div>
+          <div class="form-field">
+            <label for="modalSalary">Salary / Compensation</label>
+            <input type="text" id="modalSalary" placeholder="e.g. $160k - $190k">
+          </div>
+          <div class="form-field">
+            <label for="modalStatus">Pipeline Stage</label>
+            <select id="modalStatus">
+              <option value="saved">Saved</option>
+              <option value="applied" selected>Applied</option>
+              <option value="interview">Interviewing</option>
+              <option value="offer">Offer</option>
+              <option value="rejected">Archived</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="modalFollowUp">Next Follow-Up Date</label>
+            <input type="date" id="modalFollowUp">
+          </div>
+          <div class="form-field full-width">
+            <label for="modalNotes">Application Notes / Referrals</label>
+            <textarea id="modalNotes" rows="3" placeholder="Contact person, interview dates, key notes..."></textarea>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="window.JobHunterApp.closeModal('appModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save to Pipeline</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add Watchlist Modal -->
+  <div class="modal-backdrop" id="watchlistModal" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Watch Company Career Board</h3>
+        <button class="modal-close-btn" onclick="window.JobHunterApp.closeModal('watchlistModal')">&times;</button>
+      </div>
+      <form id="watchlistModalForm" onsubmit="event.preventDefault(); window.JobHunterApp.saveModalWatchlist();">
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="wlCompanyName">Company Name</label>
+            <input type="text" id="wlCompanyName" placeholder="e.g. Airbnb, Figma, OpenAI" required>
+          </div>
+          <div class="form-field">
+            <label for="wlAtsType">ATS Board Provider</label>
+            <select id="wlAtsType">
+              <option value="greenhouse">Greenhouse (boards-api.greenhouse.io)</option>
+              <option value="lever">Lever (api.lever.co)</option>
+              <option value="ashby">Ashby (api.ashbyhq.com)</option>
+              <option value="smartrecruiters">SmartRecruiters</option>
+            </select>
+          </div>
+          <div class="form-field full-width">
+            <label for="wlTargetRole">Target Role Keyword</label>
+            <input type="text" id="wlTargetRole" placeholder="e.g. Full Stack, Backend, Systems" value="Software Engineer">
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="window.JobHunterApp.closeModal('watchlistModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add to Watchlist</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
