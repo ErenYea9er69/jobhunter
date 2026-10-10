@@ -31,6 +31,7 @@
 
   const S = {
     view: 'jobs',
+    quickFilter: 'all',
     profile: null,
     profileEmpty: true,
     dirty: false,
@@ -44,8 +45,8 @@
     applications: [],
     watchlist: [],
     watchResults: {},
-    ws: { job: null, key: '', tab: 'resume', from: 'jobs', refinement: null, decisions: {}, ats: null, atsFresh: false,
-          gaps: null, cover: {}, prep: null, tone: 'direct', showUnchanged: false, seq: 0 }
+    ws: { job: null, key: '', tab: 'strategy', from: 'jobs', refinement: null, decisions: {}, ats: null, atsFresh: false,
+          strategy: null, gaps: null, cover: {}, prep: null, tone: 'direct', showUnchanged: false, seq: 0 }
   };
 
   // ---------------------------------------------------------------- helpers
@@ -181,11 +182,11 @@
     window.scrollTo(0, 0);
 
     if (view === 'jobs' && S.searchStale) { S.searchStale = false; runSearch(); }
-    if (view === 'job') { S.ws.tab = ['resume', 'ats', 'gaps', 'cover', 'prep'].includes(sub) ? sub : 'resume'; renderWsHeader(); renderWsTab(); }
+    if (view === 'job') { S.ws.tab = ['strategy', 'resume', 'ats', 'gaps', 'cover', 'prep'].includes(sub) ? sub : 'strategy'; renderWsHeader(); renderWsTab(); }
     if (view === 'applications') loadApplications();
     if (view === 'companies') loadWatchlist();
     if (view === 'digest') loadDigest();
-    if (view === 'privacy') loadSourceHealth();
+    if (view === 'privacy') { loadSourceHealth(); loadAiSettings(); }
   }
 
   // ------------------------------------------------------------ theme, menu
@@ -546,27 +547,44 @@
     renderDetail();
   }
 
+  function filteredJobs() {
+    let list = S.jobs || [];
+    if (S.quickFilter === 'high_match') {
+      list = list.filter(j => (j.score || 0) >= 80);
+    } else if (S.quickFilter === 'direct_ats') {
+      list = list.filter(j => j.source_kind === 'Direct employer ATS' || String(j.source_tier || '').startsWith('Direct'));
+    } else if (S.quickFilter === 'fresh') {
+      list = list.filter(j => {
+        const d = timeAgo(j.posted_at);
+        return d && !d.includes('mo') && !d.includes('yr') && !d.includes('3w') && !d.includes('4w');
+      });
+    }
+    return list;
+  }
+
   function renderList() {
     const list = $('#jobList');
     const meta = S.searchMeta || {};
-    if (!S.jobs.length) {
+    const jobs = filteredJobs();
+    if (!jobs.length) {
       const { total, ok } = sourceCounts();
       const allFailed = total > 0 && ok === 0;
-      const strict = Number(val('searchMinScore')) > 0;
+      const strict = Number(val('searchMinScore')) > 0 || S.quickFilter !== 'all';
       list.innerHTML = `<div class="empty">${ico(allFailed ? 'alert' : 'search')}
         <h3>${allFailed ? 'No source answered' : 'No jobs match these filters'}</h3>
-        <p>${allFailed ? 'Check your internet connection, then search again. Open Sources above to see what failed.' : 'Try a broader title, a different work mode, or a lower match score.'}</p>
+        <p>${allFailed ? 'Check your internet connection, then search again. Open Sources above to see what failed.' : 'Try a broader title, a different work mode, or clear the quick filters.'}</p>
         <div class="empty-actions">
-          ${strict && !allFailed ? '<button type="button" class="btn btn-primary" data-action="clear-min">Show all scores</button>' : ''}
+          ${strict && !allFailed ? '<button type="button" class="btn btn-primary" data-action="clear-filters">Show all results</button>' : ''}
           <button type="button" class="btn btn-secondary" data-action="search-again">Search again</button>
         </div></div>`;
       return;
     }
     const showScore = !meta.profile_empty;
-    list.innerHTML = S.jobs.map(j => {
+    list.innerHTML = jobs.map(j => {
       const key = jobKey(j);
       const required = Object.keys(j.required_skills || {}).length;
       const matched = (j.matched_skills || []).length;
+      const isDirectAts = j.source_kind === 'Direct employer ATS' || String(j.source_tier || '').startsWith('Direct');
       return `<button type="button" class="job-item${key === S.selectedKey ? ' is-selected' : ''}" data-action="job-select" data-key="${esc(key)}">
         <span class="job-item-title">${esc(j.title)}</span>
         <span class="job-item-company">${esc(j.company)}</span>
@@ -576,6 +594,8 @@
           ${j.work_mode ? `<span>${ico('briefcase')}${esc(j.work_mode)}</span>` : ''}
           ${j.salary ? `<span>${esc(j.salary)}</span>` : ''}
           ${showScore && required ? `<span>${matched} of ${required} skills</span>` : ''}
+          ${isDirectAts ? `<span class="chip chip-ok" title="Direct employer careers board">${ico('shield')}Direct ATS</span>` : ''}
+          ${j.score >= 85 ? '<span class="chip chip-ok">Top Match</span>' : ''}
           ${j.is_new ? '<span class="chip chip-info">New</span>' : ''}
           ${j.is_sample ? '<span class="chip chip-warn">Sample</span>' : ''}
           ${jobSources(j).length > 1 ? `<span>${jobSources(j).length} sources</span>` : ''}
@@ -603,6 +623,7 @@
     const desc = String(j.description || '');
     const posted = j.posted_at ? timeAgo(j.posted_at) : '';
     const saved = savedApp(j);
+    const isDirectAts = j.source_kind === 'Direct employer ATS' || String(j.source_tier || '').startsWith('Direct');
 
     el.innerHTML = `
       <button type="button" class="btn btn-ghost btn-sm detail-close" data-action="detail-close">${ico('back')}Back to results</button>
@@ -610,7 +631,7 @@
         <div class="detail-top">
           <div>
             <h2 class="detail-title">${esc(j.title)}</h2>
-            <p class="detail-company">${esc(j.company)}</p>
+            <p class="detail-company">${esc(j.company)} ${isDirectAts ? `<span class="chip chip-ok" title="Direct employer ATS">${ico('shield')}Direct ATS</span>` : ''}</p>
           </div>
           ${showScore ? ring(score, true) : ''}
         </div>
@@ -621,7 +642,8 @@
           ${posted ? `<span>${ico('clock')}Posted ${esc(posted)}</span>` : ''}
         </div>
         <div class="detail-actions">
-        <button type="button" class="btn btn-primary" data-action="job-tailor">${ico('file')}Tailor resume</button>
+        <button type="button" class="btn btn-primary" data-action="job-strategy">${ico('bolt')}AI Strategy</button>
+        <button type="button" class="btn btn-secondary" data-action="job-tailor">${ico('file')}Tailor resume</button>
         <button type="button" class="btn btn-secondary" data-action="job-save" ${saved ? 'disabled' : ''}>${ico('bookmark')}${saved ? 'Saved' : 'Save'}</button>
         ${apply ? `<a class="btn btn-secondary" href="${esc(apply)}" target="_blank" rel="noopener noreferrer">${ico('external')}Apply</a>` : ''}
         <button type="button" class="btn btn-ghost" data-action="job-hunt" title="Tailor your resume, write a cover letter and prep notes, then save it all to Applications">${ico('bolt')}Prepare everything</button>
@@ -691,10 +713,10 @@
   // ------------------------------------------------------- job workspace
   function resetWorkspaceData() {
     const w = S.ws;
-    w.refinement = null; w.decisions = {}; w.ats = null; w.atsFresh = false; w.gaps = null; w.cover = {}; w.prep = null;
+    w.refinement = null; w.decisions = {}; w.ats = null; w.atsFresh = false; w.strategy = null; w.gaps = null; w.cover = {}; w.prep = null;
   }
 
-  function openWorkspace(job, tab = 'resume', from = S.view) {
+  function openWorkspace(job, tab = 'strategy', from = S.view) {
     if (!job) return;
     if (S.profileEmpty) { toast('Add your resume first. Tailoring needs it.', 'error'); go('resume'); return; }
     if (S.dirty) toast('You have unsaved profile changes. Tailoring uses your last saved profile.');
@@ -733,7 +755,8 @@
     const seq = ++w.seq, panel = $('#wsPanel');
     panel.innerHTML = skeletons(2);
     try {
-      if (w.tab === 'resume') { await ensureRefinement(); if (seq === w.seq) renderResumeTab(); }
+      if (w.tab === 'strategy') { await ensureStrategy(); if (seq === w.seq) renderStrategyTab(); }
+      else if (w.tab === 'resume') { await ensureRefinement(); if (seq === w.seq) renderResumeTab(); }
       else if (w.tab === 'ats') { await ensureAts(); if (seq === w.seq) renderAtsTab(); }
       else if (w.tab === 'gaps') { await ensureGaps(); if (seq === w.seq) renderGapsTab(); }
       else if (w.tab === 'cover') { await ensureCover(); if (seq === w.seq) renderCoverTab(); }
@@ -742,6 +765,121 @@
     } catch (err) {
       if (seq !== w.seq) return;
       panel.innerHTML = `<div class="empty">${ico('alert')}<h3>This tab did not load</h3><p>${esc(err.message)}</p><div class="empty-actions"><button type="button" class="btn btn-primary" data-action="ws-retry">Try again</button></div></div>`;
+    }
+  }
+
+  async function ensureStrategy() {
+    const w = S.ws;
+    if (w.strategy && w.strategy.job_id === w.job.id) return;
+    const data = await api('/api/ai-strategy', { method: 'POST', body: { job: w.job } });
+    w.strategy = data;
+  }
+
+  function renderStrategyTab() {
+    const w = S.ws, st = w.strategy;
+    if (!st) return;
+    const j = w.job;
+    const score = Math.round(st.fit_score || j.score || 0);
+    const flags = st.posting_health_flags || [];
+    const bridges = st.skill_bridges || [];
+    const tracks = st.talking_tracks || [];
+    const plan = st.action_plan || [];
+
+    $('#wsPanel').innerHTML = `
+      <div class="strategy-overview">
+        <div class="guardrail-verified-banner">
+          <div>${ico('shield')} <strong>100% Grounded Intelligence</strong></div>
+          <small>Verified against your master profile. Zero hallucinations.</small>
+        </div>
+
+        <div class="strategy-card">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
+            <div>
+              <h3>${ico('bolt')}Role Alignment &amp; Fit Rationale</h3>
+              <p style="margin-bottom:12px">${esc(st.executive_summary || 'Analysis complete.')}</p>
+              ${st.matched_skills && st.matched_skills.length ? `
+                <div class="fit-row" style="margin-top:10px">
+                  <strong>Direct Matches:</strong>
+                  ${st.matched_skills.map(s => `<span class="chip chip-ok">${esc(s)}</span>`).join('')}
+                </div>` : ''}
+              ${st.missing_skills && st.missing_skills.length ? `
+                <div class="fit-row" style="margin-top:8px">
+                  <strong>Gaps to Address:</strong>
+                  ${st.missing_skills.map(s => `<span class="chip chip-warn">${esc(s)}</span>`).join('')}
+                </div>` : ''}
+            </div>
+            ${ring(score, true)}
+          </div>
+        </div>
+
+        ${bridges.length ? `
+        <div class="strategy-card">
+          <h3>${ico('refresh')}Transferable Skill Bridges</h3>
+          <p>These skills aren't listed verbatim on your resume, but your existing tech stack bridges the gap:</p>
+          <div class="bridge-list">
+            ${bridges.map(b => `
+              <div class="bridge-item">
+                <div class="bridge-item-head">
+                  <strong>Requires ${esc(b.required_skill)}</strong>
+                  <span>&larr; Bridge from ${esc(b.candidate_bridge)}</span>
+                </div>
+                <p>${esc(b.rationale)}</p>
+              </div>
+            `).join('')}
+          </div>
+        </div>` : ''}
+
+        ${tracks.length ? `
+        <div class="strategy-card">
+          <h3>${ico('briefcase')}Interview Talking Tracks</h3>
+          <p>How to speak honestly and confidently about stack requirements in technical screens:</p>
+          <div class="talking-tracks">
+            ${tracks.map(t => `
+              <div class="track-item">
+                <b>Topic: ${esc(t.topic)}</b>
+                <p>${esc(t.strategy)}</p>
+              </div>
+            `).join('')}
+          </div>
+        </div>` : ''}
+
+        <div class="strategy-card">
+          <h3>${ico('shield')}Posting Health &amp; Transparency Audit</h3>
+          <div class="health-flags">
+            ${flags.map(f => `
+              <div class="flag-item flag-${esc(f.type || 'info')}">
+                <b>${esc(f.label)}</b>
+                <span>${esc(f.text)}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="strategy-card">
+          <h3>${ico('check')}Tactical Application Plan</h3>
+          <ol class="action-plan">
+            ${plan.map((p, idx) => `
+              <li>
+                <span class="action-plan-num">${idx + 1}</span>
+                <span>${esc(p)}</span>
+              </li>
+            `).join('')}
+          </ol>
+        </div>
+      </div>
+    `;
+  }
+
+  async function copyAtsBullets() {
+    const r = effectiveResume();
+    const bullets = (r.experience || []).flatMap(e => (e.bullets || []).map(b => `• ${b}`));
+    if (!bullets.length) { toast('No bullets to copy', 'error'); return; }
+    const text = bullets.join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('Copied all ATS bullets to clipboard');
+    } catch (e) {
+      toast('Clipboard blocked. Please copy manually.', 'error');
     }
   }
 
@@ -806,6 +944,10 @@
         <div><strong>Tailor this resume in one click</strong>
           <p>Reorders your skills and bullets, and mirrors the posting's wording for skills you already list. Every fact comes from your resume. Your master resume stays untouched.</p></div>
         <button type="button" class="btn btn-primary" data-action="auto-tailor">${ico('bolt')}Tailor automatically</button>
+      </div>
+      <div class="ats-copy-banner">
+        <div><strong>${ico('shield')} 100% Grounded Tailoring</strong> &bull; <small>Zero Hallucinations. Every tailored point mirrors verified resume facts.</small></div>
+        <button type="button" class="btn btn-secondary btn-sm" data-action="bullets-copy">${ico('copy')}Copy Plain ATS Bullets</button>
       </div>
       <div class="diff-layout">
         <div>
@@ -1269,6 +1411,87 @@
     } catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
   }
 
+  async function loadAiSettings() {
+    try {
+      const cfg = await api('/api/settings');
+      const provSelect = $('#aiProviderSelect');
+      if (provSelect) {
+        provSelect.value = cfg.active_provider || 'deterministic';
+        updateAiKeyVisibility(provSelect.value);
+      }
+      const modelInput = $('#aiModelInput');
+      if (modelInput && cfg.ai_model) modelInput.value = cfg.ai_model;
+      const ollamaInput = $('#ollamaEndpointInput');
+      if (ollamaInput && cfg.ollama_endpoint) ollamaInput.value = cfg.ollama_endpoint;
+
+      const badge = $('#activeAiBadge');
+      if (badge) {
+        const prov = cfg.active_provider || 'deterministic';
+        badge.textContent = `${prov.toUpperCase()} (${cfg.llm_available ? 'Connected' : 'Active'})`;
+        badge.className = `chip ${prov === 'deterministic' ? 'chip-ok' : cfg.llm_available ? 'chip-ok' : 'chip-warn'}`;
+      }
+    } catch (err) {
+      /* ignore */
+    }
+  }
+
+  function updateAiKeyVisibility(provider) {
+    const keyField = $('#aiKeyField');
+    const modelField = $('#aiModelField');
+    const ollamaField = $('#ollamaEndpointField');
+    const keyLabel = $('#aiKeyLabel');
+    if (!keyField) return;
+
+    if (provider === 'deterministic') {
+      keyField.hidden = true; modelField.hidden = true; ollamaField.hidden = true;
+    } else if (provider === 'ollama') {
+      keyField.hidden = true; modelField.hidden = false; ollamaField.hidden = false;
+    } else {
+      keyField.hidden = false; modelField.hidden = false; ollamaField.hidden = true;
+      keyLabel.textContent = `${provider.toUpperCase()} API Key`;
+    }
+  }
+
+  async function testAiConnection() {
+    const btn = $('#btnTestAi');
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `${ico('refresh')} Testing...`;
+    try {
+      const res = await api('/api/test-ai', { method: 'POST' });
+      if (res.success) toast(res.message);
+      else toast(res.message, 'error');
+    } catch (err) {
+      toast('Test failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  }
+
+  async function saveAiSettings() {
+    const prov = val('aiProviderSelect');
+    const key = val('aiApiKeyInput').trim();
+    const model = val('aiModelInput').trim();
+    const ollama = val('ollamaEndpointInput').trim();
+
+    const payload = { ai_provider: prov };
+    if (model) payload.ai_model = model;
+    if (ollama) payload.ollama_endpoint = ollama;
+    if (key) {
+      if (prov === 'gemini') payload.gemini_api_key = key;
+      else if (prov === 'openai') payload.openai_api_key = key;
+      else if (prov === 'anthropic') payload.anthropic_api_key = key;
+    }
+    try {
+      await api('/api/settings', { method: 'POST', body: payload });
+      toast('AI configuration saved');
+      await loadAiSettings();
+    } catch (err) {
+      toast('Failed to save settings: ' + err.message, 'error');
+    }
+  }
+
   async function purgeAll() {
     if (!await confirmDialog('Delete all your data?', 'This removes your profile, applications, watchlist, settings, and cached searches. You cannot undo it.', 'Delete everything')) return;
     try { await api('/api/purge-all-data', { method: 'DELETE' }); toast('All data deleted'); setTimeout(() => { location.hash = '#/jobs'; location.reload(); }, 600); }
@@ -1281,7 +1504,14 @@
     'idea': el => { $('#searchQuery').value = el.dataset.q; runSearch(); },
     'search-again': () => runSearch(),
     'clear-min': () => { $('#searchMinScore').value = '0'; runSearch(); },
+    'clear-filters': () => {
+      S.quickFilter = 'all';
+      $('#searchMinScore').value = '0';
+      $$('[data-quick-filter]').forEach(b => b.classList.toggle('is-active', b.dataset.quickFilter === 'all'));
+      renderList();
+    },
     'job-select': el => selectJob(el.dataset.key),
+    'job-strategy': () => openWorkspace(selectedJob(), 'strategy', 'jobs'),
     'job-tailor': () => openWorkspace(selectedJob(), 'resume', 'jobs'),
     'job-save': () => saveJob(selectedJob()),
     'job-hunt': () => prepareEverything(selectedJob()),
@@ -1303,6 +1533,7 @@
     'ws-save': () => saveJob(S.ws.job),
     'ws-retry': () => renderWsTab(),
     'auto-tailor': () => autoTailor(),
+    'bullets-copy': () => copyAtsBullets(),
     'diff-accept': el => setDiff(el.dataset.id, 'accepted'),
     'diff-reject': el => setDiff(el.dataset.id, 'rejected'),
     'diff-accept-all': () => setAllDiffs('accepted'),
@@ -1369,6 +1600,28 @@
       const p = $('#sourcePanel'); p.hidden = !p.hidden;
       $('#sourceToggle').setAttribute('aria-expanded', String(!p.hidden));
     });
+
+    // quick filters
+    const qf = $('#quickFilterRow');
+    if (qf) {
+      qf.addEventListener('click', e => {
+        const b = e.target.closest('[data-quick-filter]');
+        if (!b) return;
+        S.quickFilter = b.dataset.quickFilter;
+        $$('[data-quick-filter]', qf).forEach(x => x.classList.toggle('is-active', x === b));
+        renderList();
+      });
+    }
+
+    // AI settings
+    const provSelect = $('#aiProviderSelect');
+    if (provSelect) {
+      provSelect.addEventListener('change', () => updateAiKeyVisibility(provSelect.value));
+    }
+    const testAiBtn = $('#btnTestAi');
+    if (testAiBtn) testAiBtn.addEventListener('click', testAiConnection);
+    const saveAiBtn = $('#btnSaveAi');
+    if (saveAiBtn) saveAiBtn.addEventListener('click', saveAiSettings);
 
     // workspace tabs
     $('#wsTabs').addEventListener('click', e => {

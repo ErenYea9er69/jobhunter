@@ -135,6 +135,13 @@
           <div class="chips" id="suggestChips" aria-label="Search ideas"></div>
         </div>
 
+        <div class="quick-filters" id="quickFilterRow" role="group" aria-label="Quick filters">
+          <button type="button" class="qchip is-active" data-quick-filter="all">All listings</button>
+          <button type="button" class="qchip" data-quick-filter="high_match">80%+ Match</button>
+          <button type="button" class="qchip" data-quick-filter="direct_ats">Direct ATS Only</button>
+          <button type="button" class="qchip" data-quick-filter="fresh">Fresh (&lt; 7 days)</button>
+        </div>
+
         <div class="results-meta" id="resultsMeta">
           <p class="results-summary" id="resultsSummary" aria-live="polite">Searching your sources</p>
           <div class="results-tools">
@@ -180,11 +187,12 @@
         </div>
 
         <div class="tabs" role="tablist" aria-label="Job tools" id="wsTabs">
-          <button type="button" role="tab" data-ws-tab="resume" aria-selected="true">Resume</button>
-          <button type="button" role="tab" data-ws-tab="ats" aria-selected="false">ATS score <b class="count" id="wsAtsCount" hidden></b></button>
-          <button type="button" role="tab" data-ws-tab="gaps" aria-selected="false">Skill gaps</button>
-          <button type="button" role="tab" data-ws-tab="cover" aria-selected="false">Cover letter</button>
-          <button type="button" role="tab" data-ws-tab="prep" aria-selected="false">Interview prep</button>
+          <button type="button" role="tab" data-ws-tab="strategy" aria-selected="false"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>AI Strategy</button>
+          <button type="button" role="tab" data-ws-tab="resume" aria-selected="true"><svg class="i" aria-hidden="true"><use href="#i-file"/></svg>Tailor Resume</button>
+          <button type="button" role="tab" data-ws-tab="ats" aria-selected="false">ATS Score <b class="count" id="wsAtsCount" hidden></b></button>
+          <button type="button" role="tab" data-ws-tab="gaps" aria-selected="false">Skill Gaps</button>
+          <button type="button" role="tab" data-ws-tab="cover" aria-selected="false">Cover Letter</button>
+          <button type="button" role="tab" data-ws-tab="prep" aria-selected="false">Interview Prep</button>
         </div>
         <div class="ws-panel" id="wsPanel" role="tabpanel"></div>
       </div>
@@ -362,6 +370,48 @@
         <section class="card">
           <h2 class="card-title"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Your data stays on this computer</h2>
           <p>Your resume, applications, and tailored documents live in <code>data/jobhunter.db</code>. The app sends none of it to tracking services, training sets, or data brokers.</p>
+        </section>
+
+        <section class="card" id="aiSettingsCard">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>AI Engine &amp; Guardrails</h2>
+              <p class="muted">Power tailoring and strategic role analysis with Gemini, OpenAI, Claude, Ollama, or the built-in local engine.</p>
+            </div>
+            <span class="chip chip-ok" id="activeAiBadge">Deterministic (Active)</span>
+          </div>
+          <div class="form-grid">
+            <div class="form-field span-2">
+              <label for="aiProviderSelect">Active AI Provider</label>
+              <select id="aiProviderSelect">
+                <option value="deterministic">Local Deterministic Engine (Fast, 100% Free, Zero Hallucinations)</option>
+                <option value="gemini">Google Gemini (Gemini 1.5/2.0 Flash)</option>
+                <option value="openai">OpenAI (GPT-4o Mini / GPT-4o)</option>
+                <option value="anthropic">Anthropic Claude (Claude Sonnet 3.5)</option>
+                <option value="ollama">Ollama (Local LLM)</option>
+              </select>
+            </div>
+            <div class="form-field span-2" id="aiKeyField" hidden>
+              <label for="aiApiKeyInput" id="aiKeyLabel">API Key</label>
+              <input type="password" id="aiApiKeyInput" placeholder="Enter API key" autocomplete="off">
+            </div>
+            <div class="form-field" id="aiModelField" hidden>
+              <label for="aiModelInput">Model Name (optional)</label>
+              <input type="text" id="aiModelInput" placeholder="Default model">
+            </div>
+            <div class="form-field" id="ollamaEndpointField" hidden>
+              <label for="ollamaEndpointInput">Ollama URL</label>
+              <input type="text" id="ollamaEndpointInput" placeholder="http://127.0.0.1:11434">
+            </div>
+          </div>
+          <div class="ai-guardrail-summary">
+            <strong><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Zero-Hallucination Guardrail Active</strong>
+            <p class="muted small">All AI rewrites are filtered through our local Grounding Guard. If any AI invents a metric, technology, or title you don't possess, it is automatically rejected.</p>
+          </div>
+          <div class="head-actions" style="margin-top:14px; gap:8px;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnTestAi"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>Test connection</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnSaveAi">Save AI configuration</button>
+          </div>
         </section>
 
         <section class="card">

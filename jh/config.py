@@ -27,10 +27,14 @@ ADZUNA_COUNTRY = os.environ.get("JH_ADZUNA_COUNTRY", "us")
 ADZUNA_APP_ID = os.environ.get("ADZUNA_APP_ID", "")
 ADZUNA_APP_KEY = os.environ.get("ADZUNA_APP_KEY", "")
 
-# Optional LLM for tailoring. Without a key the app uses the deterministic engine.
+# Optional LLM for tailoring and strategy. Without a key the app uses the deterministic engine.
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-LLM_MODEL = os.environ.get("JH_LLM_MODEL", "claude-sonnet-5-5")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+AI_PROVIDER = os.environ.get("JH_AI_PROVIDER", "auto")  # "auto", "gemini", "openai", "anthropic", "ollama", "deterministic"
+LLM_MODEL = os.environ.get("JH_LLM_MODEL", "")
 LLM_TIMEOUT_SECONDS = float(os.environ.get("JH_LLM_TIMEOUT", "40"))
+OLLAMA_ENDPOINT = os.environ.get("JH_OLLAMA_ENDPOINT", "http://127.0.0.1:11434")
 
 # Demo mode seeds a sample profile and labeled sample jobs. Off by default.
 DEMO = os.environ.get("JH_DEMO", "0") == "1"

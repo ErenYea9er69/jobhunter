@@ -182,21 +182,62 @@ def r_digest_send(q, body):
     return digest.send_digest()
 
 
+@route("GET", "/api/settings")
+def r_get_settings(q, body):
+    allowed = {"digest_min_score", "digest_email", "adzuna_app_id", "adzuna_app_key",
+               "ai_provider", "gemini_api_key", "openai_api_key", "anthropic_api_key", "ai_model", "ollama_endpoint"}
+    out = {}
+    with db.session() as c:
+        for row in c.execute("SELECT key, value FROM settings"):
+            if row["key"] in allowed:
+                out[row["key"]] = row["value"]
+    cfg = refit.get_active_ai_config()
+    out["active_provider"] = cfg["provider"]
+    out["active_model"] = cfg["model"]
+    out["llm_available"] = refit.llm_available()
+    return out
+
+
 @route("POST", "/api/settings")
 def r_settings(q, body):
-    allowed = {"digest_min_score", "digest_email", "adzuna_app_id", "adzuna_app_key"}
+    allowed = {"digest_min_score", "digest_email", "adzuna_app_id", "adzuna_app_key",
+               "ai_provider", "gemini_api_key", "openai_api_key", "anthropic_api_key", "ai_model", "ollama_endpoint"}
     for k, v in body.items():
         if k in allowed:
-            db.set_setting(k, v)
-    return {"success": True}
+            db.set_setting(k, str(v).strip())
+    return {"success": True, "active_ai": refit.get_active_ai_config()}
+
+
+@route("POST", "/api/test-ai")
+def r_test_ai(q, body):
+    t0 = time.time()
+    cfg = refit.get_active_ai_config()
+    if cfg["provider"] == "deterministic":
+        return {"success": True, "provider": "deterministic", "latency_ms": 1,
+                "message": "Deterministic engine active (100% local, fast, zero cost, 0 hallucinations)."}
+    try:
+        reply = refit._call_llm("You are an assistant. Reply with 'OK'.", "Ping", cfg)
+        ms = int((time.time() - t0) * 1000)
+        return {"success": True, "provider": cfg["provider"], "model": cfg["model"], "latency_ms": ms,
+                "message": f"Successfully connected to {cfg['provider'].title()} in {ms}ms."}
+    except Exception as e:
+        return {"success": False, "provider": cfg["provider"], "error": str(e),
+                "message": f"Connection failed to {cfg['provider']}: {str(e)[:160]}"}
+
+
+@route("POST", "/api/ai-strategy")
+def r_ai_strategy(q, body):
+    return refit.generate_ai_strategy(_job(body), _need_profile())
 
 
 @route("GET", "/api/cache-stats")
 def r_cache(q, body):
     with db.session() as c:
         n = c.execute("SELECT COUNT(*) n FROM source_cache").fetchone()["n"]
+    cfg = refit.get_active_ai_config()
     return {"cached_queries_count": n, "ttl_seconds": config.CACHE_TTL_SECONDS, "version": __version__,
-            "llm_enabled": refit.llm_available(), "demo": config.DEMO}
+            "llm_enabled": refit.llm_available(), "ai_provider": cfg["provider"], "ai_model": cfg["model"],
+            "demo": config.DEMO}
 
 
 @route("POST", "/api/clear-cache")

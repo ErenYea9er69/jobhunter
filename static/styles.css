@@ -559,6 +559,49 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 
+/* 13. AI Strategy, Quick Filters & Guardrails ------------------------------ */
+.quick-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.qchip { border: 1px solid var(--line); background: var(--surface); color: var(--text-2); padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s ease; }
+.qchip:hover { border-color: var(--line-strong); color: var(--text); background: var(--surface-2); }
+.qchip.is-active { background: var(--brand); color: var(--brand-on); border-color: var(--brand); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+.ai-guardrail-summary { margin-top: 14px; padding: 12px 14px; background: var(--surface-2); border-left: 3px solid var(--success); border-radius: var(--r-sm); }
+.ai-guardrail-summary strong { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 13.5px; margin-bottom: 4px; }
+
+.strategy-overview { display: flex; flex-direction: column; gap: 18px; }
+.strategy-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 20px; box-shadow: var(--shadow); }
+.strategy-card h3 { font-family: var(--font-title); font-size: 18px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+.strategy-card p { line-height: 1.55; color: var(--text-2); }
+
+.bridge-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.bridge-item { padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.bridge-item-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13.5px; }
+.bridge-item-head strong { color: var(--danger); }
+.bridge-item-head span { color: var(--success); font-weight: 600; }
+.bridge-item p { font-size: 13px; margin: 0; color: var(--text-2); }
+
+.talking-tracks { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.track-item { padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.track-item b { color: var(--brand); display: block; margin-bottom: 4px; font-size: 13.5px; }
+.track-item p { margin: 0; font-size: 13px; color: var(--text-2); line-height: 1.5; }
+
+.health-flags { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.flag-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: var(--r-sm); font-size: 13px; }
+.flag-item.flag-green { background: var(--success-soft); color: var(--text); border: 1px solid rgba(46, 106, 62, 0.2); }
+.flag-item.flag-yellow { background: var(--warning-soft); color: var(--text); border: 1px solid rgba(150, 88, 10, 0.2); }
+.flag-item.flag-info { background: var(--info-soft); color: var(--text); border: 1px solid rgba(29, 106, 103, 0.2); }
+.flag-item b { font-weight: 600; min-width: 130px; }
+
+.action-plan { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.action-plan li { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--surface-2); border-radius: var(--r-sm); font-size: 13.5px; line-height: 1.5; }
+.action-plan-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: var(--brand-on); font-size: 12px; font-weight: 700; flex-shrink: 0; }
+
+.guardrail-verified-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: var(--success-soft); border: 1px solid var(--success); border-radius: var(--r-md); margin-bottom: 18px; }
+.guardrail-verified-banner div { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13.5px; font-weight: 600; }
+.guardrail-verified-banner small { color: var(--text-2); font-size: 12px; }
+
+.ats-copy-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; background: var(--surface-3); border-radius: var(--r-sm); margin-bottom: 14px; }
+
 @media print {
   .topbar, .nav, .tabs, .ws-head, .tailor-banner, .diff-bar, .diff-card, .preview-head, .savebar, .toasts { display: none !important; }
   body { background: #fff; padding: 0; }

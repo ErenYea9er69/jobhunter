@@ -261,5 +261,34 @@ class TrackerTests(Base):
         self.assertEqual(tracker.list_applications(), [])
 
 
+class AiStrategyTests(Base):
+    def test_ai_strategy_generation(self):
+        strat = refit.generate_ai_strategy(JOB, DEMO_PROFILE)
+        self.assertIn("fit_score", strat)
+        self.assertIn("executive_summary", strat)
+        self.assertIn("posting_health_flags", strat)
+        self.assertIn("action_plan", strat)
+        self.assertTrue(strat["guardrail_verified"])
+        self.assertGreater(len(strat["action_plan"]), 0)
+
+    def test_guardrail_report_grounded(self):
+        rep = refit.generate_guardrail_report(DEMO_PROFILE, DEMO_PROFILE)
+        self.assertTrue(rep["grounded"])
+        self.assertEqual(rep["safety_score"], 100)
+
+    def test_guardrail_report_flags_unearned_claims(self):
+        bad_resume = dict(DEMO_PROFILE, summary="Earned $10M scaling Rust to 100M users with Kubernetes.")
+        rep = refit.generate_guardrail_report(DEMO_PROFILE, bad_resume)
+        self.assertFalse(rep["grounded"])
+        self.assertEqual(rep["safety_score"], 50)
+
+    def test_ai_config_resolution(self):
+        db.set_setting("ai_provider", "gemini")
+        db.set_setting("gemini_api_key", "test-key-123")
+        cfg = refit.get_active_ai_config()
+        self.assertEqual(cfg["provider"], "gemini")
+        self.assertEqual(cfg["key"], "test-key-123")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

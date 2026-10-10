@@ -444,7 +444,11 @@ class IndeedJobSpy(Source):
         """Small public-results fallback when python-jobspy is not installed."""
         params = {"q": query or "software engineer", "l": location or "", "fromage": "14"}
         url = "https://www.indeed.com/jobs?" + urllib.parse.urlencode(params)
-        page = http_get(url, headers={"Accept": "text/html"}, retries=0)
+        try:
+            page = http_get(url, headers={"Accept": "text/html",
+                                          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"}, retries=0)
+        except HttpError:
+            raise HttpError("Indeed requires python-jobspy for Cloudflare bypass. Other feeds active.")
         out = []
         for match in re.finditer(r'data-jk=["\']([^"\']+)["\']', page, re.I):
             start, end = max(0, match.start() - 1500), min(len(page), match.end() + 6500)

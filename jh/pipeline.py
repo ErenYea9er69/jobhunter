@@ -213,11 +213,20 @@ def search(query="", location="", work_mode="Any", min_score=0, profile=None, fo
     # Watchlist boards return every opening, so keep only those relevant to the query or the user's target.
     if query:
         qwords = [w for w in re.findall(r"[a-z0-9+#]+", query.lower()) if len(w) > 2]
+        syns = set(qwords)
+        if "engineer" in syns or "developer" in syns or "swe" in syns:
+            syns.update({"engineer", "developer", "swe", "dev"})
+        if "frontend" in syns or "front-end" in syns:
+            syns.update({"frontend", "front end", "ui"})
+        if "backend" in syns or "back-end" in syns:
+            syns.update({"backend", "back end", "api"})
+        if "fullstack" in syns or "full-stack" in syns:
+            syns.update({"fullstack", "full stack"})
         def relevant(j):
             if not j["source_tier"].startswith("Direct"):
                 return True
             hay = f"{j['title']} {j.get('description', '')[:600]}".lower()
-            return any(w in hay for w in qwords) if qwords else True
+            return any(w in hay for w in syns) if syns else True
         raw = [j for j in raw if relevant(j)]
 
     merged = dedup.merge_jobs(raw)
