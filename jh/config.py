@@ -1,0 +1,43 @@
+"""Runtime configuration. Every value reads from an environment variable with a safe default."""
+import os
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+DATA_DIR = os.environ.get("JH_DATA_DIR", os.path.join(BASE_DIR, "data"))
+DB_PATH = os.path.join(DATA_DIR, "jobhunter.db")
+
+HOST = os.environ.get("JH_HOST", "127.0.0.1")
+PORT = int(os.environ.get("JH_PORT", "8080"))
+
+# Search behavior
+SEARCH_DEADLINE_SECONDS = float(os.environ.get("JH_SEARCH_DEADLINE", "14"))
+SOURCE_TIMEOUT_SECONDS = float(os.environ.get("JH_SOURCE_TIMEOUT", "8"))
+CACHE_TTL_SECONDS = int(os.environ.get("JH_CACHE_TTL", "900"))
+STALE_CACHE_MAX_SECONDS = int(os.environ.get("JH_STALE_MAX", str(24 * 3600)))
+MAX_RESULTS = int(os.environ.get("JH_MAX_RESULTS", "150"))
+ENRICH_TOP_N = int(os.environ.get("JH_ENRICH_TOP_N", "12"))
+
+# Sources with legal or stability risk stay off until the user opts in.
+ENABLE_LINKEDIN = os.environ.get("JH_ENABLE_LINKEDIN", "0") == "1"
+ENABLE_JOBSPY = os.environ.get("JH_ENABLE_JOBSPY", "0") == "1"
+ADZUNA_COUNTRY = os.environ.get("JH_ADZUNA_COUNTRY", "us")
+ADZUNA_APP_ID = os.environ.get("ADZUNA_APP_ID", "")
+ADZUNA_APP_KEY = os.environ.get("ADZUNA_APP_KEY", "")
+
+# Optional LLM for tailoring. Without a key the app uses the deterministic engine.
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+LLM_MODEL = os.environ.get("JH_LLM_MODEL", "claude-sonnet-5-5")
+LLM_TIMEOUT_SECONDS = float(os.environ.get("JH_LLM_TIMEOUT", "40"))
+
+# Demo mode seeds a sample profile and labeled sample jobs. Off by default.
+DEMO = os.environ.get("JH_DEMO", "0") == "1"
+
+# Digest scheduling and email
+DIGEST_TIME = os.environ.get("JH_DIGEST_TIME", "")  # "08:00" enables the scheduler
+SMTP_HOST = os.environ.get("JH_SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("JH_SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("JH_SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("JH_SMTP_PASSWORD", "")
+
+MAX_BODY_BYTES = 12 * 1024 * 1024
+USER_AGENT = "JobHunter/2.0 (+local personal job search tool)"

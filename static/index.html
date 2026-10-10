@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JobHunter — Resume-First Multi-Board Job Search & AI Tailor</title>
-  <meta name="description" content="Upload your resume once. Search across Greenhouse, Lever, Ashby, Remotive, Jobicy, RemoteOK, and Indeed simultaneously with smart deduplication, match scoring, and truthful resume tailoring.">
+  <meta name="description" content="Upload your resume once. Search public job feeds and company boards, merge duplicates, score fit honestly, and tailor your resume using only facts you wrote.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -26,7 +26,7 @@
         </div>
         <div class="brand-text">
           <div class="brand-title">JobHunter</div>
-          <span class="brand-badge" id="tierStatusBadge">LinkedIn + Tier 1 + Indeed Active</span>
+          <span class="brand-badge" id="tierStatusBadge">Live public sources</span>
         </div>
       </div>
 
@@ -103,7 +103,7 @@
         <div class="search-hero card" id="searchHero">
           <div class="search-hero-content">
             <h1 class="page-title">Unified Multi-Source Job Search</h1>
-            <p class="page-subtitle">One unified search scrapes LinkedIn in real-time, queries Tier 1 ATS boards (Greenhouse, Lever, Ashby, SmartRecruiters), free feeds (Remotive, Jobicy, Arbeitnow, RemoteOK, Hacker News), and Indeed simultaneously. Duplicate roles are merged automatically across all boards.</p>
+            <p class="page-subtitle">One search queries free job feeds (Remotive, Jobicy, Arbeitnow, RemoteOK, We Work Remotely, Hacker News), your watched company boards (Greenhouse, Lever, Ashby, Workable, SmartRecruiters), and Adzuna when you add a key. Duplicate roles merge across sources. Sources that fail are named below the search box.</p>
           </div>
 
           <!-- Live Source Status Badges -->
@@ -117,9 +117,7 @@
             <span class="source-chip source-active" title="Tier 1 Public API"><span class="dot"></span>Arbeitnow</span>
             <span class="source-chip source-active" title="Tier 1 Public Feed"><span class="dot"></span>RemoteOK (Credited)</span>
             <span class="source-chip source-active" title="Tier 1 Aggregator"><span class="dot"></span>Hacker News</span>
-            <span class="source-chip source-active" title="Tier 2 JobSpy Best-Behaved Scraper"><span class="dot dot-amber"></span>Indeed (Tier 2)</span>
-            <span class="source-chip source-active" title="LinkedIn Public Guest Scraper (Always Active)"><span class="dot dot-blue"></span>LinkedIn (Live Scraped)</span>
-          </div>
+                                  </div>
 
           <!-- Search Form -->
           <form class="search-form" id="searchForm" onsubmit="event.preventDefault(); window.JobHunterApp.handleSearch();">
@@ -185,7 +183,7 @@
         <div class="results-header-bar" id="resultsHeaderBar">
           <div class="results-count-box">
             <span class="results-number" id="resultsCount">0</span>
-            <span class="results-label" id="resultsLabel">Unique Opportunities Found (Deduplicated across Tier 1 + Indeed)</span>
+            <span class="results-label" id="resultsLabel">Unique opportunities (duplicates merged across sources)</span>
           </div>
           <div class="results-sort-box">
             <label for="sortResultsBy">Sort Order:</label>
@@ -198,11 +196,12 @@
         </div>
 
         <!-- Job Cards Container -->
+        <div id="sourceStatus" class="field-help" style="margin:8px 0"></div>
         <div class="job-results-grid" id="jobResultsGrid">
           <!-- Populated by JavaScript -->
           <div class="empty-state-card" id="searchLoadingState">
             <div class="spinner"></div>
-            <p>Scanning Greenhouse, Lever, Ashby, Remotive, Jobicy, Arbeitnow, RemoteOK, and Indeed...</p>
+            <p>Scanning your enabled sources...</p>
           </div>
         </div>
 
@@ -378,7 +377,7 @@
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                 Copy ATS TXT
               </button>
-              <button class="btn btn-secondary btn-sm" id="btnExportDoc" onclick="window.JobHunterApp.exportResume('doc')">
+              <button class="btn btn-secondary btn-sm" id="btnExportDoc" onclick="window.JobHunterApp.exportResume('docx')">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
                 Download Word (.doc)
               </button>
@@ -401,15 +400,15 @@
           </div>
         </div>
 
-        <!-- 10X 1-Click Auto-Tailor Hero Banner -->
+        <!-- Auto-Tailor banner -->
         <div class="ats-score-boost-banner card" id="refinerAtsBoostBanner">
           <div class="boost-content">
-            <div class="boost-badge">⚡ 10X AUTOMATION</div>
-            <h3>1-Click Auto-Tailor to 98% ATS (Grade A+)</h3>
-            <p>Automatically accept all optimal keyword insertions, power verbs, and impact metrics in &lt;50ms. Master resume stays 100% private.</p>
+            <div class="boost-badge">TRUTHFUL TAILORING</div>
+            <h3>Auto-Tailor for this job</h3>
+            <p>Reorders your skills and bullets and mirrors the posting's wording for skills you already list. Every number and skill in the result comes from your master resume. Your master resume stays untouched.</p>
           </div>
           <button class="btn btn-primary btn-autohunt" onclick="window.JobHunterApp.execute1ClickAutoTailor()">
-            ⚡ 1-Click Auto-Tailor Now
+            Auto-Tailor now
           </button>
         </div>
 
@@ -436,7 +435,7 @@
               <h3 class="card-title">Live ATS Document Preview</h3>
               <p class="field-help">Applicant Tracking Systems parse plain, clean single-column layouts with standard headings.</p>
             </div>
-            <button class="btn btn-sm btn-secondary" onclick="window.JobHunterApp.printAtsPreview()">Print / Save as PDF</button>
+            <button class="btn btn-sm btn-secondary" onclick="window.JobHunterApp.exportResume('pdf')">Download PDF</button>
           </div>
           <div class="ats-paper" id="atsPaperPreview">
             <!-- Rendered ATS resume -->
@@ -781,8 +780,8 @@
       <div class="page-container">
         <div class="section-header-box">
           <div>
-            <h2 class="section-title">Morning Job Digest Simulator</h2>
-            <p class="section-subtitle">Simulates the curated daily briefing email sent to you each morning listing new matches above your chosen score threshold.</p>
+            <h2 class="section-title">Morning Job Digest</h2>
+            <p class="section-subtitle">Lists roles first seen since your last digest and scoring above your threshold. Set JH_DIGEST_TIME and SMTP settings to receive it by email each morning.</p>
           </div>
           <div class="digest-config-group">
             <label for="digestThresholdSelect">Min Score Cutoff:</label>
@@ -806,7 +805,7 @@
           <div class="email-body-content">
             <div class="digest-greeting">
               <h3>Good morning, <span id="digestGreetingName">Alex</span>! 👋</h3>
-              <p id="digestIntroText">Here are the freshest verified opportunities discovered across Greenhouse, Lever, Ashby, Remotive, and Indeed matching your Senior Full-Stack Software Engineer master profile.</p>
+              <p id="digestIntroText">Here are roles first seen since your last digest that match your threshold.</p>
             </div>
 
             <div class="digest-jobs-stream" id="digestJobsStream">
@@ -895,19 +894,19 @@
           <div class="card source-spec-card">
             <div class="source-spec-header">
               <span class="badge badge-amber">Tier 2 &bull; Workable with Care</span>
-              <h4>Indeed JobSpy Integration</h4>
+              <h4>Indeed via JobSpy (optional)</h4>
             </div>
-            <p><strong>Provider:</strong> Indeed via JobSpy-style scraper &amp; RSS feed.</p>
-            <p><strong>Status:</strong> Best-behaved mainstream scraper with no rate-limiting blocks. Fills the gap for local, non-tech, and hybrid enterprise listings that remote-only boards omit.</p>
+            <p><strong>Status:</strong> Off by default. Run pip install python-jobspy and set JH_ENABLE_JOBSPY=1. Scraping Indeed carries terms-of-service risk.</p>
+            <p>Use Adzuna (free API key) for a compliant way to cover local and non-tech jobs.</p>
           </div>
 
           <div class="card source-spec-card" style="border-color: rgba(10, 102, 194, 0.35);">
             <div class="source-spec-header">
-              <span class="badge" style="background: rgba(10, 102, 194, 0.2); color: #38bdf8; border: 1px solid rgba(10, 102, 194, 0.4);">Core Active &bull; Live Scraper</span>
-              <h4>LinkedIn Live Guest Scraper</h4>
+              <span class="badge">Opt-in &bull; Off by default</span>
+              <h4>LinkedIn guest listings (optional)</h4>
             </div>
-            <p><strong>Status: Always Active &amp; Scraped on Every Search.</strong></p>
-            <p><strong>Method:</strong> Queries LinkedIn's public guest job search engine (<code>jobs-guest/jobs/api/seeMoreJobPostings/search</code>) in parallel. Scrapes and parses titles, companies, locations, dates, and direct links without requiring credentials. Automatically cross-referenced and deduplicated against company ATS boards and Indeed.</p>
+            <p><strong>Status:</strong> Off by default. Set JH_ENABLE_LINKEDIN=1 to turn it on.</p>
+            <p><strong>Risk:</strong> LinkedIn's terms restrict automated access and the page layout changes often, so results may be incomplete or blocked. Use at your own risk.</p>
           </div>
 
         </div>

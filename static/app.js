@@ -27,6 +27,8 @@
       options.headers['Content-Type'] = 'application/json';
       options.body = JSON.stringify(options.body);
     }
+    const tokenMeta = document.querySelector('meta[name="jh-token"]');
+    options.headers['X-JH-Token'] = tokenMeta ? tokenMeta.content : '';
     const res = await fetch(url, options);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Network error' }));
@@ -289,34 +291,34 @@
   async function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
-
-    showToast(`Parsing ${file.name}...`);
+    if (file.size > 8 * 1024 * 1024) { showToast('File is larger than 8 MB.', 'error'); return; }
+    showToast(`Reading ${file.name}...`);
+    const isBinary = /\.(pdf|docx|doc)$/i.test(file.name);
     const reader = new FileReader();
-
     reader.onload = async (e) => {
-      const content = e.target.result;
       try {
-        const res = await api('/api/parse-resume', {
-          method: 'POST',
-          body: { text: content }
-        });
+        let body;
+        if (isBinary) {
+          const bytes = new Uint8Array(e.target.result);
+          let bin = '';
+          for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+          body = { filename: file.name, content_base64: btoa(bin) };
+        } else {
+          body = { text: e.target.result };
+        }
+        const res = await api('/api/parse-resume', { method: 'POST', body });
         if (res.profile) {
           AppState.profile = res.profile;
           renderProfileForm(res.profile);
           updateUserPill(res.profile);
-          showToast(`Successfully extracted profile from ${file.name}! Fix any details below and save.`);
+          const miss = (res.parse_report && res.parse_report.needs_review) || [];
+          showToast(miss.length ? `Parsed ${file.name}. Please fill in: ${miss.join(', ')}.` : `Parsed ${file.name}. Review the fields, then save.`);
         }
       } catch (err) {
-        showToast('Error parsing file: ' + err.message, 'error');
+        showToast('Could not read the file: ' + err.message, 'error');
       }
     };
-
-    if (file.type === 'application/json' || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
-      reader.readAsText(file);
-    } else {
-      // Read as text representation
-      reader.readAsText(file);
-    }
+    if (isBinary) reader.readAsArrayBuffer(file); else reader.readAsText(file);
   }
 
   async function handlePasteParse() {
@@ -356,7 +358,7 @@
     grid.innerHTML = `
       <div class="empty-state-card" id="searchLoadingState">
         <div class="spinner"></div>
-        <p>Querying Greenhouse, Lever, Ashby, SmartRecruiters, Remotive, Jobicy, Arbeitnow, RemoteOK, and Indeed concurrently...</p>
+        <p>Querying all enabled sources at the same time. Slow sources stop at the deadline and the rest still show.</p>
       </div>
     `;
 
@@ -370,6 +372,7 @@
 
       const data = await api(`/api/search?${params.toString()}`);
       AppState.jobs = data.jobs || [];
+      renderSourceStatus(data);
 
       renderSearchResults(AppState.jobs);
       populateJobDropdowns(AppState.jobs);
@@ -381,6 +384,20 @@
     } catch (err) {
       grid.innerHTML = `<div class="empty-state-card text-danger">Search failed: ${escapeHtml(err.message)}</div>`;
     }
+  }
+
+  function renderSourceStatus(data) {
+    const el = document.getElementById('sourceStatus');
+    if (!el) return;
+    const srcs = data.sources || [];
+    const ok = srcs.filter(s => s.state === 'ok' || s.state === 'cached').map(s => `${s.source} (${s.count})`);
+    const bad = srcs.filter(s => ['failed', 'timeout', 'paused', 'stale'].includes(s.state)).map(s => `${s.source}: ${s.state}${s.stale ? ' (showing older results)' : ''}`);
+    const off = srcs.filter(s => s.state === 'disabled').map(s => s.source);
+    let html = `Searched in ${(data.elapsed_ms / 1000).toFixed(1)}s. ` + (ok.length ? `Answered: ${escapeHtml(ok.join(', '))}. ` : '');
+    if (bad.length) html += `<span style="color:#f59e0b">Problems: ${escapeHtml(bad.join('; '))}.</span> `;
+    if (off.length) html += `Off: ${escapeHtml(off.join(', '))}. `;
+    if (data.profile_empty) html += '<strong>Upload your resume first so jobs get a real match score.</strong>';
+    el.innerHTML = html;
   }
 
   function renderSearchResults(jobs) {
@@ -763,7 +780,15 @@
         navigator.clipboard.writeText(res.content);
         showToast('Plain text ATS resume copied to clipboard!');
       } else {
-        const blob = new Blob([res.content], { type: format === 'doc' ? 'application/msword' : 'text/html' });
+        let blob;
+        if (res.content_base64) {
+          const bin = atob(res.content_base64);
+          const arr = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+          blob = new Blob([arr], { type: res.mime });
+        } else {
+          blob = new Blob([res.content], { type: 'text/html' });
+        }
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -1479,7 +1504,7 @@
       return;
     }
 
-    showToast(`⚡ Auto-Hunting for ${job.company}...`);
+    showToast(`Preparing a package for ${job.company}...`);
     try {
       const res = await api('/api/auto-hunt', {
         method: 'POST',
@@ -1489,7 +1514,7 @@
         }
       });
 
-      showToast(`⚡ Auto-Hunt complete! Logged into Pipeline with ${res.ats_audit.ats_score}% ATS score.`);
+      showToast(`Package ready: tailored resume, cover letter, and prep notes saved to your pipeline as Saved. Mark it Applied after you submit.`);
       await loadApplications();
       
       // Transition smoothly to Kanban pipeline
@@ -1506,7 +1531,7 @@
   // -------------------------------------------------------------
 
   async function purgeAllData() {
-    if (!confirm('Are you absolutely sure you want to permanently delete all your data? This purges your master profile, applications, and saved watchlist from SQLite.')) {
+    if (!confirm('Are you absolutely sure you want to permanently delete all your data? This deletes your profile, applications, watchlist, settings, and cached searches, then compacts the database file.')) {
       return;
     }
     try {
