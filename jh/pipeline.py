@@ -217,11 +217,17 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
         key = f"{s.name}|{query.lower()}|{location.lower()}"
         tasks[_pool.submit(_run_source, s.name, lambda s=s: s.fetch(query, location), key, force_refresh)] = s.name
 
+    fam_mode = (famous_mode or "all").lower().strip()
     with db.session() as c:
         watch = [dict(r) for r in c.execute("SELECT * FROM watchlist")]
     for w in watch:
         board = src.BOARDS.get((w["board_type"] or "").lower())
         if not board:
+            continue
+        c_famous = is_famous_company(w.get("company_name") or w.get("slug"))
+        if fam_mode == "hide" and c_famous:
+            continue
+        if fam_mode == "only" and not c_famous:
             continue
         label = f"{board.name}:{w['slug']}"
         key = f"board|{board.name}|{w['slug']}"

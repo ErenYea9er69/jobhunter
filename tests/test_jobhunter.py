@@ -336,6 +336,15 @@ class FamousFilterTests(Base):
             self.assertEqual(len(r_only["jobs"]), 1)
             self.assertEqual(r_only["jobs"][0]["company"], "OpenAI")
 
+    def test_sources_synonym_matching(self):
+        self.assertTrue(sources._matches("Full Stack Developer", "Full Stack Engineer", "Acme Corp"))
+        self.assertTrue(sources._matches("Software Engineer", "Senior Software Developer", "Acme Corp"))
+        self.assertFalse(sources._matches("Python Developer", "Go Infrastructure Lead", "Acme Corp"))
+
+    def test_himalayas_source_integrated(self):
+        self.assertIn("Himalayas", sources.SOURCE_RANKS)
+        self.assertTrue(any(s.name == "Himalayas" for s in sources.SEARCH_SOURCES))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

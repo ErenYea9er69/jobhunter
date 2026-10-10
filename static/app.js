@@ -1143,6 +1143,7 @@
         <p>${allFailed ? 'Check your internet connection, then search again. Open Sources above to see what failed.' : 'Try a broader title, a different work mode, or clear the quick filters.'}</p>
         <div class="empty-actions">
           ${strict && !allFailed ? '<button type="button" class="btn btn-primary" data-action="clear-filters">Show all results</button>' : ''}
+          ${Number(val('searchMinScore')) > 0 && !allFailed ? '<button type="button" class="btn btn-secondary" data-action="clear-min">Show any match score</button>' : ''}
           <button type="button" class="btn btn-secondary" data-action="search-again">Search again</button>
         </div></div>`;
       return;
@@ -2192,6 +2193,7 @@
         applySort();
         renderList();
         renderResults();
+        if (S.searchHasRun) runSearch();
       });
     }
 
@@ -2210,6 +2212,7 @@
           applySort();
           renderList();
           renderResults();
+          if (S.searchHasRun) runSearch();
           return;
         }
         if (qfType === 'famous_only') {
@@ -2220,6 +2223,7 @@
           applySort();
           renderList();
           renderResults();
+          if (S.searchHasRun) runSearch();
           return;
         }
         if (qfType === 'all') {
@@ -2230,6 +2234,7 @@
           applySort();
           renderList();
           renderResults();
+          if (S.searchHasRun) runSearch();
           return;
         }
         S.quickFilter = qfType;

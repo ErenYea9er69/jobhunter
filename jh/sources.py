@@ -22,7 +22,7 @@ BREAKER_COOLDOWN = 300
 SOURCE_RANKS = {
     "Greenhouse": 100, "Lever": 100, "Ashby": 100, "SmartRecruiters": 100, "Workable": 100,
     "LinkedIn": 96, "Indeed": 95, "Adzuna": 84, "Hacker News": 80,
-    "We Work Remotely": 78, "Remotive": 76, "Jobicy": 72, "Arbeitnow": 70, "RemoteOK": 68,
+    "We Work Remotely": 78, "Remotive": 76, "Himalayas": 75, "Jobicy": 72, "Arbeitnow": 70, "RemoteOK": 68,
 }
 
 
@@ -64,12 +64,34 @@ def make_job(**kw):
     }
 
 
+SYNONYM_SETS = [
+    {"developer", "engineer", "dev", "swe", "sde", "programmer"},
+    {"frontend", "front-end", "ui"},
+    {"backend", "back-end", "api"},
+    {"fullstack", "full-stack"},
+]
+
+
+def _expand_synonym(w):
+    for group in SYNONYM_SETS:
+        if w in group:
+            return group
+    return {w}
+
+
 def _matches(query, *fields):
-    """Loose client-side filter for feeds that cannot search: every query word must appear somewhere."""
+    """Loose client-side filter for feeds that cannot search: synonym and token-aware."""
     if not query:
         return True
     hay = " ".join(f or "" for f in fields).lower()
-    return all(w in hay for w in re.findall(r"[a-z0-9+#.]+", query.lower()) if len(w) > 1)
+    if query.lower() in hay:
+        return True
+    words = [w for w in re.findall(r"[a-z0-9+#.]+", query.lower()) if len(w) > 1]
+    if not words:
+        return True
+    matched_count = sum(1 for w in words if any(g in hay for g in _expand_synonym(w)))
+    threshold = len(words) if len(words) <= 2 else len(words) - 1
+    return matched_count >= threshold
 
 
 class Source:
@@ -109,10 +131,18 @@ class Jobicy(Source):
     name, tier = "Jobicy", "Free feed"
 
     def fetch(self, query, location):
-        url = "https://jobicy.com/api/v2/remote-jobs?count=50" + (f"&tag={urllib.parse.quote(query)}" if query else "")
+        url = "https://jobicy.com/api/v2/remote-jobs?count=50"
+        if query:
+            url += f"&tag={urllib.parse.quote(query)}"
         data = http_get_json(url)
+        jobs = data.get("jobs", [])
+        if not jobs and query:
+            data = http_get_json("https://jobicy.com/api/v2/remote-jobs?count=50&industry=engineering")
+            jobs = data.get("jobs", [])
         out = []
-        for j in data.get("jobs", []):
+        for j in jobs:
+            if not _matches(query, j.get("jobTitle"), j.get("companyName"), j.get("jobDescription", "")[:800]):
+                continue
             sal = f"{j.get('annualSalaryMin')} - {j.get('annualSalaryMax')} {j.get('salaryCurrency', '')}" if j.get("annualSalaryMin") else ""
             out.append(make_job(id=f"jobicy-{j['id']}", title=j.get("jobTitle"), company=j.get("companyName"),
                                 location=j.get("jobGeo"), work_mode="Remote", salary=sal, url=j.get("url"),
@@ -146,7 +176,7 @@ class RemoteOK(Source):
         for j in data:
             if not isinstance(j, dict) or not j.get("id") or not j.get("position"):
                 continue
-            if not _matches(query, j.get("position"), " ".join(j.get("tags", [])), j.get("company")):
+            if not _matches(query, j.get("position"), " ".join(j.get("tags", [])), j.get("company"), j.get("description", "")[:500]):
                 continue
             sal = ""
             if j.get("salary_min") and j.get("salary_max"):
@@ -160,25 +190,73 @@ class RemoteOK(Source):
         return out[:60]
 
 
+class Himalayas(Source):
+    name, tier = "Himalayas", "Free feed"
+
+    def fetch(self, query, location):
+        q = urllib.parse.quote(query) if query else ""
+        url = "https://himalayas.app/jobs/api?limit=50" + (f"&search={q}" if q else "")
+        try:
+            data = http_get_json(url)
+        except Exception:
+            return []
+        out = []
+        for j in data.get("jobs", []):
+            title = j.get("title") or ""
+            comp = j.get("companyName") or ""
+            desc = html_to_text(j.get("description") or j.get("excerpt") or "")
+            cats = " ".join(j.get("categories") or [])
+            if not _matches(query, title, comp, desc[:1200], cats):
+                continue
+            min_s, max_s = j.get("minSalary"), j.get("maxSalary")
+            currency = j.get("currency", "USD") or "USD"
+            sal = f"${int(min_s):,} - ${int(max_s):,} {currency}" if min_s and max_s else ""
+            loc = ", ".join(j.get("locationRestrictions") or []) or "Worldwide (Remote)"
+            guid = j.get("guid") or abs(hash(j.get("applicationLink", "") or title))
+            out.append(make_job(id=f"himalayas-{guid}",
+                                title=title, company=comp, location=loc, work_mode="Remote", salary=sal,
+                                url=j.get("applicationLink"), description=desc, posted_at=j.get("pubDate"),
+                                source=self.name, source_credit="Himalayas (himalayas.app)", source_tier=self.tier))
+        return out[:60]
+
+
 class WeWorkRemotely(Source):
     name, tier = "We Work Remotely", "Free feed"
 
     def fetch(self, query, location):
-        xml = http_get("https://weworkremotely.com/remote-jobs.rss")
-        root = ET.fromstring(xml)
+        feeds = [
+            "https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss",
+            "https://weworkremotely.com/categories/remote-programming-jobs.rss",
+            "https://weworkremotely.com/categories/remote-front-end-programming-jobs.rss",
+            "https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss",
+            "https://weworkremotely.com/remote-jobs.rss",
+        ]
         out = []
-        for item in root.iter("item"):
-            raw_title = (item.findtext("title") or "")
-            company, _, title = raw_title.partition(": ")
-            if not title:
-                company, title = "", raw_title
-            desc = item.findtext("description") or ""
-            if not _matches(query, title, company, desc[:800]):
+        seen_urls = set()
+        for feed_url in feeds:
+            try:
+                xml = http_get(feed_url, retries=0)
+                root = ET.fromstring(xml)
+                for item in root.iter("item"):
+                    link = item.findtext("link") or ""
+                    if link in seen_urls:
+                        continue
+                    seen_urls.add(link)
+                    raw_title = (item.findtext("title") or "")
+                    company, _, title = raw_title.partition(": ")
+                    if not title:
+                        company, title = "", raw_title
+                    desc = item.findtext("description") or ""
+                    if not _matches(query, title, company, desc[:1200]):
+                        continue
+                    out.append(make_job(id="wwr-" + re.sub(r"\W+", "-", item.findtext("guid") or title)[-60:], title=title,
+                                        company=company, location=item.findtext("region") or "Remote", work_mode="Remote",
+                                        url=link, description=desc, posted_at=item.findtext("pubDate"),
+                                        source=self.name, source_credit="We Work Remotely", source_tier=self.tier))
+            except Exception:
                 continue
-            out.append(make_job(id="wwr-" + re.sub(r"\W+", "-", item.findtext("guid") or title)[-60:], title=title,
-                                company=company, location=item.findtext("region") or "Remote", work_mode="Remote",
-                                url=item.findtext("link"), description=desc, posted_at=item.findtext("pubDate"),
-                                source=self.name, source_credit="We Work Remotely", source_tier=self.tier))
+            if len(out) >= 60:
+                break
         return out[:60]
 
 
@@ -389,34 +467,66 @@ class LinkedInGuest(Source):
         return ""
 
     def fetch(self, query, location):
-        url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords="
-               f"{urllib.parse.quote(query or 'software engineer')}&location={urllib.parse.quote(location or 'Remote')}&start=0")
-        html = http_get(url, headers={"Accept": "text/html"}, retries=0)
         out = []
-        for card in re.findall(r"<li>(.*?)</li>", html, re.S):
-            t = re.search(r'base-search-card__title[^>]*>\s*([^<]+)', card)
-            c = re.search(r'base-search-card__subtitle[^>]*>\s*(?:<a[^>]*>\s*)?([^<]+)', card)
-            l = re.search(r'job-search-card__location[^>]*>\s*([^<]+)', card)
-            u = re.search(r'base-card__full-link[^>]*href="([^"?]+)', card)
-            d = re.search(r'datetime="([^"]+)"', card)
-            if not (t and c and u):
-                continue
-            jid = re.search(r"(\d{6,})", u.group(1))
-            out.append(make_job(id=f"linkedin-{jid.group(1) if jid else abs(hash(u.group(1)))}", title=t.group(1).strip(),
-                                company=c.group(1).strip(), location=l.group(1).strip() if l else "", url=u.group(1),
-                                posted_at=d.group(1) if d else "", description="", needs_enrichment=True,
-                                source=self.name, source_credit="LinkedIn public listing", source_tier=self.tier))
-        return out
+        seen_ids = set()
+        kw = query or "software engineer"
+        loc = location or "Remote"
+        remote_flag = "&f_WT=2" if "remote" in f"{kw} {loc}".lower() else ""
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        for start in (0, 25):
+            url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
+                   f"keywords={urllib.parse.quote(kw)}&location={urllib.parse.quote(loc)}{remote_flag}&start={start}")
+            try:
+                page = http_get(url, headers=headers, retries=0)
+            except Exception:
+                break
+            cards = re.findall(r"<li>(.*?)</li>", page, re.S)
+            if not cards:
+                break
+            for card in cards:
+                t = re.search(r'base-search-card__title[^>]*>\s*([^<]+)', card)
+                c = re.search(r'base-search-card__subtitle[^>]*>\s*(?:<a[^>]*>\s*)?([^<]+)', card)
+                l = re.search(r'job-search-card__location[^>]*>\s*([^<]+)', card)
+                u = re.search(r'base-card__full-link[^>]*href="([^"?]+)', card)
+                d = re.search(r'datetime="([^"]+)"', card)
+                if not (t and c and u):
+                    continue
+                jid_match = re.search(r"(\d{6,})", u.group(1))
+                jid = jid_match.group(1) if jid_match else str(abs(hash(u.group(1))))
+                if jid in seen_ids:
+                    continue
+                seen_ids.add(jid)
+                title = html.unescape(t.group(1).strip())
+                comp = html.unescape(c.group(1).strip())
+                place = html.unescape(l.group(1).strip()) if l else ""
+                out.append(make_job(id=f"linkedin-{jid}", title=title,
+                                    company=comp, location=place, url=u.group(1),
+                                    posted_at=d.group(1) if d else "", description="", needs_enrichment=True,
+                                    source=self.name, source_credit="LinkedIn public listing", source_tier=self.tier))
+            time.sleep(0.1)
+        return out[:40]
 
     def enrich(self, job):
         m = re.search(r"(\d{6,})", job.get("id", ""))
         if not m:
             return job
-        html = http_get(f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{m.group(1)}", headers={"Accept": "text/html"}, retries=0)
-        d = re.search(r'show-more-less-html__markup[^>]*>(.*?)</div>', html, re.S)
-        if d:
-            job["description"] = html_to_text(d.group(1))
-            job["needs_enrichment"] = False
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        try:
+            page = http_get(f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{m.group(1)}", headers=headers, retries=0)
+            d = re.search(r'show-more-less-html__markup[^>]*>(.*?)</div>', page, re.S)
+            if d:
+                job["description"] = html_to_text(d.group(1))
+                job["needs_enrichment"] = False
+        except Exception:
+            pass
         return job
 
 
@@ -477,11 +587,22 @@ class IndeedJobSpy(Source):
             scrape_jobs = jobspy.scrape_jobs
         except (ImportError, AttributeError):
             return self._fetch_builtin(query, location)
+        is_remote = "remote" in f"{query} {location}".lower()
         df = scrape_jobs(site_name=["indeed"], search_term=query or "software engineer", location=location or "",
-                         results_wanted=40, hours_old=24 * 14)
+                         is_remote=is_remote, results_wanted=40, hours_old=24 * 30)
         out = []
         for r in df.to_dict("records"):
-            sal = f"{int(r['min_amount'])} - {int(r['max_amount'])}" if r.get("min_amount") == r.get("min_amount") and r.get("min_amount") else ""
+            min_a, max_a = r.get("min_amount"), r.get("max_amount")
+            min_ok = min_a is not None and min_a == min_a and str(min_a).lower() != "nan"
+            max_ok = max_a is not None and max_a == max_a and str(max_a).lower() != "nan"
+            if min_ok and max_ok:
+                sal = f"${int(min_a):,} - ${int(max_a):,}"
+            elif min_ok:
+                sal = f"${int(min_a):,}+"
+            elif max_ok:
+                sal = f"Up to ${int(max_a):,}"
+            else:
+                sal = ""
             out.append(make_job(id=f"indeed-{r.get('id')}", title=r.get("title"), company=r.get("company"),
                                 location=r.get("location"), work_mode="Remote" if r.get("is_remote") else "", salary=sal,
                                 url=r.get("job_url"), description=r.get("description") or "", posted_at=str(r.get("date_posted") or ""),
@@ -489,8 +610,8 @@ class IndeedJobSpy(Source):
         return out
 
 
-SEARCH_SOURCES = [Remotive(), Jobicy(), Arbeitnow(), RemoteOK(), WeWorkRemotely(), HackerNewsHiring(), Adzuna(),
-                  LinkedInGuest(), IndeedJobSpy()]
+SEARCH_SOURCES = [Himalayas(), Remotive(), Jobicy(), Arbeitnow(), RemoteOK(), WeWorkRemotely(),
+                  HackerNewsHiring(), Adzuna(), LinkedInGuest(), IndeedJobSpy()]
 
 
 # ---------------------------------------------------------------- circuit breaker

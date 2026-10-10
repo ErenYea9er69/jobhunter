@@ -79,15 +79,16 @@ def score_job(job, profile):
                 credit[m] = 0.45
                 break
 
+    title_ratio = _title_score(job.get("title", ""), profile)
+    title_pts = title_ratio * 20
+
     total_w = sum(weights.values())
     desc_len = len(job.get("description", "") or "")
     if total_w > 0:
         cov = (sum(weights[s] for s in matched) + sum(weights[s] * credit[s] for s in credit)) / total_w
         skill_pts = cov * 50
     else:
-        skill_pts = 18  # unknown requirements: neutral, below the midpoint, and flagged low confidence
-    title_ratio = _title_score(job.get("title", ""), profile)
-    title_pts = title_ratio * 20
+        skill_pts = 18 + (title_ratio * 10)  # unknown requirements: neutral baseline + title alignment boost
 
     # Seniority and years
     sen_pts = 7.0
