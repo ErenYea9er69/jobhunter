@@ -8,7 +8,7 @@ from . import config, db, dedup, sources as src
 from .scoring import score_job
 from .util import now_iso, parse_date
 
-_pool = cf.ThreadPoolExecutor(max_workers=16, thread_name_prefix="jh-src")
+_pool = cf.ThreadPoolExecutor(max_workers=config.SEARCH_WORKERS, thread_name_prefix="jh-src")
 
 
 # ---------------------------------------------------------------- cache and health
@@ -139,6 +139,29 @@ def _remember(jobs):
                        j["first_seen"], now, j.get("score", 0)))
 
 
+def _rank_opportunity(job):
+    """Combine fit with source authority and evidence of a real opening.
+
+    A famous board alone cannot make a poor match outrank a good one: fit is
+    weighted at 70%. The remaining points reward direct employer application
+    links, corroborating sources, readable descriptions and fresh postings.
+    """
+    source_rank = max([job.get("source_rank", 0)] + [s.get("source_rank", 0) for s in job.get("sources", [])])
+    direct = 10 if job.get("source_kind") == "Direct employer ATS" else 0
+    corroboration = min(10, max(0, len(job.get("sources", [])) - 1) * 4)
+    description = min(10, round(len(job.get("description", "") or "") / 700 * 10))
+    freshness = job.get("score_breakdown", {}).get("freshness", 0) * 2
+    evidence = min(30, direct + corroboration + description + freshness)
+    opportunity = int(round(job.get("score", 0) * 0.70 + source_rank * 0.20 + (evidence / 30) * 10))
+    kind = job.get("source_kind") or "Job source"
+    job["opportunity_score"] = max(0, min(100, opportunity))
+    job["ranking"] = {
+        "source_authority": source_rank, "source_kind": kind,
+        "evidence_points": evidence,
+        "reason": f"{kind}; {len(job.get('sources', []))} source(s); {'direct employer application link' if direct else 'board/feed application link'}"
+    }
+
+
 # ---------------------------------------------------------------- main entry
 
 def derive_query(profile):
@@ -202,7 +225,8 @@ def search(query="", location="", work_mode="Any", min_score=0, profile=None, fo
     # Fetch full text for the top candidates whose source only gave a stub, then score everything.
     for j in merged:
         j.update(score_job(j, profile))
-    merged.sort(key=lambda j: (j["score"], j.get("posted_at") or ""), reverse=True)
+        _rank_opportunity(j)
+    merged.sort(key=lambda j: (j["opportunity_score"], j["score"], j.get("posted_at") or ""), reverse=True)
     to_enrich = [j for j in merged[:config.ENRICH_TOP_N] if j.get("needs_enrichment")]
     if to_enrich:
         by_name = {s.name: s for s in list(src.BOARDS.values()) + src.SEARCH_SOURCES}
@@ -212,9 +236,10 @@ def search(query="", location="", work_mode="Any", min_score=0, profile=None, fo
             try:
                 f.result()
                 futs[f].update(score_job(futs[f], profile))
+                _rank_opportunity(futs[f])
             except Exception:
                 pass
-        merged.sort(key=lambda j: (j["score"], j.get("posted_at") or ""), reverse=True)
+        merged.sort(key=lambda j: (j["opportunity_score"], j["score"], j.get("posted_at") or ""), reverse=True)
 
     filtered = []
     for j in merged:
@@ -229,6 +254,7 @@ def search(query="", location="", work_mode="Any", min_score=0, profile=None, fo
     failed = [s for s in statuses if s["state"] in ("failed", "timeout", "paused", "stale")]
     return {
         "count": len(filtered), "query": query, "jobs": filtered, "sources": sorted(statuses, key=lambda s: s["source"]),
+        "ranking": {"method": "fit 70% + source authority 20% + evidence 10%", "workers": config.SEARCH_WORKERS},
         "partial": bool(failed), "elapsed_ms": int((time.time() - t0) * 1000),
         "profile_empty": bool(profile.get("_is_empty")),
         "warnings": ([f"{len(failed)} source(s) did not respond. Showing results from the rest."] if failed else []),

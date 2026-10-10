@@ -1,5 +1,6 @@
 """Job sources. Each source returns normalized jobs or raises; the pipeline records health and falls back to cache."""
 import datetime
+import html
 import json
 import re
 import threading
@@ -12,6 +13,33 @@ from .util import (HttpError, clean_salary_label, html_to_text, http_get, http_g
 
 BREAKER_FAILS = 3
 BREAKER_COOLDOWN = 300
+
+# Ranking is deliberately transparent.  This is source authority/directness,
+# not a claim that a company or a posting is objectively "famous".  Fit is
+# calculated separately by scoring.py and remains the largest part of the
+# final opportunity rank.
+SOURCE_RANKS = {
+    "Greenhouse": 100, "Lever": 100, "Ashby": 100, "SmartRecruiters": 100, "Workable": 100,
+    "LinkedIn": 96, "Indeed": 95, "Adzuna": 84, "Hacker News": 80,
+    "We Work Remotely": 78, "Remotive": 76, "Jobicy": 72, "Arbeitnow": 70, "RemoteOK": 68,
+}
+
+
+def source_rank(source, tier=""):
+    """Return the stable authority rank used as an explainable tie-breaker."""
+    if str(tier).startswith("Direct company ATS"):
+        return 100
+    return SOURCE_RANKS.get(source, 50)
+
+
+def source_kind(source, tier=""):
+    if str(tier).startswith("Direct company ATS") or source in {"Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workable"}:
+        return "Direct employer ATS"
+    if source in {"LinkedIn", "Indeed"}:
+        return "Major job board"
+    if source == "Adzuna":
+        return "Job aggregator"
+    return "Established job feed"
 
 
 def make_job(**kw):
@@ -29,7 +57,8 @@ def make_job(**kw):
         "salary": clean_salary_label(kw.get("salary", "")), "url": kw.get("url") or "",
         "description": desc, "posted_at": iso_or_empty(kw.get("posted_at")),
         "source": kw["source"], "source_credit": kw.get("source_credit", kw["source"]),
-        "source_tier": kw.get("source_tier", ""), "tags": kw.get("tags", []),
+        "source_tier": kw.get("source_tier", ""), "source_rank": source_rank(kw["source"], kw.get("source_tier", "")),
+        "source_kind": source_kind(kw["source"], kw.get("source_tier", "")), "tags": kw.get("tags", []),
         "needs_enrichment": bool(kw.get("needs_enrichment")),
     }
 
@@ -347,17 +376,16 @@ def detect_board(company_name):
     return None
 
 
-# ---------------------------------------------------------------- opt-in scrapers
+# ---------------------------------------------------------------- major job boards
 
 class LinkedInGuest(Source):
-    name, tier = "LinkedIn", "Scraped (opt-in)"
+    name, tier = "LinkedIn", "Major job board"
 
     def available(self):
-        return config.ENABLE_LINKEDIN
+        return True
 
     def unavailable_reason(self):
-        return ("Off by default. LinkedIn's terms restrict scraping and the page layout changes often. "
-                "Set JH_ENABLE_LINKEDIN=1 to turn it on at your own risk.")
+        return ""
 
     def fetch(self, query, location):
         url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords="
@@ -392,22 +420,57 @@ class LinkedInGuest(Source):
 
 
 class IndeedJobSpy(Source):
-    name, tier = "Indeed", "Scraped (opt-in)"
+    name, tier = "Indeed", "Major job board"
 
     def available(self):
-        if not config.ENABLE_JOBSPY:
-            return False
-        try:
-            import jobspy  # noqa: F401
-            return True
-        except ImportError:
-            return False
+        # JobSpy is an acceleration/coverage enhancement, not a requirement.
+        # The built-in parser below keeps Indeed in every search on a stdlib-only install.
+        return True
 
     def unavailable_reason(self):
-        return "Optional. Run: pip install python-jobspy, then set JH_ENABLE_JOBSPY=1. Scraping Indeed carries terms-of-service risk."
+        return ""
+
+    @staticmethod
+    def _field(fragment, patterns, limit=500):
+        for pattern in patterns:
+            m = re.search(pattern, fragment, re.I | re.S)
+            if m:
+                value = html_to_text(html.unescape(m.group(1)), limit)
+                if value:
+                    return value
+        return ""
+
+    def _fetch_builtin(self, query, location):
+        """Small public-results fallback when python-jobspy is not installed."""
+        params = {"q": query or "software engineer", "l": location or "", "fromage": "14"}
+        url = "https://www.indeed.com/jobs?" + urllib.parse.urlencode(params)
+        page = http_get(url, headers={"Accept": "text/html"}, retries=0)
+        out = []
+        for match in re.finditer(r'data-jk=["\']([^"\']+)["\']', page, re.I):
+            start, end = max(0, match.start() - 1500), min(len(page), match.end() + 6500)
+            card = page[start:end]
+            title = self._field(card, [r'class=["\'][^"\']*jobTitle[^"\']*["\'][^>]*>.*?<span[^>]*>(.*?)</span>',
+                                       r'class=["\'][^"\']*jobTitle[^"\']*["\'][^>]*>.*?>(.*?)</a>'], 180)
+            company = self._field(card, [r'data-testid=["\']company-name["\'][^>]*>(.*?)</',
+                                         r'class=["\'][^"\']*companyName[^"\']*["\'][^>]*>(.*?)</'], 180)
+            loc = self._field(card, [r'data-testid=["\']text-location["\'][^>]*>(.*?)</',
+                                    r'class=["\'][^"\']*companyLocation[^"\']*["\'][^>]*>(.*?)</'], 180)
+            desc = self._field(card, [r'class=["\'][^"\']*job-snippet[^"\']*["\'][^>]*>(.*?)</'], 3000)
+            if not title or not company:
+                continue
+            jid = match.group(1)
+            out.append(make_job(id=f"indeed-{jid}", title=title, company=company, location=loc,
+                                work_mode="Remote" if "remote" in f"{loc} {desc}".lower() else "",
+                                url=f"https://www.indeed.com/viewjob?jk={urllib.parse.quote(jid)}",
+                                description=desc, source=self.name, source_credit="Indeed public results",
+                                source_tier=self.tier))
+        return out
 
     def fetch(self, query, location):
-        from jobspy import scrape_jobs
+        try:
+            from jobspy import scrape_jobs
+        except ImportError:
+            return self._fetch_builtin(query, location)
         df = scrape_jobs(site_name=["indeed"], search_term=query or "software engineer", location=location or "",
                          results_wanted=40, hours_old=24 * 14)
         out = []

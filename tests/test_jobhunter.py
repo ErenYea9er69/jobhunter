@@ -201,6 +201,23 @@ class PipelineTests(Base):
 
 
 class SourceParserTests(Base):
+    def test_major_boards_are_always_attempted(self):
+        self.assertTrue(sources.LinkedInGuest().available())
+        self.assertTrue(sources.IndeedJobSpy().available())
+
+    def test_source_hierarchy_prefers_direct_employer_application(self):
+        jobs = [
+            sources.make_job(id="li-1", title="Senior Backend Engineer", company="Acme", location="Remote",
+                             source="LinkedIn", url="https://linkedin.example/1"),
+            sources.make_job(id="gh-1", title="Senior Backend Engineer", company="Acme", location="Remote",
+                             source="Greenhouse", source_tier="Direct company ATS", url="https://boards.greenhouse.io/acme/jobs/1"),
+        ]
+        out = dedup.merge_jobs(jobs)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["source"], "Greenhouse")
+        self.assertEqual(out[0]["source_rank"], 100)
+        self.assertEqual(out[0]["sources"][0]["source"], "Greenhouse")
+
     def test_greenhouse_lever_ashby_parse(self):
         gh = {"jobs": [{"id": 1, "title": "Engineer", "absolute_url": "https://g/1", "location": {"name": "Remote"},
                         "content": "&lt;p&gt;Python and Docker&lt;/p&gt;", "updated_at": "2026-10-01T00:00:00Z"}]}

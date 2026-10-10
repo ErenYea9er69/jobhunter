@@ -10,6 +10,7 @@ HOST = os.environ.get("JH_HOST", "127.0.0.1")
 PORT = int(os.environ.get("JH_PORT", "8080"))
 
 # Search behavior
+SEARCH_WORKERS = 16
 SEARCH_DEADLINE_SECONDS = float(os.environ.get("JH_SEARCH_DEADLINE", "14"))
 SOURCE_TIMEOUT_SECONDS = float(os.environ.get("JH_SOURCE_TIMEOUT", "8"))
 CACHE_TTL_SECONDS = int(os.environ.get("JH_CACHE_TTL", "900"))
@@ -17,9 +18,11 @@ STALE_CACHE_MAX_SECONDS = int(os.environ.get("JH_STALE_MAX", str(24 * 3600)))
 MAX_RESULTS = int(os.environ.get("JH_MAX_RESULTS", "150"))
 ENRICH_TOP_N = int(os.environ.get("JH_ENRICH_TOP_N", "12"))
 
-# Sources with legal or stability risk stay off until the user opts in.
-ENABLE_LINKEDIN = os.environ.get("JH_ENABLE_LINKEDIN", "0") == "1"
-ENABLE_JOBSPY = os.environ.get("JH_ENABLE_JOBSPY", "0") == "1"
+# LinkedIn and Indeed are part of every search.  The source clients still report
+# failures and fall back to cache when a site blocks a request; they are not
+# silently omitted because the user did not set an environment variable.
+ENABLE_LINKEDIN = True
+ENABLE_JOBSPY = True
 ADZUNA_COUNTRY = os.environ.get("JH_ADZUNA_COUNTRY", "us")
 ADZUNA_APP_ID = os.environ.get("ADZUNA_APP_ID", "")
 ADZUNA_APP_KEY = os.environ.get("ADZUNA_APP_KEY", "")

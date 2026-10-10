@@ -176,8 +176,8 @@ H3  sources.py. Full descriptions up to 7,000 characters from every ATS, and a
     fetch-details step for SmartRecruiters and LinkedIn.
 H4  Real clients for Greenhouse, Lever, Ashby, Workable, SmartRecruiters,
     Remotive, Jobicy, Arbeitnow, RemoteOK, We Work Remotely, Hacker News
-    (Algolia), Adzuna (free key, covers local and non-tech jobs), plus opt-in
-    LinkedIn and Indeed (JobSpy). Search reads your watchlist, so any company
+    (Algolia), Adzuna (free key, covers local and non-tech jobs), plus always-attempted
+    LinkedIn and Indeed (JobSpy or the built-in fallback). Search reads your watchlist, so any company
     on those boards is searchable.
 H5  tracker.py. Adding a company auto-detects its board. "Check now" calls each
     board, counts matches for your target role and stores the result.
@@ -220,7 +220,7 @@ MEASURED RESULTS (same inputs, old versus new)
   Pastry chef score for a software engineer      58         ->  32
   Skills added for an Excel-only candidate       6 invented ->  0 added
   Resume formats read correctly                  txt        ->  txt, md, docx, pdf
-  Working job sources                            5 live + 8 fake -> 12 real (+2 opt-in)
+  Working job sources                            5 live + 8 fake -> 12 real (+2 always-attempted major boards)
   Company boards searchable                      1 (10 jobs) -> any on 5 ATS families
   Skills in the ontology                         62         ->  121
   Automated tests                                0          ->  28
@@ -241,8 +241,11 @@ I want you to know these limits before you rely on it.
    status line.
 2. The PDF reader handles ordinary text PDFs. Scanned PDFs need OCR. Install
    pypdf for a stronger reader, or paste the text.
-3. LinkedIn and Indeed scraping stay off by default. Both restrict automated
-   access in their terms and both change their pages often.
+3. LinkedIn and Indeed are attempted on every search as requested. LinkedIn's
+   public endpoint and Indeed's page structure can still block or change; the
+   source-health line, circuit breaker, and stale-cache fallback make that
+   visible instead of silently disabling them. Indeed uses JobSpy when installed
+   and a stdlib fallback parser otherwise.
 4. Matching reads text, so it misses synonyms outside the 121-skill ontology.
    Extend the lists in jh/skills.py (one line per skill).
 5. The LLM engine is optional and untested against the live API. The grounding

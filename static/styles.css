@@ -1424,6 +1424,12 @@ option {
   color: var(--text-3);
 }
 
+.opportunity-label {
+  color: var(--text-muted, #64748b);
+  font-size: 10px;
+  margin-top: 3px;
+}
+
 .action-buttons-stack {
   display: flex;
   flex-direction: column;

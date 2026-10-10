@@ -466,7 +466,7 @@
             <div class="dedup-sources-cluster">
               ${isMultiSource ? `<span class="dedup-badge">Consolidated from ${sourcesList.length} Sources:</span>` : '<span class="dedup-badge">Direct Source:</span>'}
               ${sourcesList.map(s => {
-                const isATS = s.source.includes('Greenhouse') || s.source.includes('Ashby') || s.source.includes('Lever') || s.source.includes('SmartRecruiters');
+                const isATS = (s.source_tier || '').includes('Direct company ATS') || s.source.includes('Greenhouse') || s.source.includes('Ashby') || s.source.includes('Lever') || s.source.includes('SmartRecruiters') || s.source.includes('Workable');
                 return `
                   <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer" class="source-apply-link ${isATS ? 'primary-ats' : ''}" title="Apply directly on original posting">
                     <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
@@ -489,6 +489,7 @@
                 ${score}<span class="score-pct">%</span>
               </div>
               <span class="score-label">Fit Match</span>
+              <span class="opportunity-label">Opportunity ${escapeHtml(String(j.opportunity_score ?? score))}</span>
             </div>
 
             <div class="action-buttons-stack">
