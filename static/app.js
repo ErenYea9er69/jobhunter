@@ -40,6 +40,8 @@
     searchMeta: null,
     searchSeq: 0,
     searchStale: false,
+    searchHasRun: false,
+    lastSearchTime: null,
     workMode: 'Remote',
     selectedKey: null,
     applications: [],
@@ -48,6 +50,39 @@
     ws: { job: null, key: '', tab: 'strategy', from: 'jobs', refinement: null, decisions: {}, ats: null, atsFresh: false,
           strategy: null, gaps: null, cover: {}, prep: null, tone: 'direct', showUnchanged: false, seq: 0 }
   };
+
+  // Auto-reload schedule
+  let autoReloadIntervalId = null;
+  function getAutoReloadMinutes() {
+    try {
+      const v = localStorage.getItem('jh-auto-reload');
+      if (v === null) return 300; // default 5 hours
+      return parseInt(v, 10);
+    } catch (e) { return 300; }
+  }
+  function setAutoReloadMinutes(mins) {
+    try {
+      if (mins > 0) localStorage.setItem('jh-auto-reload', String(mins));
+      else localStorage.setItem('jh-auto-reload', '0');
+    } catch (e) { /* ignore */ }
+    scheduleAutoReload(mins);
+  }
+  function scheduleAutoReload(mins) {
+    if (autoReloadIntervalId) { clearInterval(autoReloadIntervalId); autoReloadIntervalId = null; }
+    if (mins > 0) {
+      autoReloadIntervalId = setInterval(() => {
+        if (S.view === 'jobs' || S.searchHasRun) runSearch();
+      }, mins * 60 * 1000);
+    }
+  }
+  function formatTimeSince(ts) {
+    if (!ts) return '';
+    const diff = Math.round((Date.now() - ts) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return new Date(ts).toLocaleDateString();
+  }
 
   // ---------------------------------------------------------------- helpers
   const ico = (name, cls = '') => `<svg class="i ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -181,7 +216,10 @@
     closeDetailSheet();
     window.scrollTo(0, 0);
 
-    if (view === 'jobs' && S.searchStale) { S.searchStale = false; runSearch(); }
+    if (view === 'jobs') {
+      if (S.searchHasRun && S.searchMeta) renderResults();
+      else renderWelcomeState();
+    }
     if (view === 'job') { S.ws.tab = ['strategy', 'resume', 'ats', 'gaps', 'cover', 'prep'].includes(sub) ? sub : 'strategy'; renderWsHeader(); renderWsTab(); }
     if (view === 'applications') loadApplications();
     if (view === 'companies') loadWatchlist();
@@ -475,13 +513,375 @@
     return Array.from({ length: n }, () => '<div class="skeleton"><i></i><i></i><i></i></div>').join('');
   }
 
+  const SEARCH_TIPS = [
+    {
+      title: 'Why direct ATS matters',
+      text: 'Applying directly through company applicant systems like Ashby, Greenhouse, or Lever sends your profile straight to the employer\'s internal hiring team.'
+    },
+    {
+      title: 'Merging duplicate listings',
+      text: 'Many boards scrape each other and repost identical roles with slight differences. JobHunter groups them together so you only review each position once.'
+    },
+    {
+      title: 'Honest match scoring',
+      text: 'Your match score reflects only skills and experience you actually listed in your profile. Nothing is guessed or exaggerated.'
+    },
+    {
+      title: 'Timing matters',
+      text: 'Applying within the first two days of a listing going live gives hiring managers the earliest look at your resume.'
+    }
+  ];
+
+  let searchTipTimer = null;
+  let scoreEtaTimer = null;
+  let scoreEtaState = { current: 0, total: 350, estSeconds: 2.2, startTime: 0 };
+
+  function stopScoreEtaTicker() {
+    if (scoreEtaTimer) { clearInterval(scoreEtaTimer); scoreEtaTimer = null; }
+  }
+
+  function startScoreEtaTicker(total, estSeconds) {
+    stopScoreEtaTicker();
+    scoreEtaState = {
+      current: 0,
+      total: total || 350,
+      estSeconds: estSeconds || 2.2,
+      startTime: Date.now()
+    };
+
+    scoreEtaTimer = setInterval(() => {
+      if (scoreEtaState.current >= scoreEtaState.total) {
+        stopScoreEtaTicker();
+        return;
+      }
+      const elapsed = (Date.now() - scoreEtaState.startTime) / 1000;
+      const rate = scoreEtaState.estSeconds > 0 ? (scoreEtaState.total - scoreEtaState.current) / scoreEtaState.estSeconds : 50;
+      const extra = Math.round(elapsed * rate);
+      const simulatedCount = Math.min(scoreEtaState.total, scoreEtaState.current + extra);
+      const remSec = Math.max(0.1, scoreEtaState.estSeconds - elapsed).toFixed(1);
+
+      const sub = $('#searchStepSub-3');
+      if (sub) {
+        if (simulatedCount >= scoreEtaState.total) {
+          sub.innerHTML = `${scoreEtaState.total}/${scoreEtaState.total} • <span class="step-eta-text">Done</span>`;
+        } else {
+          sub.innerHTML = `${simulatedCount}/${scoreEtaState.total} • <span class="step-eta-text">~${remSec}s left</span>`;
+        }
+      }
+      const pct = Math.round((simulatedCount / scoreEtaState.total) * 100);
+      const miniBar = $('#stepMiniBar');
+      if (miniBar) {
+        miniBar.style.width = `${pct}%`;
+      }
+      const metric = $('#metricDedupVal');
+      if (metric) {
+        metric.textContent = `${simulatedCount} / ${scoreEtaState.total} scored (~${remSec}s left)`;
+      }
+      const bar = $('#searchStageBar');
+      if (bar) {
+        const barPct = Math.min(97, 88 + Math.round((simulatedCount / scoreEtaState.total) * 9));
+        bar.style.width = barPct + '%';
+      }
+    }, 120);
+  }
+
+  function updateScoreEtaTickerBaseline(curr, total, estSec) {
+    scoreEtaState.current = curr;
+    scoreEtaState.total = total;
+    scoreEtaState.estSeconds = estSec;
+    scoreEtaState.startTime = Date.now();
+  }
+
+  function stopSearchProgressAnimation() {
+    if (searchTipTimer) { clearInterval(searchTipTimer); searchTipTimer = null; }
+    stopScoreEtaTicker();
+  }
+
+  function formatSourceLabel(raw) {
+    if (!raw) return '';
+    if (raw.includes(':')) {
+      const parts = raw.split(':');
+      const board = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+      const comp = parts[1].charAt(0).toUpperCase() + parts[1].slice(1);
+      return `${comp} (${board})`;
+    }
+    return raw;
+  }
+
+  function renderSearchHubSkeleton() {
+    stopSearchProgressAnimation();
+
+    const stage = $('#searchProgressStage');
+    if (stage) stage.hidden = false;
+    const split = $('#searchSplit');
+    if (split) split.hidden = true;
+    const resultsMeta = $('#resultsMeta');
+    if (resultsMeta) resultsMeta.hidden = true;
+    const tools = $('#resultsTools');
+    if (tools) tools.hidden = true;
+
+    if (stage) {
+      stage.innerHTML = `
+        <div class="search-stage-card">
+          <div class="search-stage-header">
+            <div class="search-stage-status">
+              <span class="search-live-orb" aria-hidden="true"><span class="search-live-orb-core"></span></span>
+              <span class="search-stage-kicker" id="searchStageKicker">Live search in progress</span>
+            </div>
+            <h2 class="search-stage-title" id="searchStageTitle">Connecting to employer boards and feeds</h2>
+            <p class="search-stage-desc" id="searchStageDesc">Querying company ATS portals, direct employer watchlists, and remote tech feeds in parallel.</p>
+          </div>
+
+          <div class="search-stage-track" role="progressbar" aria-label="Search progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="15" id="searchStageTrack">
+            <div class="search-stage-bar" id="searchStageBar" style="width: 15%;"></div>
+          </div>
+
+          <div class="search-stage-steps" role="list">
+            <div class="search-step is-active" id="searchStep-0" role="listitem">
+              <div class="search-step-marker">
+                <span class="step-num">1</span>
+                <span class="step-check" aria-hidden="true">✓</span>
+              </div>
+              <div class="search-step-body">
+                <span class="step-label">Connect</span>
+                <span class="step-sub" id="searchStepSub-0">Querying sources</span>
+              </div>
+            </div>
+            <div class="search-step" id="searchStep-1" role="listitem">
+              <div class="search-step-marker">
+                <span class="step-num">2</span>
+                <span class="step-check" aria-hidden="true">✓</span>
+              </div>
+              <div class="search-step-body">
+                <span class="step-label" id="searchScanStepLabel">Collect</span>
+                <span class="step-sub" id="searchStepSub-1">Streaming postings</span>
+              </div>
+            </div>
+            <div class="search-step" id="searchStep-2" role="listitem">
+              <div class="search-step-marker">
+                <span class="step-num">3</span>
+                <span class="step-check" aria-hidden="true">✓</span>
+              </div>
+              <div class="search-step-body">
+                <span class="step-label">Deduplicate</span>
+                <span class="step-sub" id="searchStepSub-2">Merging duplicates</span>
+              </div>
+            </div>
+            <div class="search-step" id="searchStep-3" role="listitem">
+              <div class="search-step-marker">
+                <span class="step-num">4</span>
+                <span class="step-check" aria-hidden="true">✓</span>
+              </div>
+              <div class="search-step-body">
+                <span class="step-label" id="searchScoreStepLabel">Match &amp; rank</span>
+                <span class="step-sub" id="searchStepSub-3">Scoring your resume</span>
+                <div class="step-mini-track" id="stepMiniTrack" hidden>
+                  <div class="step-mini-bar" id="stepMiniBar" style="width: 0%;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="search-stage-radar">
+            <div class="search-radar-head">
+              <span class="radar-title">Active source radar</span>
+              <span class="radar-counter" id="searchRadarCounter">Connecting to boards...</span>
+            </div>
+            <div class="search-sources-grid" id="searchSourcesGrid">
+              <div class="source-card is-scanning">
+                <span class="source-card-indicator" aria-hidden="true"></span>
+                <span class="source-card-name">Connecting to sources...</span>
+                <span class="source-card-status">Waiting</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="search-metrics-strip">
+            <div class="search-metric-item">
+              <span class="metric-label">Sources completed</span>
+              <strong class="metric-value" id="metricSourcesVal">0 / 0</strong>
+            </div>
+            <div class="search-metric-sep"></div>
+            <div class="search-metric-item">
+              <span class="metric-label">Raw postings gathered</span>
+              <strong class="metric-value" id="metricPostingsVal">0</strong>
+            </div>
+            <div class="search-metric-sep"></div>
+            <div class="search-metric-item">
+              <span class="metric-label">Duplicate resolution</span>
+              <strong class="metric-value" id="metricDedupVal">Waiting</strong>
+            </div>
+          </div>
+
+          <div class="search-stage-note" id="searchStageNote">
+            <div class="search-note-lead" id="searchNoteLead">${esc(SEARCH_TIPS[0].title)}</div>
+            <p class="search-note-text" id="searchNoteText">${esc(SEARCH_TIPS[0].text)}</p>
+          </div>
+        </div>
+      `;
+    }
+
+    let tipIdx = 0;
+    searchTipTimer = setInterval(() => {
+      tipIdx = (tipIdx + 1) % SEARCH_TIPS.length;
+      const tipLead = $('#searchNoteLead');
+      const tipText = $('#searchNoteText');
+      if (tipLead && tipText) {
+        tipLead.textContent = SEARCH_TIPS[tipIdx].title;
+        tipText.textContent = SEARCH_TIPS[tipIdx].text;
+      }
+    }, 3200);
+  }
+
+  function handleRealSearchEvent(type, data) {
+    const titleEl = $('#searchStageTitle');
+    const descEl = $('#searchStageDesc');
+    const barEl = $('#searchStageBar');
+    const trackEl = $('#searchStageTrack');
+    const gridBox = $('#searchSourcesGrid');
+    const counterEl = $('#searchRadarCounter');
+    const metricSources = $('#metricSourcesVal');
+    const metricPostings = $('#metricPostingsVal');
+    const metricDedup = $('#metricDedupVal');
+
+    if (type === 'init') {
+      const step0 = $('#searchStep-0');
+      const step1 = $('#searchStep-1');
+      if (step0) step0.className = 'search-step is-done';
+      if (step1) step1.className = 'search-step is-active';
+      if (titleEl) titleEl.textContent = `Querying ${data.total} sources in parallel`;
+      if (descEl) descEl.textContent = `Dispatched queries to verified company ATS portals and remote tech feeds.`;
+      if (barEl) barEl.style.width = '20%';
+      if (trackEl) trackEl.setAttribute('aria-valuenow', '20');
+      if (counterEl) counterEl.textContent = `0 of ${data.total} answered`;
+      if (metricSources) metricSources.textContent = `0 / ${data.total}`;
+
+      if (gridBox && data.sources) {
+        gridBox.innerHTML = data.sources.map(s => {
+          const safeId = 'src-card-' + String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
+          return `
+            <div class="source-card is-scanning" id="${safeId}" data-src="${esc(s)}">
+              <span class="source-card-indicator" aria-hidden="true"></span>
+              <span class="source-card-name" title="${esc(formatSourceLabel(s))}">${esc(formatSourceLabel(s))}</span>
+              <span class="source-card-status">Scanning</span>
+            </div>`;
+        }).join('');
+      }
+    } else if (type === 'source_done') {
+      const safeId = 'src-card-' + String(data.source).replace(/[^a-zA-Z0-9_-]/g, '_');
+      const card = $(`#${safeId}`);
+      if (card) {
+        card.classList.remove('is-scanning');
+        const statusSpan = card.querySelector('.source-card-status');
+        if (data.state === 'ok' || data.state === 'cached') {
+          card.classList.add('is-done');
+          if (statusSpan) statusSpan.textContent = `+${data.count} • ${data.ms}ms`;
+        } else {
+          card.classList.add('is-idle');
+          if (statusSpan) statusSpan.textContent = `0 • ${data.ms}ms`;
+        }
+      }
+
+      const scanLabel = $('#searchScanStepLabel');
+      if (scanLabel) scanLabel.textContent = `Collect (${data.completed}/${data.total})`;
+      const pct = Math.min(80, Math.round(20 + (data.completed / data.total) * 60));
+      if (barEl) barEl.style.width = pct + '%';
+      if (trackEl) trackEl.setAttribute('aria-valuenow', String(pct));
+      if (counterEl) counterEl.textContent = `${data.completed} of ${data.total} answered`;
+      if (metricSources) metricSources.textContent = `${data.completed} / ${data.total}`;
+      if (metricPostings) metricPostings.textContent = String(data.raw_total || 0);
+
+      if (titleEl) titleEl.textContent = `Gathered ${data.raw_total} postings (${data.completed} of ${data.total} sources finished)`;
+      if (descEl) descEl.textContent = `Received response from ${formatSourceLabel(data.source)} (${data.count} jobs in ${data.ms}ms).`;
+    } else if (type === 'stage') {
+      if (data.stage === 'dedup') {
+        const step1 = $('#searchStep-1');
+        const step2 = $('#searchStep-2');
+        if (step1) step1.className = 'search-step is-done';
+        if (step2) step2.className = 'search-step is-active';
+        if (titleEl) titleEl.textContent = `Merging cross-board duplicates`;
+        if (descEl) descEl.textContent = data.message || `Deduplicating raw postings to isolate direct company application links.`;
+        if (barEl) barEl.style.width = '86%';
+        if (trackEl) trackEl.setAttribute('aria-valuenow', '86');
+        if (metricDedup) metricDedup.textContent = `Filtering mirrors...`;
+      } else if (data.stage === 'score') {
+        const step2 = $('#searchStep-2');
+        const step3 = $('#searchStep-3');
+        if (step2) step2.className = 'search-step is-done';
+        if (step3) step3.className = 'search-step is-active';
+
+        const estSec = data.est_seconds || 2.2;
+        const total = data.unique_count || 0;
+
+        const scoreLabel = $('#searchScoreStepLabel');
+        if (scoreLabel) scoreLabel.textContent = 'Match & rank';
+        const miniTrack = $('#stepMiniTrack');
+        if (miniTrack) miniTrack.hidden = false;
+        const miniBar = $('#stepMiniBar');
+        if (miniBar) miniBar.style.width = '6%';
+        const stepSub3 = $('#searchStepSub-3');
+        if (stepSub3) stepSub3.innerHTML = `0/${total} • <span class="step-eta-text">~${estSec}s left</span>`;
+
+        if (titleEl) titleEl.textContent = `Calculating honest match scores`;
+        if (descEl) descEl.textContent = `Evaluating ${total} unique roles against your skills and experience (~${estSec}s remaining)...`;
+        if (barEl) barEl.style.width = '88%';
+        if (trackEl) trackEl.setAttribute('aria-valuenow', '88');
+        if (metricDedup) metricDedup.textContent = `0 / ${total} scored (~${estSec}s left)`;
+
+        startScoreEtaTicker(total, estSec);
+      } else if (data.stage === 'score_progress') {
+        const scoreLabel = $('#searchScoreStepLabel');
+        if (scoreLabel) scoreLabel.textContent = 'Match & rank';
+        const miniBar = $('#stepMiniBar');
+        if (miniBar) miniBar.style.width = `${data.pct}%`;
+        const stepSub3 = $('#searchStepSub-3');
+
+        // If scoring is complete (current == total), show done state immediately
+        if (data.current >= data.total) {
+          stopScoreEtaTicker();
+          if (stepSub3) stepSub3.innerHTML = `${data.total}/${data.total} • <span class="step-eta-text">Done</span>`;
+          if (miniBar) miniBar.style.width = '100%';
+          if (metricDedup) metricDedup.textContent = `${data.total} / ${data.total} scored`;
+          if (titleEl) titleEl.textContent = 'Scoring complete — finalizing results';
+          if (descEl) descEl.textContent = `All ${data.total} roles scored against your resume. Sorting results...`;
+          const barPct = 97;
+          if (barEl) barEl.style.width = barPct + '%';
+          if (trackEl) trackEl.setAttribute('aria-valuenow', String(barPct));
+          return;
+        }
+
+        if (stepSub3) stepSub3.innerHTML = `${data.current}/${data.total} • <span class="step-eta-text">~${data.est_seconds}s left</span>`;
+
+        if (titleEl) titleEl.textContent = `Calculating honest match scores`;
+        if (descEl) descEl.textContent = `Scored ${data.current} of ${data.total} roles against your resume profile (~${data.est_seconds}s remaining)...`;
+
+        const barPct = Math.min(96, 88 + Math.round((data.current / data.total) * 9));
+        if (barEl) barEl.style.width = barPct + '%';
+        if (trackEl) trackEl.setAttribute('aria-valuenow', String(barPct));
+        if (metricDedup) metricDedup.textContent = `${data.current} / ${data.total} scored (~${data.est_seconds}s left)`;
+
+        updateScoreEtaTickerBaseline(data.current, data.total, data.est_seconds);
+      } else if (data.stage === 'enrich') {
+        const scoreLabel = $('#searchScoreStepLabel');
+        if (scoreLabel) scoreLabel.textContent = 'Match & rank';
+        const stepSub3 = $('#searchStepSub-3');
+        if (stepSub3) stepSub3.innerHTML = `Verifying top ${data.enrich_count || 12} direct links • <span class="step-eta-text">~${data.est_seconds || 1}s left</span>`;
+        const miniBar = $('#stepMiniBar');
+        if (miniBar) miniBar.style.width = '96%';
+        if (titleEl) titleEl.textContent = `Verifying direct employer links`;
+        if (descEl) descEl.textContent = `Ensuring top application links route straight to verified employer portals (~1s remaining)...`;
+        if (barEl) barEl.style.width = '98%';
+        if (trackEl) trackEl.setAttribute('aria-valuenow', '98');
+      }
+    }
+  }
+
   async function runSearch() {
+    stopSearchProgressAnimation();
     const seq = ++S.searchSeq;
     const btn = $('#btnSearch');
-    btn.disabled = true; btn.textContent = 'Searching';
-    $('#jobList').innerHTML = skeletons();
-    $('#jobDetail').innerHTML = '';
-    $('#resultsSummary').textContent = 'Searching your sources. Slow ones stop at the deadline.';
+    btn.disabled = true; btn.innerHTML = `<span class="btn-spinner"></span> Searching`;
+    renderSearchHubSkeleton();
     $('#sourceToggle').hidden = true;
     $('#sourcePanel').hidden = true;
 
@@ -489,24 +889,114 @@
       q: val('searchQuery').trim(), location: val('searchLocation').trim(),
       work_mode: S.workMode, min_score: val('searchMinScore')
     });
+
+    const metaToken = document.querySelector('meta[name="jh-token"]');
+    const token = metaToken ? metaToken.content : '';
+
+    let completedData = null;
     try {
-      const data = await api('/api/search?' + params.toString());
-      if (seq !== S.searchSeq) return;
-      S.searchMeta = data;
-      S.jobsRanked = data.jobs || [];
-      applySort();
-      const keep = S.jobs.find(j => jobKey(j) === S.selectedKey);
-      S.selectedKey = keep ? jobKey(keep) : (!isNarrow() && S.jobs[0] ? jobKey(S.jobs[0]) : null);
-      renderResults();
-    } catch (err) {
-      if (seq !== S.searchSeq) return;
-      S.jobs = []; S.searchMeta = null;
-      $('#resultsSummary').textContent = 'Search failed';
-      $('#jobList').innerHTML = `<div class="empty">${ico('alert')}<h3>The search did not finish</h3><p>${esc(err.message)}</p><div class="empty-actions"><button type="button" class="btn btn-primary" data-action="search-again">Try again</button></div></div>`;
-      $('#jobDetail').innerHTML = '';
+      const res = await fetch('/api/search/stream?' + params.toString(), {
+        headers: { 'X-JH-Token': token }
+      });
+
+      if (!res.ok) throw new Error('Streaming unavailable');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+        for (const part of parts) {
+          if (!part.trim()) continue;
+          let eventType = 'message';
+          let dataStr = '';
+          for (const line of part.split('\n')) {
+            if (line.startsWith('event:')) eventType = line.slice(6).trim();
+            else if (line.startsWith('data:')) dataStr = line.slice(5).trim();
+          }
+          if (!dataStr) continue;
+          try {
+            const parsed = JSON.parse(dataStr);
+            if (seq !== S.searchSeq) return;
+            handleRealSearchEvent(eventType, parsed);
+            if (eventType === 'complete') {
+              completedData = parsed;
+              try { reader.cancel(); } catch (e) {}
+              break;
+            }
+          } catch (e) {}
+        }
+        if (completedData) break;
+      }
+    } catch (streamErr) {
+      try {
+        completedData = await api('/api/search?' + params.toString());
+      } catch (e) {
+        if (seq !== S.searchSeq) return;
+        stopSearchProgressAnimation();
+        const stage = $('#searchProgressStage');
+        if (stage) stage.hidden = true;
+        const split = $('#searchSplit');
+        if (split) split.hidden = false;
+        const tools = $('#resultsTools');
+        if (tools) tools.hidden = false;
+        const resultsMeta = $('#resultsMeta');
+        if (resultsMeta) resultsMeta.hidden = false;
+        S.jobs = []; S.searchMeta = null;
+        $('#resultsSummary').textContent = 'Search failed';
+        $('#jobList').innerHTML = `<div class="empty">${ico('alert')}<h3>The search did not finish</h3><p>${esc(e.message)}</p><div class="empty-actions"><button type="button" class="btn btn-primary" data-action="search-again">Try again</button></div></div>`;
+        $('#jobDetail').innerHTML = '';
+        return;
+      }
     } finally {
-      if (seq === S.searchSeq) { btn.disabled = false; btn.textContent = 'Search'; }
+      if (seq === S.searchSeq) {
+        btn.disabled = false;
+        btn.innerHTML = `${ico('search')} Search`;
+      }
     }
+
+    if (seq !== S.searchSeq || !completedData) return;
+
+    // Graceful final stage completion moment
+    stopScoreEtaTicker();
+    const step3 = $('#searchStep-3');
+    if (step3) step3.className = 'search-step is-done';
+    const badge = $('#searchStepEtaBadge');
+    if (badge) {
+      badge.textContent = 'Done';
+      badge.classList.add('is-done');
+    }
+    const scoreLabel = $('#searchScoreStepLabel');
+    if (scoreLabel) scoreLabel.textContent = 'Match & rank';
+    const sub = $('#searchStepSub-3');
+    if (sub) sub.textContent = 'Complete';
+    const miniBar = $('#stepMiniBar');
+    if (miniBar) miniBar.style.width = '100%';
+    const barEl = $('#searchStageBar');
+    if (barEl) barEl.style.width = '100%';
+    const titleEl = $('#searchStageTitle');
+    if (titleEl) titleEl.textContent = `Completed`;
+
+    await new Promise(r => setTimeout(r, 260));
+    if (seq !== S.searchSeq) return;
+
+    stopSearchProgressAnimation();
+    S.searchMeta = completedData;
+    S.jobsRanked = completedData.jobs || [];
+    S.searchHasRun = true;
+    S.lastSearchTime = Date.now();
+    try {
+      sessionStorage.setItem('jh-last-search-meta', JSON.stringify(completedData));
+      sessionStorage.setItem('jh-last-search-time', String(S.lastSearchTime));
+    } catch (e) {}
+    applySort();
+    const keep = S.jobs.find(j => jobKey(j) === S.selectedKey);
+    S.selectedKey = keep ? jobKey(keep) : (!isNarrow() && S.jobs[0] ? jobKey(S.jobs[0]) : null);
+    renderResults();
   }
 
   function applySort() {
@@ -526,6 +1016,23 @@
   }
 
   function renderResults() {
+    stopSearchProgressAnimation();
+    const stage = $('#searchProgressStage');
+    if (stage) stage.hidden = true;
+    const split = $('#searchSplit');
+    if (split) split.hidden = false;
+    const resultsMeta = $('#resultsMeta');
+    if (resultsMeta) resultsMeta.hidden = false;
+    const tools = $('#resultsTools');
+    if (tools) tools.hidden = false;
+
+    // Update last search timestamp badge
+    const lastBadge = $('#lastSearchBadge');
+    if (lastBadge && S.lastSearchTime) {
+      lastBadge.textContent = `Last searched ${formatTimeSince(S.lastSearchTime)}`;
+      lastBadge.hidden = false;
+    }
+
     const meta = S.searchMeta || {};
     const n = S.jobs.length;
     const typed = val('searchQuery').trim();
@@ -1592,9 +2099,17 @@
     $('#workModeSeg').addEventListener('click', e => {
       const b = e.target.closest('[data-mode]');
       if (!b) return;
-      S.workMode = b.dataset.mode; syncWorkModeSeg(); runSearch();
+      S.workMode = b.dataset.mode; syncWorkModeSeg();
+      if (S.searchHasRun) runSearch();
     });
-    $('#searchMinScore').addEventListener('change', runSearch);
+    $('#searchMinScore').addEventListener('change', () => {
+      if (S.searchHasRun) runSearch();
+    });
+    $('#autoReloadSelect').addEventListener('change', e => {
+      setAutoReloadMinutes(parseInt(e.target.value, 10));
+      const label = e.target.options[e.target.selectedIndex].text;
+      toast(label === 'Off' ? 'Auto-refresh disabled' : `Auto-refresh set to ${label.toLowerCase()}`);
+    });
     $('#sortResultsBy').addEventListener('change', () => { applySort(); renderList(); });
     $('#sourceToggle').addEventListener('click', () => {
       const p = $('#sourcePanel'); p.hidden = !p.hidden;
@@ -1669,10 +2184,56 @@
     S.openExp = new Set([0]);
     initTheme();
     bindEvents();
-    route();
     await Promise.all([loadProfile(), loadApplications()]);
     renderWsHeader();
-    runSearch();
+    renderIdeas();
+
+    // Restore auto-reload schedule (defaults to 5 hours)
+    const savedMins = getAutoReloadMinutes();
+    const reloadSelect = $('#autoReloadSelect');
+    if (reloadSelect) reloadSelect.value = String(savedMins);
+    scheduleAutoReload(savedMins);
+
+    // Check for cached search results from this session
+    let restoredCached = false;
+    try {
+      const cached = sessionStorage.getItem('jh-last-search-meta');
+      const cachedTime = sessionStorage.getItem('jh-last-search-time');
+      if (cached) {
+        const meta = JSON.parse(cached);
+        if (meta && meta.jobs && meta.jobs.length > 0) {
+          S.searchMeta = meta;
+          S.jobsRanked = meta.jobs;
+          S.searchHasRun = true;
+          S.lastSearchTime = parseInt(cachedTime, 10) || Date.now();
+          applySort();
+          const keep = S.jobs.find(j => jobKey(j) === S.selectedKey);
+          S.selectedKey = keep ? jobKey(keep) : (!isNarrow() && S.jobs[0] ? jobKey(S.jobs[0]) : null);
+          restoredCached = true;
+        }
+      }
+    } catch (e) {}
+
+    route();
+
+    if (S.view === 'jobs') {
+      if (restoredCached) renderResults();
+      else renderWelcomeState();
+    }
+  }
+
+  function renderWelcomeState() {
+    const stage = $('#searchProgressStage');
+    if (stage) stage.hidden = true;
+    const split = $('#searchSplit');
+    if (split) split.hidden = false;
+    const resultsMeta = $('#resultsMeta');
+    if (resultsMeta) resultsMeta.hidden = false;
+    const tools = $('#resultsTools');
+    if (tools) tools.hidden = false;
+    $('#resultsSummary').innerHTML = `Press <strong>Search</strong> to discover jobs matching your profile.`;
+    $('#jobList').innerHTML = `<div class="empty">${ico('search')}<h3>Ready to search</h3><p>Enter a query or just hit Search to find jobs based on your resume.</p><div class="empty-actions"><button type="button" class="btn btn-primary" data-action="search-again">Search now</button></div></div>`;
+    $('#jobDetail').innerHTML = '';
   }
 
   document.addEventListener('DOMContentLoaded', init);

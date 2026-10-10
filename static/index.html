@@ -132,6 +132,20 @@
               <option value="85">85% or more</option>
             </select>
           </label>
+          <label class="inline-select auto-reload-select">
+            <svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>
+            <span>Auto-refresh</span>
+            <select id="autoReloadSelect">
+              <option value="0">Off</option>
+              <option value="30">Every 30 min</option>
+              <option value="60">Every 1 hour</option>
+              <option value="120">Every 2 hours</option>
+              <option value="300" selected>Every 5 hours</option>
+              <option value="720">Every 12 hours</option>
+              <option value="1440">Every 24 hours</option>
+            </select>
+          </label>
+          <span class="last-search-badge" id="lastSearchBadge" hidden></span>
           <div class="chips" id="suggestChips" aria-label="Search ideas"></div>
         </div>
 
@@ -143,8 +157,8 @@
         </div>
 
         <div class="results-meta" id="resultsMeta">
-          <p class="results-summary" id="resultsSummary" aria-live="polite">Searching your sources</p>
-          <div class="results-tools">
+          <p class="results-summary" id="resultsSummary" aria-live="polite"></p>
+          <div class="results-tools" id="resultsTools">
             <button type="button" class="link-btn" id="sourceToggle" aria-expanded="false" aria-controls="sourcePanel" hidden>Source status</button>
             <label class="inline-select">
               <span>Sort</span>
@@ -159,7 +173,11 @@
         </div>
         <div class="source-panel" id="sourcePanel" hidden></div>
 
-        <div class="split">
+        <!-- Dedicated centered live search progress stage -->
+        <div class="search-stage" id="searchProgressStage" hidden></div>
+
+        <!-- Job listings split view -->
+        <div class="split" id="searchSplit">
           <div class="job-list" id="jobList" aria-label="Job results"></div>
           <aside class="job-detail" id="jobDetail" aria-label="Job details"></aside>
         </div>

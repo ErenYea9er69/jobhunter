@@ -168,7 +168,7 @@ def derive_query(profile):
     return (profile.get("target_title") or "").strip()
 
 
-def search(query="", location="", work_mode="Any", min_score=0, profile=None, force_refresh=False, limit=None):
+def search(query="", location="", work_mode="Any", min_score=0, profile=None, force_refresh=False, limit=None, on_progress=None):
     t0 = time.time()
     profile = profile if profile is not None else db.get_profile()
     query = (query or "").strip() or derive_query(profile)
@@ -193,24 +193,72 @@ def search(query="", location="", work_mode="Any", min_score=0, profile=None, fo
         key = f"board|{board.name}|{w['slug']}"
         tasks[_pool.submit(_run_source, label, lambda b=board, w=w: b.fetch_company(w["slug"], w["company_name"]), key, force_refresh)] = label
 
-    done, pending = cf.wait(list(tasks), timeout=config.SEARCH_DEADLINE_SECONDS)
-    for f in done:
-        try:
-            jobs, st = f.result()
-            raw.extend(jobs)
-            statuses.append(st)
-        except Exception as e:  # defensive: _run_source already catches source errors
-            statuses.append({"source": tasks[f], "state": "failed", "count": 0, "error": str(e)[:160], "ms": 0, "stale": False})
-    for f in pending:
-        f.cancel()
-        statuses.append({"source": tasks[f], "state": "timeout", "count": 0, "ms": int(config.SEARCH_DEADLINE_SECONDS * 1000),
-                         "error": "Did not answer before the search deadline.", "stale": False})
+    source_labels = [tasks[f] for f in tasks]
+    if on_progress:
+        on_progress("init", {
+            "sources": source_labels,
+            "total": len(tasks),
+            "query": query,
+            "location": location
+        })
+
+    done_labels = set()
+    deadline = time.time() + config.SEARCH_DEADLINE_SECONDS
+    try:
+        for f in cf.as_completed(list(tasks), timeout=config.SEARCH_DEADLINE_SECONDS):
+            label = tasks[f]
+            done_labels.add(label)
+            try:
+                jobs, st = f.result()
+                raw.extend(jobs)
+                statuses.append(st)
+                if on_progress:
+                    on_progress("source_done", {
+                        "source": st["source"],
+                        "state": st["state"],
+                        "count": st["count"],
+                        "ms": st["ms"],
+                        "raw_total": len(raw),
+                        "completed": len(done_labels),
+                        "total": len(tasks)
+                    })
+            except Exception as e:
+                st = {"source": label, "state": "failed", "count": 0, "error": str(e)[:160], "ms": 0, "stale": False}
+                statuses.append(st)
+                if on_progress:
+                    on_progress("source_done", {
+                        "source": label,
+                        "state": "failed",
+                        "count": 0,
+                        "error": str(e)[:160],
+                        "ms": 0,
+                        "raw_total": len(raw),
+                        "completed": len(done_labels),
+                        "total": len(tasks)
+                    })
+    except cf.TimeoutError:
+        for f, label in tasks.items():
+            if label not in done_labels:
+                f.cancel()
+                st = {"source": label, "state": "timeout", "count": 0, "ms": int(config.SEARCH_DEADLINE_SECONDS * 1000),
+                      "error": "Did not answer before search deadline.", "stale": False}
+                statuses.append(st)
+                if on_progress:
+                    on_progress("source_done", {
+                        "source": label,
+                        "state": "timeout",
+                        "count": 0,
+                        "error": "Timeout",
+                        "ms": int(config.SEARCH_DEADLINE_SECONDS * 1000),
+                        "raw_total": len(raw),
+                        "completed": len(statuses),
+                        "total": len(tasks)
+                    })
 
     if config.DEMO:
         from .demo import SAMPLE_JOBS
         raw.extend(SAMPLE_JOBS)
 
-    # Watchlist boards return every opening, so keep only those relevant to the query or the user's target.
     if query:
         qwords = [w for w in re.findall(r"[a-z0-9+#]+", query.lower()) if len(w) > 2]
         syns = set(qwords)
@@ -229,18 +277,66 @@ def search(query="", location="", work_mode="Any", min_score=0, profile=None, fo
             return any(w in hay for w in syns) if syns else True
         raw = [j for j in raw if relevant(j)]
 
+    if on_progress:
+        on_progress("stage", {
+            "stage": "dedup",
+            "message": f"Deduplicating {len(raw)} raw postings across all boards...",
+            "raw_count": len(raw)
+        })
+
     merged = dedup.merge_jobs(raw)
 
-    # Fetch full text for the top candidates whose source only gave a stub, then score everything.
-    for j in merged:
+    # Pre-filter by work mode and location before expensive deep skill scoring
+    merged = [j for j in merged if _passes(j, work_mode, location)]
+    if len(merged) > 350:
+        if query:
+            merged.sort(key=lambda j: (any(w in (j.get("title") or "").lower() for w in syns), j.get("source_rank", 0)), reverse=True)
+        merged = merged[:350]
+
+    total_unique = len(merged)
+    has_enrichable = any(j.get("needs_enrichment") for j in merged[:config.ENRICH_TOP_N])
+    est_total_s = max(0.8, round(total_unique * 0.003 + (1.6 if has_enrichable else 0.3), 1))
+
+    if on_progress:
+        on_progress("stage", {
+            "stage": "score",
+            "message": f"Calculating resume fit scores for {total_unique} matching opportunities (~{est_total_s}s remaining)...",
+            "unique_count": total_unique,
+            "est_seconds": est_total_s
+        })
+
+    t_score_start = time.time()
+    for idx, j in enumerate(merged, start=1):
         j.update(score_job(j, profile))
         _rank_opportunity(j)
+        if on_progress and (idx % 25 == 0 or idx == total_unique):
+            is_final = (idx == total_unique)
+            elapsed = time.time() - t_score_start
+            rate = idx / elapsed if elapsed > 0 else 400
+            rem_scoring = (total_unique - idx) / rate if (rate > 0 and not is_final) else 0
+            rem_total = 0.0 if is_final else max(0.2, round(rem_scoring + (1.2 if has_enrichable else 0.1), 1))
+            on_progress("stage", {
+                "stage": "score_progress",
+                "current": idx,
+                "total": total_unique,
+                "est_seconds": rem_total,
+                "pct": 100 if is_final else (int(round((idx / total_unique) * 100)) if total_unique else 100),
+                "message": f"Scoring complete for all {total_unique} roles" if is_final else f"Scoring match fit: {idx} of {total_unique} roles (~{rem_total}s remaining)..."
+            })
+
     merged.sort(key=lambda j: (j["opportunity_score"], j["score"], j.get("posted_at") or ""), reverse=True)
     to_enrich = [j for j in merged[:config.ENRICH_TOP_N] if j.get("needs_enrichment")]
     if to_enrich:
+        if on_progress:
+            on_progress("stage", {
+                "stage": "enrich",
+                "message": f"Verifying direct employer links for top {len(to_enrich)} roles (~1s remaining)...",
+                "enrich_count": len(to_enrich),
+                "est_seconds": 1.0
+            })
         by_name = {s.name: s for s in list(src.BOARDS.values()) + src.SEARCH_SOURCES}
         futs = {_pool.submit(by_name[j["source"]].enrich, j): j for j in to_enrich if j["source"] in by_name}
-        d2, _ = cf.wait(list(futs), timeout=6)
+        d2, _ = cf.wait(list(futs), timeout=2.5)
         for f in d2:
             try:
                 f.result()
@@ -254,17 +350,18 @@ def search(query="", location="", work_mode="Any", min_score=0, profile=None, fo
     for j in merged:
         if min_score and j["score"] < int(min_score):
             continue
-        if not _passes(j, work_mode, location):
-            continue
         filtered.append(j)
     filtered = filtered[: (limit or config.MAX_RESULTS)]
     _remember(filtered)
 
     failed = [s for s in statuses if s["state"] in ("failed", "timeout", "paused", "stale")]
-    return {
+    result = {
         "count": len(filtered), "query": query, "jobs": filtered, "sources": sorted(statuses, key=lambda s: s["source"]),
         "ranking": {"method": "fit 70% + source authority 20% + evidence 10%", "workers": config.SEARCH_WORKERS},
         "partial": bool(failed), "elapsed_ms": int((time.time() - t0) * 1000),
         "profile_empty": bool(profile.get("_is_empty")),
         "warnings": ([f"{len(failed)} source(s) did not respond. Showing results from the rest."] if failed else []),
     }
+    if on_progress:
+        on_progress("complete", result)
+    return result

@@ -44,30 +44,47 @@ def _jaccard(a, b):
 
 
 def _same_job(a, b):
-    if normalize_company(a["company"]) != normalize_company(b["company"]):
-        return False
-    ka, kb = _title_key(a["title"]), _title_key(b["title"])
+    ka = a.get("_tk") or _title_key(a.get("title", ""))
+    kb = b.get("_tk") or _title_key(b.get("title", ""))
     if not ka or not kb:
         return False
     if ka != kb and _jaccard(ka, kb) < 0.85:
         return False
-    la, lb = _loc_class(a), _loc_class(b)
+    la = a.get("_lc") or _loc_class(a)
+    lb = b.get("_lc") or _loc_class(b)
     return la == lb or "unknown" in (la, lb) or "remote" in (la, lb)
 
 
 def merge_jobs(raw_jobs):
-    groups = []  # list of canonical jobs; companies are few so the scan stays cheap
+    groups = []  # list of canonical jobs
     by_company = {}
+    by_exact = {}  # (company, title_key, loc_class) -> canonical job
+
     for job in raw_jobs:
         if not job.get("title") or not job.get("company"):
             continue
+        job["_tk"] = _title_key(job.get("title", ""))
+        job["_lc"] = _loc_class(job)
+        norm_co = normalize_company(job["company"])
         entry = {"source": job.get("source", "Unknown"), "url": canonical_url(job.get("url")),
                  "source_credit": job.get("source_credit", job.get("source", "")),
                  "source_tier": job.get("source_tier", ""),
                  "source_rank": job.get("source_rank", source_rank(job.get("source", "Unknown"), job.get("source_tier", ""))),
                  "source_kind": job.get("source_kind", source_kind(job.get("source", "Unknown"), job.get("source_tier", "")))}
-        cands = by_company.setdefault(normalize_company(job["company"]), [])
-        target = next((g for g in cands if _same_job(g, job)), None)
+
+        # Fast path 1: exact company + title_key + loc match
+        exact_key = (norm_co, job["_tk"], job["_lc"])
+        target = by_exact.get(exact_key)
+
+        # Fast path 2: exact company + title_key (one is remote or unknown)
+        if target is None and (job["_lc"] in ("remote", "unknown")):
+            target = by_exact.get((norm_co, job["_tk"], "remote")) or by_exact.get((norm_co, job["_tk"], "unknown"))
+
+        # Fallback: scan fuzzy candidates within same company only
+        if target is None:
+            cands = by_company.setdefault(norm_co, [])
+            target = next((g for g in cands if _same_job(g, job)), None)
+
         if target is None:
             g = dict(job)
             g["sources"] = [entry]
@@ -75,9 +92,11 @@ def merge_jobs(raw_jobs):
             g.setdefault("source_rank", entry["source_rank"])
             g.setdefault("source_kind", entry["source_kind"])
             g["url"] = entry["url"]
-            cands.append(g)
+            by_company.setdefault(norm_co, []).append(g)
+            by_exact[exact_key] = g
             groups.append(g)
             continue
+
         if not any(s["source"] == entry["source"] and s["url"] == entry["url"] for s in target["sources"]):
             target["sources"].append(entry)
             target["source_names"].append(entry["source"])
@@ -92,7 +111,10 @@ def merge_jobs(raw_jobs):
         da, db_ = parse_date(target.get("posted_at")), parse_date(job.get("posted_at"))
         if db_ and (not da or db_ > da):
             target["posted_at"] = job["posted_at"]
+
     for g in groups:
+        g.pop("_tk", None)
+        g.pop("_lc", None)
         g["job_key"] = job_key(g)
         g["sources"].sort(key=lambda s: (-s.get("source_rank", 0), s["source"]))
     return groups

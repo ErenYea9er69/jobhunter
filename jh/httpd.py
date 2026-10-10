@@ -291,6 +291,42 @@ class Handler(SimpleHTTPRequestHandler):
         host = (self.headers.get("Host") or "").split(":")[0].lower()
         return host in ("127.0.0.1", "localhost", "[::1]") or host == config.HOST.lower()
 
+    def _stream_search(self, q):
+        g = lambda k, d="": q.get(k, [d])[0]
+        try:
+            min_score = int(g("min_score", "0") or 0)
+        except ValueError:
+            return self._json({"error": "min_score must be a number."}, 400)
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-transform")
+        self.send_header("Connection", "close")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+
+        def send_event(event_type, data):
+            try:
+                msg = f"event: {event_type}\ndata: {json.dumps(data)}\n\n".encode("utf-8")
+                self.wfile.write(msg)
+                self.wfile.flush()
+            except Exception:
+                pass
+
+        try:
+            pipeline.search(
+                query=g("q"),
+                location=g("location"),
+                work_mode=g("work_mode", "Any"),
+                min_score=min_score,
+                force_refresh=g("refresh") == "1",
+                on_progress=send_event
+            )
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            self.close_connection = True
+
     def _dispatch(self, method):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
@@ -298,8 +334,11 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({"error": "Host not allowed"}, 403)
         if not path.startswith("/api/"):
             return False
-        if self.headers.get("X-JH-Token") != TOKEN:
+        token_in_query = f"token={TOKEN}" in (parsed.query or "")
+        if self.headers.get("X-JH-Token") != TOKEN and not token_in_query:
             return self._json({"error": "Missing or invalid session token. Reload the page."}, 401)
+        if method == "GET" and path == "/api/search/stream":
+            return self._stream_search(urllib.parse.parse_qs(parsed.query))
         body = {}
         if method in ("POST", "DELETE"):
             n = int(self.headers.get("Content-Length") or 0)
