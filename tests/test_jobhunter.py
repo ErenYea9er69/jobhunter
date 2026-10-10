@@ -290,5 +290,52 @@ class AiStrategyTests(Base):
         self.assertEqual(cfg["key"], "test-key-123")
 
 
+class FamousFilterTests(Base):
+    def test_famous_company_detection(self):
+        self.assertTrue(pipeline.is_famous_company("OpenAI"))
+        self.assertTrue(pipeline.is_famous_company("open ai"))
+        self.assertTrue(pipeline.is_famous_company("Vercel"))
+        self.assertTrue(pipeline.is_famous_company("Meta"))
+        self.assertTrue(pipeline.is_famous_company("Meta Platforms, Inc."))
+        self.assertTrue(pipeline.is_famous_company("Grok"))
+        self.assertTrue(pipeline.is_famous_company("xAI"))
+        self.assertTrue(pipeline.is_famous_company("Anthropic"))
+        self.assertTrue(pipeline.is_famous_company("Stripe"))
+        self.assertTrue(pipeline.is_famous_company("Google"))
+        # Non-famous companies should not match
+        self.assertFalse(pipeline.is_famous_company("Acme Labs"))
+        self.assertFalse(pipeline.is_famous_company("Metadata Systems"))
+        self.assertFalse(pipeline.is_famous_company("Local Startup LLC"))
+
+    def test_search_famous_filtering(self):
+        db.save_profile(DEMO_PROFILE)
+        jobs = [
+            sources.make_job(id="1", title="Python Engineer", company="OpenAI", location="Remote", source="Fake",
+                             description="Python", url="https://x/1"),
+            sources.make_job(id="2", title="Python Engineer", company="Acme Startup", location="Remote", source="Fake",
+                             description="Python", url="https://x/2"),
+        ]
+        class FakeSrc(sources.Source):
+            name, tier = "Fake", "Free feed"
+            def fetch(self, q, l): return jobs
+
+        with mock.patch.object(sources, "SEARCH_SOURCES", [FakeSrc()]):
+            # 1. Default / "all": both appear
+            r_all = pipeline.search("python", famous_mode="all")
+            self.assertEqual(len(r_all["jobs"]), 2)
+            companies_all = {j["company"] for j in r_all["jobs"]}
+            self.assertEqual(companies_all, {"OpenAI", "Acme Startup"})
+
+            # 2. "hide": OpenAI is excluded
+            r_hide = pipeline.search("python", famous_mode="hide")
+            self.assertEqual(len(r_hide["jobs"]), 1)
+            self.assertEqual(r_hide["jobs"][0]["company"], "Acme Startup")
+
+            # 3. "only": Only OpenAI appears
+            r_only = pipeline.search("python", famous_mode="only")
+            self.assertEqual(len(r_only["jobs"]), 1)
+            self.assertEqual(r_only["jobs"][0]["company"], "OpenAI")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

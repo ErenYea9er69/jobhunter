@@ -84,7 +84,7 @@ def r_search(q, body):
     except ValueError:
         raise ApiError("min_score must be a number.")
     return pipeline.search(query=g("q"), location=g("location"), work_mode=g("work_mode", "Any"),
-                           min_score=min_score, force_refresh=g("refresh") == "1")
+                           min_score=min_score, famous_mode=g("famous_mode", "all"), force_refresh=g("refresh") == "1")
 
 
 @route("GET", "/api/sources")
@@ -319,6 +319,7 @@ class Handler(SimpleHTTPRequestHandler):
                 location=g("location"),
                 work_mode=g("work_mode", "Any"),
                 min_score=min_score,
+                famous_mode=g("famous_mode", "all"),
                 force_refresh=g("refresh") == "1",
                 on_progress=send_event
             )

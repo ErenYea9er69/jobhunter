@@ -29,9 +29,42 @@
   const DEFAULT_IDEAS = ['Full Stack', 'Backend Python', 'TypeScript React', 'DevOps Cloud'];
   const isNarrow = () => window.matchMedia('(max-width: 960px)').matches;
 
+  // Recognized Big Tech & prominent AI companies that users can choose to show or hide
+  const FAMOUS_COMPANY_TOKENS = new Set([
+    'openai', 'anthropic', 'grok', 'xai', 'perplexity', 'cohere',
+    'mistral', 'midjourney', 'cursor', 'poolside',
+    'meta', 'facebook', 'google', 'alphabet', 'apple', 'microsoft',
+    'amazon', 'netflix',
+    'vercel', 'stripe', 'gitlab', 'github', 'figma', 'docker', 'supabase',
+    'uber', 'airbnb', 'coinbase', 'shopify', 'spotify', 'databricks',
+    'snowflake', 'cloudflare', 'palantir', 'nvidia', 'bytedance', 'tiktok',
+    'salesforce', 'atlassian', 'adobe', 'twitter', 'tesla', 'spacex', 'neuralink'
+  ]);
+
+  const FAMOUS_COMPANY_PHRASES = [
+    'open ai', 'meta platforms', 'x.ai', 'scale ai', 'hugging face',
+    'amazon web services', 'deepmind'
+  ];
+
+  function isFamousCompany(companyName) {
+    if (!companyName) return false;
+    const name = String(companyName).toLowerCase().trim();
+    if (FAMOUS_COMPANY_PHRASES.some(phrase => name.includes(phrase))) return true;
+    const cleaned = name.replace(/\b(inc|llc|corp|ltd|co|corporation|technologies|systems|labs|group)\b\.?/gi, '');
+    const tokens = cleaned.match(/[a-z0-9]+/g) || [];
+    return tokens.some(t => FAMOUS_COMPANY_TOKENS.has(t));
+  }
+
+  function isFamousJob(job) {
+    if (!job) return false;
+    if (typeof job.is_famous === 'boolean') return job.is_famous;
+    return isFamousCompany(job.company);
+  }
+
   const S = {
     view: 'jobs',
     quickFilter: 'all',
+    famousFilter: (function() { try { return localStorage.getItem('jh-famous-filter') || 'all'; } catch (e) { return 'all'; } })(),
     profile: null,
     profileEmpty: true,
     dirty: false,
@@ -50,6 +83,22 @@
     ws: { job: null, key: '', tab: 'strategy', from: 'jobs', refinement: null, decisions: {}, ats: null, atsFresh: false,
           strategy: null, gaps: null, cover: {}, prep: null, tone: 'direct', showUnchanged: false, seq: 0 }
   };
+
+  function syncFamousUi() {
+    const sel = $('#searchFamousSelect');
+    if (sel && sel.value !== S.famousFilter) sel.value = S.famousFilter;
+    const qf = $('#quickFilterRow');
+    if (qf) {
+      const chipHide = $('[data-quick-filter="hide_famous"]', qf);
+      if (chipHide) chipHide.classList.toggle('is-active', S.famousFilter === 'hide');
+      const chipOnly = $('[data-quick-filter="famous_only"]', qf);
+      if (chipOnly) chipOnly.classList.toggle('is-active', S.famousFilter === 'only');
+      const chipAll = $('[data-quick-filter="all"]', qf);
+      if (chipAll && (S.famousFilter === 'hide' || S.famousFilter === 'only')) {
+        chipAll.classList.remove('is-active');
+      }
+    }
+  }
 
   // Auto-reload schedule
   let autoReloadIntervalId = null;
@@ -887,7 +936,8 @@
 
     const params = new URLSearchParams({
       q: val('searchQuery').trim(), location: val('searchLocation').trim(),
-      work_mode: S.workMode, min_score: val('searchMinScore')
+      work_mode: S.workMode, min_score: val('searchMinScore'),
+      famous_mode: S.famousFilter || 'all'
     });
 
     const metaToken = document.querySelector('meta[name="jh-token"]');
@@ -1034,10 +1084,16 @@
     }
 
     const meta = S.searchMeta || {};
-    const n = S.jobs.length;
+    const n = filteredJobs().length;
     const typed = val('searchQuery').trim();
     const forWhat = !typed && meta.query ? ` <small>for ${esc(meta.query)}, based on your resume</small>` : '';
-    $('#resultsSummary').innerHTML = n ? `${n} job${n === 1 ? '' : 's'}${forWhat}` : 'No jobs found';
+    let filterBadge = '';
+    if (S.famousFilter === 'hide') {
+      filterBadge = ` <span class="chip chip-outline chip-sm" style="font-size:11.5px;padding:1px 8px;margin-left:6px;" title="Filtered out Big Tech & prominent AI companies">No Big Tech</span>`;
+    } else if (S.famousFilter === 'only') {
+      filterBadge = ` <span class="chip chip-famous chip-sm" style="font-size:11.5px;padding:1px 8px;margin-left:6px;" title="Only showing Big Tech & prominent AI companies">Big Tech Only</span>`;
+    }
+    $('#resultsSummary').innerHTML = n ? `${n} job${n === 1 ? '' : 's'}${forWhat}${filterBadge}` : `No jobs found${filterBadge}`;
 
     const { total, ok, srcs } = sourceCounts();
     const toggle = $('#sourceToggle');
@@ -1056,6 +1112,11 @@
 
   function filteredJobs() {
     let list = S.jobs || [];
+    if (S.famousFilter === 'hide') {
+      list = list.filter(j => !isFamousJob(j));
+    } else if (S.famousFilter === 'only') {
+      list = list.filter(j => isFamousJob(j));
+    }
     if (S.quickFilter === 'high_match') {
       list = list.filter(j => (j.score || 0) >= 80);
     } else if (S.quickFilter === 'direct_ats') {
@@ -1076,7 +1137,7 @@
     if (!jobs.length) {
       const { total, ok } = sourceCounts();
       const allFailed = total > 0 && ok === 0;
-      const strict = Number(val('searchMinScore')) > 0 || S.quickFilter !== 'all';
+      const strict = Number(val('searchMinScore')) > 0 || S.quickFilter !== 'all' || S.famousFilter !== 'all';
       list.innerHTML = `<div class="empty">${ico(allFailed ? 'alert' : 'search')}
         <h3>${allFailed ? 'No source answered' : 'No jobs match these filters'}</h3>
         <p>${allFailed ? 'Check your internet connection, then search again. Open Sources above to see what failed.' : 'Try a broader title, a different work mode, or clear the quick filters.'}</p>
@@ -1092,6 +1153,7 @@
       const required = Object.keys(j.required_skills || {}).length;
       const matched = (j.matched_skills || []).length;
       const isDirectAts = j.source_kind === 'Direct employer ATS' || String(j.source_tier || '').startsWith('Direct');
+      const isFamous = isFamousJob(j);
       return `<button type="button" class="job-item${key === S.selectedKey ? ' is-selected' : ''}" data-action="job-select" data-key="${esc(key)}">
         <span class="job-item-title">${esc(j.title)}</span>
         <span class="job-item-company">${esc(j.company)}</span>
@@ -1101,6 +1163,7 @@
           ${j.work_mode ? `<span>${ico('briefcase')}${esc(j.work_mode)}</span>` : ''}
           ${j.salary ? `<span>${esc(j.salary)}</span>` : ''}
           ${showScore && required ? `<span>${matched} of ${required} skills</span>` : ''}
+          ${isFamous ? '<span class="chip chip-famous" title="Recognized Big Tech & Prominent AI company">Big Tech</span>' : ''}
           ${isDirectAts ? `<span class="chip chip-ok" title="Direct employer careers board">${ico('shield')}Direct ATS</span>` : ''}
           ${j.score >= 85 ? '<span class="chip chip-ok">Top Match</span>' : ''}
           ${j.is_new ? '<span class="chip chip-info">New</span>' : ''}
@@ -1138,7 +1201,7 @@
         <div class="detail-top">
           <div>
             <h2 class="detail-title">${esc(j.title)}</h2>
-            <p class="detail-company">${esc(j.company)} ${isDirectAts ? `<span class="chip chip-ok" title="Direct employer ATS">${ico('shield')}Direct ATS</span>` : ''}</p>
+            <p class="detail-company">${esc(j.company)} ${isFamousJob(j) ? `<span class="chip chip-famous" title="Recognized Big Tech & Prominent AI company">Big Tech</span>` : ''} ${isDirectAts ? `<span class="chip chip-ok" title="Direct employer ATS">${ico('shield')}Direct ATS</span>` : ''}</p>
           </div>
           ${showScore ? ring(score, true) : ''}
         </div>
@@ -2013,9 +2076,13 @@
     'clear-min': () => { $('#searchMinScore').value = '0'; runSearch(); },
     'clear-filters': () => {
       S.quickFilter = 'all';
+      S.famousFilter = 'all';
+      try { localStorage.setItem('jh-famous-filter', 'all'); } catch (err) {}
       $('#searchMinScore').value = '0';
-      $$('[data-quick-filter]').forEach(b => b.classList.toggle('is-active', b.dataset.quickFilter === 'all'));
+      syncFamousUi();
+      applySort();
       renderList();
+      renderResults();
     },
     'job-select': el => selectJob(el.dataset.key),
     'job-strategy': () => openWorkspace(selectedJob(), 'strategy', 'jobs'),
@@ -2116,15 +2183,63 @@
       $('#sourceToggle').setAttribute('aria-expanded', String(!p.hidden));
     });
 
+    const famSelect = $('#searchFamousSelect');
+    if (famSelect) {
+      famSelect.addEventListener('change', e => {
+        S.famousFilter = e.target.value;
+        try { localStorage.setItem('jh-famous-filter', S.famousFilter); } catch (err) {}
+        syncFamousUi();
+        applySort();
+        renderList();
+        renderResults();
+      });
+    }
+
     // quick filters
     const qf = $('#quickFilterRow');
     if (qf) {
       qf.addEventListener('click', e => {
         const b = e.target.closest('[data-quick-filter]');
         if (!b) return;
-        S.quickFilter = b.dataset.quickFilter;
-        $$('[data-quick-filter]', qf).forEach(x => x.classList.toggle('is-active', x === b));
+        const qfType = b.dataset.quickFilter;
+        if (qfType === 'hide_famous') {
+          S.famousFilter = (S.famousFilter === 'hide') ? 'all' : 'hide';
+          S.quickFilter = (S.famousFilter === 'hide') ? 'hide_famous' : 'all';
+          try { localStorage.setItem('jh-famous-filter', S.famousFilter); } catch (err) {}
+          syncFamousUi();
+          applySort();
+          renderList();
+          renderResults();
+          return;
+        }
+        if (qfType === 'famous_only') {
+          S.famousFilter = (S.famousFilter === 'only') ? 'all' : 'only';
+          S.quickFilter = (S.famousFilter === 'only') ? 'famous_only' : 'all';
+          try { localStorage.setItem('jh-famous-filter', S.famousFilter); } catch (err) {}
+          syncFamousUi();
+          applySort();
+          renderList();
+          renderResults();
+          return;
+        }
+        if (qfType === 'all') {
+          S.quickFilter = 'all';
+          S.famousFilter = 'all';
+          try { localStorage.setItem('jh-famous-filter', 'all'); } catch (err) {}
+          syncFamousUi();
+          applySort();
+          renderList();
+          renderResults();
+          return;
+        }
+        S.quickFilter = qfType;
+        $$('[data-quick-filter]', qf).forEach(x => {
+          if (x.dataset.quickFilter !== 'hide_famous' && x.dataset.quickFilter !== 'famous_only') {
+            x.classList.toggle('is-active', x === b);
+          }
+        });
         renderList();
+        renderResults();
       });
     }
 
@@ -2183,6 +2298,7 @@
   async function init() {
     S.openExp = new Set([0]);
     initTheme();
+    syncFamousUi();
     bindEvents();
     await Promise.all([loadProfile(), loadApplications()]);
     renderWsHeader();

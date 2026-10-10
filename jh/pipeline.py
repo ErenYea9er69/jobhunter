@@ -162,13 +162,47 @@ def _rank_opportunity(job):
     }
 
 
+# ---------------------------------------------------------------- famous companies & big tech
+
+FAMOUS_COMPANY_TOKENS = {
+    # Frontier AI & Prominent AI Labs
+    "openai", "anthropic", "grok", "xai", "perplexity", "cohere",
+    "mistral", "midjourney", "cursor", "poolside",
+    # Big Tech / FAANG / MAMAA
+    "meta", "facebook", "google", "alphabet", "apple", "microsoft",
+    "amazon", "netflix",
+    # Famous Unicorns & Public Tech Giants
+    "vercel", "stripe", "gitlab", "github", "figma", "docker", "supabase",
+    "uber", "airbnb", "coinbase", "shopify", "spotify", "databricks",
+    "snowflake", "cloudflare", "palantir", "nvidia", "bytedance", "tiktok",
+    "salesforce", "atlassian", "adobe", "twitter", "tesla", "spacex", "neuralink"
+}
+
+FAMOUS_COMPANY_PHRASES = (
+    "open ai", "meta platforms", "x.ai", "scale ai", "hugging face",
+    "amazon web services", "deepmind"
+)
+
+
+def is_famous_company(company_name):
+    """Return True if company is a well-known Big Tech firm or prominent AI lab."""
+    if not company_name:
+        return False
+    name = str(company_name).lower().strip()
+    if any(phrase in name for phrase in FAMOUS_COMPANY_PHRASES):
+        return True
+    cleaned = re.sub(r"\b(inc|llc|corp|ltd|co|corporation|technologies|systems|labs|group)\b\.?", "", name)
+    tokens = set(re.findall(r"[a-z0-9]+", cleaned))
+    return bool(tokens & FAMOUS_COMPANY_TOKENS)
+
+
 # ---------------------------------------------------------------- main entry
 
 def derive_query(profile):
     return (profile.get("target_title") or "").strip()
 
 
-def search(query="", location="", work_mode="Any", min_score=0, profile=None, force_refresh=False, limit=None, on_progress=None):
+def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all", profile=None, force_refresh=False, limit=None, on_progress=None):
     t0 = time.time()
     profile = profile if profile is not None else db.get_profile()
     query = (query or "").strip() or derive_query(profile)
@@ -259,6 +293,14 @@ def search(query="", location="", work_mode="Any", min_score=0, profile=None, fo
         from .demo import SAMPLE_JOBS
         raw.extend(SAMPLE_JOBS)
 
+    famous_mode = (famous_mode or "all").lower().strip()
+    for j in raw:
+        j["is_famous"] = is_famous_company(j.get("company"))
+    if famous_mode == "hide":
+        raw = [j for j in raw if not j.get("is_famous")]
+    elif famous_mode == "only":
+        raw = [j for j in raw if j.get("is_famous")]
+
     if query:
         qwords = [w for w in re.findall(r"[a-z0-9+#]+", query.lower()) if len(w) > 2]
         syns = set(qwords)
@@ -285,6 +327,12 @@ def search(query="", location="", work_mode="Any", min_score=0, profile=None, fo
         })
 
     merged = dedup.merge_jobs(raw)
+    for j in merged:
+        j["is_famous"] = is_famous_company(j.get("company"))
+    if famous_mode == "hide":
+        merged = [j for j in merged if not j.get("is_famous")]
+    elif famous_mode == "only":
+        merged = [j for j in merged if j.get("is_famous")]
 
     # Pre-filter by work mode and location before expensive deep skill scoring
     merged = [j for j in merged if _passes(j, work_mode, location)]
@@ -356,7 +404,7 @@ def search(query="", location="", work_mode="Any", min_score=0, profile=None, fo
 
     failed = [s for s in statuses if s["state"] in ("failed", "timeout", "paused", "stale")]
     result = {
-        "count": len(filtered), "query": query, "jobs": filtered, "sources": sorted(statuses, key=lambda s: s["source"]),
+        "count": len(filtered), "query": query, "famous_mode": famous_mode, "jobs": filtered, "sources": sorted(statuses, key=lambda s: s["source"]),
         "ranking": {"method": "fit 70% + source authority 20% + evidence 10%", "workers": config.SEARCH_WORKERS},
         "partial": bool(failed), "elapsed_ms": int((time.time() - t0) * 1000),
         "profile_empty": bool(profile.get("_is_empty")),

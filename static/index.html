@@ -132,6 +132,14 @@
               <option value="85">85% or more</option>
             </select>
           </label>
+          <label class="inline-select">
+            <span>Big Tech</span>
+            <select id="searchFamousSelect" title="Control whether famous companies (OpenAI, Vercel, Meta, Grok, etc.) appear">
+              <option value="all">Include all</option>
+              <option value="hide">Hide Big Tech</option>
+              <option value="only">Big Tech only</option>
+            </select>
+          </label>
           <label class="inline-select auto-reload-select">
             <svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>
             <span>Auto-refresh</span>
@@ -151,6 +159,8 @@
 
         <div class="quick-filters" id="quickFilterRow" role="group" aria-label="Quick filters">
           <button type="button" class="qchip is-active" data-quick-filter="all">All listings</button>
+          <button type="button" class="qchip" data-quick-filter="hide_famous" title="Hide OpenAI, Vercel, Meta, Grok, Stripe, etc.">No Big Tech</button>
+          <button type="button" class="qchip" data-quick-filter="famous_only" title="Show only OpenAI, Vercel, Meta, Grok, Stripe, etc.">Big Tech Only</button>
           <button type="button" class="qchip" data-quick-filter="high_match">80%+ Match</button>
           <button type="button" class="qchip" data-quick-filter="direct_ats">Direct ATS Only</button>
           <button type="button" class="qchip" data-quick-filter="fresh">Fresh (&lt; 7 days)</button>

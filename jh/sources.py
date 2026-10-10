@@ -1,6 +1,7 @@
 """Job sources. Each source returns normalized jobs or raises; the pipeline records health and falls back to cache."""
 import datetime
 import html
+import importlib
 import json
 import re
 import threading
@@ -472,8 +473,9 @@ class IndeedJobSpy(Source):
 
     def fetch(self, query, location):
         try:
-            from jobspy import scrape_jobs
-        except ImportError:
+            jobspy = importlib.import_module("jobspy")
+            scrape_jobs = jobspy.scrape_jobs
+        except (ImportError, AttributeError):
             return self._fetch_builtin(query, location)
         df = scrape_jobs(site_name=["indeed"], search_term=query or "software engineer", location=location or "",
                          results_wanted=40, hours_old=24 * 14)
