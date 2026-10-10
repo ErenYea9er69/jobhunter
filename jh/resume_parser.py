@@ -153,7 +153,7 @@ SECTION_ALIASES = {
 }
 _HEAD = {a: k for k, v in SECTION_ALIASES.items() for a in v}
 BULLET_RE = re.compile(r"^\s*(?:[-•*▪●◦‣·]|\d+[.)])\s+")
-DEGREE_RE = re.compile(r"\b(b\.?\s?s\.?c?\.?|b\.?a\.?|m\.?s\.?c?\.?|m\.?a\.?|mba|ph\.?d\.?|bachelor[^,\n]*|master[^,\n]*|doctorate|associate[^,\n]*|diploma)\b", re.I)
+DEGREE_RE = re.compile(r"\b(b\.?\s?tech|m\.?\s?tech|b\.?\s?s\.?c?\.?|b\.?a\.?|m\.?s\.?c?\.?|m\.?a\.?|mba|ph\.?d\.?|bachelor[^,\n]*|master[^,\n]*|doctorate|associate[^,\n]*|diploma)\b", re.I)
 INSTITUTION_RE = re.compile(r"\b(university|college|institute|school|academy|polytechnic|universit[éey]|hochschule)\b", re.I)
 
 
@@ -254,11 +254,18 @@ def parse_experience(lines):
         if not s:
             continue
         m = RANGE_RE.search(s)
-        if m and not BULLET_RE.match(s) and len(s) < 140:
+        present_m = (not m and re.search(r"\b(present|current|ongoing)\b", s, re.I) and not BULLET_RE.match(s) and len(s) < 140)
+        if (m or present_m) and not BULLET_RE.match(s) and len(s) < 140:
             if cur:
                 entries.append(cur)
-            start, end = _to_ym(m.group(1)), _to_ym(m.group(2))
-            role, company, loc = _role_company(s, prev)
+            if m:
+                start, end = _to_ym(m.group(1)), _to_ym(m.group(2))
+                role, company, loc = _role_company(s, prev)
+                ranges.append((start, end))
+            else:
+                start, end = None, None
+                clean_s = re.sub(r"\b(present|current|now|today|ongoing)\b", "", s, flags=re.I).strip(" |,-–—")
+                role, company, loc = _role_company(clean_s, prev)
             if not role and prev and not BULLET_RE.match(prev) and not RANGE_RE.search(prev) and len(prev) < 100:
                 role, company, loc = _role_company(prev, "")
                 if "," in role and not company:
@@ -269,7 +276,6 @@ def parse_experience(lines):
                 role, company = prev.strip(" |,-–—"), role or company
             cur = {"company": company, "role": role, "location": loc, "start_date": _fmt(start),
                    "end_date": _fmt(end), "current": end is None, "bullets": []}
-            ranges.append((start, end))
         elif cur is not None:
             if BULLET_RE.match(s):
                 cur["bullets"].append(BULLET_RE.sub("", s).strip())
@@ -335,6 +341,9 @@ def parse_resume(text):
         phone = None
     linkedin = re.search(r"(?:https?://)?(?:www\.)?linkedin\.com/in/[\w%-]+/?", text, re.I)
     github = re.search(r"(?:https?://)?(?:www\.)?github\.com/[\w-]+", text, re.I)
+    portfolio = re.search(r"(?:https?://)?(?:www\.)?[\w-]+\.(?:vercel\.app|netlify\.app|github\.io|me|dev)(?:/[\w-]*)?", text, re.I)
+    if not github and portfolio:
+        github = portfolio
 
     name = ""
     for l in header:
@@ -351,6 +360,16 @@ def parse_resume(text):
         if m and "@" not in m.group(1):
             location = m.group(1).strip()
             break
+    if not location:
+        for l in header:
+            parts = [p.strip() for p in re.split(r"[|•·–—-]", l) if p.strip()]
+            for p in parts:
+                if "@" not in p and not re.search(r"\d", p) and "http" not in p.lower() and len(p) < 30:
+                    if re.match(r"^[A-Z][a-z]+(?:\s[A-Z][a-z]+)?$", p) and not _ROLE_WORDS.search(p):
+                        location = p
+                        break
+            if location:
+                break
     if not location and re.search(r"\bremote\b", "\n".join(header), re.I):
         location = "Remote"
 
@@ -359,6 +378,11 @@ def parse_resume(text):
     years = years_from_ranges(ranges)
 
     summary = " ".join(l.strip() for l in sections.get("summary", []) if l.strip())[:900]
+    if not years and summary:
+        ym = re.search(r"(\d+)\+?\s*years?\b.*?\bexperience", summary, re.I)
+        if ym:
+            years = float(ym.group(1))
+
     skills_text = "\n".join(sections.get("skills", []))
     explicit = sk.extract(skills_text)
     listed = [s.strip() for s in re.split(r"[,;•|\n]", skills_text) if 2 < len(s.strip()) < 30]
@@ -375,6 +399,10 @@ def parse_resume(text):
         by_cat.setdefault(sk.CATEGORY_OF.get(s, "Other"), []).append(s)
 
     target = exp[0]["role"] if exp and exp[0]["role"] else ""
+    if (not target or target.lower() == "freelance developer") and summary:
+        tm = re.search(r"^([A-Z][A-Za-z\s/-]+?)\s+with\s+\d+", summary, re.I)
+        if tm:
+            target = tm.group(1).strip()
     profile = {
         "name": name, "email": email.group(0) if email else "", "phone": phone.group(1).strip() if phone else "",
         "location": location, "linkedin": linkedin.group(0) if linkedin else "", "github": github.group(0) if github else "",

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   JobHunter design system
+   JobHunter design system — Sidebar Edition
    Two themes: "White Coffee" (light, default) and "Dark Roast" (dark).
 
    How the theme is chosen, with no change to the HTML or JavaScript:
@@ -32,6 +32,11 @@
   --bg-input: #fffdf9;
   --bg-hover: rgba(84, 58, 40, 0.06);
   --scrim: rgba(45, 29, 18, 0.48);
+
+  /* Sidebar */
+  --bg-sidebar: #faf5ec;
+  --bg-sidebar-hover: rgba(84, 58, 40, 0.06);
+  --sidebar-border: rgba(84, 58, 40, 0.12);
 
   /* Lines */
   --border: rgba(84, 58, 40, 0.15);
@@ -112,6 +117,9 @@
   --radius-md: 10px;
   --radius-lg: 16px;
   --radius-pill: 999px;
+
+  /* Sidebar width */
+  --sidebar-width: 228px;
 }
 
 /* Dark Roast (dark): forced with data-theme="dark" */
@@ -128,6 +136,10 @@
   --bg-input: #17110d;
   --bg-hover: rgba(244, 228, 206, 0.06);
   --scrim: rgba(5, 3, 2, 0.68);
+
+  --bg-sidebar: #1a140f;
+  --bg-sidebar-hover: rgba(244, 228, 206, 0.06);
+  --sidebar-border: rgba(244, 228, 206, 0.08);
 
   --border: rgba(244, 228, 206, 0.1);
   --border-strong: rgba(244, 228, 206, 0.22);
@@ -189,9 +201,7 @@
   --paper-muted: #5a4b40;
 }
 
-/* Dark Roast follows the device when no theme is forced.
-   The values repeat the block above on purpose: CSS cannot share one
-   block between a media query and an attribute selector. */
+/* Dark Roast follows the device when no theme is forced. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
@@ -206,6 +216,10 @@
     --bg-input: #17110d;
     --bg-hover: rgba(244, 228, 206, 0.06);
     --scrim: rgba(5, 3, 2, 0.68);
+
+    --bg-sidebar: #1a140f;
+    --bg-sidebar-hover: rgba(244, 228, 206, 0.06);
+    --sidebar-border: rgba(244, 228, 206, 0.08);
 
     --border: rgba(244, 228, 206, 0.1);
     --border-strong: rgba(244, 228, 206, 0.22);
@@ -358,14 +372,14 @@ ul {
 
 
 /* ==========================================================================
-   3. Header and navigation
+   3. Header — minimal top bar
    ========================================================================== */
 
 .app-header {
   position: sticky;
   top: 0;
   z-index: 100;
-  padding: 0 28px;
+  padding: 0 24px;
   background: var(--bg-header);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -374,13 +388,31 @@ ul {
 
 .header-container {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 20px;
-  max-width: 1720px;
+  gap: 16px;
+  max-width: 100%;
   margin: 0 auto;
-  padding: 10px 0 0;
+  padding: 10px 0;
+}
+
+.sidebar-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-toggle:hover {
+  color: var(--text);
+  background: var(--bg-hover);
 }
 
 .brand-group {
@@ -388,15 +420,14 @@ ul {
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
-  order: 1;
 }
 
 .brand-logo {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-md);
   background: var(--grad-logo);
   color: var(--brand-on);
@@ -404,8 +435,8 @@ ul {
 }
 
 .radar-icon {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
 }
 
 .radar-sweep {
@@ -426,7 +457,7 @@ ul {
 
 .brand-title {
   font-family: var(--font-heading);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 800;
   letter-spacing: -0.4px;
   line-height: 1.1;
@@ -440,7 +471,7 @@ ul {
 .brand-badge {
   display: inline-block;
   padding: 1px 8px;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -450,75 +481,11 @@ ul {
   border-radius: var(--radius-pill);
 }
 
-/* The eleven tabs need about 1650px. They sit on their own row. When the
-   screen is narrower the row scrolls sideways and fades at both edges. */
-.main-nav {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  order: 3;
-  flex: 1 0 100%;
-  min-width: 0;
-  padding: 0 24px 6px;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
-  mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
-}
-
-.main-nav > :first-child {
-  margin-left: auto;
-}
-
-.main-nav > :last-child {
-  margin-right: auto;
-}
-
-.nav-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex-shrink: 0;
-  padding: 8px 12px;
-  font-family: var(--font-heading);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  color: var(--text-2);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
-}
-
-.nav-btn:hover {
-  color: var(--text);
-  background: var(--bg-hover);
-}
-
-.nav-btn.active {
-  color: var(--brand-text);
-  background: var(--brand-soft);
-  border-color: var(--brand-border);
-}
-
-.nav-pill-count {
-  padding: 1px 7px;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.5;
-  color: var(--brand-on);
-  background: var(--brand);
-  border-radius: var(--radius-pill);
-}
-
 .user-profile-pill {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
-  order: 2;
   padding: 5px 14px 5px 6px;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -536,8 +503,8 @@ ul {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   font-size: 11px;
   font-weight: 700;
   color: var(--brand-on);
@@ -564,17 +531,146 @@ ul {
 
 
 /* ==========================================================================
-   4. Page layout and tabs
+   4. Sidebar navigation
+   ========================================================================== */
+
+.app-layout {
+  display: flex;
+  min-height: calc(100vh - 58px);
+}
+
+.sidebar {
+  position: sticky;
+  top: 58px;
+  flex-shrink: 0;
+  width: var(--sidebar-width);
+  height: calc(100vh - 58px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--sidebar-border);
+  scrollbar-width: thin;
+  z-index: 50;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 12px;
+  gap: 4px;
+  min-height: 100%;
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 16px;
+}
+
+.nav-group-bottom {
+  margin-top: auto;
+  margin-bottom: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.nav-group-label {
+  padding: 4px 12px 6px;
+  font-family: var(--font-heading);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  user-select: none;
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.nav-btn svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+.nav-btn span:first-of-type {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-btn:hover {
+  color: var(--text);
+  background: var(--bg-sidebar-hover);
+}
+
+.nav-btn.active {
+  color: var(--brand-text);
+  background: var(--brand-soft);
+  border-color: var(--brand-border);
+  font-weight: 600;
+}
+
+.nav-pill-count {
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--brand-on);
+  background: var(--brand);
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+}
+
+/* Sidebar overlay (mobile) */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: var(--scrim);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.sidebar-overlay.visible {
+  display: block;
+  opacity: 1;
+}
+
+
+/* ==========================================================================
+   5. Main content area
    ========================================================================== */
 
 .main-content {
-  max-width: 1720px;
-  margin: 0 auto;
-  padding: 26px 28px 64px;
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  padding: 28px 36px 64px;
 }
 
 .page-container {
-  max-width: 1480px;
+  max-width: 1400px;
   margin: 0 auto;
 }
 
@@ -628,7 +724,7 @@ ul {
 .page-title {
   margin-bottom: 6px;
   font-family: var(--font-heading);
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 800;
   letter-spacing: -0.6px;
 }
@@ -654,7 +750,7 @@ ul {
 
 
 /* ==========================================================================
-   5. Cards
+   6. Cards
    ========================================================================== */
 
 .card {
@@ -724,7 +820,7 @@ ul {
 
 
 /* ==========================================================================
-   6. Buttons
+   7. Buttons
    ========================================================================== */
 
 .btn {
@@ -868,7 +964,7 @@ ul {
 
 
 /* ==========================================================================
-   7. Form controls
+   8. Form controls
    ========================================================================== */
 
 input[type="text"],
@@ -1004,7 +1100,7 @@ option {
 
 
 /* ==========================================================================
-   8. Badges, chips and status marks
+   9. Badges, chips and status marks
    ========================================================================== */
 
 .badge {
@@ -1121,7 +1217,7 @@ option {
 
 
 /* ==========================================================================
-   9. Tab: Search and match
+   10. Tab: Search and match
    ========================================================================== */
 
 .search-hero {
@@ -1439,7 +1535,7 @@ option {
 
 
 /* ==========================================================================
-   10. Tab: Resume profile
+   11. Tab: Resume profile
    ========================================================================== */
 
 .upload-dropzone {
@@ -1594,7 +1690,7 @@ option {
 
 
 /* ==========================================================================
-   11. Tab: Resume refiner
+   12. Tab: Resume refiner
    ========================================================================== */
 
 .refiner-job-header {
@@ -1617,6 +1713,7 @@ option {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.8px;
+  text-transform: uppercase;
   color: var(--brand);
 }
 
@@ -1913,7 +2010,7 @@ option {
 
 
 /* ==========================================================================
-   12. Tab: ATS audit
+   13. Tab: ATS audit
    ========================================================================== */
 
 .ats-hero-score-card {
@@ -2158,7 +2255,7 @@ option {
 
 
 /* ==========================================================================
-   13. Tab: Gap report
+   14. Tab: Gap report
    ========================================================================== */
 
 .metrics-grid {
@@ -2269,7 +2366,7 @@ option {
 
 
 /* ==========================================================================
-   14. Tab: Cover letter
+   15. Tab: Cover letter
    ========================================================================== */
 
 .cover-controls-row {
@@ -2324,7 +2421,7 @@ option {
 
 
 /* ==========================================================================
-   15. Tab: Application tracker (Kanban)
+   16. Tab: Application tracker (Kanban)
    ========================================================================== */
 
 .kanban-board-container {
@@ -2488,7 +2585,7 @@ option {
 
 
 /* ==========================================================================
-   16. Tab: Watchlist and daily digest
+   17. Tab: Watchlist and daily digest
    ========================================================================== */
 
 .watchlist-grid {
@@ -2608,7 +2705,7 @@ option {
 
 
 /* ==========================================================================
-   17. Tab: Interview prep and privacy
+   18. Tab: Interview prep and privacy
    ========================================================================== */
 
 .prep-sections-grid {
@@ -2705,7 +2802,7 @@ option {
 
 
 /* ==========================================================================
-   18. Modals and toasts
+   19. Modals and toasts
    ========================================================================== */
 
 .modal-backdrop {
@@ -2822,8 +2919,7 @@ option {
 
 
 /* ==========================================================================
-   18b. Badge color variants (declared after every badge base class so the
-   color, background and border here win over each base)
+   20. Badge color variants
    ========================================================================== */
 
 .badge-emerald {
@@ -2871,7 +2967,7 @@ option {
 
 
 /* ==========================================================================
-   19. Text color helpers (declared late so they win over component colors)
+   21. Text color helpers
    ========================================================================== */
 
 .text-success,
@@ -2883,9 +2979,7 @@ option {
 
 
 /* ==========================================================================
-   20. Overrides for colors written inline in the HTML and JavaScript
-   The markup sets some text colors with style="..." in a dark-theme palette.
-   These rules map each one to a theme token so both themes stay readable.
+   22. Overrides for colors written inline in the HTML and JavaScript
    ========================================================================== */
 
 [style*="#94a3b8"] { color: var(--text-2) !important; }
@@ -2900,7 +2994,7 @@ option {
 
 
 /* ==========================================================================
-   21. Responsive
+   23. Responsive
    ========================================================================== */
 
 @media (max-width: 1200px) {
@@ -2942,14 +3036,30 @@ option {
   }
 }
 
+/* Sidebar collapses to a slide-out drawer below 900px */
 @media (max-width: 900px) {
-  .app-header {
-    position: static;
-    padding: 0 16px;
+  .sidebar-toggle {
+    display: flex;
   }
 
-  .user-profile-pill {
-    margin-left: auto;
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 200;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .app-header {
+    position: sticky;
+    padding: 0 16px;
   }
 
   .main-content {
@@ -3044,7 +3154,7 @@ option {
 
 
 /* ==========================================================================
-   22. Accessibility and print
+   24. Accessibility and print
    ========================================================================== */
 
 @media (prefers-reduced-motion: reduce) {
@@ -3065,10 +3175,15 @@ option {
   }
 
   .app-header,
+  .sidebar,
   .toast-container,
   .modal-backdrop,
   .tab-pane:not(.active) {
     display: none !important;
+  }
+
+  .main-content {
+    padding: 0;
   }
 
   .card {
