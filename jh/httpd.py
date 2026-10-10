@@ -87,6 +87,13 @@ def r_search(q, body):
                            min_score=min_score, famous_mode=g("famous_mode", "all"), force_refresh=g("refresh") == "1")
 
 
+@route("GET", "/api/search/saved")
+def r_saved_search(q, body):
+    saved = db.get_saved_search_jobs()
+    meta = db.get_search_meta()
+    return {"jobs": saved, "all_jobs": saved, "count": len(saved), "meta": meta}
+
+
 @route("GET", "/api/sources")
 def r_sources(q, body):
     return {"sources": pipeline.health_report()}

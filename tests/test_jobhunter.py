@@ -371,6 +371,50 @@ class FamousFilterTests(Base):
         self.assertIn("Himalayas", sources.SOURCE_RANKS)
         self.assertTrue(any(s.name == "Himalayas" for s in sources.SEARCH_SOURCES))
 
+    def test_search_db_persistence_and_replacement(self):
+        batch1 = [
+            {"job_key": "job1", "title": "Python Dev", "company": "Co A", "location": "Remote", "work_mode": "Remote", "score": 80, "opportunity_score": 85},
+            {"job_key": "job2", "title": "React Dev", "company": "Co B", "location": "NYC", "work_mode": "Onsite", "score": 70, "opportunity_score": 75},
+        ]
+        db.replace_search_jobs(batch1, query="python", location="remote")
+        saved = db.get_saved_search_jobs()
+        self.assertEqual(len(saved), 2)
+        self.assertEqual(saved[0]["job_key"], "job1")
+
+        meta = db.get_search_meta()
+        self.assertEqual(meta["query"], "python")
+        self.assertEqual(meta["total_count"], 2)
+
+        # Verify replacement: old ones are deleted and new ones stored
+        batch2 = [
+            {"job_key": "job3", "title": "Go Dev", "company": "Co C", "location": "Remote", "work_mode": "Remote", "score": 90, "opportunity_score": 95},
+        ]
+        db.replace_search_jobs(batch2, query="golang", location="remote")
+        saved2 = db.get_saved_search_jobs()
+        self.assertEqual(len(saved2), 1)
+        self.assertEqual(saved2[0]["job_key"], "job3")
+        self.assertFalse(any(j["job_key"] == "job1" for j in saved2))
+
+
+    def test_country_and_company_stage_classification(self):
+        from jh.scoring import classify_job_country, classify_company_stage
+        self.assertEqual(classify_job_country("San Francisco, CA"), "United States")
+        self.assertEqual(classify_job_country("Salt Lake City, UT"), "United States")
+        self.assertEqual(classify_job_country("London, United Kingdom"), "United Kingdom")
+        self.assertEqual(classify_job_country("Berlin, Germany"), "Germany")
+        self.assertEqual(classify_job_country("Toronto, ON, Canada"), "Canada")
+        self.assertEqual(classify_job_country("Bengaluru, Karnataka, India"), "India")
+        self.assertEqual(classify_job_country("Singapore, Singapore"), "Singapore")
+        self.assertEqual(classify_job_country("Paris, France"), "France")
+        self.assertEqual(classify_job_country("Remote"), "Worldwide")
+
+        # Company stage
+        self.assertEqual(classify_company_stage({"company": "Google"}), "big_tech")
+        self.assertEqual(classify_company_stage({"company": "OpenAI"}), "big_tech")
+        self.assertEqual(classify_company_stage({"company": "Linear", "tags": []}), "mid_tech")
+        self.assertEqual(classify_company_stage({"company": "Stealth AI", "tags": ["startup"]}), "startup")
+        self.assertEqual(classify_company_stage({"company": "Hedge (YC)", "tags": []}), "startup")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

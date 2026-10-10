@@ -69,8 +69,18 @@ def init_db():
         c.execute("""CREATE TABLE IF NOT EXISTS source_health (
             source TEXT PRIMARY KEY, ok_count INTEGER DEFAULT 0, fail_count INTEGER DEFAULT 0,
             last_error TEXT, last_ok TEXT, last_ms INTEGER DEFAULT 0)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS search_jobs (
+            job_key TEXT PRIMARY KEY, query TEXT NOT NULL, title TEXT NOT NULL, company TEXT NOT NULL,
+            location TEXT, work_mode TEXT, score INTEGER DEFAULT 0, opportunity_score INTEGER DEFAULT 0,
+            is_famous INTEGER DEFAULT 0, source_kind TEXT, source_names TEXT, posted_at TEXT,
+            job_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS search_meta (
+            id INTEGER PRIMARY KEY, query TEXT, location TEXT, total_count INTEGER DEFAULT 0,
+            sources_json TEXT, updated_at TEXT NOT NULL)""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_hist_app ON status_history(app_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_apps_status ON applications(status)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_query ON search_jobs(query)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_opp ON search_jobs(opportunity_score)")
         # v1 databases lack nothing structural here, so the version bump records the migration.
         c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         # Backfill history for v1 rows so funnel stats work on old data.
@@ -115,11 +125,57 @@ def set_setting(key, value):
         c.execute("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", (key, str(value)))
 
 
+def replace_search_jobs(jobs, query="", location="", sources=None):
+    """Delete old search jobs and store new ones into DB cache."""
+    now = now_iso()
+    with session() as c:
+        c.execute("DELETE FROM search_jobs")
+        for j in jobs:
+            c.execute("""
+                INSERT OR REPLACE INTO search_jobs
+                (job_key, query, title, company, location, work_mode, score, opportunity_score,
+                 is_famous, source_kind, source_names, posted_at, job_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                j.get("job_key", ""), query, j.get("title", ""), j.get("company", ""),
+                j.get("location", ""), j.get("work_mode", ""), j.get("score", 0),
+                j.get("opportunity_score", 0), 1 if j.get("is_famous") else 0,
+                j.get("source_kind", ""), ",".join(j.get("source_names", [])),
+                j.get("posted_at", ""), json.dumps(j), now, now
+            ))
+        c.execute("""INSERT OR REPLACE INTO search_meta
+                     (id, query, location, total_count, sources_json, updated_at)
+                     VALUES (1, ?, ?, ?, ?, ?)""",
+                  (query, location, len(jobs), json.dumps(sources or []), now))
+
+
+def get_saved_search_jobs():
+    """Retrieve saved search jobs from DB ordered by opportunity_score and score."""
+    with session() as c:
+        rows = c.execute("SELECT job_json FROM search_jobs ORDER BY opportunity_score DESC, score DESC").fetchall()
+    return [json.loads(r["job_json"]) for r in rows]
+
+
+def get_search_meta():
+    """Retrieve metadata of the last search stored in DB."""
+    with session() as c:
+        row = c.execute("SELECT * FROM search_meta WHERE id=1").fetchone()
+    if not row:
+        return None
+    return {
+        "query": row["query"],
+        "location": row["location"],
+        "total_count": row["total_count"],
+        "sources": json.loads(row["sources_json"] or "[]"),
+        "updated_at": row["updated_at"]
+    }
+
+
 def purge_all():
     """Delete every user table, then VACUUM so removed content leaves the file."""
     with session() as c:
         for t in ("profile", "applications", "watchlist", "settings", "status_history",
-                  "seen_jobs", "source_cache", "source_health"):
+                  "seen_jobs", "source_cache", "source_health", "search_jobs", "search_meta"):
             c.execute(f"DELETE FROM {t}")
     conn = connect()
     try:

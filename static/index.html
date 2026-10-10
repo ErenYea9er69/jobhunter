@@ -114,56 +114,180 @@
             <input type="text" id="searchLocation" placeholder="Location (optional)" aria-label="Location" autocomplete="off">
           </label>
           <button type="submit" class="btn btn-primary btn-lg" id="btnSearch">Search</button>
+          <button type="button" class="btn btn-secondary btn-lg" id="btnRefresh" title="Query live sources, delete old database entries, and store fresh listings">
+            <svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>
+            <span>Refresh</span>
+          </button>
         </form>
 
-        <div class="filters">
-          <div class="segmented" id="workModeSeg" role="group" aria-label="Work mode">
-            <button type="button" data-mode="Any" aria-pressed="false">Any</button>
-            <button type="button" data-mode="Remote" aria-pressed="true">Remote</button>
-            <button type="button" data-mode="Hybrid" aria-pressed="false">Hybrid</button>
-            <button type="button" data-mode="Onsite" aria-pressed="false">On-site</button>
-          </div>
-          <label class="inline-select">
-            <span>Match</span>
-            <select id="searchMinScore">
-              <option value="0">Any score</option>
-              <option value="50">50% or more</option>
-              <option value="70" selected>70% or more</option>
-              <option value="85">85% or more</option>
-            </select>
-          </label>
-          <label class="inline-select">
-            <span>Big Tech</span>
-            <select id="searchFamousSelect" title="Control whether famous companies (OpenAI, Vercel, Meta, Grok, etc.) appear">
-              <option value="all">Include all</option>
-              <option value="hide">Hide Big Tech</option>
-              <option value="only">Big Tech only</option>
-            </select>
-          </label>
-          <label class="inline-select auto-reload-select">
-            <svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>
-            <span>Auto-refresh</span>
-            <select id="autoReloadSelect">
-              <option value="0">Off</option>
-              <option value="30">Every 30 min</option>
-              <option value="60">Every 1 hour</option>
-              <option value="120">Every 2 hours</option>
-              <option value="300" selected>Every 5 hours</option>
-              <option value="720">Every 12 hours</option>
-              <option value="1440">Every 24 hours</option>
-            </select>
-          </label>
-          <span class="last-search-badge" id="lastSearchBadge" hidden></span>
-          <div class="chips" id="suggestChips" aria-label="Search ideas"></div>
-        </div>
+        <!-- 10X Multi-Facet Filter Console -->
+        <div class="filter-console" id="filterConsole">
+          <div class="filter-primary-row">
+            <!-- In-result live sub-search input -->
+            <div class="filter-search-box">
+              <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+              <input type="search" id="filterKeyword" placeholder="Filter jobs by title, company, or keyword..." aria-label="Filter current jobs" autocomplete="off">
+              <button type="button" class="filter-search-clear" id="filterKeywordClear" hidden title="Clear search" aria-label="Clear filter search">&times;</button>
+            </div>
 
-        <div class="quick-filters" id="quickFilterRow" role="group" aria-label="Quick filters">
-          <button type="button" class="qchip is-active" data-quick-filter="all">All listings</button>
-          <button type="button" class="qchip" data-quick-filter="hide_famous" title="Hide OpenAI, Vercel, Meta, Grok, Stripe, etc.">No Big Tech</button>
-          <button type="button" class="qchip" data-quick-filter="famous_only" title="Show only OpenAI, Vercel, Meta, Grok, Stripe, etc.">Big Tech Only</button>
-          <button type="button" class="qchip" data-quick-filter="high_match">80%+ Match</button>
-          <button type="button" class="qchip" data-quick-filter="direct_ats">Direct ATS Only</button>
-          <button type="button" class="qchip" data-quick-filter="fresh">Fresh (&lt; 7 days)</button>
+            <!-- Work Mode Segmented with live counts -->
+            <div class="segmented" id="workModeSeg" role="group" aria-label="Work mode">
+              <button type="button" data-mode="Any" aria-pressed="true">Any <span class="f-cnt" id="cntModeAny"></span></button>
+              <button type="button" data-mode="Remote" aria-pressed="false">Remote <span class="f-cnt" id="cntModeRemote"></span></button>
+              <button type="button" data-mode="Hybrid" aria-pressed="false">Hybrid <span class="f-cnt" id="cntModeHybrid"></span></button>
+              <button type="button" data-mode="Onsite" aria-pressed="false">On-site <span class="f-cnt" id="cntModeOnsite"></span></button>
+            </div>
+
+            <!-- Match Score Selector with live counts -->
+            <div class="segmented segmented-score" id="matchScoreSeg" role="group" aria-label="Minimum match fit">
+              <button type="button" data-min-score="0" aria-pressed="true">Any Score <span class="f-cnt" id="cntScore0"></span></button>
+              <button type="button" data-min-score="60" aria-pressed="false">60%+ <span class="f-cnt" id="cntScore60"></span></button>
+              <button type="button" data-min-score="70" aria-pressed="false">70%+ <span class="f-cnt" id="cntScore70"></span></button>
+              <button type="button" data-min-score="80" aria-pressed="false">80%+ <span class="f-cnt" id="cntScore80"></span></button>
+              <button type="button" data-min-score="85" aria-pressed="false">85%+ <span class="f-cnt" id="cntScore85"></span></button>
+            </div>
+            <select id="searchMinScore" hidden><option value="0">0</option><option value="60">60</option><option value="70">70</option><option value="80">80</option><option value="85">85</option></select>
+
+            <!-- Big Tech & Startups Selector with live counts -->
+            <div class="segmented segmented-famous" id="famousSeg" role="group" aria-label="Company type filter">
+              <button type="button" data-famous="all" aria-pressed="true">All Co. <span class="f-cnt" id="cntFamAll"></span></button>
+              <button type="button" data-famous="hide" aria-pressed="false">No Big Tech <span class="f-cnt" id="cntFamHide"></span></button>
+              <button type="button" data-famous="startups" aria-pressed="false">Startups &amp; Mid-Tech <span class="f-cnt" id="cntFamStartups"></span></button>
+              <button type="button" data-famous="only" aria-pressed="false">Big Tech Only <span class="f-cnt" id="cntFamOnly"></span></button>
+            </div>
+            <select id="searchFamousSelect" hidden><option value="all">all</option><option value="hide">hide</option><option value="startups">startups</option><option value="only">only</option></select>
+
+            <!-- Toggle More Filters Drawer -->
+            <button type="button" class="btn btn-secondary btn-sm btn-filter-drawer" id="btnToggleFiltersDrawer" aria-expanded="false" aria-controls="filtersDrawer">
+              <svg class="i" aria-hidden="true"><use href="#i-more"/></svg>
+              <span>More Filters</span>
+              <span class="filter-count-badge" id="moreFiltersCountBadge" hidden>0</span>
+            </button>
+
+            <!-- Auto-refresh interval select -->
+            <label class="inline-select auto-reload-select">
+              <svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>
+              <span>Auto-refresh</span>
+              <select id="autoReloadSelect">
+                <option value="0">Off</option>
+                <option value="30">Every 30 min</option>
+                <option value="60">Every 1 hour</option>
+                <option value="120">Every 2 hours</option>
+                <option value="300" selected>Every 5 hours</option>
+                <option value="720">Every 12 hours</option>
+                <option value="1440">Every 24 hours</option>
+              </select>
+            </label>
+            <span class="last-search-badge" id="lastSearchBadge" hidden></span>
+            <div class="chips" id="suggestChips" aria-label="Search ideas"></div>
+          </div>
+
+          <!-- Secondary Expandable Filters Drawer -->
+          <div class="filters-drawer" id="filtersDrawer" hidden>
+            <div class="drawer-grid">
+              <!-- Target Country (Include) -->
+              <div class="drawer-group">
+                <span class="drawer-label">Target Country (Include)</span>
+                <div class="country-include-wrap">
+                  <div class="segmented segmented-sm" id="countryQuickSeg" role="group">
+                    <button type="button" data-country="all" aria-pressed="true">All</button>
+                    <button type="button" data-country="Worldwide" aria-pressed="false">Worldwide <span class="f-cnt" id="cntCtryWorldwide"></span></button>
+                    <button type="button" data-country="United States" aria-pressed="false">USA <span class="f-cnt" id="cntCtryUS"></span></button>
+                    <button type="button" data-country="United Kingdom" aria-pressed="false">UK <span class="f-cnt" id="cntCtryUK"></span></button>
+                    <button type="button" data-country="Germany" aria-pressed="false">Germany <span class="f-cnt" id="cntCtryDE"></span></button>
+                    <button type="button" data-country="Canada" aria-pressed="false">Canada <span class="f-cnt" id="cntCtryCA"></span></button>
+                  </div>
+                  <div class="country-select-row">
+                    <select id="countrySelect" aria-label="Select target country">
+                      <option value="all">More countries...</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Exclude Countries (Hide from results) -->
+              <div class="drawer-group">
+                <div class="drawer-label-row">
+                  <span class="drawer-label">Exclude Countries (Hide unwanted)</span>
+                  <span class="drawer-hint">Hide jobs from these countries</span>
+                </div>
+                <div class="country-exclude-wrap">
+                  <div class="country-exclude-actions">
+                    <select id="excludeCountrySelect" aria-label="Add country to exclude">
+                      <option value="">🚫 Choose country to exclude...</option>
+                    </select>
+                    <div class="quick-exclude-chips" id="quickExcludeChips">
+                      <button type="button" class="btn-quick-exclude" data-exclude-country="India">+ Exclude India <span class="f-cnt" id="cntExIndia"></span></button>
+                      <button type="button" class="btn-quick-exclude" data-exclude-country="United States">+ Exclude US <span class="f-cnt" id="cntExUS"></span></button>
+                    </div>
+                  </div>
+                  <div class="excluded-tags-list" id="excludedCountriesTags"></div>
+                </div>
+              </div>
+
+              <!-- Seniority -->
+              <div class="drawer-group">
+                <span class="drawer-label">Seniority Level</span>
+                <div class="segmented segmented-sm" id="senioritySeg" role="group">
+                  <button type="button" data-sen="all" aria-pressed="true">All</button>
+                  <button type="button" data-sen="junior" aria-pressed="false">Entry / Jr <span class="f-cnt" id="cntSenJr"></span></button>
+                  <button type="button" data-sen="mid" aria-pressed="false">Mid-Level <span class="f-cnt" id="cntSenMid"></span></button>
+                  <button type="button" data-sen="senior" aria-pressed="false">Senior <span class="f-cnt" id="cntSenSr"></span></button>
+                  <button type="button" data-sen="lead_staff" aria-pressed="false">Lead / Staff <span class="f-cnt" id="cntSenLead"></span></button>
+                </div>
+              </div>
+
+              <!-- Compensation / Salary -->
+              <div class="drawer-group">
+                <span class="drawer-label">Estimated Salary</span>
+                <div class="segmented segmented-sm" id="salarySeg" role="group">
+                  <button type="button" data-sal="0" aria-pressed="true">Any Pay</button>
+                  <button type="button" data-sal="disclosed" aria-pressed="false">Disclosed <span class="f-cnt" id="cntSalDisc"></span></button>
+                  <button type="button" data-sal="100k" aria-pressed="false">$100k+ <span class="f-cnt" id="cntSal100"></span></button>
+                  <button type="button" data-sal="140k" aria-pressed="false">$140k+ <span class="f-cnt" id="cntSal140"></span></button>
+                  <button type="button" data-sal="180k" aria-pressed="false">$180k+ <span class="f-cnt" id="cntSal180"></span></button>
+                </div>
+              </div>
+
+              <!-- Date Freshness -->
+              <div class="drawer-group">
+                <span class="drawer-label">Date Posted</span>
+                <div class="segmented segmented-sm" id="freshnessSeg" role="group">
+                  <button type="button" data-days="0" aria-pressed="true">Any time</button>
+                  <button type="button" data-days="1" aria-pressed="false">&lt; 24h <span class="f-cnt" id="cntFresh1"></span></button>
+                  <button type="button" data-days="7" aria-pressed="false">&lt; 7 days <span class="f-cnt" id="cntFresh7"></span></button>
+                  <button type="button" data-days="14" aria-pressed="false">&lt; 14 days <span class="f-cnt" id="cntFresh14"></span></button>
+                  <button type="button" data-days="30" aria-pressed="false">&lt; 30 days <span class="f-cnt" id="cntFresh30"></span></button>
+                </div>
+              </div>
+
+              <!-- Application Flags -->
+              <div class="drawer-group">
+                <span class="drawer-label">Application Filters</span>
+                <div class="toggle-group" id="flagsGroup">
+                  <button type="button" class="qchip" id="btnFlagDirectAts" data-flag="direct_ats">Direct ATS Only <span class="f-cnt" id="cntDirectAts"></span></button>
+                  <button type="button" class="qchip" id="btnFlagHideApplied" data-flag="hide_applied">Hide Applied <span class="f-cnt" id="cntApplied"></span></button>
+                  <button type="button" class="qchip" id="btnFlagSavedOnly" data-flag="saved_only">Saved Only <span class="f-cnt" id="cntSaved"></span></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Top Skills Facet Cloud -->
+            <div class="skills-facet-row" id="skillsFacetRow">
+              <div class="skills-facet-header">
+                <span class="drawer-label">Skills & Tech Stack Facets</span>
+                <span class="skills-facet-hint">Click tags to filter by required technology</span>
+              </div>
+              <div class="skills-facet-chips" id="skillsFacetChips"></div>
+            </div>
+          </div>
+
+          <!-- Active Filter Tags Bar -->
+          <div class="active-filters-bar" id="activeFiltersBar" hidden>
+            <span class="active-filters-label">Active filters:</span>
+            <div class="active-filters-list" id="activeFiltersList"></div>
+            <button type="button" class="link-btn btn-clear-all-filters" id="btnClearAllFilters">Reset all filters</button>
+          </div>
         </div>
 
         <div class="results-meta" id="resultsMeta">
@@ -175,6 +299,7 @@
               <select id="sortResultsBy">
                 <option value="ranked">Recommended</option>
                 <option value="score_desc">Highest match</option>
+                <option value="salary_desc">Highest salary</option>
                 <option value="date_desc">Newest</option>
                 <option value="company_asc">Company A to Z</option>
               </select>

@@ -348,13 +348,8 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
     merged = dedup.merge_jobs(raw)
     for j in merged:
         j["is_famous"] = is_famous_company(j.get("company"))
-    if famous_mode == "hide":
-        merged = [j for j in merged if not j.get("is_famous")]
-    elif famous_mode == "only":
-        merged = [j for j in merged if j.get("is_famous")]
 
-    # Pre-filter by work mode and location before expensive deep skill scoring
-    merged = [j for j in merged if _passes(j, work_mode, location)]
+    # Score all candidate opportunities for this query/location so DB and client have the full pool
     if len(merged) > 350:
         if query:
             merged.sort(key=lambda j: (any(w in (j.get("title") or "").lower() for w in syns), j.get("source_rank", 0)), reverse=True)
@@ -413,8 +408,18 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
                 pass
         merged.sort(key=lambda j: (j["opportunity_score"], j["score"], j.get("posted_at") or ""), reverse=True)
 
+    # Persist all fresh scored jobs into SQLite DB (clears old ones and stores new ones)
+    db.replace_search_jobs(merged, query=query, location=location, sources=statuses)
+
+    # Filter according to requested params for immediate response
     filtered = []
     for j in merged:
+        if famous_mode == "hide" and j.get("is_famous"):
+            continue
+        if famous_mode == "only" and not j.get("is_famous"):
+            continue
+        if not _passes(j, work_mode, location):
+            continue
         if min_score and j["score"] < int(min_score):
             continue
         filtered.append(j)
@@ -423,7 +428,8 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
 
     failed = [s for s in statuses if s["state"] in ("failed", "timeout", "paused", "stale")]
     result = {
-        "count": len(filtered), "query": query, "famous_mode": famous_mode, "jobs": filtered, "sources": sorted(statuses, key=lambda s: s["source"]),
+        "count": len(filtered), "query": query, "famous_mode": famous_mode, "jobs": filtered,
+        "all_jobs": merged, "total_stored": len(merged), "sources": sorted(statuses, key=lambda s: s["source"]),
         "ranking": {"method": "fit 70% + source authority 20% + evidence 10%", "workers": config.SEARCH_WORKERS},
         "partial": bool(failed), "elapsed_ms": int((time.time() - t0) * 1000),
         "profile_empty": bool(profile.get("_is_empty")),

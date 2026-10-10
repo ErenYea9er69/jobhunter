@@ -324,6 +324,134 @@ def _mode_of(job):
     return "unknown"
 
 
+US_STATES = {
+    "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id", "il", "in", "ia",
+    "ks", "ky", "la", "me", "md", "ma", "mi", "mn", "ms", "mo", "mt", "ne", "nv", "nh", "nj",
+    "nm", "ny", "nc", "nd", "oh", "ok", "or", "pa", "ri", "sc", "sd", "tn", "tx", "ut", "vt",
+    "va", "wa", "wv", "wi", "wy", "dc"
+}
+
+US_MAJOR_CITIES = {
+    "seattle", "san francisco", "new york", "nyc", "boston", "chicago", "los angeles", "austin",
+    "denver", "atlanta", "miami", "silicon valley", "bay area", "dallas", "houston", "phoenix",
+    "philadelphia", "san diego", "salt lake city", "portland", "washington"
+}
+
+CANADIAN_PROVINCES = {
+    "on", "bc", "qc", "ab", "mb", "sk", "ns", "nb", "nl", "pe",
+    "ontario", "british columbia", "quebec", "alberta"
+}
+
+COUNTRY_MAP = [
+    (re.compile(r"\b(united states|usa|u\.s\.a?|u\.s\b|us\b)\b", re.I), "United States"),
+    (re.compile(r"\b(united kingdom|great britain|england|scotland|wales|uk\b|u\.k\b|gb\b)\b", re.I), "United Kingdom"),
+    (re.compile(r"\b(canada|can\b)\b", re.I), "Canada"),
+    (re.compile(r"\b(germany|deutschland|de\b)\b", re.I), "Germany"),
+    (re.compile(r"\b(france|fr\b)\b", re.I), "France"),
+    (re.compile(r"\b(netherlands|holland|amsterdam|rotterdam|nl\b)\b", re.I), "Netherlands"),
+    (re.compile(r"\b(india|bengaluru|bangalore|hyderabad|pune|mumbai|delhi|noida|gurugram|in\b)\b", re.I), "India"),
+    (re.compile(r"\b(australia|sydney|melbourne|brisbane|au\b|aus\b)\b", re.I), "Australia"),
+    (re.compile(r"\b(singapore|sg\b)\b", re.I), "Singapore"),
+    (re.compile(r"\b(ireland|dublin|ie\b)\b", re.I), "Ireland"),
+    (re.compile(r"\b(spain|españa|madrid|barcelona|es\b)\b", re.I), "Spain"),
+    (re.compile(r"\b(switzerland|schweiz|suisse|zurich|geneva|ch\b)\b", re.I), "Switzerland"),
+    (re.compile(r"\b(poland|polska|warsaw|krakow|pl\b)\b", re.I), "Poland"),
+    (re.compile(r"\b(sweden|sverige|stockholm|se\b)\b", re.I), "Sweden"),
+    (re.compile(r"\b(brazil|brasil|sao paulo|br\b)\b", re.I), "Brazil"),
+    (re.compile(r"\b(japan|nippon|tokyo|jp\b)\b", re.I), "Japan"),
+    (re.compile(r"\b(south korea|korea|seoul|kr\b)\b", re.I), "South Korea"),
+    (re.compile(r"\b(israel|tel aviv|il\b)\b", re.I), "Israel"),
+    (re.compile(r"\b(italy|italia|rome|milan|it\b)\b", re.I), "Italy"),
+    (re.compile(r"\b(mexico|mx\b)\b", re.I), "Mexico"),
+    (re.compile(r"\b(new zealand|nz\b)\b", re.I), "New Zealand"),
+    (re.compile(r"\b(portugal|lisbon|pt\b)\b", re.I), "Portugal"),
+    (re.compile(r"\b(austria|österreich|vienna|at\b)\b", re.I), "Austria"),
+    (re.compile(r"\b(belgium|brussels|be\b)\b", re.I), "Belgium"),
+    (re.compile(r"\b(denmark|copenhagen|dk\b)\b", re.I), "Denmark"),
+    (re.compile(r"\b(finland|helsinki|fi\b)\b", re.I), "Finland"),
+    (re.compile(r"\b(norway|oslo|no\b)\b", re.I), "Norway"),
+    (re.compile(r"\b(south africa|za\b)\b", re.I), "South Africa"),
+    (re.compile(r"\b(argentina|ar\b)\b", re.I), "Argentina"),
+    (re.compile(r"\b(colombia|co\b)\b", re.I), "Colombia"),
+    (re.compile(r"\b(uae|united arab emirates|dubai)\b", re.I), "UAE"),
+    (re.compile(r"\b(nigeria|lagos|ng\b)\b", re.I), "Nigeria"),
+    (re.compile(r"\b(kenya|nairobi|ke\b)\b", re.I), "Kenya"),
+    (re.compile(r"\b(czech republic|czechia|prague|cz\b)\b", re.I), "Czech Republic"),
+    (re.compile(r"\b(romania|bucharest|ro\b)\b", re.I), "Romania"),
+    (re.compile(r"\b(estonia|tallinn|ee\b)\b", re.I), "Estonia"),
+    (re.compile(r"\b(morocco|casablanca|rabat|ma\b)\b", re.I), "Morocco"),
+    (re.compile(r"\b(egypt|cairo|alexandria|eg\b)\b", re.I), "Egypt"),
+    (re.compile(r"\b(indonesia|jakarta|id\b)\b", re.I), "Indonesia"),
+    (re.compile(r"\b(vietnam|hanoi|ho chi minh|vn\b)\b", re.I), "Vietnam"),
+    (re.compile(r"\b(bangladesh|dhaka|bd\b)\b", re.I), "Bangladesh"),
+    (re.compile(r"\b(worldwide|anywhere|global|everywhere)\b", re.I), "Worldwide"),
+]
+
+
+def classify_job_country(location, title="", description=""):
+    loc = (location or "").strip()
+    if not loc or loc.lower() in ("remote", "unknown", "work from home", "remote - anywhere"):
+        return "Worldwide"
+
+    parts = [p.strip() for p in loc.split(",") if p.strip()]
+    if parts:
+        last = parts[-1].strip().lower()
+        if last in US_STATES:
+            return "United States"
+        if last in CANADIAN_PROVINCES:
+            return "Canada"
+        if len(parts) >= 2 and parts[-2].strip().lower() in US_STATES:
+            return "United States"
+        if len(parts) >= 2 and parts[-2].strip().lower() in CANADIAN_PROVINCES:
+            return "Canada"
+
+    loc_lower = loc.lower()
+    if any(city in loc_lower for city in US_MAJOR_CITIES):
+        return "United States"
+
+    for pat, country in COUNTRY_MAP:
+        if pat.search(loc):
+            return country
+
+    if "worldwide" in loc_lower or "anywhere" in loc_lower or "global" in loc_lower:
+        return "Worldwide"
+
+    if parts:
+        cleaned_last = re.sub(r"[^A-Za-z\s-]", "", parts[-1]).strip().title()
+        if len(cleaned_last) >= 3 and cleaned_last.lower() not in ("remote", "hybrid", "onsite", "area", "region", "city"):
+            return cleaned_last
+
+    return "Worldwide"
+
+
+def classify_company_stage(job):
+    from .pipeline import is_famous_company
+    comp = job.get("company", "")
+    if is_famous_company(comp):
+        return "big_tech"
+    tags = [t.lower() for t in (job.get("tags") or [])]
+    text = f"{job.get('title', '')} {comp} {(job.get('description', '') or '')[:500]}".lower()
+    if "startup" in tags or "(yc" in comp.lower() or re.search(r"\b(startup|early-stage|early stage|founding engineer|founding developer|stealth|seed stage|series a|series b)\b", text):
+        return "startup"
+    src_name = job.get("source", "")
+    if src_name in ("Hacker News", "RemoteOK", "Himalayas"):
+        return "startup"
+    return "mid_tech"
+
+
+def classify_job_seniority(title, text=""):
+    t = f"{title or ''} {(text or '')[:350]}".lower()
+    if re.search(r"\b(intern|internship|co-op|apprentice)\b", t):
+        return "intern"
+    if re.search(r"\b(lead|staff|principal|director|head of|vp|architect|founding)\b", t):
+        return "lead_staff"
+    if re.search(r"\b(senior|sr\.?|sr\b)\b", t):
+        return "senior"
+    if re.search(r"\b(junior|jr\.?|jr\b|entry|associate|graduate|new grad)\b", t):
+        return "junior"
+    return "mid"
+
+
 def score_job(job, profile):
     text = f"{job.get('title', '')}\n{job.get('description', '')}\n{' '.join(job.get('tags', []) or [])}"
     weights = sk.extract_weighted(text)
@@ -432,4 +560,10 @@ def score_job(job, profile):
         "score_breakdown": {"skills": round(skill_pts, 1), "title": round(title_pts, 1), "seniority": round(sen_pts, 1),
                             "work_mode": round(mode_pts, 1), "freshness": fresh_pts, "salary": sal_pts},
         "required_skills": {k: v for k, v in weights.items()},
+        "salary_annual_min": int(ann[0]) if ann else 0,
+        "salary_annual_max": int(ann[1]) if ann else 0,
+        "has_salary": bool(ann),
+        "seniority": classify_job_seniority(job.get("title"), text),
+        "country": classify_job_country(job.get("location"), job.get("title"), text),
+        "company_stage": classify_company_stage(job),
     }

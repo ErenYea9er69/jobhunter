@@ -478,46 +478,91 @@ class LinkedInGuest(Source):
     def fetch(self, query, location):
         out = []
         seen_ids = set()
-        kw = query or "software engineer"
-        loc = location or "Remote"
-        remote_flag = "&f_WT=2" if "remote" in f"{kw} {loc}".lower() else ""
+        kw = (query or "software engineer").strip()
+        loc = (location or "").strip()
+        is_remote = "remote" in f"{kw} {loc}".lower()
+        remote_flag = "&f_WT=2" if is_remote else ""
+        search_loc = loc if loc and loc.lower() not in ("remote", "anywhere") else "Worldwide"
+
         headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
+            "Sec-Ch-Ua": '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
         }
-        for start in (0, 25):
+
+        # 10X multi-query strategy: role query + startup/mid-tech query + pagination
+        queries = [
+            (kw, search_loc, 0, False),
+            (kw, search_loc, 25, False),
+            (f"{kw} startup", search_loc, 0, True),
+            (f"{kw} startup", search_loc, 25, True),
+        ]
+        # If user did not constrain location, also probe US startup ecosystem
+        if search_loc == "Worldwide":
+            queries.append((f"{kw} startup", "United States", 0, True))
+
+        for term, place, start_idx, is_startup_term in queries:
             url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
-                   f"keywords={urllib.parse.quote(kw)}&location={urllib.parse.quote(loc)}{remote_flag}&start={start}")
+                   f"keywords={urllib.parse.quote(term)}&location={urllib.parse.quote(place)}{remote_flag}&start={start_idx}")
             try:
-                page = http_get(url, headers=headers, retries=0)
+                page = http_get(url, headers=headers, retries=1)
             except Exception:
-                break
+                continue
+
             cards = re.findall(r"<li>(.*?)</li>", page, re.S)
             if not cards:
-                break
+                continue
+
             for card in cards:
                 t = re.search(r'base-search-card__title[^>]*>\s*([^<]+)', card)
                 c = re.search(r'base-search-card__subtitle[^>]*>\s*(?:<a[^>]*>\s*)?([^<]+)', card)
                 l = re.search(r'job-search-card__location[^>]*>\s*([^<]+)', card)
                 u = re.search(r'base-card__full-link[^>]*href="([^"?]+)', card)
                 d = re.search(r'datetime="([^"]+)"', card)
+                sal_m = re.search(r'job-search-card__salary-info[^>]*>\s*([^<]+)', card)
+
                 if not (t and c and u):
                     continue
+
                 jid_match = re.search(r"(\d{6,})", u.group(1))
                 jid = jid_match.group(1) if jid_match else str(abs(hash(u.group(1))))
                 if jid in seen_ids:
                     continue
                 seen_ids.add(jid)
+
                 title = html.unescape(t.group(1).strip())
                 comp = html.unescape(c.group(1).strip())
-                place = html.unescape(l.group(1).strip()) if l else ""
-                out.append(make_job(id=f"linkedin-{jid}", title=title,
-                                    company=comp, location=place, url=u.group(1),
-                                    posted_at=d.group(1) if d else "", description="", needs_enrichment=True,
-                                    source=self.name, source_credit="LinkedIn public listing", source_tier=self.tier))
+                place_str = html.unescape(l.group(1).strip()) if l else ""
+                salary = html.unescape(sal_m.group(1).strip()) if sal_m else ""
+
+                tags = []
+                if is_startup_term or "startup" in card.lower() or "early-stage" in card.lower():
+                    tags.append("startup")
+
+                out.append(make_job(
+                    id=f"linkedin-{jid}",
+                    title=title,
+                    company=comp,
+                    location=place_str,
+                    salary=salary,
+                    url=u.group(1),
+                    posted_at=d.group(1) if d else "",
+                    description="",
+                    tags=tags,
+                    needs_enrichment=True,
+                    source=self.name,
+                    source_credit="LinkedIn public listing",
+                    source_tier=self.tier
+                ))
             time.sleep(0.1)
-        return out[:40]
+
+        return out[:60]
 
     def enrich(self, job):
         m = re.search(r"(\d{6,})", job.get("id", ""))
