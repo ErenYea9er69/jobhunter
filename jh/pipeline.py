@@ -205,17 +205,26 @@ def derive_query(profile):
 def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all", profile=None, force_refresh=False, limit=None, on_progress=None):
     t0 = time.time()
     profile = profile if profile is not None else db.get_profile()
+    is_profile_search = not (query and query.strip()) or query.strip().lower() == (profile.get("target_title") or "").strip().lower()
     query = (query or "").strip() or derive_query(profile)
     location = (location or "").strip()
     statuses, raw = [], []
+
+    from .scoring import derive_target_roles
+    extra_terms = [r for r in derive_target_roles(profile) if r.lower() != query.lower()] if is_profile_search else []
 
     tasks = {}
     for s in src.SEARCH_SOURCES:
         if not s.available():
             statuses.append({"source": s.name, "state": "disabled", "count": 0, "error": s.unavailable_reason(), "ms": 0, "stale": False})
             continue
-        key = f"{s.name}|{query.lower()}|{location.lower()}"
-        tasks[_pool.submit(_run_source, s.name, lambda s=s: s.fetch(query, location), key, force_refresh)] = s.name
+        queries_for_s = [query]
+        if is_profile_search and extra_terms and s.name in ("Indeed", "LinkedIn"):
+            queries_for_s.append(extra_terms[0])
+        for q_term in queries_for_s:
+            key = f"{s.name}|{q_term.lower()}|{location.lower()}"
+            lbl = f"{s.name}:{q_term}" if len(queries_for_s) > 1 else s.name
+            tasks[_pool.submit(_run_source, lbl, lambda s=s, q_term=q_term: s.fetch(q_term, location), key, force_refresh)] = lbl
 
     fam_mode = (famous_mode or "all").lower().strip()
     with db.session() as c:
@@ -317,7 +326,11 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
         if "backend" in syns or "back-end" in syns:
             syns.update({"backend", "back end", "api"})
         if "fullstack" in syns or "full-stack" in syns:
-            syns.update({"fullstack", "full stack"})
+            syns.update({"fullstack", "full stack", "backend", "frontend", "software", "web"})
+        for sk_name in profile.get("skills", [])[:8]:
+            for tok in re.findall(r"[a-z0-9+#]+", sk_name.lower()):
+                if len(tok) > 2:
+                    syns.add(tok)
         def relevant(j):
             if not j["source_tier"].startswith("Direct"):
                 return True

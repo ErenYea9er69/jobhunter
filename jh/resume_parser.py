@@ -403,10 +403,14 @@ def parse_resume(text):
         tm = re.search(r"^([A-Z][A-Za-z\s/-]+?)\s+with\s+\d+", summary, re.I)
         if tm:
             target = tm.group(1).strip()
+    from .scoring import derive_target_roles
+    tmp_prof = {"target_title": target, "skills": skill_list, "experience": exp}
+    target_roles = derive_target_roles(tmp_prof)
+
     profile = {
         "name": name, "email": email.group(0) if email else "", "phone": phone.group(1).strip() if phone else "",
         "location": location, "linkedin": linkedin.group(0) if linkedin else "", "github": github.group(0) if github else "",
-        "target_title": target, "years_of_experience": years, "work_mode": "Any",
+        "target_title": target, "target_roles": target_roles, "years_of_experience": years, "work_mode": "Any",
         "preferred_locations": [location] if location else [], "min_salary": 0, "excluded_keywords": [],
         "summary": summary, "skills": skill_list, "skills_by_category": by_cat,
         "experience": exp, "education": edu,

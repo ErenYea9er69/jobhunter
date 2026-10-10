@@ -12,7 +12,7 @@ SCHEMA_VERSION = 2
 
 EMPTY_PROFILE = {
     "name": "", "email": "", "phone": "", "location": "", "linkedin": "", "github": "",
-    "target_title": "", "years_of_experience": 0, "work_mode": "Any",
+    "target_title": "", "target_roles": [], "years_of_experience": 0, "work_mode": "Any",
     "preferred_locations": [], "min_salary": 0, "excluded_keywords": [],
     "summary": "", "skills": [], "skills_by_category": {}, "experience": [], "education": [],
     "_is_empty": True,
@@ -90,6 +90,9 @@ def get_profile():
     data = json.loads(row["data"])
     for k, v in EMPTY_PROFILE.items():
         data.setdefault(k, json.loads(json.dumps(v)) if k != "_is_empty" else False)
+    if not data.get("target_roles") and (data.get("target_title") or data.get("skills")):
+        from .scoring import derive_target_roles
+        data["target_roles"] = derive_target_roles(data)
     return data
 
 

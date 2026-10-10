@@ -80,13 +80,22 @@ def _expand_synonym(w):
 
 
 def _matches(query, *fields):
-    """Loose client-side filter for feeds that cannot search: synonym and token-aware."""
+    """Loose client-side filter for feeds that cannot search: synonym, role-family, and token-aware."""
     if not query:
         return True
     hay = " ".join(f or "" for f in fields).lower()
-    if query.lower() in hay:
+    q_lower = query.lower()
+    if q_lower in hay:
         return True
-    words = [w for w in re.findall(r"[a-z0-9+#.]+", query.lower()) if len(w) > 1]
+
+    # Role family expansion: Full Stack roles naturally include Backend, Frontend, and Software Engineering
+    is_fullstack = "fullstack" in q_lower or "full stack" in q_lower
+    if is_fullstack:
+        tech_roles = {"developer", "engineer", "dev", "swe", "programmer", "software", "backend", "frontend", "fullstack", "web"}
+        if any(r in hay for r in tech_roles):
+            return True
+
+    words = [w for w in re.findall(r"[a-z0-9+#.]+", q_lower) if len(w) > 1]
     if not words:
         return True
     matched_count = sum(1 for w in words if any(g in hay for g in _expand_synonym(w)))

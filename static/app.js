@@ -551,10 +551,21 @@
 
   function renderIdeas() {
     const p = S.profile || {};
-    let ideas = [p.target_title, ...(p.skills || []).slice(0, 3)].filter(Boolean);
+    let ideas = [];
+    if (p.target_title) ideas.push(p.target_title);
+    if (Array.isArray(p.target_roles)) {
+      ideas.push(...p.target_roles);
+    }
+    const skills = p.skills || [];
+    for (const s of skills) {
+      if (/^(python|react|node|javascript|typescript|java|golang|c#|ruby|rust)$/i.test(s)) {
+        ideas.push(`${s} Developer`);
+      }
+    }
+    ideas.push(...skills.slice(0, 3));
     if (!ideas.length) ideas = DEFAULT_IDEAS;
     const seen = new Set();
-    ideas = ideas.filter(x => { const k = x.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 4);
+    ideas = ideas.filter(x => { const k = x.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 6);
     $('#suggestChips').innerHTML = ideas.map(x => `<button type="button" class="chip" data-action="idea" data-q="${esc(x)}">${esc(x)}</button>`).join('');
   }
 

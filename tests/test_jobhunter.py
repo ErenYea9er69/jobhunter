@@ -341,6 +341,32 @@ class FamousFilterTests(Base):
         self.assertTrue(sources._matches("Software Engineer", "Senior Software Developer", "Acme Corp"))
         self.assertFalse(sources._matches("Python Developer", "Go Infrastructure Lead", "Acme Corp"))
 
+    def test_sources_role_family_matching(self):
+        # A Full Stack query should accept backend, frontend, and software engineering roles
+        self.assertTrue(sources._matches("Full Stack Developer", "Backend Engineer", "Acme Corp"))
+        self.assertTrue(sources._matches("Full Stack Developer", "Frontend Developer", "Acme Corp"))
+        self.assertTrue(sources._matches("Full Stack Developer", "Senior Software Engineer", "Acme Corp"))
+        self.assertFalse(sources._matches("Full Stack Developer", "Pastry Chef", "Acme Bakery"))
+
+    def test_role_family_and_skill_title_scoring(self):
+        profile = {
+            "target_title": "Full Stack Developer",
+            "skills": ["Python", "React", "PostgreSQL", "Docker"],
+            "experience": [{"role": "Full Stack Developer"}]
+        }
+        roles = scoring.derive_target_roles(profile)
+        self.assertIn("Backend Developer", roles)
+        self.assertIn("Frontend Developer", roles)
+        self.assertIn("Python Developer", roles)
+
+        # Full stack candidates have high title affinity for Backend, Frontend, and Python roles
+        self.assertGreaterEqual(scoring._title_score("Backend Engineer", profile), 0.85)
+        self.assertGreaterEqual(scoring._title_score("Frontend Engineer", profile), 0.85)
+        self.assertGreaterEqual(scoring._title_score("Python Developer", profile), 0.85)
+        self.assertGreaterEqual(scoring._title_score("Software Engineer", profile), 0.85)
+        # Unrelated domain remains 0.0
+        self.assertEqual(scoring._title_score("Pastry Chef", profile), 0.0)
+
     def test_himalayas_source_integrated(self):
         self.assertIn("Himalayas", sources.SOURCE_RANKS)
         self.assertTrue(any(s.name == "Himalayas" for s in sources.SEARCH_SOURCES))
