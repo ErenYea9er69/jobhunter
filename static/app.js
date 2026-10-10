@@ -1,34 +1,69 @@
 /**
- * JobHunter — Client-Side Application Controller
- * Handles Multi-Source Aggregation, Deduplication, Match Scoring, Resume Refiner (Diffs),
- * Gap Reports, Cover Letters, Application Kanban, and Watchlist.
+ * JobHunter interface controller.
+ * Talks to the same /api endpoints as before. Only the interface changed.
  */
-
 (function () {
   'use strict';
 
-  const AppState = {
+  // ------------------------------------------------------------------ setup
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+
+  const STAGES = [
+    { key: 'saved', label: 'Saved' },
+    { key: 'applied', label: 'Applied' },
+    { key: 'interview', label: 'Interviewing' },
+    { key: 'offer', label: 'Offer' },
+    { key: 'rejected', label: 'Archived' }
+  ];
+  const TONES = [
+    { key: 'direct', label: 'Direct' },
+    { key: 'conversational', label: 'Conversational' },
+    { key: 'systems', label: 'Systems' }
+  ];
+  const VIEWS = ['jobs', 'job', 'applications', 'resume', 'companies', 'digest', 'privacy'];
+  const TITLES = {
+    jobs: 'Jobs', job: 'Job workspace', applications: 'Applications', resume: 'Resume',
+    companies: 'Companies', digest: 'Morning digest', privacy: 'Sources and privacy'
+  };
+  const DEFAULT_IDEAS = ['Full Stack', 'Backend Python', 'TypeScript React', 'DevOps Cloud'];
+  const isNarrow = () => window.matchMedia('(max-width: 960px)').matches;
+
+  const S = {
+    view: 'jobs',
     profile: null,
+    profileEmpty: true,
+    dirty: false,
     jobs: [],
+    jobsRanked: [],
+    searchMeta: null,
+    searchSeq: 0,
+    searchStale: false,
+    workMode: 'Remote',
+    selectedKey: null,
     applications: [],
     watchlist: [],
-    activeJob: null,
-    activeRefinement: null,
-    activeAtsAudit: null,
-    diffDecisions: {}, // diffId -> 'accepted' | 'rejected' | 'pending'
-    coverTone: 'direct',
-    searchInProgress: false
+    watchResults: {},
+    ws: { job: null, key: '', tab: 'resume', from: 'jobs', refinement: null, decisions: {}, ats: null, atsFresh: false,
+          gaps: null, cover: {}, prep: null, tone: 'direct', showUnchanged: false, seq: 0 }
   };
 
-  // Helper for API calls
+  // ---------------------------------------------------------------- helpers
+  const ico = (name, cls = '') => `<svg class="i ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+
+  function esc(v) {
+    if (v === null || v === undefined) return '';
+    return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
   async function api(url, options = {}) {
     options.headers = options.headers || {};
     if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
       options.headers['Content-Type'] = 'application/json';
       options.body = JSON.stringify(options.body);
     }
-    const tokenMeta = document.querySelector('meta[name="jh-token"]');
-    options.headers['X-JH-Token'] = tokenMeta ? tokenMeta.content : '';
+    const meta = document.querySelector('meta[name="jh-token"]');
+    options.headers['X-JH-Token'] = meta ? meta.content : '';
     const res = await fetch(url, options);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Network error' }));
@@ -37,268 +72,346 @@
     return res.json();
   }
 
-  // Toast Notification System
-  function showToast(message, type = 'success') {
-    const container = document.getElementById('toastContainer');
-    if (!container) return;
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.innerHTML = `
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-        ${type === 'success' ? '<path d="M20 6L9 17l-5-5"></path>' : '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>'}
-      </svg>
-      <span>${escapeHtml(message)}</span>
-    `;
-    container.appendChild(toast);
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateY(10px)';
-      toast.style.transition = 'all 0.25s ease';
-      setTimeout(() => toast.remove(), 250);
-    }, 3200);
+  function toast(message, type = 'ok') {
+    const box = $('#toastContainer');
+    if (!box) return;
+    const el = document.createElement('div');
+    el.className = `toast${type === 'error' ? ' toast-error' : ''}`;
+    el.innerHTML = `${ico(type === 'error' ? 'alert' : 'check')}<span>${esc(message)}</span>`;
+    box.appendChild(el);
+    setTimeout(() => el.remove(), type === 'error' ? 6000 : 3500);
   }
 
-  function escapeHtml(str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
-  // Navigation Controller
-  function initNavigation() {
-    const navButtons = document.querySelectorAll('.nav-btn');
-    navButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const targetTab = btn.getAttribute('data-tab');
-        switchTab(targetTab);
-      });
+  function confirmDialog(title, text, okLabel = 'Confirm') {
+    return new Promise(resolve => {
+      const d = $('#confirmDialog');
+      $('#confirmTitle').textContent = title;
+      $('#confirmText').textContent = text;
+      $('#confirmOk').textContent = okLabel;
+      const finish = value => {
+        d.removeEventListener('click', onClick);
+        d.removeEventListener('close', onClose);
+        if (d.open) d.close();
+        resolve(value);
+      };
+      const onClick = e => { const b = e.target.closest('[data-confirm]'); if (b) finish(b.dataset.confirm === 'ok'); };
+      const onClose = () => finish(false);
+      d.addEventListener('click', onClick);
+      d.addEventListener('close', onClose);
+      d.showModal();
     });
-
-    const userPill = document.getElementById('userProfilePill');
-    if (userPill) {
-      userPill.addEventListener('click', () => switchTab('tab-profile'));
-    }
   }
 
-  function switchTab(tabId) {
-    document.querySelectorAll('.nav-btn').forEach(b => {
-      b.classList.toggle('active', b.getAttribute('data-tab') === tabId);
-    });
-    document.querySelectorAll('.tab-pane').forEach(p => {
-      p.classList.toggle('active', p.id === tabId);
-    });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const jobKey = j => String(j.job_key || j.id || `${j.company}|${j.title}`);
+  const sameJob = (a, b) => a && b && jobKey(a) === jobKey(b);
 
-    // Tab-specific refreshes
-    if (tabId === 'tab-tracker') {
-      renderKanbanBoard();
-    } else if (tabId === 'tab-watchlist') {
-      loadWatchlist();
-    } else if (tabId === 'tab-digest') {
-      loadDailyDigest();
-    } else if (tabId === 'tab-ats-audit') {
-      loadAtsForActiveJob();
-    }
+  function tierOf(score) {
+    if (score >= 85) return { cls: 'tier-high', label: 'Excellent fit' };
+    if (score >= 70) return { cls: 'tier-good', label: 'Strong fit' };
+    if (score >= 50) return { cls: 'tier-fair', label: 'Fair fit' };
+    return { cls: 'tier-low', label: 'Low fit' };
+  }
+  function ring(score, large = false) {
+    const n = Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
+    return `<div class="score-ring ${large ? 'score-ring-lg ' : ''}${tierOf(n).cls}" style="--pct:${n}" role="img" aria-label="Match score ${n} percent"><span>${n}</span></div>`;
   }
 
-  // -------------------------------------------------------------
-  // Profile Controller (Master Resume Intake & Editor)
-  // -------------------------------------------------------------
+  function timeAgo(iso) {
+    const t = Date.parse(iso);
+    if (isNaN(t)) return '';
+    const s = Math.max(0, (Date.now() - t) / 1000);
+    if (s < 90) return 'just now';
+    const m = s / 60; if (m < 60) return `${Math.round(m)} min ago`;
+    const h = m / 60; if (h < 24) return `${Math.round(h)} hr ago`;
+    const d = Math.round(h / 24);
+    return d === 1 ? '1 day ago' : `${d} days ago`;
+  }
+
+  function daysUntil(dateStr) {
+    const p = String(dateStr || '').split('-').map(Number);
+    if (p.length < 3 || p.some(isNaN)) return null;
+    const target = new Date(p[0], p[1] - 1, p[2]);
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+    return Math.round((target - now) / 86400000);
+  }
+
+  const isoDay = offset => {
+    const d = new Date(Date.now() + offset * 86400000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  function jobSources(j) {
+    return (j.sources && j.sources.length) ? j.sources : [{ source: j.source, url: j.url }];
+  }
+  function isDirect(s) {
+    const name = String(s.source || '');
+    return String(s.source_tier || '').includes('Direct company ATS') || /Greenhouse|Ashby|Lever|SmartRecruiters|Workable/i.test(name);
+  }
+  function bestApplyUrl(j) {
+    const list = jobSources(j).filter(s => s.url);
+    const direct = list.find(isDirect);
+    return (direct || list[0] || {}).url || '';
+  }
+
+  const val = id => ($('#' + id) || {}).value || '';
+
+  // ----------------------------------------------------------------- router
+  function route() {
+    const parts = location.hash.replace(/^#\/?/, '').split('/');
+    let view = VIEWS.includes(parts[0]) ? parts[0] : 'jobs';
+    if (view === 'job' && !S.ws.job) view = 'jobs';
+    showView(view, parts[1] || '');
+  }
+
+  function go(view, sub = '') {
+    const hash = `#/${view}${sub ? '/' + sub : ''}`;
+    if (location.hash === hash) route(); else location.hash = hash;
+  }
+
+  function showView(view, sub) {
+    S.view = view;
+    $$('.view').forEach(v => { v.hidden = v.id !== `view-${view}`; });
+    const navKey = view === 'job' ? (S.ws.from === 'applications' ? 'applications' : 'jobs') : view;
+    $$('[data-nav]').forEach(a => {
+      if (a.dataset.nav === navKey) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    document.title = `${TITLES[view] || 'JobHunter'} | JobHunter`;
+    closeMenu();
+    closeDetailSheet();
+    window.scrollTo(0, 0);
+
+    if (view === 'jobs' && S.searchStale) { S.searchStale = false; runSearch(); }
+    if (view === 'job') { S.ws.tab = ['resume', 'ats', 'gaps', 'cover', 'prep'].includes(sub) ? sub : 'resume'; renderWsHeader(); renderWsTab(); }
+    if (view === 'applications') loadApplications();
+    if (view === 'companies') loadWatchlist();
+    if (view === 'digest') loadDigest();
+    if (view === 'privacy') loadSourceHealth();
+  }
+
+  // ------------------------------------------------------------ theme, menu
+  function initTheme() {
+    let saved = 'auto';
+    try { saved = localStorage.getItem('jh-theme') || 'auto'; } catch (e) { /* ignore */ }
+    setTheme(saved, false);
+    $('#themeSeg').addEventListener('click', e => {
+      const b = e.target.closest('[data-theme-choice]');
+      if (b) setTheme(b.dataset.themeChoice, true);
+    });
+  }
+  function setTheme(choice, persist) {
+    const root = document.documentElement;
+    if (choice === 'light' || choice === 'dark') root.setAttribute('data-theme', choice); else root.removeAttribute('data-theme');
+    $$('[data-theme-choice]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.themeChoice === choice)));
+    if (persist) { try { choice === 'auto' ? localStorage.removeItem('jh-theme') : localStorage.setItem('jh-theme', choice); } catch (e) { /* ignore */ } }
+  }
+  function closeMenu() {
+    const m = $('#moreMenu');
+    if (m && !m.hidden) { m.hidden = true; $('#moreBtn').setAttribute('aria-expanded', 'false'); }
+  }
+  function toggleMenu() {
+    const m = $('#moreMenu');
+    m.hidden = !m.hidden;
+    $('#moreBtn').setAttribute('aria-expanded', String(!m.hidden));
+  }
+
+  // ---------------------------------------------------------------- profile
+  function normalizeProfile(p) {
+    const q = Object.assign({}, p);
+    delete q._is_empty; delete q._updated_at;
+    q.skills = Array.isArray(q.skills) ? q.skills : [];
+    q.experience = Array.isArray(q.experience) ? q.experience : [];
+    q.education = Array.isArray(q.education) ? q.education : [];
+    return q;
+  }
 
   async function loadProfile() {
     try {
-      const data = await api('/api/profile');
-      AppState.profile = data;
-      renderProfileForm(data);
-      updateUserPill(data);
+      const raw = await api('/api/profile');
+      S.profileEmpty = !!raw._is_empty;
+      S.profile = normalizeProfile(raw);
+      if (['Remote', 'Hybrid', 'Onsite'].includes(S.profile.work_mode)) S.workMode = S.profile.work_mode;
+      renderProfile();
+      renderIdeas();
+      syncWorkModeSeg();
     } catch (err) {
-      console.error('Failed to load profile:', err);
+      S.profile = normalizeProfile({});
+      renderProfile();
+      toast('Could not load your profile: ' + err.message, 'error');
+    }
+    updateProfileLink();
+    $('#onboardNotice').hidden = !S.profileEmpty;
+  }
+
+  function updateProfileLink() {
+    const p = S.profile || {};
+    const name = (p.name || '').trim();
+    $('#pillName').textContent = name || 'Add your resume';
+    $('#pillTitle').textContent = name ? [p.years_of_experience ? `${p.years_of_experience} yrs` : '', p.work_mode || ''].filter(Boolean).join(', ') : '';
+    $('#userAvatar').textContent = name ? name.split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase() : '?';
+  }
+
+  function renderProfile() {
+    const p = S.profile || normalizeProfile({});
+    const set = (id, v) => { const el = $('#' + id); if (el) el.value = v === undefined || v === null ? '' : v; };
+    set('profName', p.name); set('profTitle', p.target_title);
+    set('profExp', p.years_of_experience === undefined ? '' : p.years_of_experience);
+    set('profWorkMode', p.work_mode || 'Remote');
+    set('profEmail', p.email); set('profPhone', p.phone); set('profLocation', p.location);
+    set('profLinkedin', p.linkedin); set('profGithub', p.github); set('profSummary', p.summary);
+    renderSkills(); renderExperience(); renderEducation();
+
+    const card = $('#intakeCard'), form = $('#profileForm');
+    if (S.profileEmpty) {
+      form.before(card); card.style.marginTop = '';
+      $('#intakeTitle').textContent = 'Start with your resume';
+      $('#intakeSub').textContent = 'Upload a PDF, Word, text, or Markdown file. The app reads it into the fields below.';
+    } else {
+      form.after(card); card.style.marginTop = '16px';
+      $('#intakeTitle').textContent = 'Replace from a new file';
+      $('#intakeSub').textContent = 'Upload a new resume to refill the fields above. Nothing changes until you save.';
     }
   }
 
-  function updateUserPill(profile) {
-    const nameEl = document.getElementById('pillName');
-    const titleEl = document.getElementById('pillTitle');
-    const avatarEl = document.getElementById('userAvatar');
-    if (nameEl) nameEl.textContent = profile.name || 'Alex Rivera';
-    if (titleEl) titleEl.textContent = `${profile.years_of_experience || 5} yrs • ${profile.work_mode || 'Remote'}`;
-    if (avatarEl && profile.name) {
-      const initials = profile.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-      avatarEl.textContent = initials;
-    }
+  function renderSkills() {
+    const skills = (S.profile && S.profile.skills) || [];
+    $('#profileSkillsTags').innerHTML = skills.length
+      ? skills.map((s, i) => `<span class="tag">${esc(s)}<button type="button" data-action="skill-remove" data-i="${i}" aria-label="Remove ${esc(s)}">${ico('x')}</button></span>`).join('')
+      : '<span class="muted">No skills yet. Add the tools and languages you use.</span>';
   }
 
-  function renderProfileForm(p) {
-    if (!p) return;
-    document.getElementById('profName').value = p.name || '';
-    document.getElementById('profTitle').value = p.target_title || '';
-    document.getElementById('profExp').value = p.years_of_experience || 5;
-    document.getElementById('profWorkMode').value = p.work_mode || 'Remote';
-    document.getElementById('profEmail').value = p.email || '';
-    document.getElementById('profPhone').value = p.phone || '';
-    document.getElementById('profLocation').value = p.location || '';
-    document.getElementById('profLinkedin').value = p.linkedin || '';
-    document.getElementById('profGithub').value = p.github || '';
-    document.getElementById('profSummary').value = p.summary || '';
-
-    renderSkillsTags(p.skills || []);
-    renderExperienceList(p.experience || []);
-    renderEducationList(p.education || []);
-  }
-
-  function renderSkillsTags(skills) {
-    const container = document.getElementById('profileSkillsTags');
-    if (!container) return;
-    container.innerHTML = skills.map((s, idx) => `
-      <span class="skill-tag" data-index="${idx}">
-        ${escapeHtml(s)}
-        <span class="tag-remove" onclick="window.JobHunterApp.removeSkill(${idx})">&times;</span>
-      </span>
-    `).join('');
-  }
-
-  function renderExperienceList(expList) {
-    const container = document.getElementById('profileExperienceList');
-    if (!container) return;
-    container.innerHTML = expList.map((exp, idx) => `
-      <div class="experience-entry-box" data-exp-index="${idx}">
-        <div class="entry-header">
-          <h4>${escapeHtml(exp.role || 'Role')} &mdash; ${escapeHtml(exp.company || 'Company')}</h4>
-          <button type="button" class="btn btn-sm btn-outline-danger" onclick="window.JobHunterApp.removeExperienceEntry(${idx})">Remove Role</button>
-        </div>
-        <div class="form-grid-2">
-          <div class="form-field">
-            <label>Company</label>
-            <input type="text" class="exp-company" value="${escapeHtml(exp.company || '')}">
+  function renderExperience() {
+    const list = (S.profile && S.profile.experience) || [];
+    $('#profileExperienceList').innerHTML = list.length ? list.map((x, i) => `
+      <details class="entry" data-exp="${i}" ${S.openExp.has(i) ? 'open' : ''}>
+        <summary><span>${esc(x.role || 'New role')}<small>${esc(x.company || '')}</small></span>${ico('chevron')}</summary>
+        <div class="entry-body">
+          <div class="form-grid">
+            <div class="form-field"><label>Company</label><input type="text" class="exp-company" value="${esc(x.company)}"></div>
+            <div class="form-field"><label>Title</label><input type="text" class="exp-role" value="${esc(x.role)}"></div>
+            <div class="form-field"><label>Start</label><input type="text" class="exp-start" value="${esc(x.start_date)}" placeholder="2021-03"></div>
+            <div class="form-field"><label>End</label><input type="text" class="exp-end" value="${esc(x.end_date)}" placeholder="Present"></div>
+            <div class="form-field span-2"><label>Location</label><input type="text" class="exp-location" value="${esc(x.location)}"></div>
           </div>
-          <div class="form-field">
-            <label>Title / Role</label>
-            <input type="text" class="exp-role" value="${escapeHtml(exp.role || '')}">
+          <div class="bullets">
+            <label>Bullets</label>
+            ${(x.bullets || []).map((b, bi) => `
+              <div class="bullet-row">
+                <textarea class="exp-bullet" rows="2" aria-label="Bullet ${bi + 1}">${esc(b)}</textarea>
+                <button type="button" class="icon-btn" data-action="bullet-remove" data-i="${i}" data-b="${bi}" aria-label="Remove bullet">${ico('x')}</button>
+              </div>`).join('')}
           </div>
-          <div class="form-field">
-            <label>Dates</label>
-            <input type="text" class="exp-dates" value="${escapeHtml(exp.start_date || '')} - ${escapeHtml(exp.end_date || '')}">
-          </div>
-          <div class="form-field">
-            <label>Location</label>
-            <input type="text" class="exp-location" value="${escapeHtml(exp.location || '')}">
+          <div class="entry-actions">
+            <button type="button" class="btn btn-secondary btn-sm" data-action="bullet-add" data-i="${i}">${ico('plus')}Add bullet</button>
+            <button type="button" class="btn btn-quiet-danger btn-sm" data-action="exp-remove" data-i="${i}">Remove position</button>
           </div>
         </div>
-        <div class="bullets-editor-list">
-          <label style="font-size: 11.5px; font-weight: 600; color: #94a3b8; text-transform: uppercase;">Experience Bullets (Targeted by AI Refiner)</label>
-          ${(exp.bullets || []).map((b, bIdx) => `
-            <div class="bullet-edit-row">
-              <textarea rows="2" class="exp-bullet-text">${escapeHtml(b)}</textarea>
-              <button type="button" class="btn btn-sm btn-outline-danger" onclick="window.JobHunterApp.removeBullet(${idx}, ${bIdx})">&times;</button>
-            </div>
-          `).join('')}
-          <button type="button" class="btn btn-sm btn-secondary" style="align-self: flex-start; margin-top: 6px;" onclick="window.JobHunterApp.addBullet(${idx})">+ Add Bullet</button>
-        </div>
-      </div>
-    `).join('');
+      </details>`).join('') : '<p class="muted">No positions yet.</p>';
   }
 
-  function renderEducationList(eduList) {
-    const container = document.getElementById('profileEducationList');
-    if (!container) return;
-    container.innerHTML = eduList.map((edu, idx) => `
-      <div class="experience-entry-box" style="padding: 14px;" data-edu-index="${idx}">
-        <div class="form-grid-2">
-          <div class="form-field">
-            <label>Institution</label>
-            <input type="text" class="edu-inst" value="${escapeHtml(edu.institution || '')}">
+  function renderEducation() {
+    const list = (S.profile && S.profile.education) || [];
+    $('#profileEducationList').innerHTML = list.length ? list.map((e, i) => `
+      <div class="entry" data-edu="${i}">
+        <div class="entry-body" style="padding-top:16px">
+          <div class="form-grid">
+            <div class="form-field"><label>School</label><input type="text" class="edu-inst" value="${esc(e.institution)}"></div>
+            <div class="form-field"><label>Degree</label><input type="text" class="edu-degree" value="${esc(e.degree)}"></div>
+            <div class="form-field"><label>Year</label><input type="text" class="edu-year" value="${esc(e.graduation_year)}"></div>
           </div>
-          <div class="form-field">
-            <label>Degree</label>
-            <input type="text" class="edu-degree" value="${escapeHtml(edu.degree || '')}">
-          </div>
+          <div class="entry-actions"><button type="button" class="btn btn-quiet-danger btn-sm" data-action="edu-remove" data-i="${i}">Remove</button></div>
         </div>
-      </div>
-    `).join('');
+      </div>`).join('') : '<p class="muted">No education yet.</p>';
   }
 
-  async function saveMasterProfile() {
-    const updated = {
-      name: document.getElementById('profName').value.trim(),
-      target_title: document.getElementById('profTitle').value.trim(),
-      years_of_experience: parseInt(document.getElementById('profExp').value) || 5,
-      work_mode: document.getElementById('profWorkMode').value,
-      email: document.getElementById('profEmail').value.trim(),
-      phone: document.getElementById('profPhone').value.trim(),
-      location: document.getElementById('profLocation').value.trim(),
-      linkedin: document.getElementById('profLinkedin').value.trim(),
-      github: document.getElementById('profGithub').value.trim(),
-      summary: document.getElementById('profSummary').value.trim(),
-      skills: AppState.profile.skills || [],
-      experience: collectExperienceFromForm(),
-      education: collectEducationFromForm(),
-      preferred_locations: ["Remote", "Worldwide"]
-    };
-
-    try {
-      await api('/api/profile', { method: 'POST', body: updated });
-      AppState.profile = updated;
-      updateUserPill(updated);
-      showToast('Master resume profile saved locally to SQLite!');
-      // Re-run search match scoring with updated profile
-      handleSearch();
-    } catch (err) {
-      showToast('Failed to save profile: ' + err.message, 'error');
-    }
-  }
-
-  function collectExperienceFromForm() {
-    const boxes = document.querySelectorAll('.experience-entry-box[data-exp-index]');
-    const list = [];
-    boxes.forEach(box => {
-      const company = box.querySelector('.exp-company')?.value || '';
-      const role = box.querySelector('.exp-role')?.value || '';
-      const dates = (box.querySelector('.exp-dates')?.value || '').split('-');
-      const location = box.querySelector('.exp-location')?.value || 'Remote';
-      const bulletTextareas = box.querySelectorAll('.exp-bullet-text');
-      const bullets = Array.from(bulletTextareas).map(ta => ta.value.trim()).filter(b => b.length > 0);
-      list.push({
-        company,
-        role,
-        location,
-        start_date: dates[0]?.trim() || '2021',
-        end_date: dates[1]?.trim() || 'Present',
-        bullets
+  function collectExperience() {
+    const old = (S.profile && S.profile.experience) || [];
+    return $$('#profileExperienceList [data-exp]').map(box => {
+      const i = Number(box.dataset.exp);
+      const end = $('.exp-end', box).value.trim();
+      return Object.assign({}, old[i] || {}, {
+        company: $('.exp-company', box).value.trim(),
+        role: $('.exp-role', box).value.trim(),
+        start_date: $('.exp-start', box).value.trim(),
+        end_date: end,
+        current: /^(present|current|now)$/i.test(end),
+        location: $('.exp-location', box).value.trim(),
+        bullets: $$('.exp-bullet', box).map(t => t.value.trim()).filter(Boolean)
       });
     });
-    return list;
+  }
+  function collectEducation() {
+    const old = (S.profile && S.profile.education) || [];
+    return $$('#profileEducationList [data-edu]').map(box => Object.assign({}, old[Number(box.dataset.edu)] || {}, {
+      institution: $('.edu-inst', box).value.trim(),
+      degree: $('.edu-degree', box).value.trim(),
+      graduation_year: $('.edu-year', box).value.trim()
+    }));
   }
 
-  function collectEducationFromForm() {
-    const boxes = document.querySelectorAll('.experience-entry-box[data-edu-index]');
-    const list = [];
-    boxes.forEach(box => {
-      const institution = box.querySelector('.edu-inst')?.value || '';
-      const degree = box.querySelector('.edu-degree')?.value || '';
-      list.push({ institution, degree, graduation_year: '2020' });
+  /** Read the form into one profile object. Keeps every field the form does not show. */
+  function collectProfile() {
+    const exp = parseInt(val('profExp'), 10);
+    return Object.assign({}, S.profile, {
+      name: val('profName').trim(),
+      target_title: val('profTitle').trim(),
+      years_of_experience: isNaN(exp) ? 0 : exp,
+      work_mode: val('profWorkMode') || 'Remote',
+      email: val('profEmail').trim(), phone: val('profPhone').trim(), location: val('profLocation').trim(),
+      linkedin: val('profLinkedin').trim(), github: val('profGithub').trim(), summary: val('profSummary').trim(),
+      skills: (S.profile && S.profile.skills) || [],
+      experience: collectExperience(),
+      education: collectEducation()
     });
-    return list;
+  }
+  /** Copy typed values into state so a list redraw never loses them. */
+  function syncFormToState() {
+    $$('#profileExperienceList [data-exp]').forEach(b => { const i = Number(b.dataset.exp); if (b.open) S.openExp.add(i); else S.openExp.delete(i); });
+    S.profile = collectProfile();
   }
 
-  // -------------------------------------------------------------
-  // Resume File Upload & Parsing Intake
-  // -------------------------------------------------------------
+  function markDirty(text) {
+    S.dirty = true;
+    $('#saveBar').hidden = false;
+    $('#saveBarText').textContent = text || 'You have unsaved changes.';
+  }
+  function clearDirty() { S.dirty = false; $('#saveBar').hidden = true; }
 
-  async function handleFileUpload(event) {
-    const file = event.target.files[0];
+  async function saveProfile() {
+    const p = collectProfile();
+    try {
+      await api('/api/profile', { method: 'POST', body: p });
+      S.profile = p;
+      S.profileEmpty = false;
+      clearDirty();
+      resetWorkspaceData();
+      S.searchStale = true;
+      updateProfileLink(); renderIdeas();
+      $('#onboardNotice').hidden = true;
+      renderProfile();
+      toast('Profile saved');
+      return true;
+    } catch (err) {
+      toast('Could not save: ' + err.message, 'error');
+      return false;
+    }
+  }
+
+  async function discardProfile() {
+    clearDirty();
+    await loadProfile();
+    toast('Changes discarded');
+  }
+
+  async function handleFile(file) {
     if (!file) return;
-    if (file.size > 8 * 1024 * 1024) { showToast('File is larger than 8 MB.', 'error'); return; }
-    showToast(`Reading ${file.name}...`);
-    const isBinary = /\.(pdf|docx|doc)$/i.test(file.name);
+    if (file.size > 8 * 1024 * 1024) { toast('That file is larger than 8 MB.', 'error'); return; }
+    toast(`Reading ${file.name}`);
+    const binary = /\.(pdf|docx|doc)$/i.test(file.name);
     const reader = new FileReader();
-    reader.onload = async (e) => {
+    reader.onload = async e => {
       try {
         let body;
-        if (isBinary) {
+        if (binary) {
           const bytes = new Uint8Array(e.target.result);
           let bin = '';
           for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
@@ -306,1456 +419,1008 @@
         } else {
           body = { text: e.target.result };
         }
-        const res = await api('/api/parse-resume', { method: 'POST', body });
-        if (res.profile) {
-          AppState.profile = res.profile;
-          renderProfileForm(res.profile);
-          updateUserPill(res.profile);
-          const miss = (res.parse_report && res.parse_report.needs_review) || [];
-          showToast(miss.length ? `Parsed ${file.name}. Please fill in: ${miss.join(', ')}.` : `Parsed ${file.name}. Review the fields, then save.`);
-        }
+        applyParsed(await api('/api/parse-resume', { method: 'POST', body }), file.name);
       } catch (err) {
-        showToast('Could not read the file: ' + err.message, 'error');
+        toast('Could not read the file: ' + err.message, 'error');
       }
     };
-    if (isBinary) reader.readAsArrayBuffer(file); else reader.readAsText(file);
+    if (binary) reader.readAsArrayBuffer(file); else reader.readAsText(file);
   }
 
-  async function handlePasteParse() {
-    const text = document.getElementById('rawResumePaste').value.trim();
-    if (!text) {
-      showToast('Please paste resume text first.', 'error');
+  function applyParsed(res, label) {
+    if (!res || !res.profile) return;
+    const keep = S.profile || {};
+    S.profile = normalizeProfile(Object.assign({}, keep, res.profile));
+    renderProfile();
+    const miss = (res.parse_report && res.parse_report.needs_review) || [];
+    markDirty(miss.length ? `Check these fields, then save: ${miss.join(', ')}.` : 'Review the fields, then save your profile.');
+    toast(`Read ${label}. Review the fields, then save.`);
+    $('#profileForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  async function parsePasted() {
+    const text = val('rawResumePaste').trim();
+    if (!text) { toast('Paste your resume text first.', 'error'); return; }
+    try { applyParsed(await api('/api/parse-resume', { method: 'POST', body: { text } }), 'your text'); }
+    catch (err) { toast('Could not read the text: ' + err.message, 'error'); }
+  }
+
+  async function addSkillToProfile(skill) {
+    syncFormToState();
+    if (S.profile.skills.includes(skill)) return;
+    S.profile.skills.push(skill);
+    renderSkills();
+    if (await saveProfile()) {
+      toast(`Added ${skill} to your profile`);
+      renderWsTab();
+    }
+  }
+
+  // ----------------------------------------------------------------- search
+  function syncWorkModeSeg() {
+    $$('#workModeSeg [data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === S.workMode)));
+  }
+
+  function renderIdeas() {
+    const p = S.profile || {};
+    let ideas = [p.target_title, ...(p.skills || []).slice(0, 3)].filter(Boolean);
+    if (!ideas.length) ideas = DEFAULT_IDEAS;
+    const seen = new Set();
+    ideas = ideas.filter(x => { const k = x.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 4);
+    $('#suggestChips').innerHTML = ideas.map(x => `<button type="button" class="chip" data-action="idea" data-q="${esc(x)}">${esc(x)}</button>`).join('');
+  }
+
+  function skeletons(n = 4) {
+    return Array.from({ length: n }, () => '<div class="skeleton"><i></i><i></i><i></i></div>').join('');
+  }
+
+  async function runSearch() {
+    const seq = ++S.searchSeq;
+    const btn = $('#btnSearch');
+    btn.disabled = true; btn.textContent = 'Searching';
+    $('#jobList').innerHTML = skeletons();
+    $('#jobDetail').innerHTML = '';
+    $('#resultsSummary').textContent = 'Searching your sources. Slow ones stop at the deadline.';
+    $('#sourceToggle').hidden = true;
+    $('#sourcePanel').hidden = true;
+
+    const params = new URLSearchParams({
+      q: val('searchQuery').trim(), location: val('searchLocation').trim(),
+      work_mode: S.workMode, min_score: val('searchMinScore')
+    });
+    try {
+      const data = await api('/api/search?' + params.toString());
+      if (seq !== S.searchSeq) return;
+      S.searchMeta = data;
+      S.jobsRanked = data.jobs || [];
+      applySort();
+      const keep = S.jobs.find(j => jobKey(j) === S.selectedKey);
+      S.selectedKey = keep ? jobKey(keep) : (!isNarrow() && S.jobs[0] ? jobKey(S.jobs[0]) : null);
+      renderResults();
+    } catch (err) {
+      if (seq !== S.searchSeq) return;
+      S.jobs = []; S.searchMeta = null;
+      $('#resultsSummary').textContent = 'Search failed';
+      $('#jobList').innerHTML = `<div class="empty">${ico('alert')}<h3>The search did not finish</h3><p>${esc(err.message)}</p><div class="empty-actions"><button type="button" class="btn btn-primary" data-action="search-again">Try again</button></div></div>`;
+      $('#jobDetail').innerHTML = '';
+    } finally {
+      if (seq === S.searchSeq) { btn.disabled = false; btn.textContent = 'Search'; }
+    }
+  }
+
+  function applySort() {
+    const how = val('sortResultsBy') || 'ranked';
+    const list = S.jobsRanked.slice();
+    if (how === 'score_desc') list.sort((a, b) => (b.score || 0) - (a.score || 0));
+    else if (how === 'date_desc') list.sort((a, b) => String(b.posted_at || '').localeCompare(String(a.posted_at || '')));
+    else if (how === 'company_asc') list.sort((a, b) => String(a.company || '').localeCompare(String(b.company || '')));
+    S.jobs = list;
+  }
+
+  function sourceCounts() {
+    const srcs = (S.searchMeta && S.searchMeta.sources) || [];
+    const active = srcs.filter(s => s.state !== 'disabled');
+    const ok = active.filter(s => s.state === 'ok' || s.state === 'cached').length;
+    return { total: active.length, ok, srcs };
+  }
+
+  function renderResults() {
+    const meta = S.searchMeta || {};
+    const n = S.jobs.length;
+    const typed = val('searchQuery').trim();
+    const forWhat = !typed && meta.query ? ` <small>for ${esc(meta.query)}, based on your resume</small>` : '';
+    $('#resultsSummary').innerHTML = n ? `${n} job${n === 1 ? '' : 's'}${forWhat}` : 'No jobs found';
+
+    const { total, ok, srcs } = sourceCounts();
+    const toggle = $('#sourceToggle');
+    toggle.hidden = !total;
+    toggle.textContent = `Sources: ${ok} of ${total} answered`;
+    $('#sourcePanel').innerHTML = srcs.map(s => {
+      const good = s.state === 'ok' || s.state === 'cached';
+      const bad = ['failed', 'timeout', 'paused', 'stale'].includes(s.state);
+      const note = good ? `${s.count} job${s.count === 1 ? '' : 's'}${s.state === 'cached' ? ', cached' : ''}` : s.state === 'disabled' ? 'off' : s.state;
+      return `<div class="src-row" title="${esc(s.error || '')}"><span class="dot ${good ? 'dot-ok' : bad ? 'dot-bad' : ''}"></span><b>${esc(s.source)}</b><em>${esc(note)}</em></div>`;
+    }).join('');
+
+    renderList();
+    renderDetail();
+  }
+
+  function renderList() {
+    const list = $('#jobList');
+    const meta = S.searchMeta || {};
+    if (!S.jobs.length) {
+      const { total, ok } = sourceCounts();
+      const allFailed = total > 0 && ok === 0;
+      const strict = Number(val('searchMinScore')) > 0;
+      list.innerHTML = `<div class="empty">${ico(allFailed ? 'alert' : 'search')}
+        <h3>${allFailed ? 'No source answered' : 'No jobs match these filters'}</h3>
+        <p>${allFailed ? 'Check your internet connection, then search again. Open Sources above to see what failed.' : 'Try a broader title, a different work mode, or a lower match score.'}</p>
+        <div class="empty-actions">
+          ${strict && !allFailed ? '<button type="button" class="btn btn-primary" data-action="clear-min">Show all scores</button>' : ''}
+          <button type="button" class="btn btn-secondary" data-action="search-again">Search again</button>
+        </div></div>`;
       return;
     }
-    showToast('Extracting structured profile from pasted text...');
-    try {
-      const res = await api('/api/parse-resume', {
-        method: 'POST',
-        body: { text }
-      });
-      if (res.profile) {
-        AppState.profile = res.profile;
-        renderProfileForm(res.profile);
-        updateUserPill(res.profile);
-        showToast('Extracted profile! Review and save your master resume.');
-      }
-    } catch (err) {
-      showToast('Error parsing text: ' + err.message, 'error');
-    }
-  }
-
-  // -------------------------------------------------------------
-  // Unified Multi-Source Search & Deduplication Engine
-  // -------------------------------------------------------------
-
-  async function handleSearch() {
-    const query = document.getElementById('searchQuery').value.trim();
-    const location = document.getElementById('searchLocation').value.trim();
-    const workMode = document.getElementById('searchWorkMode').value;
-    const minScore = document.getElementById('searchMinScore').value;
-
-    const grid = document.getElementById('jobResultsGrid');
-    grid.innerHTML = `
-      <div class="empty-state-card" id="searchLoadingState">
-        <div class="spinner"></div>
-        <p>Querying all enabled sources at the same time. Slow sources stop at the deadline and the rest still show.</p>
-      </div>
-    `;
-
-    try {
-      const params = new URLSearchParams({
-        q: query,
-        location: location,
-        work_mode: workMode,
-        min_score: minScore
-      });
-
-      const data = await api(`/api/search?${params.toString()}`);
-      AppState.jobs = data.jobs || [];
-      renderSourceStatus(data);
-
-      renderSearchResults(AppState.jobs);
-      populateJobDropdowns(AppState.jobs);
-
-      // If active job not set, default to highest score
-      if (AppState.jobs.length > 0 && !AppState.activeJob) {
-        setActiveJob(AppState.jobs[0]);
-      }
-    } catch (err) {
-      grid.innerHTML = `<div class="empty-state-card text-danger">Search failed: ${escapeHtml(err.message)}</div>`;
-    }
-  }
-
-  function renderSourceStatus(data) {
-    const el = document.getElementById('sourceStatus');
-    if (!el) return;
-    const srcs = data.sources || [];
-    const ok = srcs.filter(s => s.state === 'ok' || s.state === 'cached').map(s => `${s.source} (${s.count})`);
-    const bad = srcs.filter(s => ['failed', 'timeout', 'paused', 'stale'].includes(s.state)).map(s => `${s.source}: ${s.state}${s.stale ? ' (showing older results)' : ''}`);
-    const off = srcs.filter(s => s.state === 'disabled').map(s => s.source);
-    let html = `Searched in ${(data.elapsed_ms / 1000).toFixed(1)}s. ` + (ok.length ? `Answered: ${escapeHtml(ok.join(', '))}. ` : '');
-    if (bad.length) html += `<span style="color:#f59e0b">Problems: ${escapeHtml(bad.join('; '))}.</span> `;
-    if (off.length) html += `Off: ${escapeHtml(off.join(', '))}. `;
-    if (data.profile_empty) html += '<strong>Upload your resume first so jobs get a real match score.</strong>';
-    el.innerHTML = html;
-  }
-
-  function renderSearchResults(jobs) {
-    const grid = document.getElementById('jobResultsGrid');
-    const countEl = document.getElementById('resultsCount');
-    if (countEl) countEl.textContent = jobs.length;
-
-    if (!jobs || jobs.length === 0) {
-      grid.innerHTML = `
-        <div class="empty-state-card">
-          <h3>No matching jobs found</h3>
-          <p>Try lowering the min match score or searching for broader terms (e.g. "Engineer", "Full Stack", "Python").</p>
-        </div>
-      `;
-      return;
-    }
-
-    grid.innerHTML = jobs.map((j, idx) => {
-      const score = j.score || 70;
-      let scoreClass = 'score-low';
-      let fitCardClass = 'fit-low';
-      if (score >= 85) { scoreClass = 'score-exceptional'; fitCardClass = 'fit-exceptional'; }
-      else if (score >= 70) { scoreClass = 'score-strong'; fitCardClass = 'fit-strong'; }
-      else if (score >= 50) { scoreClass = 'score-moderate'; fitCardClass = 'fit-moderate'; }
-
-      const companyInitial = (j.company || 'C').charAt(0).toUpperCase();
-
-      // Multi-source deduplication presentation
-      const sourcesList = j.sources || [{ source: j.source, url: j.url }];
-      const isMultiSource = sourcesList.length > 1;
-
-      return `
-        <article class="job-card ${fitCardClass}" id="job-card-${idx}">
-          <div class="job-card-main">
-            <div class="job-header-line">
-              <div class="company-avatar">${companyInitial}</div>
-              <div class="job-titles-group">
-                <h3>${escapeHtml(j.title)}</h3>
-                <div class="company-name-row">
-                  <span class="company-name">${escapeHtml(j.company)}</span>
-                  <span class="source-chip source-active" style="padding: 1px 7px; font-size: 10px;">${escapeHtml(j.source_tier || 'Tier 1')}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="job-metadata-chips">
-              <span class="meta-chip">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-                ${escapeHtml(j.location || 'Remote')}
-              </span>
-              <span class="meta-chip">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
-                ${escapeHtml(j.work_mode || 'Remote')}
-              </span>
-              ${j.salary ? `<span class="meta-chip salary-chip">${escapeHtml(j.salary)}</span>` : ''}
-            </div>
-
-            <p class="job-desc-snippet">${escapeHtml(j.description)}</p>
-
-            <!-- Match Score Rationale Note -->
-            <div class="match-rationale-box">
-              <strong>Match Analysis:</strong> ${escapeHtml(j.rationale || 'Good skill alignment.')}
-            </div>
-
-            <!-- Cross-Source Deduplication & Direct Application Links -->
-            <div class="dedup-sources-cluster">
-              ${isMultiSource ? `<span class="dedup-badge">Consolidated from ${sourcesList.length} Sources:</span>` : '<span class="dedup-badge">Direct Source:</span>'}
-              ${sourcesList.map(s => {
-                const isATS = (s.source_tier || '').includes('Direct company ATS') || s.source.includes('Greenhouse') || s.source.includes('Ashby') || s.source.includes('Lever') || s.source.includes('SmartRecruiters') || s.source.includes('Workable');
-                return `
-                  <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer" class="source-apply-link ${isATS ? 'primary-ats' : ''}" title="Apply directly on original posting">
-                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                    ${escapeHtml(s.source)} ${isATS ? '(Direct ATS)' : ''}
-                  </a>
-                `;
-              }).join('')}
-            </div>
-
-            <!-- Source Credit / Attribution compliance -->
-            <div class="source-credit-text">
-              Source Attribution: ${escapeHtml(j.source_credit || j.source)} &bull; Privacy preserved
-            </div>
-          </div>
-
-          <!-- Score & Action Buttons -->
-          <div class="job-card-actions">
-            <div class="score-widget">
-              <div class="score-badge-circle ${scoreClass}">
-                ${score}<span class="score-pct">%</span>
-              </div>
-              <span class="score-label">Fit Match</span>
-              <span class="opportunity-label">Opportunity ${escapeHtml(String(j.opportunity_score ?? score))}</span>
-            </div>
-
-            <div class="action-buttons-stack">
-              <button class="btn btn-autohunt btn-sm" onclick="window.JobHunterApp.execute1ClickAutoHunt(${idx})" title="1-Click Auto-Hunt: Tailor resume, generate cover letter & prep, and log to pipeline">
-                ⚡ Auto-Hunt
-              </button>
-              <button class="btn btn-primary btn-sm" onclick="window.JobHunterApp.triggerTailorJob(${idx})">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                Tailor Resume
-              </button>
-              <button class="btn btn-secondary btn-sm" onclick="window.JobHunterApp.triggerAtsJob(${idx})">
-                ATS Audit
-              </button>
-              <button class="btn btn-secondary btn-sm" onclick="window.JobHunterApp.triggerGapJob(${idx})">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path></svg>
-                Gap Report
-              </button>
-              <button class="btn btn-secondary btn-sm" onclick="window.JobHunterApp.saveJobToTracker(${idx})">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
-                Save
-              </button>
-            </div>
-          </div>
-        </article>
-      `;
+    const showScore = !meta.profile_empty;
+    list.innerHTML = S.jobs.map(j => {
+      const key = jobKey(j);
+      const required = Object.keys(j.required_skills || {}).length;
+      const matched = (j.matched_skills || []).length;
+      return `<button type="button" class="job-item${key === S.selectedKey ? ' is-selected' : ''}" data-action="job-select" data-key="${esc(key)}">
+        <span class="job-item-title">${esc(j.title)}</span>
+        <span class="job-item-company">${esc(j.company)}</span>
+        ${showScore ? ring(j.score) : ''}
+        <span class="job-item-meta">
+          <span>${ico('pin')}${esc(j.location || 'Remote')}</span>
+          ${j.work_mode ? `<span>${ico('briefcase')}${esc(j.work_mode)}</span>` : ''}
+          ${j.salary ? `<span>${esc(j.salary)}</span>` : ''}
+          ${showScore && required ? `<span>${matched} of ${required} skills</span>` : ''}
+          ${j.is_new ? '<span class="chip chip-info">New</span>' : ''}
+          ${j.is_sample ? '<span class="chip chip-warn">Sample</span>' : ''}
+          ${jobSources(j).length > 1 ? `<span>${jobSources(j).length} sources</span>` : ''}
+        </span>
+      </button>`;
     }).join('');
   }
 
-  function populateJobDropdowns(jobs) {
-    const dropdownIds = ['refinerJobSelector', 'gapJobSelector', 'coverJobSelector', 'prepJobSelector', 'atsJobSelector'];
-    dropdownIds.forEach(id => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.innerHTML = jobs.map((j, idx) => `
-        <option value="${idx}">${escapeHtml(j.company)} — ${escapeHtml(j.title)} (${j.score || 70}%)</option>
-      `).join('');
-    });
+  const selectedJob = () => S.jobs.find(j => jobKey(j) === S.selectedKey) || null;
+  const savedApp = j => S.applications.find(a => (a.job_id && j.id && a.job_id === j.id) ||
+    (String(a.title).toLowerCase() === String(j.title).toLowerCase() && String(a.company).toLowerCase() === String(j.company).toLowerCase()));
+
+  function renderDetail() {
+    const el = $('#jobDetail');
+    const j = selectedJob();
+    if (!j) {
+      el.innerHTML = S.jobs.length ? `<div class="empty" style="border:0">${ico('briefcase')}<h3>Pick a job</h3><p>Select a job on the left to see why it fits and what to do next.</p></div>` : '';
+      return;
+    }
+    const showScore = !(S.searchMeta && S.searchMeta.profile_empty);
+    const score = Math.round(j.score || 0);
+    const sources = jobSources(j).filter(s => s.url);
+    const apply = bestApplyUrl(j);
+    const matched = j.matched_skills || [], missing = j.missing_skills || [];
+    const desc = String(j.description || '');
+    const posted = j.posted_at ? timeAgo(j.posted_at) : '';
+    const saved = savedApp(j);
+
+    el.innerHTML = `
+      <button type="button" class="btn btn-ghost btn-sm detail-close" data-action="detail-close">${ico('back')}Back to results</button>
+      <div class="detail-body">
+        <div class="detail-top">
+          <div>
+            <h2 class="detail-title">${esc(j.title)}</h2>
+            <p class="detail-company">${esc(j.company)}</p>
+          </div>
+          ${showScore ? ring(score, true) : ''}
+        </div>
+        <div class="detail-facts">
+          <span>${ico('pin')}${esc(j.location || 'Remote')}</span>
+          ${j.work_mode ? `<span>${ico('briefcase')}${esc(j.work_mode)}</span>` : ''}
+          ${j.salary ? `<span>${esc(j.salary)}</span>` : ''}
+          ${posted ? `<span>${ico('clock')}Posted ${esc(posted)}</span>` : ''}
+        </div>
+        <div class="detail-actions">
+        <button type="button" class="btn btn-primary" data-action="job-tailor">${ico('file')}Tailor resume</button>
+        <button type="button" class="btn btn-secondary" data-action="job-save" ${saved ? 'disabled' : ''}>${ico('bookmark')}${saved ? 'Saved' : 'Save'}</button>
+        ${apply ? `<a class="btn btn-secondary" href="${esc(apply)}" target="_blank" rel="noopener noreferrer">${ico('external')}Apply</a>` : ''}
+        <button type="button" class="btn btn-ghost" data-action="job-hunt" title="Tailor your resume, write a cover letter and prep notes, then save it all to Applications">${ico('bolt')}Prepare everything</button>
+        </div>
+
+        ${showScore ? `<div class="detail-block"><h3>Why it fits</h3>
+          <div class="fit-box">
+            <p><span class="chip ${score >= 85 ? 'chip-ok' : score >= 70 ? 'chip-info' : score >= 50 ? 'chip-warn' : ''}">${tierOf(score).label}</span></p>
+            <p>${esc(j.rationale || '')}</p>
+            ${matched.length ? `<div class="fit-row"><strong>You have</strong>${matched.map(s => `<span class="chip chip-ok">${esc(s)}</span>`).join('')}</div>` : ''}
+            ${missing.length ? `<div class="fit-row"><strong>Missing</strong>${missing.map(s => `<span class="chip chip-warn">${esc(s)}</span>`).join('')}</div>` : ''}
+          </div></div>` : ''}
+
+        ${desc ? `<div class="detail-block"><h3>About the role</h3><p class="desc">${esc(desc.length > 3000 ? desc.slice(0, 3000) + '...' : desc)}</p></div>` : ''}
+
+        ${sources.length ? `<div class="detail-block"><h3>${sources.length > 1 ? `Posted on ${sources.length} sites` : 'Where to apply'}</h3>
+          <div class="apply-links">${sources.map(s => `<a class="chip chip-outline" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.source)}${isDirect(s) ? ', company site' : ''}${ico('external')}</a>`).join('')}</div></div>` : ''}
+
+        <p class="credit">Source: ${esc(j.source_credit || j.source || '')}</p>
+      </div>`;
   }
 
-  function setActiveJob(job) {
-    AppState.activeJob = job;
-    updateRefinerHeader(job);
-    loadRefinementForActiveJob();
-    loadGapForActiveJob();
-    loadCoverForActiveJob();
-    loadPrepForActiveJob();
-    loadAtsForActiveJob();
+  function selectJob(key) {
+    S.selectedKey = key;
+    $$('#jobList .job-item').forEach(b => b.classList.toggle('is-selected', b.dataset.key === key));
+    renderDetail();
+    if (isNarrow()) {
+      const d = $('#jobDetail');
+      d.classList.add('is-open'); d.scrollTop = 0;
+      document.body.style.overflow = 'hidden';
+    }
+  }
+  function closeDetailSheet() {
+    const d = $('#jobDetail');
+    if (d) d.classList.remove('is-open');
+    document.body.style.overflow = '';
   }
 
-  // -------------------------------------------------------------
-  // Resume Refiner (Side-by-Side Diff & Granular Controls)
-  // -------------------------------------------------------------
-
-  function updateRefinerHeader(job) {
+  async function saveJob(job) {
     if (!job) return;
-    document.getElementById('refinerJobTitle').textContent = job.title;
-    document.getElementById('refinerCompany').textContent = job.company;
-    document.getElementById('refinerLocation').textContent = job.location || 'Remote';
-    const scoreEl = document.getElementById('refinerMatchScore');
-    scoreEl.textContent = `${job.score || 75}% Match`;
-  }
-
-  async function loadRefinementForActiveJob() {
-    if (!AppState.activeJob) return;
+    if (savedApp(job)) { toast('Already in Applications'); return; }
     try {
-      const data = await api('/api/refine', {
-        method: 'POST',
-        body: { job: AppState.activeJob }
-      });
-      AppState.activeRefinement = data;
-      AppState.diffDecisions = {};
-      (data.diff_items || []).forEach(d => {
-        AppState.diffDecisions[d.id] = 'pending';
-      });
-      renderDiffStream(data.diff_items || []);
-      renderAtsPreview();
-      updateDiffSummaryStats();
+      await api('/api/applications', { method: 'POST', body: {
+        job_id: job.id, company: job.company, title: job.title, location: job.location, salary: job.salary,
+        status: 'saved', notes: 'Saved from search.', follow_up_date: isoDay(5),
+        sources: jobSources(job), job_data: job
+      } });
+      await loadApplications();
+      toast(`Saved ${job.title}`);
+      if (S.view === 'jobs') renderDetail();
+      if (S.view === 'job') renderWsHeader();
+    } catch (err) { toast('Could not save: ' + err.message, 'error'); }
+  }
+
+  async function prepareEverything(job) {
+    if (!job) return;
+    if (S.profileEmpty) { toast('Add your resume first.', 'error'); go('resume'); return; }
+    toast(`Preparing a package for ${job.company}`);
+    try {
+      await api('/api/auto-hunt', { method: 'POST', body: { job } });
+      await loadApplications();
+      toast('Package ready. Review it in Applications, then mark it Applied after you submit.');
+      go('applications');
+    } catch (err) { toast('Could not prepare: ' + err.message, 'error'); }
+  }
+
+  // ------------------------------------------------------- job workspace
+  function resetWorkspaceData() {
+    const w = S.ws;
+    w.refinement = null; w.decisions = {}; w.ats = null; w.atsFresh = false; w.gaps = null; w.cover = {}; w.prep = null;
+  }
+
+  function openWorkspace(job, tab = 'resume', from = S.view) {
+    if (!job) return;
+    if (S.profileEmpty) { toast('Add your resume first. Tailoring needs it.', 'error'); go('resume'); return; }
+    if (S.dirty) toast('You have unsaved profile changes. Tailoring uses your last saved profile.');
+    const key = jobKey(job);
+    if (key !== S.ws.key) resetWorkspaceData();
+    S.ws.job = job; S.ws.key = key; S.ws.showUnchanged = false;
+    if (from !== 'job') S.ws.from = from;
+    closeDetailSheet();
+    go('job', tab);
+  }
+
+  function renderWsHeader() {
+    const w = S.ws, j = w.job;
+    if (!j) return;
+    $('#wsTitle').textContent = j.title || 'Job';
+    const loc = String(j.location || '');
+    $('#wsMeta').textContent = [j.company, loc, loc.toLowerCase().includes(String(j.work_mode || '').toLowerCase()) ? '' : j.work_mode, j.salary].filter(Boolean).join(', ');
+    const sc = $('#wsScore');
+    const showScore = j.score !== undefined && !(S.searchMeta && S.searchMeta.profile_empty);
+    sc.hidden = !showScore;
+    if (showScore) sc.outerHTML = ring(j.score).replace('class="', 'id="wsScore" class="');
+    const url = bestApplyUrl(j), a = $('#wsApply');
+    a.hidden = !url; if (url) a.href = url;
+    const saved = savedApp(j);
+    const sb = $('[data-action="ws-save"]');
+    sb.disabled = !!saved;
+    sb.innerHTML = `${ico('bookmark')}${saved ? 'Saved' : 'Save'}`;
+    $('#wsBackLabel').textContent = w.from === 'applications' ? 'Back to applications' : w.from === 'digest' ? 'Back to digest' : 'Back to jobs';
+    if (w.ats) { const c = $('#wsAtsCount'); c.hidden = false; c.textContent = `${w.ats.ats_score}`; } else $('#wsAtsCount').hidden = true;
+  }
+
+  async function renderWsTab() {
+    const w = S.ws;
+    if (!w.job) return;
+    $$('#wsTabs [data-ws-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.wsTab === w.tab)));
+    const seq = ++w.seq, panel = $('#wsPanel');
+    panel.innerHTML = skeletons(2);
+    try {
+      if (w.tab === 'resume') { await ensureRefinement(); if (seq === w.seq) renderResumeTab(); }
+      else if (w.tab === 'ats') { await ensureAts(); if (seq === w.seq) renderAtsTab(); }
+      else if (w.tab === 'gaps') { await ensureGaps(); if (seq === w.seq) renderGapsTab(); }
+      else if (w.tab === 'cover') { await ensureCover(); if (seq === w.seq) renderCoverTab(); }
+      else if (w.tab === 'prep') { await ensurePrep(); if (seq === w.seq) renderPrepTab(); }
+      if (seq === w.seq) renderWsHeader();
     } catch (err) {
-      console.error('Refine error:', err);
+      if (seq !== w.seq) return;
+      panel.innerHTML = `<div class="empty">${ico('alert')}<h3>This tab did not load</h3><p>${esc(err.message)}</p><div class="empty-actions"><button type="button" class="btn btn-primary" data-action="ws-retry">Try again</button></div></div>`;
     }
   }
 
-  function renderDiffStream(diffItems) {
-    const container = document.getElementById('diffCardsStream');
-    if (!container) return;
-
-    container.innerHTML = diffItems.map(d => {
-      const decision = AppState.diffDecisions[d.id] || 'pending';
-      const isAccepted = decision === 'accepted';
-      const isRejected = decision === 'rejected';
-
-      let cardStatusClass = '';
-      if (isAccepted) cardStatusClass = 'accepted';
-      if (isRejected) cardStatusClass = 'rejected';
-
-      let badgeClass = 'badge-modified';
-      if (d.status === 'reordered') badgeClass = 'badge-reordered';
-      if (d.status === 'unchanged') badgeClass = 'badge-unchanged';
-
-      return `
-        <div class="diff-card ${cardStatusClass}" id="card-${d.id}">
-          <div class="diff-card-header">
-            <div class="diff-label-group">
-              <span class="diff-section-tag">${escapeHtml(d.section)}</span>
-              <span class="diff-title">${escapeHtml(d.label)}</span>
-            </div>
-            <span class="diff-status-badge ${badgeClass}">${escapeHtml(d.status.toUpperCase())}</span>
-          </div>
-
-          <div class="diff-columns-grid">
-            <div class="diff-col diff-col-orig">
-              <div class="diff-col-title">Master Resume (Original)</div>
-              <div>${escapeHtml(d.original)}</div>
-            </div>
-            <div class="diff-col diff-col-prop">
-              <div class="diff-col-title">Tailored Proposal for ${escapeHtml(AppState.activeJob.company)}</div>
-              <div id="text-${d.id}" contenteditable="true" onblur="window.JobHunterApp.handleManualDiffEdit('${d.id}', this.innerText)">${escapeHtml(d.proposed)}</div>
-            </div>
-          </div>
-
-          <div class="diff-rationale">
-            &bull; Tailoring Rationale: ${escapeHtml(d.rationale)}
-          </div>
-
-          <div class="diff-actions-row">
-            <button class="btn btn-sm ${isAccepted ? 'btn-primary' : 'btn-outline-success'}" onclick="window.JobHunterApp.setDiffDecision('${d.id}', 'accepted')">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              ${isAccepted ? 'Accepted' : 'Accept Change'}
-            </button>
-            <button class="btn btn-sm ${isRejected ? 'btn-danger' : 'btn-outline-danger'}" onclick="window.JobHunterApp.setDiffDecision('${d.id}', 'rejected')">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-              ${isRejected ? 'Rejected (Reverted)' : 'Reject / Keep Original'}
-            </button>
-          </div>
-        </div>
-      `;
-    }).join('');
+  async function ensureRefinement() {
+    const w = S.ws;
+    if (w.refinement) return;
+    const data = await api('/api/refine', { method: 'POST', body: { job: w.job } });
+    w.refinement = data; w.decisions = {};
+    (data.diff_items || []).forEach(d => { w.decisions[d.id] = 'pending'; });
   }
 
-  function setDiffDecision(diffId, decision) {
-    AppState.diffDecisions[diffId] = decision;
-    const card = document.getElementById(`card-${diffId}`);
-    if (card) {
-      card.classList.toggle('accepted', decision === 'accepted');
-      card.classList.toggle('rejected', decision === 'rejected');
+  function effectiveResume() {
+    const base = JSON.parse(JSON.stringify(S.profile || {}));
+    const w = S.ws, ref = w.refinement;
+    if (!ref) return base;
+    const item = id => (ref.diff_items || []).find(d => d.id === id);
+    const sum = item('diff_summary'), sk = item('diff_skills');
+    if (w.decisions.diff_summary === 'accepted' && sum) base.summary = sum.proposed;
+    if (w.decisions.diff_skills === 'accepted' && sk) {
+      base.skills = sk.edited ? sk.proposed.split(',').map(s => s.trim()).filter(Boolean) : (ref.tailored_skills || base.skills);
     }
-    updateDiffSummaryStats();
-    renderAtsPreview();
-    showToast(`Change ${decision === 'accepted' ? 'accepted' : 'rejected'}`);
+    (base.experience || []).forEach((exp, ei) => (exp.bullets || []).forEach((_, bi) => {
+      const d = item(`diff_exp_${ei}_${bi}`);
+      if (d && w.decisions[d.id] === 'accepted') exp.bullets[bi] = d.proposed;
+    }));
+    return base;
   }
 
-  function acceptAllDiffs() {
-    if (!AppState.activeRefinement) return;
-    (AppState.activeRefinement.diff_items || []).forEach(d => {
-      AppState.diffDecisions[d.id] = 'accepted';
-      const card = document.getElementById(`card-${d.id}`);
-      if (card) {
-        card.classList.add('accepted');
-        card.classList.remove('rejected');
-      }
-    });
-    updateDiffSummaryStats();
-    renderAtsPreview();
-    showToast('Accepted all tailored optimizations!');
+  const changedItems = () => ((S.ws.refinement && S.ws.refinement.diff_items) || []).filter(d => d.status !== 'unchanged');
+
+  function diffStatsHtml() {
+    const items = changedItems(), d = S.ws.decisions;
+    const a = items.filter(x => d[x.id] === 'accepted').length, r = items.filter(x => d[x.id] === 'rejected').length;
+    return `${items.length} suggested change${items.length === 1 ? '' : 's'}<span>, ${a} accepted, ${r} kept original</span>`;
   }
 
-  function rejectAllDiffs() {
-    if (!AppState.activeRefinement) return;
-    (AppState.activeRefinement.diff_items || []).forEach(d => {
-      AppState.diffDecisions[d.id] = 'rejected';
-      const card = document.getElementById(`card-${d.id}`);
-      if (card) {
-        card.classList.remove('accepted');
-        card.classList.add('rejected');
-      }
-    });
-    updateDiffSummaryStats();
-    renderAtsPreview();
-    showToast('Reverted all to original master text.');
-  }
-
-  function handleManualDiffEdit(diffId, newText) {
-    if (!AppState.activeRefinement) return;
-    const item = AppState.activeRefinement.diff_items.find(d => d.id === diffId);
-    if (item) {
-      item.proposed = newText;
-      AppState.diffDecisions[diffId] = 'accepted';
-      const card = document.getElementById(`card-${diffId}`);
-      if (card) card.classList.add('accepted');
-      renderAtsPreview();
-    }
-  }
-
-  function updateDiffSummaryStats() {
-    const statsEl = document.getElementById('diffSummaryStats');
-    if (!statsEl || !AppState.activeRefinement) return;
-    const total = (AppState.activeRefinement.diff_items || []).length;
-    let accepted = 0;
-    let rejected = 0;
-    Object.values(AppState.diffDecisions).forEach(val => {
-      if (val === 'accepted') accepted++;
-      if (val === 'rejected') rejected++;
-    });
-    statsEl.innerHTML = `${total} Proposed Optimizations &bull; <strong style="color: #34d399">${accepted} Accepted</strong> &bull; <strong style="color: #f87171">${rejected} Rejected</strong>`;
-  }
-
-  function getEffectiveTailoredResume() {
-    if (!AppState.profile) return {};
-    const effective = JSON.parse(JSON.stringify(AppState.profile));
-
-    if (!AppState.activeRefinement) return effective;
-
-    // Apply summary if accepted
-    if (AppState.diffDecisions['diff_summary'] === 'accepted') {
-      effective.summary = AppState.activeRefinement.tailored_summary;
-    }
-
-    // Apply skills if accepted
-    if (AppState.diffDecisions['diff_skills'] === 'accepted') {
-      effective.skills = AppState.activeRefinement.tailored_skills;
-    }
-
-    // Apply experience bullets
-    effective.experience.forEach((exp, expIdx) => {
-      exp.bullets.forEach((bullet, bIdx) => {
-        const diffId = `diff_exp_${expIdx}_${bIdx}`;
-        if (AppState.diffDecisions[diffId] === 'accepted') {
-          const item = AppState.activeRefinement.diff_items.find(d => d.id === diffId);
-          if (item) {
-            exp.bullets[bIdx] = item.proposed;
-          }
-        }
-      });
-    });
-
-    return effective;
-  }
-
-  function renderAtsPreview() {
-    const container = document.getElementById('atsPaperPreview');
-    if (!container) return;
-    const res = getEffectiveTailoredResume();
-
-    container.innerHTML = `
-      <h2>${escapeHtml(res.name || 'Candidate Name')}</h2>
-      <div class="ats-paper-contact">
-        ${escapeHtml(res.email || '')} &bull; ${escapeHtml(res.phone || '')} &bull; ${escapeHtml(res.location || '')}<br>
-        ${escapeHtml(res.linkedin || '')} &bull; ${escapeHtml(res.github || '')}
+  function diffCardHtml(d) {
+    const dec = S.ws.decisions[d.id] || 'pending';
+    const acc = dec === 'accepted', rej = dec === 'rejected';
+    const tag = d.status === 'reordered' ? ['chip-info', 'Reordered'] : d.status === 'unchanged' ? ['', 'Unchanged'] : ['chip-ok', 'Reworded'];
+    return `<article class="diff-card${acc ? ' is-accepted' : ''}${rej ? ' is-rejected' : ''}" data-diff="${esc(d.id)}">
+      <div class="diff-card-head"><strong>${esc(d.label || d.section)}</strong><span class="chip ${tag[0]}">${tag[1]}</span></div>
+      <div class="diff-cols">
+        <div class="diff-col"><span class="diff-col-label">Your resume</span>${esc(d.original)}</div>
+        <div class="diff-col prop"><span class="diff-col-label">Tailored, click to edit</span><div class="editable" contenteditable="true" role="textbox" aria-label="Tailored text" data-id="${esc(d.id)}">${esc(d.proposed)}</div></div>
       </div>
+      ${d.rationale ? `<p class="diff-why">${esc(d.rationale)}</p>` : ''}
+      <div class="diff-actions">
+        <button type="button" class="btn btn-sm ${acc ? 'btn-primary' : 'btn-secondary'}" data-action="diff-accept" data-id="${esc(d.id)}" aria-pressed="${acc}">${ico('check')}${acc ? 'Accepted' : 'Accept'}</button>
+        <button type="button" class="btn btn-sm ${rej ? 'btn-primary' : 'btn-secondary'}" data-action="diff-reject" data-id="${esc(d.id)}" aria-pressed="${rej}">${rej ? 'Kept original' : 'Keep original'}</button>
+      </div>
+    </article>`;
+  }
 
-      <div class="ats-paper-section-title">Professional Summary</div>
-      <p>${escapeHtml(res.summary || '')}</p>
-
-      <div class="ats-paper-section-title">Core Competencies &amp; Technical Skills</div>
-      <p>${(res.skills || []).join(' &bull; ')}</p>
-
-      <div class="ats-paper-section-title">Professional Experience</div>
-      ${(res.experience || []).map(exp => `
-        <div style="margin-bottom: 14px;">
-          <table style="width: 100%;">
-            <tr>
-              <td><strong>${escapeHtml(exp.role)}</strong> &mdash; ${escapeHtml(exp.company)}</td>
-              <td style="text-align: right; color: #555;">${escapeHtml(exp.start_date)} &ndash; ${escapeHtml(exp.end_date)}</td>
-            </tr>
-          </table>
-          <div style="font-size: 11.5px; color: #666; font-style: italic;">${escapeHtml(exp.location)}</div>
-          <ul>
-            ${(exp.bullets || []).map(b => `<li>${escapeHtml(b)}</li>`).join('')}
-          </ul>
+  function renderResumeTab() {
+    const w = S.ws, ref = w.refinement;
+    const all = ref.diff_items || [];
+    const changed = all.filter(d => d.status !== 'unchanged');
+    const unchanged = all.filter(d => d.status === 'unchanged');
+    $('#wsPanel').innerHTML = `
+      <div class="tailor-banner">
+        <div><strong>Tailor this resume in one click</strong>
+          <p>Reorders your skills and bullets, and mirrors the posting's wording for skills you already list. Every fact comes from your resume. Your master resume stays untouched.</p></div>
+        <button type="button" class="btn btn-primary" data-action="auto-tailor">${ico('bolt')}Tailor automatically</button>
+      </div>
+      <div class="diff-layout">
+        <div>
+          <div class="diff-bar">
+            <div class="diff-bar-stats" id="diffStats">${diffStatsHtml()}</div>
+            <div class="head-actions">
+              <button type="button" class="btn btn-secondary btn-sm" data-action="diff-accept-all">Accept all</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-action="diff-reset">Keep all original</button>
+            </div>
+          </div>
+          <div id="diffList">${changed.length ? changed.map(diffCardHtml).join('') : '<div class="empty"><h3>Nothing to change</h3><p>Your resume already matches this posting well.</p></div>'}</div>
+          ${unchanged.length ? `<button type="button" class="link-btn diff-toggle" data-action="diff-unchanged-toggle">${w.showUnchanged ? 'Hide' : 'Show'} ${unchanged.length} unchanged bullet${unchanged.length === 1 ? '' : 's'}</button>
+            ${w.showUnchanged ? unchanged.map(diffCardHtml).join('') : ''}` : ''}
         </div>
-      `).join('')}
-
-      <div class="ats-paper-section-title">Education</div>
-      ${(res.education || []).map(edu => `
-        <p><strong>${escapeHtml(edu.degree)}</strong> &mdash; ${escapeHtml(edu.institution)} (${escapeHtml(edu.graduation_year)})</p>
-      `).join('')}
-    `;
-  }
-
-  async function exportResume(format) {
-    const resume = getEffectiveTailoredResume();
-    try {
-      const res = await api('/api/export', {
-        method: 'POST',
-        body: { format, resume }
-      });
-
-      if (format === 'txt') {
-        navigator.clipboard.writeText(res.content);
-        showToast('Plain text ATS resume copied to clipboard!');
-      } else {
-        let blob;
-        if (res.content_base64) {
-          const bin = atob(res.content_base64);
-          const arr = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-          blob = new Blob([arr], { type: res.mime });
-        } else {
-          blob = new Blob([res.content], { type: 'text/html' });
-        }
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = res.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        showToast(`Downloaded ${res.filename}!`);
-      }
-    } catch (err) {
-      showToast('Export failed: ' + err.message, 'error');
-    }
-  }
-
-  function printAtsPreview() {
-    window.print();
-  }
-
-  // -------------------------------------------------------------
-  // Gap Report Controller
-  // -------------------------------------------------------------
-
-  async function loadGapForActiveJob() {
-    if (!AppState.activeJob) return;
-    try {
-      const report = await api('/api/gap-report', {
-        method: 'POST',
-        body: { job: AppState.activeJob }
-      });
-      renderGapReport(report);
-    } catch (err) {
-      console.error('Gap report error:', err);
-    }
-  }
-
-  function renderGapReport(rep) {
-    const matchedCount = (rep.matched_skills || []).length;
-    const addCount = (rep.add_if_true || []).length;
-    const realCount = (rep.real_gaps || []).length;
-
-    document.getElementById('gapMatchedCount').textContent = matchedCount;
-    document.getElementById('gapMatchedList').textContent = (rep.matched_skills || []).slice(0, 6).join(', ') || 'Core Stack';
-    document.getElementById('gapAddIfTrueCount').textContent = addCount;
-    document.getElementById('gapRealCount').textContent = realCount;
-
-    const addContainer = document.getElementById('gapAddIfTrueList');
-    if (addContainer) {
-      if (addCount === 0) {
-        addContainer.innerHTML = '<p class="field-help">No minor adjacent tool gaps detected! Your toolchain matches well.</p>';
-      } else {
-        addContainer.innerHTML = rep.add_if_true.map(item => `
-          <div class="gap-item-card">
-            <div class="gap-item-main">
-              <span class="gap-item-name">${escapeHtml(item.skill)}</span>
-              <span class="gap-item-advice">${escapeHtml(item.advice)}</span>
+        <aside class="card preview-card">
+          <div class="preview-head">
+            <h3>Resume preview</h3>
+            <div class="head-actions">
+              <button type="button" class="btn btn-ghost btn-sm" data-action="export" data-fmt="txt">${ico('copy')}Copy text</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-action="export" data-fmt="docx">${ico('download')}Word</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-action="export" data-fmt="pdf">${ico('download')}PDF</button>
             </div>
-            <button class="btn btn-outline-success btn-sm" onclick="window.JobHunterApp.addSkillToProfile('${escapeHtml(item.skill)}')">
-              + Add to Profile
-            </button>
           </div>
-        `).join('');
-      }
-    }
-
-    const realContainer = document.getElementById('gapRealList');
-    if (realContainer) {
-      if (realCount === 0) {
-        realContainer.innerHTML = '<p class="field-help">Zero major architectural gaps! You meet all structural requirements.</p>';
-      } else {
-        realContainer.innerHTML = rep.real_gaps.map(item => `
-          <div class="gap-item-card" style="border-left: 3px solid var(--accent-amber);">
-            <div class="gap-item-main">
-              <span class="gap-item-name text-amber">${escapeHtml(item.skill)}</span>
-              <span class="gap-item-advice">${escapeHtml(item.advice)}</span>
-            </div>
-            <span class="badge badge-amber" style="font-size: 10px; font-weight: 700;">PREPARE TALKING POINT</span>
-          </div>
-        `).join('');
-      }
-    }
+          <div class="preview-scroll"><div class="paper" id="atsPaperPreview"></div></div>
+        </aside>
+      </div>`;
+    renderPreview();
   }
 
-  async function addSkillToProfile(skillName) {
-    if (!AppState.profile.skills.includes(skillName)) {
-      AppState.profile.skills.push(skillName);
-      await saveMasterProfile();
-      showToast(`Added "${skillName}" to your master profile!`);
-      loadGapForActiveJob();
-      loadRefinementForActiveJob();
-    }
+  function renderPreview() {
+    const box = $('#atsPaperPreview');
+    if (!box) return;
+    const r = effectiveResume();
+    box.innerHTML = `
+      <h2>${esc(r.name || 'Your name')}</h2>
+      <div class="contact">${[r.email, r.phone, r.location].filter(Boolean).map(esc).join(', ')}${(r.linkedin || r.github) ? '<br>' + [r.linkedin, r.github].filter(Boolean).map(esc).join(', ') : ''}</div>
+      ${r.summary ? `<div class="sec">Summary</div><p>${esc(r.summary)}</p>` : ''}
+      ${(r.skills || []).length ? `<div class="sec">Skills</div><p>${(r.skills || []).map(esc).join(', ')}</p>` : ''}
+      ${(r.experience || []).length ? '<div class="sec">Experience</div>' : ''}
+      ${(r.experience || []).map(x => `<div class="job-block">
+        <div class="job-line"><strong>${esc(x.role)}, ${esc(x.company)}</strong><span>${esc(x.start_date)} to ${esc(x.end_date)}</span></div>
+        ${x.location ? `<div class="loc">${esc(x.location)}</div>` : ''}
+        <ul>${(x.bullets || []).map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>`).join('')}
+      ${(r.education || []).length ? '<div class="sec">Education</div>' : ''}
+      ${(r.education || []).map(e => `<p><strong>${esc(e.degree)}</strong>, ${esc(e.institution)}${e.graduation_year ? ` (${esc(e.graduation_year)})` : ''}</p>`).join('')}`;
   }
 
-  // -------------------------------------------------------------
-  // Cover Letter Generator Controller
-  // -------------------------------------------------------------
+  function afterDiffChange(id) {
+    S.ws.atsFresh = false;
+    const d = (S.ws.refinement.diff_items || []).find(x => x.id === id);
+    const card = id && $(`[data-diff="${CSS.escape(id)}"]`);
+    if (card && d) card.outerHTML = diffCardHtml(d);
+    const stats = $('#diffStats'); if (stats) stats.innerHTML = diffStatsHtml();
+    renderPreview();
+  }
 
-  async function loadCoverForActiveJob() {
-    if (!AppState.activeJob) return;
+  function setDiff(id, decision) {
+    const w = S.ws;
+    w.decisions[id] = w.decisions[id] === decision ? 'pending' : decision;
+    afterDiffChange(id);
+  }
+  function setAllDiffs(decision) {
+    changedItems().forEach(d => { S.ws.decisions[d.id] = decision; });
+    S.ws.atsFresh = false;
+    renderResumeTab();
+  }
+  function manualEdit(el) {
+    const d = (S.ws.refinement.diff_items || []).find(x => x.id === el.dataset.id);
+    const text = el.innerText.trim();
+    if (!d || text === String(d.proposed).trim()) return;
+    d.proposed = text; d.edited = true;
+    S.ws.decisions[d.id] = 'accepted';
+    afterDiffChange(d.id);
+  }
+
+  async function autoTailor() {
+    const w = S.ws, btns = $$('[data-action="auto-tailor"]');
+    btns.forEach(b => { b.disabled = true; });
     try {
-      const data = await api('/api/cover-letter', {
-        method: 'POST',
-        body: { job: AppState.activeJob }
-      });
-      const textarea = document.getElementById('coverLetterTextarea');
-      if (textarea) textarea.value = data.cover_letter || '';
-    } catch (err) {
-      console.error('Cover letter error:', err);
-    }
+      const res = await api('/api/auto-tailor', { method: 'POST', body: { job: w.job } });
+      w.refinement = res.refinement; w.decisions = {};
+      (res.refinement.diff_items || []).forEach(d => { w.decisions[d.id] = 'accepted'; });
+      w.ats = res.ats_audit; w.atsFresh = true;
+      toast(`Tailored. ATS score is now ${res.ats_audit.ats_score}%${res.boost > 0 ? `, up ${res.boost} points` : ''}.`);
+      if (w.tab === 'ats') renderAtsTab(); else renderResumeTab();
+      renderWsHeader();
+    } catch (err) { toast('Could not tailor: ' + err.message, 'error'); }
+    finally { btns.forEach(b => { b.disabled = false; }); }
   }
 
-  function setCoverTone(tone) {
-    AppState.coverTone = tone;
-    document.querySelectorAll('.btn-tone').forEach(b => {
-      b.classList.toggle('active', b.getAttribute('data-tone') === tone);
-    });
-    loadCoverForActiveJob();
-    showToast(`Tone updated to ${tone}`);
+  async function exportResume(fmt) {
+    try {
+      const res = await api('/api/export', { method: 'POST', body: { format: fmt, resume: effectiveResume() } });
+      if (fmt === 'txt') {
+        try { await navigator.clipboard.writeText(res.content); toast('Plain text resume copied'); }
+        catch (e) { toast('Your browser blocked copying. Use Word or PDF instead.', 'error'); }
+        return;
+      }
+      const bin = atob(res.content_base64), arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([arr], { type: res.mime }));
+      const a = document.createElement('a');
+      a.href = url; a.download = res.filename; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast(`Downloaded ${res.filename}`);
+    } catch (err) { toast('Export failed: ' + err.message, 'error'); }
   }
 
-  function copyCoverLetter() {
-    const text = document.getElementById('coverLetterTextarea').value;
-    navigator.clipboard.writeText(text);
-    showToast('Cover letter copied to clipboard!');
+  // ATS
+  async function ensureAts() {
+    const w = S.ws;
+    if (w.ats && w.atsFresh) return;
+    w.ats = await api('/api/ats-audit', { method: 'POST', body: { job: w.job, resume: effectiveResume() } });
+    w.atsFresh = true;
   }
 
-  async function saveCoverLetterToTracker() {
-    if (!AppState.activeJob) return;
-    const text = document.getElementById('coverLetterTextarea').value;
-    const payload = {
-      job_id: AppState.activeJob.id,
-      company: AppState.activeJob.company,
-      title: AppState.activeJob.title,
-      location: AppState.activeJob.location,
-      salary: AppState.activeJob.salary,
-      status: 'applied',
-      notes: 'Applied with tailored cover letter and resume.',
-      sources: AppState.activeJob.sources || [{ source: AppState.activeJob.source, url: AppState.activeJob.url }],
-      job_data: AppState.activeJob,
-      cover_letter: text
+  function renderAtsTab() {
+    const a = S.ws.ats, b = a.breakdown || {};
+    const score = a.ats_score || 0;
+    const head = score >= 90 ? ['Ready to submit', 'Your resume parses cleanly and covers the posting well.']
+      : score >= 75 ? ['Passes, with room to improve', 'It will pass a first parse. More measurable results and posting keywords would raise it.']
+      : ['Needs work', 'Key posting words or structure are missing. Tailor automatically to fix the common gaps.'];
+    const bars = [
+      ['Posting keywords', b.keyword_score, 40], ['Structure and contact', b.structure_score, 20],
+      ['Measurable results', b.metrics_score, 20], ['Action verbs', b.verbs_score, 10], ['Length', b.length_score, 10]
+    ];
+    const kw = a.top_keywords_density || [];
+    const checks = a.checklist || [];
+    const recs = a.recommendations || [];
+    $('#wsPanel').innerHTML = `
+      <div class="card ats-top">
+        <div class="ats-score">
+          <div class="score-ring ${tierOf(score).cls}" style="--pct:${score}" role="img" aria-label="ATS score ${score} out of 100"><span>${score}</span></div>
+          <div>
+            <h2>${head[0]}, grade ${esc(a.grade || '')}</h2>
+            <p>${head[1]}</p>
+            <div class="actions">
+              <button type="button" class="btn btn-primary btn-sm" data-action="auto-tailor">${ico('bolt')}Tailor automatically</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-action="export" data-fmt="pdf">${ico('download')}Download PDF</button>
+            </div>
+          </div>
+        </div>
+        <div>${bars.map(([n, v, max]) => `<div class="bar-row"><span>${n}</span><div class="bar" role="img" aria-label="${n}: ${v || 0} of ${max}"><i style="width:${Math.round(((v || 0) / max) * 100)}%"></i></div><b>${v || 0}/${max}</b></div>`).join('')}</div>
+      </div>
+      ${a.note ? `<p class="muted small" style="margin-top:10px">${esc(a.note)}</p>` : ''}
+      <div class="two-col">
+        <section class="card">
+          <h2 class="card-title">Posting keywords</h2>
+          <p class="muted small">Each keyword should appear at least once and no more than six times.</p>
+          ${kw.length ? kw.map(k => {
+            const st = k.status === 'missing' ? ['chip-bad', 'Missing'] : k.status === 'stuffed' ? ['chip-warn', 'Too many'] : ['chip-ok', 'Good'];
+            return `<div class="kw-row"><span>${esc(k.keyword)}</span><span><span class="muted small">${k.count}x</span> <span class="chip ${st[0]}">${st[1]}</span></span></div>`;
+          }).join('') : '<p class="muted">No keywords found in the posting.</p>'}
+        </section>
+        <section class="card">
+          <h2 class="card-title">Checks</h2>
+          ${checks.map(c => `<div class="check-item ${c.passed ? 'pass' : 'fail'}"><span class="check-mark">${ico(c.passed ? 'check' : 'x')}</span><div><strong>${esc(c.rule)}</strong><small>${esc(c.details)}</small></div></div>`).join('')}
+          <h3 class="card-title" style="margin-top:18px">What to do next</h3>
+          ${recs.length ? `<ul class="reco">${recs.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : '<p class="muted">Nothing blocks this resume. You can submit it.</p>'}
+        </section>
+      </div>`;
+  }
+
+  // Gaps
+  async function ensureGaps() {
+    if (S.ws.gaps) return;
+    S.ws.gaps = await api('/api/gap-report', { method: 'POST', body: { job: S.ws.job } });
+  }
+  function renderGapsTab() {
+    const g = S.ws.gaps;
+    const matched = g.matched_skills || [], add = g.add_if_true || [], real = g.real_gaps || [];
+    $('#wsPanel').innerHTML = `
+      <div class="gap-stats">
+        <div class="stat stat-ok"><b>${matched.length}</b><span>Skills you match</span></div>
+        <div class="stat stat-info"><b>${add.length}</b><span>Worth adding if true</span></div>
+        <div class="stat stat-warn"><b>${real.length}</b><span>Real gaps</span></div>
+      </div>
+      ${matched.length ? `<div class="card"><h2 class="card-title">You already have</h2><div class="chips" style="margin-top:8px">${matched.map(s => `<span class="chip chip-ok">${esc(s)}</span>`).join('')}</div></div>` : ''}
+      <div class="two-col">
+        <section class="card">
+          <h2 class="card-title">Add if true</h2>
+          <p class="muted small">Common tools people use but forget to list. Add one only if you really use it.</p>
+          ${add.length ? add.map(i => `<div class="gap-item"><div><strong>${esc(i.skill)}</strong><span>${esc(i.advice)}</span></div><button type="button" class="btn btn-secondary btn-sm" data-action="gap-add" data-skill="${esc(i.skill)}">${ico('plus')}Add to profile</button></div>`).join('')
+            : '<p class="muted" style="margin-top:12px">No small gaps found.</p>'}
+        </section>
+        <section class="card">
+          <h2 class="card-title">Real gaps</h2>
+          <p class="muted small">Do not claim these. Plan an honest answer for the interview.</p>
+          ${real.length ? real.map(i => `<div class="gap-item"><div><strong>${esc(i.skill)} ${i.priority ? `<span class="chip chip-warn">${esc(i.priority)}</span>` : ''}</strong><span>${esc(i.advice)}</span></div></div>`).join('')
+            : '<p class="muted" style="margin-top:12px">No major gaps found.</p>'}
+        </section>
+      </div>`;
+  }
+
+  // Cover letter
+  async function ensureCover() {
+    const w = S.ws;
+    if (w.cover[w.tone] !== undefined) return;
+    const data = await api('/api/cover-letter', { method: 'POST', body: { job: w.job, tone: w.tone } });
+    w.cover[w.tone] = data.cover_letter || '';
+  }
+  function renderCoverTab() {
+    const w = S.ws;
+    $('#wsPanel').innerHTML = `
+      <div class="card">
+        <div class="letter-controls">
+          <div class="segmented" role="group" aria-label="Letter tone">${TONES.map(t => `<button type="button" data-action="cover-tone" data-tone="${t.key}" aria-pressed="${t.key === w.tone}">${t.label}</button>`).join('')}</div>
+          <div class="head-actions">
+            <button type="button" class="btn btn-secondary btn-sm" data-action="cover-copy">${ico('copy')}Copy</button>
+            <button type="button" class="btn btn-primary btn-sm" data-action="cover-save">${ico('bookmark')}Save to Applications</button>
+          </div>
+        </div>
+        <label class="sr-only" for="coverLetterTextarea">Cover letter</label>
+        <textarea id="coverLetterTextarea" class="letter" rows="16">${esc(w.cover[w.tone])}</textarea>
+        <p class="muted small" style="margin-top:10px">Every fact comes from your saved resume. Edit freely before you send it.</p>
+      </div>`;
+  }
+  async function saveCoverLetter() {
+    const w = S.ws, job = w.job, text = val('coverLetterTextarea');
+    const existing = savedApp(job);
+    const base = existing ? Object.assign({}, existing) : {
+      job_id: job.id, company: job.company, title: job.title, location: job.location, salary: job.salary,
+      status: 'saved', notes: 'Cover letter saved.', follow_up_date: isoDay(5), sources: jobSources(job), job_data: job
     };
+    base.cover_letter = text;
+    if (w.refinement) base.tailored_resume = effectiveResume();
     try {
-      await api('/api/applications', { method: 'POST', body: payload });
-      showToast('Saved to Application Pipeline (Applied column)!');
-      loadApplications();
-    } catch (err) {
-      showToast('Error saving application: ' + err.message, 'error');
-    }
+      await api('/api/applications', { method: 'POST', body: base });
+      await loadApplications();
+      renderWsHeader();
+      toast('Saved to Applications');
+    } catch (err) { toast('Could not save: ' + err.message, 'error'); }
   }
 
-  // -------------------------------------------------------------
-  // Application Tracker (Kanban Pipeline) Controller
-  // -------------------------------------------------------------
+  // Interview prep
+  async function ensurePrep() {
+    if (S.ws.prep) return;
+    S.ws.prep = await api('/api/interview-prep', { method: 'POST', body: { job: S.ws.job } });
+  }
+  function renderPrepTab() {
+    const p = S.ws.prep;
+    const block = (title, hint, body, open) => `<details class="prep-block" ${open ? 'open' : ''}><summary>${title}${ico('chevron')}</summary><div class="prep-body">${hint ? `<p class="muted small" style="margin-bottom:6px">${hint}</p>` : ''}${body}</div></details>`;
+    const q = (a, b) => `<div class="prep-q"><strong>${a}</strong>${b ? `<p>${b}</p>` : ''}</div>`;
+    $('#wsPanel').innerHTML =
+      block('Behavioral questions', `Tailored to ${esc(p.company)}. Answer with Situation, Task, Action, Result.`,
+        (p.behavioral_questions || []).map(x => q(esc(x.question), esc(x.tip))).join('') || '<p class="muted">None.</p>', true) +
+      block('Technical deep dives', 'Based on the posting\'s main tools.',
+        (p.technical_deep_dives || []).map(x => q(`${esc(x.topic)}: ${esc(x.question)}`, esc(x.talking_point))).join('') || '<p class="muted">None.</p>', false) +
+      block('Your skill gaps, answered honestly', 'Never fake experience. Show how fast you learn.',
+        (p.gap_talking_points || []).map(x => q(esc(x.skill), esc(x.recommended_response))).join('') || '<p class="muted">No gaps to address.</p>', false) +
+      block('Questions to ask them', '',
+        (p.questions_to_ask_interviewer || []).map(x => q(esc(x), '')).join('') || '<p class="muted">None.</p>', false);
+  }
 
+  // ----------------------------------------------------------- applications
   async function loadApplications() {
     try {
       const data = await api('/api/applications');
-      AppState.applications = data.applications || [];
-      renderKanbanBoard();
-      updateTrackerCount(AppState.applications.length);
-    } catch (err) {
-      console.error('Error loading applications:', err);
+      S.applications = data.applications || [];
+    } catch (err) { console.error('Applications failed:', err); }
+    const n = S.applications.filter(a => a.status !== 'rejected').length;
+    const badge = $('#navAppCount'); badge.hidden = !n; badge.textContent = n;
+    if (S.view === 'applications') renderBoard();
+  }
+
+  function followHtml(a) {
+    if (!a.follow_up_date || a.status === 'rejected' || a.status === 'saved') return '';
+    const d = daysUntil(a.follow_up_date);
+    if (d === null) return '';
+    const late = d < 0, text = late ? `Follow up ${-d}d overdue` : d === 0 ? 'Follow up today' : `Follow up in ${d}d`;
+    return `<span class="follow${late || d === 0 ? ' late' : ''}">${ico('clock')}${text}</span>`;
+  }
+
+  function renderBoard() {
+    const apps = S.applications;
+    const live = apps.filter(a => a.status !== 'rejected').length;
+    const overdue = apps.filter(a => a.overdue).length;
+    $('#appStats').textContent = apps.length
+      ? `${live} in progress${overdue ? `, ${overdue} follow-up${overdue === 1 ? '' : 's'} overdue` : ''}. Drag a card or use its stage menu.`
+      : 'Track every role from saved to offer.';
+    const board = $('#kanbanBoard');
+    if (!apps.length) {
+      board.style.display = 'block';
+      board.innerHTML = `<div class="empty">${ico('board')}<h3>No applications yet</h3><p>Save a job from search, or add one you found elsewhere.</p>
+        <div class="empty-actions"><a class="btn btn-primary" href="#/jobs">Find jobs</a><button type="button" class="btn btn-secondary" data-action="app-add">Add application</button></div></div>`;
+      return;
     }
+    board.style.display = '';
+    board.innerHTML = STAGES.map(st => {
+      const items = apps.filter(a => (a.status || 'saved') === st.key);
+      return `<section class="col" data-stage="${st.key}" aria-label="${st.label}">
+        <div class="col-head"><span>${st.label}</span><span class="count">${items.length}</span></div>
+        <div class="col-body">${items.length ? items.map(a => `
+          <article class="kcard" draggable="true" data-id="${esc(a.id)}">
+            <div class="kcard-title">${esc(a.title)}</div>
+            <div class="kcard-company">${esc(a.company)}</div>
+            <div class="kcard-meta">${a.location ? `<span>${esc(a.location)}</span>` : ''}${a.salary ? `<span>${esc(a.salary)}</span>` : ''}</div>
+            ${followHtml(a)}
+            ${a.notes ? `<div class="kcard-notes">${esc(a.notes)}</div>` : ''}
+            <div class="kcard-foot">
+              <select aria-label="Stage for ${esc(a.title)}" data-action="app-stage" data-id="${esc(a.id)}">${STAGES.map(s => `<option value="${s.key}" ${s.key === a.status ? 'selected' : ''}>${s.label}</option>`).join('')}</select>
+              ${a.job_data && (a.job_data.title || a.job_data.description) ? `<button type="button" class="icon-btn" data-action="app-open" data-id="${esc(a.id)}" title="Open tailoring tools" aria-label="Open tailoring tools">${ico('file')}</button>` : ''}
+              <button type="button" class="icon-btn" data-action="app-edit" data-id="${esc(a.id)}" title="Edit" aria-label="Edit ${esc(a.title)}">${ico('edit')}</button>
+              <button type="button" class="icon-btn" data-action="app-delete" data-id="${esc(a.id)}" title="Remove" aria-label="Remove ${esc(a.title)}">${ico('trash')}</button>
+            </div>
+          </article>`).join('') : '<div class="col-empty">Nothing here</div>'}</div>
+      </section>`;
+    }).join('');
   }
 
-  function updateTrackerCount(count) {
-    const el = document.getElementById('navTrackerCount');
-    if (el) el.textContent = count;
-  }
-
-  function renderKanbanBoard() {
-    const statuses = ['saved', 'applied', 'interview', 'offer', 'rejected'];
-    const counts = { saved: 0, applied: 0, interview: 0, offer: 0, rejected: 0 };
-
-    statuses.forEach(status => {
-      const dropzone = document.getElementById(`cards${status.charAt(0).toUpperCase() + status.slice(1)}`);
-      if (!dropzone) return;
-
-      const filtered = AppState.applications.filter(a => (a.status || 'saved') === status);
-      counts[status] = filtered.length;
-
-      dropzone.innerHTML = filtered.map(app => {
-        // Calculate follow-up status
-        let followUpBadge = '';
-        if (app.follow_up_date) {
-          const followDate = new Date(app.follow_up_date);
-          const today = new Date();
-          const diffDays = Math.ceil((followDate - today) / (1000 * 60 * 60 * 24));
-          const isOverdue = diffDays < 0;
-          const isToday = diffDays === 0;
-
-          followUpBadge = `
-            <div class="follow-up-badge ${isOverdue || isToday ? 'overdue' : ''}">
-              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-              ${isOverdue ? 'Overdue!' : isToday ? 'Follow up today!' : `Follow-up in ${diffDays}d`}
-            </div>
-          `;
-        }
-
-        return `
-          <div class="kanban-card" draggable="true" ondragstart="event.dataTransfer.setData('text/plain', '${app.id}')" id="kanban-card-${app.id}">
-            <div class="kanban-card-title">${escapeHtml(app.title)}</div>
-            <div class="kanban-card-company">${escapeHtml(app.company)}</div>
-            <div class="kanban-card-meta">
-              <span>${escapeHtml(app.location || 'Remote')}</span>
-              <span>${escapeHtml(app.salary || '')}</span>
-            </div>
-            ${followUpBadge}
-            ${app.notes ? `<div style="font-size: 11px; color: #94a3b8; font-style: italic; margin-bottom: 6px;">"${escapeHtml(app.notes)}"</div>` : ''}
-            <div class="kanban-card-actions">
-              <select class="stage-select" onchange="window.JobHunterApp.moveApplicationStage('${app.id}', this.value)">
-                <option value="saved" ${app.status === 'saved' ? 'selected' : ''}>Saved</option>
-                <option value="applied" ${app.status === 'applied' ? 'selected' : ''}>Applied</option>
-                <option value="interview" ${app.status === 'interview' ? 'selected' : ''}>Interview</option>
-                <option value="offer" ${app.status === 'offer' ? 'selected' : ''}>Offer</option>
-                <option value="rejected" ${app.status === 'rejected' ? 'selected' : ''}>Archived</option>
-              </select>
-              <button class="btn btn-sm btn-outline-danger" style="padding: 2px 6px;" onclick="window.JobHunterApp.deleteApplication('${app.id}')">&times;</button>
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      // Update column header count
-      const countEl = document.getElementById(`count${status.charAt(0).toUpperCase() + status.slice(1)}`);
-      if (countEl) countEl.textContent = counts[status];
-    });
-  }
-
-  async function moveApplicationStage(appId, newStatus) {
-    const app = AppState.applications.find(a => a.id === appId);
-    if (!app) return;
-    app.status = newStatus;
+  async function moveApp(id, status) {
+    const app = S.applications.find(a => a.id === id);
+    if (!app || app.status === status) return;
+    const previous = app.status;
+    app.status = status;
+    renderBoard();
     try {
       await api('/api/applications', { method: 'POST', body: app });
-      renderKanbanBoard();
-      showToast(`Moved to ${newStatus}`);
-    } catch (err) {
-      showToast('Error moving stage: ' + err.message, 'error');
-    }
-  }
-
-  function handleCardDrop(event, targetStatus) {
-    event.preventDefault();
-    const appId = event.dataTransfer.getData('text/plain');
-    if (appId) {
-      moveApplicationStage(appId, targetStatus);
-    }
-  }
-
-  async function deleteApplication(appId) {
-    if (!confirm('Remove this application from the pipeline?')) return;
-    try {
-      await api(`/api/applications/${appId}`, { method: 'DELETE' });
-      AppState.applications = AppState.applications.filter(a => a.id !== appId);
-      renderKanbanBoard();
-      updateTrackerCount(AppState.applications.length);
-      showToast('Application deleted.');
-    } catch (err) {
-      showToast('Error deleting application: ' + err.message, 'error');
-    }
-  }
-
-  async function saveJobToTracker(jobIdx) {
-    const job = AppState.jobs[jobIdx];
-    if (!job) return;
-
-    const payload = {
-      job_id: job.id,
-      company: job.company,
-      title: job.title,
-      location: job.location,
-      salary: job.salary,
-      status: 'saved',
-      notes: 'Bookmarked from multi-source search.',
-      follow_up_date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      sources: job.sources || [{ source: job.source, url: job.url }],
-      job_data: job
-    };
-
-    try {
-      await api('/api/applications', { method: 'POST', body: payload });
-      showToast(`Saved "${job.title}" to tracker!`);
+      toast(`Moved to ${STAGES.find(s => s.key === status).label}`);
       loadApplications();
     } catch (err) {
-      showToast('Error saving to tracker: ' + err.message, 'error');
+      app.status = previous; renderBoard();
+      toast('Could not move it: ' + err.message, 'error');
     }
   }
 
-  function openAddCustomAppModal() {
-    document.getElementById('appModalTitle').textContent = 'Add Opportunity to Pipeline';
-    document.getElementById('modalCompany').value = '';
-    document.getElementById('modalTitle').value = '';
-    document.getElementById('modalLocation').value = 'Remote';
-    document.getElementById('modalSalary').value = '';
-    document.getElementById('modalFollowUp').value = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    document.getElementById('modalNotes').value = '';
-    document.getElementById('appModal').style.display = 'flex';
+  async function deleteApp(id) {
+    const app = S.applications.find(a => a.id === id);
+    if (!app) return;
+    if (!await confirmDialog('Remove this application?', `${app.title} at ${app.company} will leave your pipeline.`, 'Remove')) return;
+    try {
+      await api(`/api/applications/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      S.applications = S.applications.filter(a => a.id !== id);
+      renderBoard(); loadApplications();
+      toast('Application removed');
+    } catch (err) { toast('Could not remove it: ' + err.message, 'error'); }
   }
 
-  async function saveModalApplication() {
-    const payload = {
-      company: document.getElementById('modalCompany').value.trim(),
-      title: document.getElementById('modalTitle').value.trim(),
-      location: document.getElementById('modalLocation').value.trim(),
-      salary: document.getElementById('modalSalary').value.trim(),
-      status: document.getElementById('modalStatus').value,
-      follow_up_date: document.getElementById('modalFollowUp').value,
-      notes: document.getElementById('modalNotes').value.trim()
+  let editingApp = null;
+  function openAppDialog(app) {
+    editingApp = app || null;
+    $('#appDialogTitle').textContent = app ? 'Edit application' : 'Add application';
+    $('#appDialogSubmit').textContent = 'Save application';
+    $('#modalCompany').value = app ? app.company : '';
+    $('#modalTitle').value = app ? app.title : '';
+    $('#modalLocation').value = app ? app.location : 'Remote';
+    $('#modalSalary').value = app ? app.salary : '';
+    $('#modalStatus').value = app ? app.status : 'applied';
+    $('#modalFollowUp').value = app ? app.follow_up_date : isoDay(3);
+    $('#modalNotes').value = app ? app.notes : '';
+    $('#appDialog').showModal();
+    $('#modalCompany').focus();
+  }
+  async function submitAppDialog() {
+    const fields = {
+      company: val('modalCompany').trim(), title: val('modalTitle').trim(), location: val('modalLocation').trim(),
+      salary: val('modalSalary').trim(), status: val('modalStatus'), follow_up_date: val('modalFollowUp'), notes: val('modalNotes').trim()
     };
     try {
-      await api('/api/applications', { method: 'POST', body: payload });
-      closeModal('appModal');
-      showToast('Added to application tracker!');
-      loadApplications();
-    } catch (err) {
-      showToast('Error: ' + err.message, 'error');
-    }
-  }
-
-  // -------------------------------------------------------------
-  // Watchlist Controller (Greenhouse, Lever, Ashby Career Portals)
-  // -------------------------------------------------------------
-
-  async function loadWatchlist() {
-    try {
-      const data = await api('/api/watchlist');
-      AppState.watchlist = data.watchlist || [];
-      renderWatchlistGrid();
-    } catch (err) {
-      console.error('Watchlist error:', err);
-    }
-  }
-
-  function renderWatchlistGrid() {
-    const container = document.getElementById('watchlistGrid');
-    if (!container) return;
-
-    if (AppState.watchlist.length === 0) {
-      container.innerHTML = '<div class="empty-state-card">No companies watched yet. Add target employers to monitor their ATS boards.</div>';
-      return;
-    }
-
-    container.innerHTML = AppState.watchlist.map(w => `
-      <div class="card watchlist-card">
-        <div>
-          <div class="wl-company-header">
-            <span class="wl-company-name">${escapeHtml(w.company_name)}</span>
-            <span class="wl-badge badge-cyan">${escapeHtml(w.board_type.toUpperCase())}</span>
-          </div>
-          <p style="font-size: 13px; color: #94a3b8; margin-bottom: 8px;">Target Role: <strong>${escapeHtml(w.target_role || 'Engineering')}</strong></p>
-          <div style="font-size: 12px; color: #34d399; font-weight: 600;">
-            &bull; Active Board Monitor: 1+ matching positions
-          </div>
-        </div>
-        <div style="display: flex; gap: 8px; margin-top: 16px;">
-          <button class="btn btn-primary btn-sm" onclick="window.JobHunterApp.searchCompanyRoles('${escapeHtml(w.company_name)}')">View Roles</button>
-          <button class="btn btn-outline-danger btn-sm" onclick="window.JobHunterApp.deleteWatchlistItem('${w.id}')">Unwatch</button>
-        </div>
-      </div>
-    `).join('');
-  }
-
-  function openAddWatchlistModal() {
-    document.getElementById('wlCompanyName').value = '';
-    document.getElementById('wlTargetRole').value = 'Software Engineer';
-    document.getElementById('watchlistModal').style.display = 'flex';
-  }
-
-  async function saveModalWatchlist() {
-    const company_name = document.getElementById('wlCompanyName').value.trim();
-    const board_type = document.getElementById('wlAtsType').value;
-    const target_role = document.getElementById('wlTargetRole').value.trim();
-
-    try {
-      await api('/api/watchlist', {
-        method: 'POST',
-        body: { company_name, board_type, target_role }
-      });
-      closeModal('watchlistModal');
-      showToast(`Added ${company_name} to career board watchlist!`);
-      loadWatchlist();
-    } catch (err) {
-      showToast('Error: ' + err.message, 'error');
-    }
-  }
-
-  async function deleteWatchlistItem(id) {
-    try {
-      await api(`/api/watchlist/${id}`, { method: 'DELETE' });
-      showToast('Removed from watchlist.');
-      loadWatchlist();
-    } catch (err) {
-      showToast('Error: ' + err.message, 'error');
-    }
-  }
-
-  function searchCompanyRoles(companyName) {
-    document.getElementById('searchQuery').value = companyName;
-    switchTab('tab-search');
-    handleSearch();
-  }
-
-  // -------------------------------------------------------------
-  // Daily Digest Simulator Controller
-  // -------------------------------------------------------------
-
-  async function loadDailyDigest(threshold = 75) {
-    try {
-      const data = await api('/api/digest');
-      renderDailyDigest(data);
-    } catch (err) {
-      console.error('Digest error:', err);
-    }
-  }
-
-  function renderDailyDigest(digest) {
-    document.getElementById('digestGreetingName').textContent = digest.recipient_name || 'Alex';
-    document.getElementById('digestDate').textContent = digest.date || 'Today, 8:00 AM';
-    document.getElementById('digestThresholdBadge').textContent = `${digest.min_score || 75}%+`;
-    document.getElementById('digestIntroText').textContent = digest.summary || 'Here are today’s top matching opportunities:';
-
-    const container = document.getElementById('digestJobsStream');
-    if (!container) return;
-
-    const jobs = digest.digest_jobs || [];
-    if (jobs.length === 0) {
-      container.innerHTML = '<p class="empty-state-card">No jobs met the minimum score threshold today. Lower threshold to see more.</p>';
-      return;
-    }
-
-    container.innerHTML = jobs.map((j, idx) => `
-      <div class="digest-job-row">
-        <div class="digest-job-info">
-          <h4>${escapeHtml(j.title)} &mdash; ${escapeHtml(j.company)}</h4>
-          <div class="digest-job-sub">
-            ${escapeHtml(j.location || 'Remote')} &bull; ${escapeHtml(j.salary || 'Competitive')} &bull; Matched on: ${(j.matched_skills || []).slice(0, 3).join(', ')}
-          </div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <span class="score-badge-circle score-exceptional" style="font-size: 14px; padding: 4px 10px;">${j.score || 85}%</span>
-          <button class="btn btn-primary btn-sm" onclick="window.JobHunterApp.triggerTailorFromDigest('${escapeHtml(j.company)}')">Tailor &amp; Apply</button>
-        </div>
-      </div>
-    `).join('');
-  }
-
-  function reloadDigest(threshold) {
-    loadDailyDigest(threshold);
-  }
-
-  // -------------------------------------------------------------
-  // Interview Prep Studio Controller
-  // -------------------------------------------------------------
-
-  async function loadPrepForActiveJob() {
-    if (!AppState.activeJob) return;
-    try {
-      const data = await api('/api/interview-prep', {
-        method: 'POST',
-        body: { job: AppState.activeJob }
-      });
-      renderInterviewPrep(data);
-    } catch (err) {
-      console.error('Prep error:', err);
-    }
-  }
-
-  function renderInterviewPrep(prep) {
-    const container = document.getElementById('prepSectionsGrid');
-    if (!container) return;
-
-    container.innerHTML = `
-      <!-- Behavioral Questions -->
-      <div class="card prep-category-card">
-        <h3 class="card-title text-cyan">Behavioral &amp; Situational Questions</h3>
-        <p class="field-help">Tailored to ${escapeHtml(prep.company)} and structured around the STAR framework (Situation, Task, Action, Result).</p>
-        ${(prep.behavioral_questions || []).map(q => `
-          <div class="prep-question-item">
-            <div class="prep-q-title">${escapeHtml(q.question)}</div>
-            <div class="prep-q-tip"><strong>STAR Strategy:</strong> ${escapeHtml(q.tip)}</div>
-          </div>
-        `).join('')}
-      </div>
-
-      <!-- Technical Deep Dives -->
-      <div class="card prep-category-card">
-        <h3 class="card-title text-success">Technical Architecture &amp; Stack Deep Dives</h3>
-        <p class="field-help">Targeted challenges based on the posting's core infrastructure.</p>
-        ${(prep.technical_deep_dives || []).map(t => `
-          <div class="prep-question-item">
-            <div class="prep-q-title"><strong>${escapeHtml(t.topic)}:</strong> ${escapeHtml(t.question)}</div>
-            <div class="prep-q-tip"><strong>Key Talking Points:</strong> ${escapeHtml(t.talking_point)}</div>
-          </div>
-        `).join('')}
-      </div>
-
-      <!-- Overcoming Gaps Honestly -->
-      <div class="card prep-category-card">
-        <h3 class="card-title text-amber">Addressing Identified Skill Gaps Honestly</h3>
-        <p class="field-help">Never fake experience. Use this framing to demonstrate rapid ramp-up capability.</p>
-        ${(prep.gap_talking_points || []).map(g => `
-          <div class="prep-question-item">
-            <div class="prep-q-title">Gap: ${escapeHtml(g.skill)}</div>
-            <div class="prep-q-tip">${escapeHtml(g.recommended_response)}</div>
-          </div>
-        `).join('')}
-      </div>
-
-      <!-- Questions for the Interviewer -->
-      <div class="card prep-category-card">
-        <h3 class="card-title">High-Signal Questions to Ask the Hiring Team</h3>
-        <p class="field-help">Shows domain expertise and genuine enthusiasm.</p>
-        ${(prep.questions_to_ask_interviewer || []).map(q => `
-          <div class="prep-question-item">
-            <div class="prep-q-title">${escapeHtml(q)}</div>
-          </div>
-        `).join('')}
-      </div>
-    `;
-  }
-
-  // -------------------------------------------------------------
-  // ATS Score & Parseability Studio Controller (10X Parseability)
-  // -------------------------------------------------------------
-
-  async function loadAtsForActiveJob() {
-    if (!AppState.activeJob) return;
-    try {
-      const effectiveResume = getEffectiveTailoredResume();
-      const data = await api('/api/ats-audit', {
-        method: 'POST',
-        body: {
-          job: AppState.activeJob,
-          resume: effectiveResume
-        }
-      });
-      AppState.activeAtsAudit = data;
-      renderAtsAudit(data);
-    } catch (err) {
-      console.error('ATS audit error:', err);
-    }
-  }
-
-  function renderAtsAudit(audit) {
-    if (!audit) return;
-
-    // Grade and Points
-    const letterEl = document.getElementById('atsGradeLetter');
-    const pointsEl = document.getElementById('atsScorePoints');
-    const circleEl = document.getElementById('atsGradeCircle');
-    const navBadgeEl = document.getElementById('navAtsScoreBadge');
-
-    if (letterEl) letterEl.textContent = audit.grade || 'A';
-    if (pointsEl) pointsEl.textContent = `${audit.ats_score || 0} / 100`;
-    if (navBadgeEl) navBadgeEl.textContent = `${audit.ats_score}% ${audit.grade}`;
-
-    if (circleEl) {
-      circleEl.className = 'ats-grade-circle';
-      const gradeFirst = (audit.grade || 'A').charAt(0).toLowerCase();
-      circleEl.classList.add(`grade-${gradeFirst}`);
-    }
-
-    // Status Badge & Narrative
-    const statusBadge = document.getElementById('atsStatusBadge');
-    const titleEl = document.getElementById('atsSummaryTitle');
-    const descEl = document.getElementById('atsSummaryDesc');
-
-    if (audit.ats_score >= 90) {
-      if (statusBadge) {
-        statusBadge.className = 'ats-status-badge badge-emerald';
-        statusBadge.textContent = 'OPTIMAL ATS PARSEABILITY';
-      }
-      if (titleEl) titleEl.textContent = 'Ready for Enterprise ATS Systems';
-      if (descEl) descEl.textContent = 'Your resume achieves tier-1 parseability across Greenhouse, Lever, and Workday with zero structural blockers and optimal keyword frequency.';
-    } else if (audit.ats_score >= 75) {
-      if (statusBadge) {
-        statusBadge.className = 'ats-status-badge badge-amber-glow';
-        statusBadge.textContent = 'COMPATIBLE WITH ROOM FOR OPTIMIZATION';
-      }
-      if (titleEl) titleEl.textContent = 'Passable ATS Formatting & Density';
-      if (descEl) descEl.textContent = 'Your resume will pass initial parsing filters, but adding quantified impact metrics and top role keywords will boost recruiter match rankings.';
-    } else {
-      if (statusBadge) {
-        statusBadge.className = 'ats-status-badge badge-rose-glow';
-        statusBadge.textContent = 'ATS GAPS DETECTED';
-      }
-      if (titleEl) titleEl.textContent = 'Action Required: Key Requirements Missing';
-      if (descEl) descEl.textContent = 'Several required job keywords or structural elements are missing. Click 1-Click Auto-Tailor to instantly optimize.';
-    }
-
-    // Pillars Breakdown
-    const b = audit.breakdown || {};
-    const pkEl = document.getElementById('atsPillarKeywords');
-    const pmEl = document.getElementById('atsPillarMetrics');
-    const pmSub = document.getElementById('atsPillarMetricsSub');
-    const pvEl = document.getElementById('atsPillarVerbs');
-    const psEl = document.getElementById('atsPillarSections');
-
-    if (pkEl) pkEl.textContent = `${b.keyword_score || 0} / 35 pts`;
-    if (pmEl) pmEl.textContent = `${b.metrics_score || 0} / 25 pts`;
-    if (pmSub) pmSub.textContent = `${b.quantified_bullets_pct || 0}% metrics density`;
-    if (pvEl) pvEl.textContent = `${b.verbs_score || 0} / 20 pts`;
-    if (psEl) psEl.textContent = `${b.structure_score || 0} / 20 pts`;
-
-    // Keyword Density Saturation Table
-    const kwListContainer = document.getElementById('atsKeywordDensityList');
-    if (kwListContainer) {
-      const topKw = audit.top_keywords_density || [];
-      if (topKw.length === 0) {
-        kwListContainer.innerHTML = '<div style="color: #94a3b8; font-size: 13px;">No required keywords extracted.</div>';
-      } else {
-        kwListContainer.innerHTML = topKw.map(kw => {
-          let badgeHtml = '';
-          if (kw.status === 'optimal') {
-            badgeHtml = `<span class="kw-badge optimal">Optimal (${kw.count}x)</span>`;
-          } else if (kw.status === 'single') {
-            badgeHtml = `<span class="kw-badge single">Present (${kw.count}x)</span>`;
-          } else {
-            badgeHtml = `<span class="kw-badge missing">Missing (0x)</span>`;
-          }
-          return `
-            <div class="keyword-row">
-              <div class="kw-left">
-                <span class="kw-name">${escapeHtml(kw.keyword)}</span>
-              </div>
-              <div class="kw-right">
-                <span class="kw-count">${kw.count} occurrences</span>
-                ${badgeHtml}
-              </div>
-            </div>
-          `;
-        }).join('');
-      }
-    }
-
-    // Checklist Stream
-    const checklistContainer = document.getElementById('atsChecklistStream');
-    if (checklistContainer) {
-      const items = audit.checklist || [];
-      checklistContainer.innerHTML = items.map(c => `
-        <div class="checklist-item ${c.passed ? 'check-pass' : 'check-fail'}">
-          <div class="check-icon-box">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
-              ${c.passed ? '<polyline points="20 6 9 17 4 12"></polyline>' : '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>'}
-            </svg>
-          </div>
-          <div class="check-text-group">
-            <div class="check-title">${escapeHtml(c.rule)}</div>
-            <div class="check-desc">${escapeHtml(c.details)}</div>
-          </div>
-        </div>
-      `).join('');
-    }
-
-    // Recommendations
-    const recsList = document.getElementById('atsRecommendationsList');
-    if (recsList) {
-      const recs = audit.recommendations || [];
-      if (recs.length === 0) {
-        recsList.innerHTML = '<li>Zero ATS blockers detected! Your resume is ready for direct submission.</li>';
-      } else {
-        recsList.innerHTML = recs.map(r => `<li>${escapeHtml(r)}</li>`).join('');
-      }
-    }
-  }
-
-  // 1-Click Auto-Tailor Action
-  async function execute1ClickAutoTailor() {
-    if (!AppState.activeJob || !AppState.profile) {
-      showToast('Select a target job first.', 'error');
-      return;
-    }
-
-    showToast('⚡ Running 1-Click Auto-Tailor optimization...');
-    try {
-      const res = await api('/api/auto-tailor', {
-        method: 'POST',
-        body: {
-          job: AppState.activeJob,
-          profile: AppState.profile
-        }
-      });
-
-      // Update refinement state
-      AppState.activeRefinement = res.refinement;
-      AppState.diffDecisions = {};
-      (res.refinement.diff_items || []).forEach(d => {
-        AppState.diffDecisions[d.id] = 'accepted';
-      });
-
-      renderDiffStream(res.refinement.diff_items || []);
-      renderAtsPreview();
-      updateDiffSummaryStats();
-
-      // Render ATS audit response
-      if (res.ats_audit) {
-        AppState.activeAtsAudit = res.ats_audit;
-        renderAtsAudit(res.ats_audit);
-      }
-
-      showToast(`⚡ Auto-Tailored to ${res.ats_audit.ats_score}% (Grade ${res.ats_audit.grade}) in ${res.speed_ms || 35}ms!`);
-    } catch (err) {
-      showToast('Auto-tailor error: ' + err.message, 'error');
-    }
-  }
-
-  // 1-Click Auto-Hunt Action
-  async function execute1ClickAutoHunt(jobIdx) {
-    const job = (typeof jobIdx === 'number') ? AppState.jobs[jobIdx] : AppState.activeJob;
-    if (!job) {
-      showToast('No job selected for auto-hunt', 'error');
-      return;
-    }
-
-    showToast(`Preparing a package for ${job.company}...`);
-    try {
-      const res = await api('/api/auto-hunt', {
-        method: 'POST',
-        body: {
-          job: job,
-          profile: AppState.profile
-        }
-      });
-
-      showToast(`Package ready: tailored resume, cover letter, and prep notes saved to your pipeline as Saved. Mark it Applied after you submit.`);
+      await api('/api/applications', { method: 'POST', body: editingApp ? Object.assign({}, editingApp, fields) : fields });
+      $('#appDialog').close();
+      toast(editingApp ? 'Application updated' : 'Application added');
       await loadApplications();
-      
-      // Transition smoothly to Kanban pipeline
-      setTimeout(() => {
-        switchTab('tab-tracker');
-      }, 700);
-    } catch (err) {
-      showToast('Auto-hunt error: ' + err.message, 'error');
-    }
+    } catch (err) { toast('Could not save: ' + err.message, 'error'); }
   }
 
-  // -------------------------------------------------------------
-  // Data Privacy & Purge Controller
-  // -------------------------------------------------------------
+  // -------------------------------------------------------------- companies
+  async function loadWatchlist() {
+    try { S.watchlist = (await api('/api/watchlist')).watchlist || []; renderWatchlist(); }
+    catch (err) { toast('Could not load companies: ' + err.message, 'error'); }
+  }
 
-  async function purgeAllData() {
-    if (!confirm('Are you absolutely sure you want to permanently delete all your data? This deletes your profile, applications, watchlist, settings, and cached searches, then compacts the database file.')) {
+  function renderWatchlist() {
+    const grid = $('#watchlistGrid');
+    $('#btnWatchCheck').hidden = !S.watchlist.length;
+    if (!S.watchlist.length) {
+      grid.innerHTML = `<div class="empty" style="grid-column:1/-1">${ico('building')}<h3>No companies yet</h3><p>Add a company you would love to work for. The app finds its public career page and checks it for roles that fit.</p>
+        <div class="empty-actions"><button type="button" class="btn btn-primary" data-action="watch-add">Watch a company</button></div></div>`;
       return;
     }
+    grid.innerHTML = S.watchlist.map(w => {
+      const r = S.watchResults[w.id];
+      let status;
+      if (r && r.error) status = `<span class="chip chip-bad">Check failed</span> <span class="muted small">${esc(r.error)}</span>`;
+      else if (r) status = `<span class="chip ${r.matches ? 'chip-ok' : ''}">${r.matches} matching of ${r.total} open</span>`;
+      else if (w.last_checked) status = `<span class="muted small">Checked ${esc(timeAgo(w.last_checked))}, ${w.active_matches_count || 0} matching</span>`;
+      else status = '<span class="muted small">Not checked yet</span>';
+      const top = r && r.top && r.top.length ? `<ul class="wl-roles">${r.top.map(t => `<li><a href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">${esc(t.title)}</a><span class="chip chip-info">${Math.round(t.score)}%</span></li>`).join('')}</ul>` : '';
+      return `<article class="wl-card">
+        <div class="wl-name">${esc(w.company_name)}<span class="chip">${esc(w.board_type)}</span></div>
+        <p class="muted small">Role keyword: ${esc(w.target_role || 'any role')}</p>
+        <div>${status}</div>${top}
+        <div class="wl-actions">
+          <button type="button" class="btn btn-secondary btn-sm" data-action="watch-view" data-name="${esc(w.company_name)}">${ico('search')}Search roles</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-action="watch-remove" data-id="${esc(w.id)}" data-name="${esc(w.company_name)}">Remove</button>
+        </div></article>`;
+    }).join('');
+  }
+
+  async function checkWatchlist() {
+    const btn = $('#btnWatchCheck');
+    btn.disabled = true; btn.innerHTML = `${ico('refresh')}Checking`;
     try {
-      await api('/api/purge-all-data', { method: 'DELETE' });
-      showToast('All data has been permanently wiped.');
-      location.reload();
-    } catch (err) {
-      showToast('Error purging data: ' + err.message, 'error');
-    }
+      const res = await api('/api/watchlist/check', { method: 'POST', body: {} });
+      (res.results || []).forEach(r => { S.watchResults[r.id] = r; });
+      await loadWatchlist();
+      toast('Career pages checked');
+    } catch (err) { toast('Check failed: ' + err.message, 'error'); }
+    finally { btn.disabled = false; btn.innerHTML = `${ico('refresh')}Check all`; }
   }
 
-  function closeModal(modalId) {
-    const el = document.getElementById(modalId);
-    if (el) el.style.display = 'none';
+  async function submitWatch() {
+    const btn = $('#watchSubmit');
+    btn.disabled = true; btn.textContent = 'Looking for the career page';
+    try {
+      const body = { company_name: val('wlCompanyName').trim(), board_type: val('wlAtsType'), target_role: val('wlTargetRole').trim() };
+      const r = await api('/api/watchlist', { method: 'POST', body });
+      $('#watchDialog').close();
+      toast(`Watching ${body.company_name}${r.auto_detected ? ` on ${r.board_type}` : ''}`);
+      loadWatchlist();
+    } catch (err) { toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Watch company'; }
   }
 
-  // -------------------------------------------------------------
-  // Quick Actions & Triggers
-  // -------------------------------------------------------------
-
-  function triggerTailorJob(idx) {
-    const job = AppState.jobs[idx];
-    if (job) {
-      setActiveJob(job);
-      document.getElementById('refinerJobSelector').value = idx;
-      switchTab('tab-refiner');
-    }
+  // ----------------------------------------------------------------- digest
+  async function loadDigest() {
+    const body = $('#digestBody');
+    body.innerHTML = skeletons(2);
+    try {
+      const d = await api('/api/digest');
+      $('#digestThresholdSelect').value = String(d.min_score || 75);
+      $('#digestSub').textContent = `${d.date || 'Today'}. New roles that score ${d.min_score || 75}% or more.`;
+      const jobs = d.digest_jobs || [];
+      S.digestJobs = jobs;
+      body.innerHTML = `<p class="digest-intro">${esc(d.summary || '')}</p>` + (jobs.length ? jobs.map((j, i) => `
+        <div class="digest-row">
+          <div><h3>${esc(j.title)}</h3><p>${esc(j.company)}${j.location ? `, ${esc(j.location)}` : ''}${j.salary ? `, ${esc(j.salary)}` : ''}</p>
+            ${(j.matched_skills || []).length ? `<p>Matches ${(j.matched_skills || []).slice(0, 4).map(esc).join(', ')}</p>` : ''}</div>
+          <div class="side">${ring(j.score)}<button type="button" class="btn btn-primary btn-sm" data-action="digest-open" data-i="${i}">Tailor</button></div>
+        </div>`).join('') : `<div class="empty" style="border:0">${ico('mail')}<h3>Nothing above the cutoff</h3><p>Lower the cutoff, or search again after you update your resume.</p></div>`);
+    } catch (err) { body.innerHTML = `<div class="empty" style="border:0">${ico('alert')}<h3>The digest did not load</h3><p>${esc(err.message)}</p></div>`; }
   }
 
-  function triggerGapJob(idx) {
-    const job = AppState.jobs[idx];
-    if (job) {
-      setActiveJob(job);
-      document.getElementById('gapJobSelector').value = idx;
-      switchTab('tab-gap');
-    }
+  async function changeDigestCutoff() {
+    try {
+      await api('/api/settings', { method: 'POST', body: { digest_min_score: val('digestThresholdSelect') } });
+      loadDigest();
+    } catch (err) { toast('Could not change the cutoff: ' + err.message, 'error'); }
   }
 
-  function triggerAtsJob(idx) {
-    const job = AppState.jobs[idx];
-    if (job) {
-      setActiveJob(job);
-      const sel = document.getElementById('atsJobSelector');
-      if (sel) sel.value = idx;
-      switchTab('tab-ats-audit');
-    }
+  // ---------------------------------------------------------------- privacy
+  async function loadSourceHealth() {
+    const box = $('#sourceHealth');
+    try {
+      const list = (await api('/api/sources')).sources || [];
+      box.innerHTML = list.length ? list.map(s => {
+        const good = s.ok_count > 0 && !!s.last_ok, bad = !good && s.fail_count > 0;
+        const note = s.enabled === false ? (s.note || 'Off') : good ? `Answered ${timeAgo(s.last_ok)}` : bad ? String(s.last_error || 'Not answering').slice(0, 80) : (s.note || 'Not used yet');
+        return `<div class="health-row"><span class="dot ${good ? 'dot-ok' : bad ? 'dot-bad' : ''}"></span><strong>${esc(s.source)}</strong><em>${esc(note)}</em></div>`;
+      }).join('') : '<p class="muted">Run a search to see how each source responds.</p>';
+    } catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
   }
 
-  function loadJobForAts(idx) {
-    const job = AppState.jobs[parseInt(idx)];
-    if (job) setActiveJob(job);
+  async function purgeAll() {
+    if (!await confirmDialog('Delete all your data?', 'This removes your profile, applications, watchlist, settings, and cached searches. You cannot undo it.', 'Delete everything')) return;
+    try { await api('/api/purge-all-data', { method: 'DELETE' }); toast('All data deleted'); setTimeout(() => { location.hash = '#/jobs'; location.reload(); }, 600); }
+    catch (err) { toast('Could not delete: ' + err.message, 'error'); }
   }
 
-  function triggerTailorFromDigest(companyName) {
-    const match = AppState.jobs.find(j => j.company.toLowerCase().includes(companyName.toLowerCase()));
-    if (match) {
-      setActiveJob(match);
-      switchTab('tab-refiner');
-    } else {
-      searchCompanyRoles(companyName);
-    }
-  }
-
-  function loadJobForRefiner(idx) {
-    const job = AppState.jobs[parseInt(idx)];
-    if (job) setActiveJob(job);
-  }
-
-  function loadJobForGap(idx) {
-    const job = AppState.jobs[parseInt(idx)];
-    if (job) setActiveJob(job);
-  }
-
-  function loadJobForCover(idx) {
-    const job = AppState.jobs[parseInt(idx)];
-    if (job) setActiveJob(job);
-  }
-
-  function loadJobForPrep(idx) {
-    const job = AppState.jobs[parseInt(idx)];
-    if (job) setActiveJob(job);
-  }
-
-  function setSearchKeyword(kw) {
-    document.getElementById('searchQuery').value = kw;
-    handleSearch();
-  }
-
-  function sortResults(criterion) {
-    if (criterion === 'score_desc') {
-      AppState.jobs.sort((a, b) => (b.score || 0) - (a.score || 0));
-    } else if (criterion === 'date_desc') {
-      AppState.jobs.sort((a, b) => (b.posted_at || '').localeCompare(a.posted_at || ''));
-    } else if (criterion === 'company_asc') {
-      AppState.jobs.sort((a, b) => (a.company || '').localeCompare(b.company || ''));
-    }
-    renderSearchResults(AppState.jobs);
-  }
-
-  function promptAddSkill() {
-    const s = prompt('Enter technical skill or tool:');
-    if (s && s.trim()) {
-      if (!AppState.profile.skills.includes(s.trim())) {
-        AppState.profile.skills.push(s.trim());
-        renderSkillsTags(AppState.profile.skills);
-      }
-    }
-  }
-
-  function removeSkill(idx) {
-    AppState.profile.skills.splice(idx, 1);
-    renderSkillsTags(AppState.profile.skills);
-  }
-
-  function addExperienceEntry() {
-    AppState.profile.experience = AppState.profile.experience || [];
-    AppState.profile.experience.unshift({
-      company: 'New Company',
-      role: 'Software Engineer',
-      location: 'Remote',
-      start_date: '2023',
-      end_date: 'Present',
-      bullets: ['Built reliable backend APIs and web features.']
-    });
-    renderExperienceList(AppState.profile.experience);
-  }
-
-  function removeExperienceEntry(idx) {
-    AppState.profile.experience.splice(idx, 1);
-    renderExperienceList(AppState.profile.experience);
-  }
-
-  function addBullet(expIdx) {
-    if (AppState.profile.experience[expIdx]) {
-      AppState.profile.experience[expIdx].bullets.push('Designed and scaled production features with measurable impact.');
-      renderExperienceList(AppState.profile.experience);
-    }
-  }
-
-  function removeBullet(expIdx, bIdx) {
-    if (AppState.profile.experience[expIdx]) {
-      AppState.profile.experience[expIdx].bullets.splice(bIdx, 1);
-      renderExperienceList(AppState.profile.experience);
-    }
-  }
-
-  function addEducationEntry() {
-    AppState.profile.education = AppState.profile.education || [];
-    AppState.profile.education.push({
-      institution: 'University Name',
-      degree: 'B.S. in Computer Science',
-      graduation_year: '2021'
-    });
-    renderEducationList(AppState.profile.education);
-  }
-
-  function loadSampleProfile() {
-    location.reload();
-  }
-
-  // -------------------------------------------------------------
-  // Application Bootstrap
-  // -------------------------------------------------------------
-
-  async function init() {
-    initNavigation();
-    await loadProfile();
-    await loadApplications();
-    await handleSearch();
-  }
-
-  // Expose global controller
-  window.JobHunterApp = {
-    handleSearch,
-    saveMasterProfile,
-    handleFileUpload,
-    handlePasteParse,
-    loadSampleProfile,
-    promptAddSkill,
-    removeSkill,
-    addSkillToProfile,
-    addExperienceEntry,
-    removeExperienceEntry,
-    addBullet,
-    removeBullet,
-    addEducationEntry,
-    triggerTailorJob,
-    triggerGapJob,
-    triggerAtsJob,
-    saveJobToTracker,
-    loadJobForRefiner,
-    loadJobForGap,
-    loadJobForCover,
-    loadJobForPrep,
-    loadJobForAts,
-    loadAtsForActiveJob,
-    execute1ClickAutoTailor,
-    execute1ClickAutoHunt,
-    setSearchKeyword,
-    sortResults,
-    setDiffDecision,
-    acceptAllDiffs,
-    rejectAllDiffs,
-    handleManualDiffEdit,
-    exportResume,
-    printAtsPreview,
-    setCoverTone,
-    copyCoverLetter,
-    saveCoverLetterToTracker,
-    moveApplicationStage,
-    handleCardDrop,
-    deleteApplication,
-    openAddCustomAppModal,
-    saveModalApplication,
-    openAddWatchlistModal,
-    saveModalWatchlist,
-    deleteWatchlistItem,
-    searchCompanyRoles,
-    reloadDigest,
-    triggerTailorFromDigest,
-    purgeAllData,
-    closeModal
+  // ----------------------------------------------------------------- events
+  const ACTIONS = {
+    // search
+    'idea': el => { $('#searchQuery').value = el.dataset.q; runSearch(); },
+    'search-again': () => runSearch(),
+    'clear-min': () => { $('#searchMinScore').value = '0'; runSearch(); },
+    'job-select': el => selectJob(el.dataset.key),
+    'job-tailor': () => openWorkspace(selectedJob(), 'resume', 'jobs'),
+    'job-save': () => saveJob(selectedJob()),
+    'job-hunt': () => prepareEverything(selectedJob()),
+    'detail-close': () => closeDetailSheet(),
+    // profile
+    'skill-add': () => addSkillFromInput(),
+    'skill-remove': el => { syncFormToState(); S.profile.skills.splice(Number(el.dataset.i), 1); renderSkills(); markDirty(); },
+    'exp-add': () => { syncFormToState(); S.profile.experience.unshift({ company: '', role: '', location: '', start_date: '', end_date: 'Present', current: true, bullets: [''] }); S.openExp = new Set([0]); renderExperience(); markDirty(); const f = $('#profileExperienceList .exp-company'); if (f) f.focus(); },
+    'exp-remove': el => { syncFormToState(); S.profile.experience.splice(Number(el.dataset.i), 1); S.openExp = new Set([0]); renderExperience(); markDirty(); },
+    'bullet-add': el => { syncFormToState(); const i = Number(el.dataset.i); S.profile.experience[i].bullets.push(''); S.openExp.add(i); renderExperience(); markDirty(); const t = $$(`#profileExperienceList [data-exp="${i}"] .exp-bullet`); if (t.length) t[t.length - 1].focus(); },
+    'bullet-remove': el => { syncFormToState(); S.profile.experience[Number(el.dataset.i)].bullets.splice(Number(el.dataset.b), 1); renderExperience(); markDirty(); },
+    'edu-add': () => { syncFormToState(); S.profile.education.push({ institution: '', degree: '', graduation_year: '' }); renderEducation(); markDirty(); const f = $$('#profileEducationList .edu-inst'); if (f.length) f[f.length - 1].focus(); },
+    'edu-remove': el => { syncFormToState(); S.profile.education.splice(Number(el.dataset.i), 1); renderEducation(); markDirty(); },
+    'parse-paste': () => parsePasted(),
+    'profile-save': () => saveProfile(),
+    'profile-discard': () => discardProfile(),
+    // workspace
+    'ws-back': () => go(S.ws.from === 'applications' ? 'applications' : S.ws.from === 'digest' ? 'digest' : 'jobs'),
+    'ws-save': () => saveJob(S.ws.job),
+    'ws-retry': () => renderWsTab(),
+    'auto-tailor': () => autoTailor(),
+    'diff-accept': el => setDiff(el.dataset.id, 'accepted'),
+    'diff-reject': el => setDiff(el.dataset.id, 'rejected'),
+    'diff-accept-all': () => setAllDiffs('accepted'),
+    'diff-reset': () => setAllDiffs('rejected'),
+    'diff-unchanged-toggle': () => { S.ws.showUnchanged = !S.ws.showUnchanged; renderResumeTab(); },
+    'export': el => exportResume(el.dataset.fmt),
+    'gap-add': el => addSkillToProfile(el.dataset.skill),
+    'cover-tone': el => { S.ws.tone = el.dataset.tone; renderWsTab(); },
+    'cover-copy': async () => { try { await navigator.clipboard.writeText(val('coverLetterTextarea')); toast('Cover letter copied'); } catch (e) { toast('Your browser blocked copying. Select the text and copy it.', 'error'); } },
+    'cover-save': () => saveCoverLetter(),
+    // applications
+    'app-add': () => openAppDialog(null),
+    'app-edit': el => openAppDialog(S.applications.find(a => a.id === el.dataset.id)),
+    'app-delete': el => deleteApp(el.dataset.id),
+    'app-open': el => { const a = S.applications.find(x => x.id === el.dataset.id); if (a) openWorkspace(a.job_data, 'resume', 'applications'); },
+    // companies, digest, misc
+    'watch-add': () => { $('#wlCompanyName').value = ''; $('#wlTargetRole').value = ''; $('#wlAtsType').value = ''; $('#watchDialog').showModal(); $('#wlCompanyName').focus(); },
+    'watch-check': () => checkWatchlist(),
+    'watch-view': el => { $('#searchQuery').value = el.dataset.name; go('jobs'); runSearch(); },
+    'watch-remove': async el => {
+      if (!await confirmDialog(`Stop watching ${el.dataset.name}?`, 'You can add it again later.', 'Remove')) return;
+      try { await api(`/api/watchlist/${encodeURIComponent(el.dataset.id)}`, { method: 'DELETE' }); toast('Company removed'); loadWatchlist(); }
+      catch (err) { toast(err.message, 'error'); }
+    },
+    'digest-open': el => openWorkspace((S.digestJobs || [])[Number(el.dataset.i)], 'resume', 'digest'),
+    'sources-refresh': () => loadSourceHealth(),
+    'purge': () => purgeAll(),
+    'dialog-close': el => { const d = el.closest('dialog'); if (d) d.close(); }
   };
+
+  function addSkillFromInput() {
+    const input = $('#newSkill'), s = input.value.trim();
+    if (!s) return;
+    syncFormToState();
+    if (!S.profile.skills.some(x => x.toLowerCase() === s.toLowerCase())) { S.profile.skills.push(s); renderSkills(); markDirty(); }
+    input.value = ''; input.focus();
+  }
+
+  function bindEvents() {
+    document.addEventListener('click', e => {
+      const el = e.target.closest('[data-action]');
+      if (el && ACTIONS[el.dataset.action] && el.tagName !== 'SELECT') ACTIONS[el.dataset.action](el, e);
+      if (!e.target.closest('.menu-wrap')) closeMenu();
+    });
+    $('#moreBtn').addEventListener('click', toggleMenu);
+    $('#moreMenu').addEventListener('click', e => { if (e.target.closest('a')) closeMenu(); });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { closeMenu(); closeDetailSheet(); }
+    });
+    window.addEventListener('hashchange', route);
+    window.addEventListener('beforeunload', e => { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+    // search form
+    $('#searchForm').addEventListener('submit', e => { e.preventDefault(); runSearch(); });
+    $('#workModeSeg').addEventListener('click', e => {
+      const b = e.target.closest('[data-mode]');
+      if (!b) return;
+      S.workMode = b.dataset.mode; syncWorkModeSeg(); runSearch();
+    });
+    $('#searchMinScore').addEventListener('change', runSearch);
+    $('#sortResultsBy').addEventListener('change', () => { applySort(); renderList(); });
+    $('#sourceToggle').addEventListener('click', () => {
+      const p = $('#sourcePanel'); p.hidden = !p.hidden;
+      $('#sourceToggle').setAttribute('aria-expanded', String(!p.hidden));
+    });
+
+    // workspace tabs
+    $('#wsTabs').addEventListener('click', e => {
+      const b = e.target.closest('[data-ws-tab]');
+      if (b) go('job', b.dataset.wsTab);
+    });
+    document.addEventListener('focusout', e => { if (e.target.matches && e.target.matches('.editable')) manualEdit(e.target); });
+    document.addEventListener('input', e => {
+      if (e.target.id === 'coverLetterTextarea') S.ws.cover[S.ws.tone] = e.target.value;
+    });
+
+    // profile form
+    $('#profileForm').addEventListener('input', e => { if (e.target.id !== 'newSkill') markDirty(); });
+    $('#profileForm').addEventListener('submit', e => e.preventDefault());
+    $('#newSkill').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addSkillFromInput(); } });
+    $('#resumeFileInput').addEventListener('change', e => { handleFile(e.target.files[0]); e.target.value = ''; });
+    const dz = $('#dropzone');
+    ['dragenter', 'dragover'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.add('is-over'); }));
+    ['dragleave', 'drop'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.remove('is-over'); }));
+    dz.addEventListener('drop', e => handleFile(e.dataTransfer.files[0]));
+
+    // applications board: stage menu and drag and drop
+    const board = $('#kanbanBoard');
+    board.addEventListener('change', e => { const s = e.target.closest('[data-action="app-stage"]'); if (s) moveApp(s.dataset.id, s.value); });
+    board.addEventListener('dragstart', e => { const c = e.target.closest('.kcard'); if (c) { e.dataTransfer.setData('text/plain', c.dataset.id); c.classList.add('dragging'); } });
+    board.addEventListener('dragend', e => { const c = e.target.closest('.kcard'); if (c) c.classList.remove('dragging'); $$('.col', board).forEach(x => x.classList.remove('drop-over')); });
+    board.addEventListener('dragover', e => { const c = e.target.closest('.col'); if (c) { e.preventDefault(); $$('.col', board).forEach(x => x.classList.toggle('drop-over', x === c)); } });
+    board.addEventListener('drop', e => {
+      const c = e.target.closest('.col');
+      if (!c) return;
+      e.preventDefault();
+      $$('.col', board).forEach(x => x.classList.remove('drop-over'));
+      const id = e.dataTransfer.getData('text/plain');
+      if (id) moveApp(id, c.dataset.stage);
+    });
+
+    // dialogs and digest
+    $('#appDialogForm').addEventListener('submit', e => { e.preventDefault(); submitAppDialog(); });
+    $('#watchDialogForm').addEventListener('submit', e => { e.preventDefault(); submitWatch(); });
+    $('#digestThresholdSelect').addEventListener('change', changeDigestCutoff);
+  }
+
+  // ------------------------------------------------------------------- init
+  async function init() {
+    S.openExp = new Set([0]);
+    initTheme();
+    bindEvents();
+    route();
+    await Promise.all([loadProfile(), loadApplications()]);
+    renderWsHeader();
+    runSearch();
+  }
 
   document.addEventListener('DOMContentLoaded', init);
 })();
