@@ -274,11 +274,44 @@ def r_export(q, body):
 
 # ------------------------------------------------------------------ handler
 
+def _find_static_dir():
+    for d in [
+        getattr(config, "STATIC_DIR", ""),
+        os.path.join(config.BASE_DIR, "public"),
+        os.path.join(config.BASE_DIR, "static"),
+        os.path.join(os.getcwd(), "public"),
+        os.path.join(os.getcwd(), "static"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static"),
+    ]:
+        if d and os.path.isdir(d):
+            return os.path.abspath(d)
+    return config.STATIC_DIR
+
+
+def _find_static_file(rel_path):
+    rel = rel_path.lstrip("/\\")
+    for d in [
+        getattr(config, "STATIC_DIR", ""),
+        os.path.join(config.BASE_DIR, "public"),
+        os.path.join(config.BASE_DIR, "static"),
+        os.path.join(os.getcwd(), "public"),
+        os.path.join(os.getcwd(), "static"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static"),
+    ]:
+        if d and os.path.isdir(d):
+            p = os.path.join(d, rel)
+            if os.path.isfile(p):
+                return os.path.abspath(p)
+    return None
+
+
 class Handler(SimpleHTTPRequestHandler):
     server_version = "JobHunter/" + __version__
 
     def __init__(self, *a, **kw):
-        super().__init__(*a, directory=config.STATIC_DIR, **kw)
+        super().__init__(*a, directory=_find_static_dir(), **kw)
 
     def log_message(self, fmt, *args):
         log.debug("%s %s", self.address_string(), fmt % args)
@@ -393,18 +426,48 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self._dispatch("GET") is not False:
             return
-        path = urllib.parse.urlparse(self.path).path
-        if path in ("/", "/index.html"):
-            with open(os.path.join(config.STATIC_DIR, "index.html"), "r", encoding="utf-8") as f:
-                page = f.read().replace("</head>", f'<meta name="jh-token" content="{TOKEN}"></head>', 1).encode()
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        # Strip /static or /public prefix if rewritten
+        clean_path = path
+        if clean_path.startswith("/static/"):
+            clean_path = clean_path[len("/static"):]
+        elif clean_path.startswith("/public/"):
+            clean_path = clean_path[len("/public"):]
+
+        if clean_path in ("/", "/index.html", ""):
+            index_file = _find_static_file("index.html")
+            if index_file and os.path.isfile(index_file):
+                with open(index_file, "r", encoding="utf-8") as f:
+                    raw = f.read()
+                if 'name="jh-token"' in raw:
+                    page = re.sub(r'<meta\s+name=["\']jh-token["\'][^>]*>', f'<meta name="jh-token" content="{TOKEN}">', raw).encode()
+                else:
+                    page = raw.replace("</head>", f'<meta name="jh-token" content="{TOKEN}"></head>', 1).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(page)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Frame-Options", "DENY")
+                self.end_headers()
+                self.wfile.write(page)
+                return
+
+        asset_file = _find_static_file(clean_path)
+        if asset_file and os.path.isfile(asset_file):
+            mime, _ = mimetypes.guess_type(asset_file)
+            mime = mime or "application/octet-stream"
+            with open(asset_file, "rb") as f:
+                content = f.read()
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(page)))
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(content)))
+            self.send_header("Cache-Control", "public, max-age=3600")
             self.end_headers()
-            self.wfile.write(page)
+            self.wfile.write(content)
             return
+
         super().do_GET()
 
     def do_POST(self):

@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JobHunter</title>
+  <meta name="description" content="Upload your resume once. Search public job boards, merge duplicates, see an honest match score, and tailor your resume with only facts you wrote.">
+  <script>
+    /* Apply the saved theme before first paint so the page never flashes the wrong colors. */
+    try { var t = localStorage.getItem('jh-theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="styles.css">
+  <meta name="jh-token" content="jobhunter-vercel-token">
+</head>
+<body>
+
+  <!-- Icon sprite -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+      <symbol id="i-briefcase" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/></symbol>
+      <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></symbol>
+      <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></symbol>
+      <symbol id="i-board" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></symbol>
+      <symbol id="i-building" viewBox="0 0 24 24"><path d="M4 21V5a1 1 0 011-1h8a1 1 0 011 1v16M14 9h5a1 1 0 011 1v11M3 21h18M8 8h2M8 12h2M8 16h2"/></symbol>
+      <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z"/></symbol>
+      <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
+      <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+      <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3L5 13h6l-1 8 8-10h-6z"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 00-14.9-3M4 5v4h4M4 13a8 8 0 0014.9 3M20 19v-4h-4"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></symbol>
+    </defs>
+  </svg>
+
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/jobs" aria-label="JobHunter home">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8" opacity=".35"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/></svg>
+        <span class="brand-name">JobHunter</span>
+      </a>
+
+      <nav class="nav" id="mainNav" aria-label="Main">
+        <a href="#/jobs" data-nav="jobs"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><span>Jobs</span></a>
+        <a href="#/applications" data-nav="applications"><svg class="i" aria-hidden="true"><use href="#i-board"/></svg><span>Applications</span><b class="count" id="navAppCount" hidden>0</b></a>
+        <a href="#/resume" data-nav="resume"><svg class="i" aria-hidden="true"><use href="#i-file"/></svg><span>Resume</span></a>
+        <a href="#/companies" data-nav="companies"><svg class="i" aria-hidden="true"><use href="#i-building"/></svg><span>Companies</span></a>
+      </nav>
+
+      <div class="topbar-actions">
+        <div class="menu-wrap">
+          <button type="button" class="icon-btn" id="moreBtn" aria-haspopup="true" aria-expanded="false" aria-controls="moreMenu" aria-label="More">
+            <svg class="i" aria-hidden="true"><use href="#i-more"/></svg>
+          </button>
+          <div class="menu" id="moreMenu" hidden>
+            <a href="#/digest" data-nav="digest"><svg class="i" aria-hidden="true"><use href="#i-mail"/></svg>Morning digest</a>
+            <a href="#/privacy" data-nav="privacy"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Sources and privacy</a>
+            <div class="menu-sep" role="separator"></div>
+            <button type="button" class="menu-item-btn" id="themeToggleBtn">
+              <svg class="i" aria-hidden="true" id="themeIcon"><use href="#i-moon"/></svg>
+              <span id="themeLabel">Dark theme</span>
+            </button>
+          </div>
+        </div>
+        <a class="profile-link" href="#/resume" id="profileLink" title="Your resume profile">
+          <span class="avatar" id="userAvatar">?</span>
+          <span class="profile-text"><span id="pillName">Add your resume</span><small id="pillTitle"></small></span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+
+    <!-- ================= JOBS ================= -->
+    <section class="view" id="view-jobs" aria-labelledby="jobsTitle">
+      <div class="container">
+        <h1 class="sr-only" id="jobsTitle">Find jobs</h1>
+
+        <div class="notice" id="onboardNotice" hidden>
+          <svg class="i" aria-hidden="true"><use href="#i-file"/></svg>
+          <div>
+            <strong>Add your resume to see real match scores.</strong>
+            <span>Until then, jobs show without a fit score.</span>
+          </div>
+          <a class="btn btn-primary btn-sm" href="#/resume">Add resume</a>
+        </div>
+
+        <form class="searchbar" id="searchForm" role="search">
+          <label class="field-icon grow-2">
+            <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+            <input type="search" id="searchQuery" placeholder="Role, tech stack, or company (e.g. Python, Full Stack)" aria-label="Job title, skill, or company" autocomplete="off">
+          </label>
+          <label class="field-icon grow-1">
+            <svg class="i" aria-hidden="true"><use href="#i-pin"/></svg>
+            <input type="text" id="searchLocation" placeholder="Location or 'Worldwide'" aria-label="Location" autocomplete="off">
+          </label>
+          <button type="submit" class="btn btn-primary btn-lg" id="btnSearch">
+            <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+            <span>Search</span>
+          </button>
+          <button type="button" class="btn btn-secondary btn-lg" id="btnRefresh" title="Query live sources, refresh database cache, and fetch fresh listings">
+            <svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>
+            <span>Refresh</span>
+          </button>
+        </form>
+
+        <div class="search-sub-bar">
+          <div class="chips" id="suggestChips" aria-label="Search ideas"></div>
+          <span class="last-search-badge" id="lastSearchBadge" hidden></span>
+        </div>
+
+        <!-- Unified Facet Filter Console -->
+        <div class="filter-console" id="filterConsole">
+          <div class="filter-primary-row">
+            <!-- Work Mode Segmented with live counts -->
+            <div class="segmented" id="workModeSeg" role="group" aria-label="Work mode">
+              <button type="button" data-mode="Any" aria-pressed="true">Any <span class="f-cnt" id="cntModeAny"></span></button>
+              <button type="button" data-mode="Remote" aria-pressed="false">Remote <span class="f-cnt" id="cntModeRemote"></span></button>
+              <button type="button" data-mode="Hybrid" aria-pressed="false">Hybrid <span class="f-cnt" id="cntModeHybrid"></span></button>
+              <button type="button" data-mode="Onsite" aria-pressed="false">On-site <span class="f-cnt" id="cntModeOnsite"></span></button>
+            </div>
+
+            <!-- Match Score Selector with live counts -->
+            <div class="segmented segmented-score" id="matchScoreSeg" role="group" aria-label="Minimum match fit">
+              <button type="button" data-min-score="0" aria-pressed="true">Any Score <span class="f-cnt" id="cntScore0"></span></button>
+              <button type="button" data-min-score="60" aria-pressed="false">60%+ <span class="f-cnt" id="cntScore60"></span></button>
+              <button type="button" data-min-score="70" aria-pressed="false">70%+ <span class="f-cnt" id="cntScore70"></span></button>
+              <button type="button" data-min-score="80" aria-pressed="false">80%+ <span class="f-cnt" id="cntScore80"></span></button>
+              <button type="button" data-min-score="85" aria-pressed="false">85%+ <span class="f-cnt" id="cntScore85"></span></button>
+            </div>
+            <select id="searchMinScore" hidden><option value="0">0</option><option value="60">60</option><option value="70">70</option><option value="80">80</option><option value="85">85</option></select>
+
+            <!-- Big Tech & Startups Selector with live counts -->
+            <div class="segmented segmented-famous" id="famousSeg" role="group" aria-label="Company type filter">
+              <button type="button" data-famous="all" aria-pressed="true">All Co. <span class="f-cnt" id="cntFamAll"></span></button>
+              <button type="button" data-famous="startups" aria-pressed="false">Startups &amp; Mid <span class="f-cnt" id="cntFamStartups"></span></button>
+              <button type="button" data-famous="only" aria-pressed="false">Big Tech <span class="f-cnt" id="cntFamOnly"></span></button>
+              <button type="button" data-famous="hide" aria-pressed="false">No Big Tech <span class="f-cnt" id="cntFamHide"></span></button>
+            </div>
+            <select id="searchFamousSelect" hidden><option value="all">all</option><option value="hide">hide</option><option value="startups">startups</option><option value="only">only</option></select>
+
+            <!-- Toggle More Filters Drawer -->
+            <button type="button" class="btn btn-secondary btn-sm btn-filter-drawer" id="btnToggleFiltersDrawer" aria-expanded="false" aria-controls="filtersDrawer">
+              <svg class="i" aria-hidden="true"><use href="#i-more"/></svg>
+              <span>More Filters</span>
+              <span class="filter-count-badge" id="moreFiltersCountBadge" hidden>0</span>
+            </button>
+
+            <!-- Auto-refresh interval select -->
+            <label class="inline-select auto-reload-select">
+              <svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>
+              <span>Auto-refresh</span>
+              <select id="autoReloadSelect">
+                <option value="0">Off</option>
+                <option value="30">Every 30 min</option>
+                <option value="60">Every 1 hour</option>
+                <option value="120">Every 2 hours</option>
+                <option value="300" selected>Every 5 hours</option>
+                <option value="720">Every 12 hours</option>
+                <option value="1440">Every 24 hours</option>
+              </select>
+            </label>
+          </div>
+
+          <!-- Secondary Expandable Filters Drawer -->
+          <div class="filters-drawer" id="filtersDrawer" hidden>
+            <div class="drawer-grid">
+              <!-- Target Country (Include) -->
+              <div class="drawer-group">
+                <span class="drawer-label">Target Country (Include)</span>
+                <div class="country-include-wrap">
+                  <div class="segmented segmented-sm" id="countryQuickSeg" role="group">
+                    <button type="button" data-country="all" aria-pressed="true">All</button>
+                    <button type="button" data-country="Worldwide" aria-pressed="false">Worldwide <span class="f-cnt" id="cntCtryWorldwide"></span></button>
+                    <button type="button" data-country="United States" aria-pressed="false">USA <span class="f-cnt" id="cntCtryUS"></span></button>
+                    <button type="button" data-country="United Kingdom" aria-pressed="false">UK <span class="f-cnt" id="cntCtryUK"></span></button>
+                    <button type="button" data-country="Germany" aria-pressed="false">Germany <span class="f-cnt" id="cntCtryDE"></span></button>
+                    <button type="button" data-country="Canada" aria-pressed="false">Canada <span class="f-cnt" id="cntCtryCA"></span></button>
+                  </div>
+                  <div class="country-select-row">
+                    <select id="countrySelect" aria-label="Select target country">
+                      <option value="all">More countries...</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Exclude Countries (Hide from results) -->
+              <div class="drawer-group">
+                <div class="drawer-label-row">
+                  <span class="drawer-label">Exclude Countries (Hide unwanted)</span>
+                  <span class="drawer-hint">Hide jobs from these countries</span>
+                </div>
+                <div class="country-exclude-wrap">
+                  <div class="country-exclude-actions">
+                    <select id="excludeCountrySelect" aria-label="Add country to exclude">
+                      <option value="">Choose country to exclude...</option>
+                    </select>
+                    <div class="quick-exclude-chips" id="quickExcludeChips">
+                      <button type="button" class="btn-quick-exclude" data-exclude-country="India">+ Exclude India <span class="f-cnt" id="cntExIndia"></span></button>
+                      <button type="button" class="btn-quick-exclude" data-exclude-country="United States">+ Exclude US <span class="f-cnt" id="cntExUS"></span></button>
+                    </div>
+                  </div>
+                  <div class="excluded-tags-list" id="excludedCountriesTags"></div>
+                </div>
+              </div>
+
+              <!-- Seniority -->
+              <div class="drawer-group">
+                <span class="drawer-label">Seniority Level</span>
+                <div class="segmented segmented-sm" id="senioritySeg" role="group">
+                  <button type="button" data-sen="all" aria-pressed="true">All</button>
+                  <button type="button" data-sen="junior" aria-pressed="false">Entry / Jr <span class="f-cnt" id="cntSenJr"></span></button>
+                  <button type="button" data-sen="mid" aria-pressed="false">Mid-Level <span class="f-cnt" id="cntSenMid"></span></button>
+                  <button type="button" data-sen="senior" aria-pressed="false">Senior <span class="f-cnt" id="cntSenSr"></span></button>
+                  <button type="button" data-sen="lead_staff" aria-pressed="false">Lead / Staff <span class="f-cnt" id="cntSenLead"></span></button>
+                </div>
+              </div>
+
+              <!-- Compensation / Salary -->
+              <div class="drawer-group">
+                <span class="drawer-label">Estimated Salary</span>
+                <div class="segmented segmented-sm" id="salarySeg" role="group">
+                  <button type="button" data-sal="0" aria-pressed="true">Any Pay</button>
+                  <button type="button" data-sal="disclosed" aria-pressed="false">Disclosed <span class="f-cnt" id="cntSalDisc"></span></button>
+                  <button type="button" data-sal="100k" aria-pressed="false">$100k+ <span class="f-cnt" id="cntSal100"></span></button>
+                  <button type="button" data-sal="140k" aria-pressed="false">$140k+ <span class="f-cnt" id="cntSal140"></span></button>
+                  <button type="button" data-sal="180k" aria-pressed="false">$180k+ <span class="f-cnt" id="cntSal180"></span></button>
+                </div>
+              </div>
+
+              <!-- Date Freshness -->
+              <div class="drawer-group">
+                <span class="drawer-label">Date Posted</span>
+                <div class="segmented segmented-sm" id="freshnessSeg" role="group">
+                  <button type="button" data-days="0" aria-pressed="true">Any time</button>
+                  <button type="button" data-days="1" aria-pressed="false">&lt; 24h <span class="f-cnt" id="cntFresh1"></span></button>
+                  <button type="button" data-days="7" aria-pressed="false">&lt; 7 days <span class="f-cnt" id="cntFresh7"></span></button>
+                  <button type="button" data-days="14" aria-pressed="false">&lt; 14 days <span class="f-cnt" id="cntFresh14"></span></button>
+                  <button type="button" data-days="30" aria-pressed="false">&lt; 30 days <span class="f-cnt" id="cntFresh30"></span></button>
+                </div>
+              </div>
+
+              <!-- Application Flags -->
+              <div class="drawer-group">
+                <span class="drawer-label">Application Filters</span>
+                <div class="toggle-group" id="flagsGroup">
+                  <button type="button" class="qchip" id="btnFlagDirectAts" data-flag="direct_ats">Direct ATS Only <span class="f-cnt" id="cntDirectAts"></span></button>
+                  <button type="button" class="qchip" id="btnFlagHideApplied" data-flag="hide_applied">Hide Applied <span class="f-cnt" id="cntApplied"></span></button>
+                  <button type="button" class="qchip" id="btnFlagSavedOnly" data-flag="saved_only">Saved Only <span class="f-cnt" id="cntSaved"></span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Fallback Notice Banner -->
+          <div class="fallback-banner" id="fallbackBanner" hidden></div>
+
+          <!-- Active Filter Tags Bar -->
+          <div class="active-filters-bar" id="activeFiltersBar" hidden>
+            <span class="active-filters-label">Active filters:</span>
+            <div class="active-filters-list" id="activeFiltersList"></div>
+            <button type="button" class="link-btn btn-clear-all-filters" id="btnClearAllFilters">Reset all filters</button>
+          </div>
+        </div>
+
+        <div class="results-meta" id="resultsMeta">
+          <p class="results-summary" id="resultsSummary" aria-live="polite"></p>
+          <div class="results-tools" id="resultsTools">
+            <button type="button" class="link-btn" id="sourceToggle" aria-expanded="false" aria-controls="sourcePanel" hidden>Source status</button>
+            <label class="inline-select">
+              <span>Sort</span>
+              <select id="sortResultsBy">
+                <option value="ranked">Recommended</option>
+                <option value="score_desc">Highest match</option>
+                <option value="salary_desc">Highest salary</option>
+                <option value="date_desc">Newest</option>
+                <option value="company_asc">Company A to Z</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="source-panel" id="sourcePanel" hidden></div>
+
+        <!-- Dedicated centered live search progress stage -->
+        <div class="search-stage" id="searchProgressStage" hidden></div>
+
+        <!-- Job listings split view -->
+        <div class="split" id="searchSplit">
+          <div class="job-list" id="jobList" aria-label="Job results"></div>
+          <aside class="job-detail" id="jobDetail" aria-label="Job details"></aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= JOB WORKSPACE ================= -->
+    <section class="view" id="view-job" aria-labelledby="wsTitle" hidden>
+      <div class="container">
+        <div class="ws-head">
+          <button type="button" class="btn btn-ghost btn-sm" data-action="ws-back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg><span id="wsBackLabel">Back to jobs</span></button>
+          <div class="ws-title-row">
+            <div class="ws-title-block">
+              <h1 id="wsTitle" class="page-title">Job</h1>
+              <p class="ws-meta" id="wsMeta"></p>
+            </div>
+            <div class="ws-head-side">
+              <div class="score-ring" id="wsScore" hidden></div>
+              <div class="ws-head-actions">
+                <a class="btn btn-secondary btn-sm" id="wsApply" target="_blank" rel="noopener noreferrer" hidden><svg class="i" aria-hidden="true"><use href="#i-external"/></svg>Apply</a>
+                <button type="button" class="btn btn-secondary btn-sm" data-action="ws-save"><svg class="i" aria-hidden="true"><use href="#i-bookmark"/></svg>Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Job tools" id="wsTabs">
+          <button type="button" role="tab" data-ws-tab="strategy" aria-selected="false"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>AI Strategy</button>
+          <button type="button" role="tab" data-ws-tab="resume" aria-selected="true"><svg class="i" aria-hidden="true"><use href="#i-file"/></svg>Tailor Resume</button>
+          <button type="button" role="tab" data-ws-tab="ats" aria-selected="false">ATS Score <b class="count" id="wsAtsCount" hidden></b></button>
+          <button type="button" role="tab" data-ws-tab="gaps" aria-selected="false">Skill Gaps</button>
+          <button type="button" role="tab" data-ws-tab="cover" aria-selected="false">Cover Letter</button>
+          <button type="button" role="tab" data-ws-tab="prep" aria-selected="false">Interview Prep</button>
+        </div>
+        <div class="ws-panel" id="wsPanel" role="tabpanel"></div>
+      </div>
+    </section>
+
+    <!-- ================= APPLICATIONS ================= -->
+    <section class="view" id="view-applications" aria-labelledby="appsTitle" hidden>
+      <div class="container container-wide">
+        <header class="page-head">
+          <div>
+            <h1 class="page-title" id="appsTitle">Applications</h1>
+            <p class="page-sub" id="appStats">Track every role from saved to offer.</p>
+          </div>
+          <button type="button" class="btn btn-primary" data-action="app-add"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Add application</button>
+        </header>
+        <div class="board" id="kanbanBoard"></div>
+      </div>
+    </section>
+
+    <!-- ================= RESUME ================= -->
+    <section class="view" id="view-resume" aria-labelledby="resumeTitle" hidden>
+      <div class="container container-narrow">
+        <header class="page-head">
+          <div>
+            <h1 class="page-title" id="resumeTitle">Your resume</h1>
+            <p class="page-sub">Every search, score, and tailored document starts here. Fix any detail before you search.</p>
+          </div>
+        </header>
+
+        <div class="card intake" id="intakeCard">
+          <div class="intake-head">
+            <div>
+              <h2 class="card-title" id="intakeTitle">Start with your resume</h2>
+              <p class="muted" id="intakeSub">Upload a PDF, Word, text, or Markdown file. The app reads it into the fields below.</p>
+            </div>
+          </div>
+          <div class="dropzone" id="dropzone">
+            <svg class="i i-lg" aria-hidden="true"><use href="#i-upload"/></svg>
+            <div>
+              <strong>Drop your resume here</strong>
+              <span class="muted">PDF, DOCX, TXT, or MD, up to 8 MB</span>
+            </div>
+            <label class="btn btn-secondary">
+              Choose file
+              <input type="file" id="resumeFileInput" accept=".pdf,.doc,.docx,.txt,.md,.json" class="sr-only">
+            </label>
+          </div>
+          <details class="paste-box">
+            <summary>Paste resume text instead</summary>
+            <textarea id="rawResumePaste" rows="6" placeholder="Paste your full resume text here" aria-label="Resume text"></textarea>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="parse-paste">Read pasted text</button>
+          </details>
+        </div>
+
+        <form class="profile-form" id="profileForm" autocomplete="off">
+          <section class="card" aria-labelledby="basicsTitle">
+            <h2 class="card-title" id="basicsTitle">Basics</h2>
+            <div class="form-grid">
+              <div class="form-field"><label for="profName">Full name</label><input type="text" id="profName"></div>
+              <div class="form-field"><label for="profTitle">Target job title</label><input type="text" id="profTitle"></div>
+              <div class="form-field"><label for="profExp">Years of experience</label><input type="number" id="profExp" min="0" max="60"></div>
+              <div class="form-field"><label for="profWorkMode">Work mode</label>
+                <select id="profWorkMode"><option value="Remote">Remote</option><option value="Hybrid">Hybrid</option><option value="Onsite">On-site</option></select>
+              </div>
+              <div class="form-field"><label for="profEmail">Email</label><input type="email" id="profEmail"></div>
+              <div class="form-field"><label for="profPhone">Phone</label><input type="text" id="profPhone"></div>
+              <div class="form-field span-2"><label for="profLocation">Location</label><input type="text" id="profLocation"></div>
+              <div class="form-field"><label for="profLinkedin">LinkedIn</label><input type="text" id="profLinkedin"></div>
+              <div class="form-field"><label for="profGithub">GitHub or portfolio</label><input type="text" id="profGithub"></div>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="summaryTitle">
+            <h2 class="card-title" id="summaryTitle">Summary</h2>
+            <div class="form-field"><label for="profSummary" class="sr-only">Professional summary</label><textarea id="profSummary" rows="4"></textarea></div>
+          </section>
+
+          <section class="card" aria-labelledby="skillsTitle">
+            <div class="card-head">
+              <div>
+                <h2 class="card-title" id="skillsTitle">Core competencies</h2>
+                <p class="muted">Technical proficiencies evaluated against role requirements.</p>
+              </div>
+            </div>
+            <div class="tags" id="profileSkillsTags"></div>
+            <div class="add-row">
+              <label for="newSkill" class="sr-only">Add competency</label>
+              <input type="text" id="newSkill" placeholder="Add competency, then press Enter">
+              <button type="button" class="btn btn-secondary btn-sm" data-action="skill-add">Add</button>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="expTitle">
+            <div class="card-head">
+              <div>
+                <h2 class="card-title" id="expTitle">Experience</h2>
+                <p class="muted">The tailoring tool rewrites these bullets to echo each posting. It never adds new facts.</p>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" data-action="exp-add"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Add position</button>
+            </div>
+            <div class="stack" id="profileExperienceList"></div>
+          </section>
+
+          <section class="card" aria-labelledby="eduTitle">
+            <div class="card-head">
+              <h2 class="card-title" id="eduTitle">Education</h2>
+              <button type="button" class="btn btn-secondary btn-sm" data-action="edu-add"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Add education</button>
+            </div>
+            <div class="stack" id="profileEducationList"></div>
+          </section>
+        </form>
+      </div>
+
+      <div class="savebar" id="saveBar" hidden>
+        <div class="savebar-inner">
+          <span id="saveBarText">You have unsaved changes.</span>
+          <div class="savebar-actions">
+            <button type="button" class="btn btn-ghost btn-sm" data-action="profile-discard">Discard</button>
+            <button type="button" class="btn btn-primary btn-sm" data-action="profile-save">Save profile</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= COMPANIES ================= -->
+    <section class="view" id="view-companies" aria-labelledby="compTitle" hidden>
+      <div class="container">
+        <header class="page-head">
+          <div>
+            <h1 class="page-title" id="compTitle">Watched companies</h1>
+            <p class="page-sub">Check a company's public career page for roles that fit your resume.</p>
+          </div>
+          <div class="head-actions">
+            <button type="button" class="btn btn-secondary" data-action="watch-check" id="btnWatchCheck"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>Check all</button>
+            <button type="button" class="btn btn-primary" data-action="watch-add"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Watch company</button>
+          </div>
+        </header>
+        <div class="grid-cards" id="watchlistGrid"></div>
+      </div>
+    </section>
+
+    <!-- ================= DIGEST ================= -->
+    <section class="view" id="view-digest" aria-labelledby="digestTitle" hidden>
+      <div class="container container-narrow">
+        <header class="page-head">
+          <div>
+            <h1 class="page-title" id="digestTitle">Morning digest</h1>
+            <p class="page-sub" id="digestSub">New roles that score above your cutoff.</p>
+          </div>
+          <label class="inline-select">
+            <span>Cutoff</span>
+            <select id="digestThresholdSelect">
+              <option value="70">70% or more</option>
+              <option value="75">75% or more</option>
+              <option value="85">85% or more</option>
+              <option value="90">90% or more</option>
+            </select>
+          </label>
+        </header>
+        <div class="card digest" id="digestBody"></div>
+        <p class="muted small">To get this by email each morning, set JH_DIGEST_TIME and your SMTP settings before you start the server.</p>
+      </div>
+    </section>
+
+    <!-- ================= PRIVACY ================= -->
+    <section class="view" id="view-privacy" aria-labelledby="privTitle" hidden>
+      <div class="container container-narrow">
+        <header class="page-head">
+          <div>
+            <h1 class="page-title" id="privTitle">Sources and privacy</h1>
+            <p class="page-sub">Where jobs come from, and where your data stays.</p>
+          </div>
+        </header>
+
+        <section class="card">
+          <h2 class="card-title"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Your data stays on this computer</h2>
+          <p>Your resume, applications, and tailored documents live in <code>data/jobhunter.db</code>. The app sends none of it to tracking services, training sets, or data brokers.</p>
+        </section>
+
+        <section class="card" id="aiSettingsCard">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>AI Engine &amp; Guardrails</h2>
+              <p class="muted">Power tailoring and strategic role analysis with Gemini, OpenAI, Claude, Ollama, or the built-in local engine.</p>
+            </div>
+            <span class="chip chip-ok" id="activeAiBadge">Deterministic (Active)</span>
+          </div>
+          <div class="form-grid">
+            <div class="form-field span-2">
+              <label for="aiProviderSelect">Active AI Provider</label>
+              <select id="aiProviderSelect">
+                <option value="deterministic">Local Deterministic Engine (Fast, 100% Free, Zero Hallucinations)</option>
+                <option value="gemini">Google Gemini (Gemini 1.5/2.0 Flash)</option>
+                <option value="openai">OpenAI (GPT-4o Mini / GPT-4o)</option>
+                <option value="anthropic">Anthropic Claude (Claude Sonnet 3.5)</option>
+                <option value="ollama">Ollama (Local LLM)</option>
+              </select>
+            </div>
+            <div class="form-field span-2" id="aiKeyField" hidden>
+              <label for="aiApiKeyInput" id="aiKeyLabel">API Key</label>
+              <input type="password" id="aiApiKeyInput" placeholder="Enter API key" autocomplete="off">
+            </div>
+            <div class="form-field" id="aiModelField" hidden>
+              <label for="aiModelInput">Model Name (optional)</label>
+              <input type="text" id="aiModelInput" placeholder="Default model">
+            </div>
+            <div class="form-field" id="ollamaEndpointField" hidden>
+              <label for="ollamaEndpointInput">Ollama URL</label>
+              <input type="text" id="ollamaEndpointInput" placeholder="http://127.0.0.1:11434">
+            </div>
+          </div>
+          <div class="ai-guardrail-summary">
+            <strong><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Zero-Hallucination Guardrail Active</strong>
+            <p class="muted small">All AI rewrites are filtered through our local Grounding Guard. If any AI invents a metric, technology, or title you don't possess, it is automatically rejected.</p>
+          </div>
+          <div class="head-actions" style="margin-top:14px; gap:8px;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnTestAi"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>Test connection</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnSaveAi">Save AI configuration</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2 class="card-title">Where jobs come from</h2>
+          </div>
+          <dl class="source-list">
+            <div><dt>Company career pages</dt><dd>Greenhouse, Lever, Ashby, SmartRecruiters, Workable. Public endpoints, no login. You apply directly with the employer.</dd></div>
+            <div><dt>Remote job feeds</dt><dd>Remotive, RemoteOK, Jobicy, Arbeitnow, We Work Remotely, Hacker News. Every job links back to the original post, as these feeds ask.</dd></div>
+            <div><dt>Indeed</dt><dd>Tried on every search. Indeed restricts scraping in its terms, so results can be partial.</dd></div>
+            <div><dt>LinkedIn</dt><dd>Public guest listings, tried on every search. LinkedIn restricts automated access and changes its pages often, so results can be partial. Use at your own risk.</dd></div>
+            <div><dt>Adzuna</dt><dd>Covers local and non-tech jobs. Turns on when you set a free ADZUNA_APP_ID and ADZUNA_APP_KEY.</dd></div>
+          </dl>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2 class="card-title">Source health</h2>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="sources-refresh"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>Refresh</button>
+          </div>
+          <div id="sourceHealth" class="health-list"><p class="muted">Loading.</p></div>
+        </section>
+
+        <section class="card danger-zone">
+          <div>
+            <h2 class="card-title">Delete all my data</h2>
+            <p class="muted">This removes your profile, applications, watchlist, settings, and cached searches, then shrinks the database file. You cannot undo it.</p>
+          </div>
+          <button type="button" class="btn btn-danger" data-action="purge">Delete everything</button>
+        </section>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================= DIALOGS ================= -->
+  <dialog class="dialog" id="appDialog" aria-labelledby="appDialogTitle">
+    <form method="dialog" id="appDialogForm">
+      <div class="dialog-head">
+        <h2 id="appDialogTitle">Add application</h2>
+        <button type="button" class="icon-btn" data-action="dialog-close" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label for="modalCompany">Company</label><input type="text" id="modalCompany" required></div>
+        <div class="form-field"><label for="modalTitle">Job title</label><input type="text" id="modalTitle" required></div>
+        <div class="form-field"><label for="modalLocation">Location</label><input type="text" id="modalLocation"></div>
+        <div class="form-field"><label for="modalSalary">Pay</label><input type="text" id="modalSalary" placeholder="e.g. $160k to $190k"></div>
+        <div class="form-field"><label for="modalStatus">Stage</label>
+          <select id="modalStatus">
+            <option value="saved">Saved</option><option value="applied">Applied</option><option value="interview">Interviewing</option><option value="offer">Offer</option><option value="rejected">Archived</option>
+          </select>
+        </div>
+        <div class="form-field"><label for="modalFollowUp">Follow up on</label><input type="date" id="modalFollowUp"></div>
+        <div class="form-field span-2"><label for="modalNotes">Notes</label><textarea id="modalNotes" rows="3" placeholder="Contacts, interview dates, referrals"></textarea></div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" data-action="dialog-close">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="appDialogSubmit">Save application</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog dialog-sm" id="watchDialog" aria-labelledby="watchDialogTitle">
+    <form method="dialog" id="watchDialogForm">
+      <div class="dialog-head">
+        <h2 id="watchDialogTitle">Watch a company</h2>
+        <button type="button" class="icon-btn" data-action="dialog-close" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="form-grid one">
+        <div class="form-field"><label for="wlCompanyName">Company name</label><input type="text" id="wlCompanyName" placeholder="e.g. Stripe, Figma, GitLab" required></div>
+        <div class="form-field"><label for="wlAtsType">Career page type</label>
+          <select id="wlAtsType">
+            <option value="">Find it for me</option>
+            <option value="greenhouse">Greenhouse</option>
+            <option value="lever">Lever</option>
+            <option value="ashby">Ashby</option>
+            <option value="smartrecruiters">SmartRecruiters</option>
+            <option value="workable">Workable</option>
+          </select>
+        </div>
+        <div class="form-field"><label for="wlTargetRole">Role keyword</label><input type="text" id="wlTargetRole" placeholder="e.g. Backend, Full Stack"></div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" data-action="dialog-close">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="watchSubmit">Watch company</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog dialog-sm" id="confirmDialog" aria-labelledby="confirmTitle">
+    <form method="dialog">
+      <div class="dialog-head"><h2 id="confirmTitle">Are you sure?</h2></div>
+      <p id="confirmText" class="muted"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" data-confirm="cancel">Cancel</button>
+        <button type="button" class="btn btn-danger" data-confirm="ok" id="confirmOk">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toasts" id="toastContainer" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

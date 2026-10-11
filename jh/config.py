@@ -2,7 +2,7 @@
 import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STATIC_DIR = os.path.join(BASE_DIR, "static")
+STATIC_DIR = os.path.join(BASE_DIR, "public") if os.path.isdir(os.path.join(BASE_DIR, "public")) else os.path.join(BASE_DIR, "static")
 
 if os.environ.get("VERCEL"):
     DATA_DIR = os.environ.get("JH_DATA_DIR", "/tmp/jobhunter_data")
