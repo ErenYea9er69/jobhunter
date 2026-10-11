@@ -107,29 +107,30 @@
         <form class="searchbar" id="searchForm" role="search">
           <label class="field-icon grow-2">
             <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
-            <input type="search" id="searchQuery" placeholder="Job title, skill, or company" aria-label="Job title, skill, or company" autocomplete="off">
+            <input type="search" id="searchQuery" placeholder="Role, tech stack, or company (e.g. Python, Full Stack)" aria-label="Job title, skill, or company" autocomplete="off">
           </label>
           <label class="field-icon grow-1">
             <svg class="i" aria-hidden="true"><use href="#i-pin"/></svg>
-            <input type="text" id="searchLocation" placeholder="Location (optional)" aria-label="Location" autocomplete="off">
+            <input type="text" id="searchLocation" placeholder="Location or 'Worldwide'" aria-label="Location" autocomplete="off">
           </label>
-          <button type="submit" class="btn btn-primary btn-lg" id="btnSearch">Search</button>
-          <button type="button" class="btn btn-secondary btn-lg" id="btnRefresh" title="Query live sources, delete old database entries, and store fresh listings">
+          <button type="submit" class="btn btn-primary btn-lg" id="btnSearch">
+            <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+            <span>Search</span>
+          </button>
+          <button type="button" class="btn btn-secondary btn-lg" id="btnRefresh" title="Query live sources, refresh database cache, and fetch fresh listings">
             <svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>
             <span>Refresh</span>
           </button>
         </form>
 
-        <!-- 10X Multi-Facet Filter Console -->
+        <div class="search-sub-bar">
+          <div class="chips" id="suggestChips" aria-label="Search ideas"></div>
+          <span class="last-search-badge" id="lastSearchBadge" hidden></span>
+        </div>
+
+        <!-- Unified Facet Filter Console -->
         <div class="filter-console" id="filterConsole">
           <div class="filter-primary-row">
-            <!-- In-result live sub-search input -->
-            <div class="filter-search-box">
-              <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
-              <input type="search" id="filterKeyword" placeholder="Filter jobs by title, company, or keyword..." aria-label="Filter current jobs" autocomplete="off">
-              <button type="button" class="filter-search-clear" id="filterKeywordClear" hidden title="Clear search" aria-label="Clear filter search">&times;</button>
-            </div>
-
             <!-- Work Mode Segmented with live counts -->
             <div class="segmented" id="workModeSeg" role="group" aria-label="Work mode">
               <button type="button" data-mode="Any" aria-pressed="true">Any <span class="f-cnt" id="cntModeAny"></span></button>
@@ -151,9 +152,9 @@
             <!-- Big Tech & Startups Selector with live counts -->
             <div class="segmented segmented-famous" id="famousSeg" role="group" aria-label="Company type filter">
               <button type="button" data-famous="all" aria-pressed="true">All Co. <span class="f-cnt" id="cntFamAll"></span></button>
+              <button type="button" data-famous="startups" aria-pressed="false">Startups &amp; Mid <span class="f-cnt" id="cntFamStartups"></span></button>
+              <button type="button" data-famous="only" aria-pressed="false">Big Tech <span class="f-cnt" id="cntFamOnly"></span></button>
               <button type="button" data-famous="hide" aria-pressed="false">No Big Tech <span class="f-cnt" id="cntFamHide"></span></button>
-              <button type="button" data-famous="startups" aria-pressed="false">Startups &amp; Mid-Tech <span class="f-cnt" id="cntFamStartups"></span></button>
-              <button type="button" data-famous="only" aria-pressed="false">Big Tech Only <span class="f-cnt" id="cntFamOnly"></span></button>
             </div>
             <select id="searchFamousSelect" hidden><option value="all">all</option><option value="hide">hide</option><option value="startups">startups</option><option value="only">only</option></select>
 
@@ -178,8 +179,6 @@
                 <option value="1440">Every 24 hours</option>
               </select>
             </label>
-            <span class="last-search-badge" id="lastSearchBadge" hidden></span>
-            <div class="chips" id="suggestChips" aria-label="Search ideas"></div>
           </div>
 
           <!-- Secondary Expandable Filters Drawer -->
@@ -281,6 +280,9 @@
               <div class="skills-facet-chips" id="skillsFacetChips"></div>
             </div>
           </div>
+
+          <!-- Fallback Notice Banner -->
+          <div class="fallback-banner" id="fallbackBanner" hidden></div>
 
           <!-- Active Filter Tags Bar -->
           <div class="active-filters-bar" id="activeFiltersBar" hidden>

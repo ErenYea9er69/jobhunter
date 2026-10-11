@@ -1342,7 +1342,9 @@
         if (f.country === 'Worldwide') {
           if (jc !== 'Worldwide' && jobWorkMode(j) !== 'remote') return false;
         } else {
-          if (jc.toLowerCase() !== f.country.toLowerCase()) return false;
+          const matchesCountry = (jc.toLowerCase() === f.country.toLowerCase());
+          const isWorldwideRemote = (jc === 'Worldwide' || jobWorkMode(j) === 'remote');
+          if (!matchesCountry && !isWorldwideRemote) return false;
         }
       }
 
@@ -1571,8 +1573,6 @@
     const f = S.filters;
     if (type === 'keyword') {
       f.keyword = '';
-      const inp = $('#filterKeyword'); if (inp) inp.value = '';
-      const clr = $('#filterKeywordClear'); if (clr) clr.hidden = true;
     } else if (type === 'workMode') {
       f.workMode = 'Any';
       S.workMode = 'Any';
@@ -1624,8 +1624,6 @@
     S.workMode = 'Any';
     S.famousFilter = 'all';
     try { localStorage.setItem('jh-famous-filter', 'all'); } catch (e) {}
-    const inp = $('#filterKeyword'); if (inp) inp.value = '';
-    const clr = $('#filterKeywordClear'); if (clr) clr.hidden = true;
     const s = $('#searchMinScore'); if (s) s.value = '0';
     const fam = $('#searchFamousSelect'); if (fam) fam.value = 'all';
     const cSel = $('#countrySelect'); if (cSel) cSel.value = 'all';
@@ -1760,6 +1758,17 @@
     const filterSub = n !== totalAll ? ` <small class="text-muted">(${n} of ${totalAll} match current filters)</small>` : '';
     $('#resultsSummary').innerHTML = n ? `${n} job${n === 1 ? '' : 's'}${forWhat}${filterSub}${filterBadge}` : `No jobs found${filterSub}${filterBadge}`;
 
+    // Update fallback notice banner if present
+    const fallbackBanner = $('#fallbackBanner');
+    if (fallbackBanner) {
+      if (meta.fallback_notice) {
+        fallbackBanner.innerHTML = `<span class="fallback-icon">🌍</span><span>${esc(meta.fallback_notice)}</span>`;
+        fallbackBanner.hidden = false;
+      } else {
+        fallbackBanner.hidden = true;
+      }
+    }
+
     const { total, ok, srcs } = sourceCounts();
     const toggle = $('#sourceToggle');
     toggle.hidden = !total;
@@ -1779,18 +1788,45 @@
     const list = $('#jobList');
     const meta = S.searchMeta || {};
     const jobs = filteredJobs();
+    const totalAll = (S.allJobs && S.allJobs.length) || 0;
+
     if (!jobs.length) {
       const { total, ok } = sourceCounts();
       const allFailed = total > 0 && ok === 0;
-      const strict = Number(val('searchMinScore')) > 0 || S.quickFilter !== 'all' || S.famousFilter !== 'all';
+
+      // Case 1: Search returned jobs, but client filters eliminated all of them!
+      if (totalAll > 0 && !allFailed) {
+        list.innerHTML = `<div class="empty">${ico('search')}
+          <h3>No jobs match active filters</h3>
+          <p>Found <strong>${totalAll} job${totalAll === 1 ? '' : 's'}</strong> for this search, but your current filters excluded all of them.</p>
+          <div class="empty-actions">
+            <button type="button" class="btn btn-primary" data-action="clear-filters">Show all ${totalAll} jobs</button>
+            ${S.filters.minScore > 0 ? '<button type="button" class="btn btn-secondary" data-action="relax-score">Show any match score</button>' : ''}
+          </div>
+        </div>`;
+        return;
+      }
+
+      // Case 2: Zero results from search sources
+      const qText = val('searchQuery').trim() || meta.query || 'this search';
+      const locText = val('searchLocation').trim();
+
       list.innerHTML = `<div class="empty">${ico(allFailed ? 'alert' : 'search')}
-        <h3>${allFailed ? 'No source answered' : 'No jobs match these filters'}</h3>
-        <p>${allFailed ? 'Check your internet connection, then search again. Open Sources above to see what failed.' : 'Try a broader title, a different work mode, or clear the quick filters.'}</p>
+        <h3>${allFailed ? 'No source answered' : `No postings found for "${esc(qText)}"`}</h3>
+        <p>${allFailed ? 'Check your internet connection, then search again. Open Sources above to see what failed.' : (locText ? `No listings matched in "${esc(locText)}". Expand to Worldwide Remote to view jobs you can work from anywhere.` : 'Try searching for related job titles or refreshing live sources.')}</p>
         <div class="empty-actions">
-          ${strict && !allFailed ? '<button type="button" class="btn btn-primary" data-action="clear-filters">Show all results</button>' : ''}
-          ${Number(val('searchMinScore')) > 0 && !allFailed ? '<button type="button" class="btn btn-secondary" data-action="clear-min">Show any match score</button>' : ''}
-          <button type="button" class="btn btn-secondary" data-action="search-again">Search again</button>
-        </div></div>`;
+          ${locText && locText.toLowerCase() !== 'worldwide' ? '<button type="button" class="btn btn-primary" data-action="search-worldwide-remote">Search Worldwide Remote</button>' : ''}
+          <button type="button" class="btn btn-secondary" data-action="search-again">Refresh live sources</button>
+          <button type="button" class="btn btn-ghost" data-action="clear-search">Clear search</button>
+        </div>
+        <div class="empty-suggestions">
+          <span>Suggested titles:</span>
+          <button type="button" class="empty-suggestion-btn" data-action="suggest-search" data-q="Software Engineer">Software Engineer</button>
+          <button type="button" class="empty-suggestion-btn" data-action="suggest-search" data-q="Full Stack Developer">Full Stack</button>
+          <button type="button" class="empty-suggestion-btn" data-action="suggest-search" data-q="Backend Engineer">Backend</button>
+          <button type="button" class="empty-suggestion-btn" data-action="suggest-search" data-q="Frontend Developer">Frontend</button>
+        </div>
+      </div>`;
       return;
     }
     const showScore = !meta.profile_empty;
@@ -2717,16 +2753,43 @@
   // ----------------------------------------------------------------- events
   const ACTIONS = {
     // search
-    'idea': el => { $('#searchQuery').value = el.dataset.q; runSearch({ forceRefresh: false }); },
+    'idea': el => {
+      $('#searchQuery').value = el.dataset.q;
+      resetAllFilters();
+      runSearch({ forceRefresh: false });
+    },
     'search-again': () => runSearch({ forceRefresh: true }),
-    'clear-min': () => { $('#searchMinScore').value = '0'; if (S.searchHasRun) filterAndRender(); else runSearch(); },
-    'clear-filters': () => {
-      S.quickFilter = 'all';
-      S.famousFilter = 'all';
-      try { localStorage.setItem('jh-famous-filter', 'all'); } catch (err) {}
-      $('#searchMinScore').value = '0';
-      syncFamousUi();
+    'clear-min': () => {
+      S.filters.minScore = 0;
+      const s = $('#searchMinScore'); if (s) s.value = '0';
       filterAndRender();
+    },
+    'relax-score': () => {
+      S.filters.minScore = 0;
+      const s = $('#searchMinScore'); if (s) s.value = '0';
+      filterAndRender();
+    },
+    'clear-filters': () => {
+      resetAllFilters();
+      filterAndRender();
+    },
+    'search-worldwide-remote': () => {
+      const loc = $('#searchLocation');
+      if (loc) loc.value = 'Worldwide';
+      resetAllFilters();
+      runSearch({ forceRefresh: false });
+    },
+    'suggest-search': el => {
+      const q = $('#searchQuery');
+      if (q) q.value = el.dataset.q || '';
+      resetAllFilters();
+      runSearch({ forceRefresh: false });
+    },
+    'clear-search': () => {
+      const q = $('#searchQuery'); if (q) q.value = '';
+      const loc = $('#searchLocation'); if (loc) loc.value = '';
+      resetAllFilters();
+      runSearch({ forceRefresh: false });
     },
     'job-select': el => selectJob(el.dataset.key),
     'job-strategy': () => openWorkspace(selectedJob(), 'strategy', 'jobs'),
@@ -2806,31 +2869,18 @@
     window.addEventListener('beforeunload', e => { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
 
     // search form & refresh
-    $('#searchForm').addEventListener('submit', e => { e.preventDefault(); runSearch({ forceRefresh: false }); });
+    $('#searchForm').addEventListener('submit', e => {
+      e.preventDefault();
+      resetAllFilters();
+      runSearch({ forceRefresh: false });
+    });
     const btnRefresh = $('#btnRefresh');
     if (btnRefresh) {
       btnRefresh.addEventListener('click', () => {
         toast('Refreshing jobs from all sources and updating database cache...');
+        resetAllFilters();
         runSearch({ forceRefresh: true });
       });
-    }
-    // filter console: live sub-search keyword
-    const fKw = $('#filterKeyword');
-    const fKwClear = $('#filterKeywordClear');
-    if (fKw) {
-      fKw.addEventListener('input', e => {
-        S.filters.keyword = e.target.value.trim();
-        if (fKwClear) fKwClear.hidden = !e.target.value;
-        if (S.searchHasRun) filterAndRender();
-      });
-      if (fKwClear) {
-        fKwClear.addEventListener('click', () => {
-          fKw.value = '';
-          fKwClear.hidden = true;
-          S.filters.keyword = '';
-          if (S.searchHasRun) filterAndRender();
-        });
-      }
     }
 
     // segmented work mode

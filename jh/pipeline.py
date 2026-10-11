@@ -366,13 +366,19 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
         qwords = [w for w in re.findall(r"[a-z0-9+#]+", query.lower()) if len(w) > 2]
         syns = set(qwords)
         if "engineer" in syns or "developer" in syns or "swe" in syns:
-            syns.update({"engineer", "developer", "swe", "dev"})
+            syns.update({"engineer", "developer", "swe", "dev", "programmer", "software", "architect"})
         if "frontend" in syns or "front-end" in syns:
-            syns.update({"frontend", "front end", "ui"})
+            syns.update({"frontend", "front end", "ui", "web", "react", "vue", "javascript", "typescript"})
         if "backend" in syns or "back-end" in syns:
-            syns.update({"backend", "back end", "api"})
+            syns.update({"backend", "back end", "api", "server", "python", "node", "java", "golang"})
         if "fullstack" in syns or "full-stack" in syns:
             syns.update({"fullstack", "full stack", "backend", "frontend", "software", "web"})
+        if "devops" in syns or "cloud" in syns or "sre" in syns:
+            syns.update({"devops", "cloud", "sre", "infrastructure", "platform", "kubernetes", "aws", "docker"})
+        if "data" in syns or "ai" in syns or "ml" in syns:
+            syns.update({"data", "analytics", "machine learning", "ai", "ml"})
+        if "mobile" in syns or "ios" in syns or "android" in syns:
+            syns.update({"mobile", "ios", "android", "flutter", "react native"})
         for sk_name in profile.get("skills", [])[:8]:
             for tok in re.findall(r"[a-z0-9+#]+", sk_name.lower()):
                 if len(tok) > 2:
@@ -474,6 +480,42 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
             if any(k in j_text for k in bad_keys):
                 continue
         filtered.append(j)
+
+    # Smart Graceful Fallback: if location yielded 0 results, find Worldwide Remote opportunities
+    fallback_notice = ""
+    if not filtered and location and location.lower() not in ("remote", "worldwide", "any"):
+        from .scoring import classify_job_country
+        req_country = classify_job_country(location)
+        fallback_candidates = []
+        for j in merged:
+            if famous_mode == "hide" and j.get("is_famous"):
+                continue
+            if famous_mode == "only" and not j.get("is_famous"):
+                continue
+            if bad_keys:
+                j_text = f"{j.get('title', '')} {j.get('description', '')}".lower()
+                if any(k in j_text for k in bad_keys):
+                    continue
+            jm = _norm_mode(j)
+            if jm == "remote":
+                loc_low = (j.get("location") or "").lower()
+                text_hay = f"{loc_low} {j.get('description', '')[:500]}".lower()
+                is_us_only = bool(re.search(r"\b(us only|u\.s\. only|united states only|must reside in (the )?us)\b", text_hay))
+                is_uk_only = bool(re.search(r"\b(uk only|united kingdom only|must reside in (the )?uk)\b", text_hay))
+                is_can_only = bool(re.search(r"\b(canada only|must reside in canada)\b", text_hay))
+                is_ind_only = bool(re.search(r"\b(india only|must reside in india)\b", text_hay))
+                if (req_country != "United States" and is_us_only) or \
+                   (req_country != "United Kingdom" and is_uk_only) or \
+                   (req_country != "Canada" and is_can_only) or \
+                   (req_country != "India" and is_ind_only):
+                    continue
+                j_copy = dict(j)
+                j_copy["is_fallback"] = True
+                fallback_candidates.append(j_copy)
+        if fallback_candidates:
+            filtered = fallback_candidates
+            fallback_notice = f"No on-site postings found in '{location}'. Showing {len(filtered)} Worldwide Remote opportunities you can work from {location}."
+
     filtered = filtered[: (limit or config.MAX_RESULTS)]
     _remember(filtered)
 
@@ -484,6 +526,7 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
         "ranking": {"method": "fit 70% + source authority 20% + evidence 10%", "workers": config.SEARCH_WORKERS},
         "partial": bool(failed), "elapsed_ms": int((time.time() - t0) * 1000),
         "profile_empty": bool(profile.get("_is_empty")),
+        "fallback_notice": fallback_notice,
         "warnings": ([f"{len(failed)} source(s) did not respond. Showing results from the rest."] if failed else []),
     }
     if on_progress:

@@ -119,6 +119,14 @@ class ScoreTests(Base):
         self.assertTrue(pipeline._passes(remote_global, "any", "Tunisia"))
         self.assertFalse(pipeline._passes(us_only_job, "any", "Tunisia"))
 
+    def test_smart_remote_fallback_when_local_empty(self):
+        # When user searches for a location that has 0 local postings, pipeline falls back to Worldwide Remote
+        res = pipeline.search(query="cobol", location="Tuvalu", work_mode="Onsite")
+        self.assertGreater(res["count"], 0)
+        self.assertTrue(any(j.get("is_fallback") for j in res["jobs"]))
+        self.assertIn("Worldwide Remote", res.get("fallback_notice", ""))
+
+
 
 class ParserTests(Base):
     def test_structure_is_read_not_invented(self):
