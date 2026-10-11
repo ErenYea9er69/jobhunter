@@ -3,7 +3,21 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
-DATA_DIR = os.environ.get("JH_DATA_DIR", os.path.join(BASE_DIR, "data"))
+
+if os.environ.get("VERCEL"):
+    DATA_DIR = os.environ.get("JH_DATA_DIR", "/tmp/jobhunter_data")
+    os.makedirs(DATA_DIR, exist_ok=True)
+    src_db = os.path.join(BASE_DIR, "data", "jobhunter.db")
+    dst_db = os.path.join(DATA_DIR, "jobhunter.db")
+    if os.path.isfile(src_db) and not os.path.isfile(dst_db):
+        import shutil
+        try:
+            shutil.copy2(src_db, dst_db)
+        except Exception:
+            pass
+else:
+    DATA_DIR = os.environ.get("JH_DATA_DIR", os.path.join(BASE_DIR, "data"))
+
 DB_PATH = os.path.join(DATA_DIR, "jobhunter.db")
 
 HOST = os.environ.get("JH_HOST", "127.0.0.1")

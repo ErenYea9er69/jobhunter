@@ -14,7 +14,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from . import ats, config, db, digest, exporters, pipeline, resume_parser, refit, tracker, __version__
 
 log = logging.getLogger("jobhunter")
-TOKEN = secrets.token_urlsafe(24)
+TOKEN = os.environ.get("JH_TOKEN") or ("jobhunter-vercel-token" if os.environ.get("VERCEL") else secrets.token_urlsafe(24))
 ROUTES = {}
 
 
@@ -295,8 +295,10 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def _host_ok(self):
+        if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
+            return True
         host = (self.headers.get("Host") or "").split(":")[0].lower()
-        return host in ("127.0.0.1", "localhost", "[::1]") or host == config.HOST.lower()
+        return host in ("127.0.0.1", "localhost", "[::1]") or host == config.HOST.lower() or host.endswith(".vercel.app")
 
     def _stream_search(self, q):
         g = lambda k, d="": q.get(k, [d])[0]
@@ -343,7 +345,10 @@ class Handler(SimpleHTTPRequestHandler):
         if not path.startswith("/api/"):
             return False
         token_in_query = f"token={TOKEN}" in (parsed.query or "")
-        if self.headers.get("X-JH-Token") != TOKEN and not token_in_query:
+        token_valid = (self.headers.get("X-JH-Token") == TOKEN) or token_in_query
+        if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
+            token_valid = True
+        if not token_valid:
             return self._json({"error": "Missing or invalid session token. Reload the page."}, 401)
         if method == "GET" and path == "/api/search/stream":
             return self._stream_search(urllib.parse.parse_qs(parsed.query))

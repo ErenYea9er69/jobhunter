@@ -1,0 +1,2 @@
+# JobHunter runs natively on Python 3.10+ standard library.
+# No external dependencies required.
