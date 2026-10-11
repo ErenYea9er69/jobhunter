@@ -28,16 +28,13 @@ OPTIONS (environment variables)
   ADZUNA_APP_ID, ADZUNA_APP_KEY free key from developer.adzuna.com for local and non-tech jobs
   ANTHROPIC_API_KEY             turns on the LLM rewrite engine (grounding check still applies)
   JH_LLM_MODEL                  default claude-sonnet-5-5
-  JH_ENABLE_LINKEDIN=1          LinkedIn guest listings (terms-of-service risk, off by default)
-  JH_ENABLE_JOBSPY=1            Indeed through python-jobspy (terms-of-service risk, off by default)
   JH_DIGEST_TIME=08:00          daily digest time
   JH_SMTP_HOST, JH_SMTP_PORT, JH_SMTP_USER, JH_SMTP_PASSWORD   email delivery
   JH_DEMO=1                     load a sample profile and labeled sample jobs
-  JH_SEARCH_DEADLINE            seconds before slow sources are skipped (default 14)
+  JH_SEARCH_DEADLINE            seconds before slow sources are skipped (default 20)
 
 OPTIONAL PACKAGES
   pip install pypdf             stronger PDF reading
-  pip install python-jobspy     only for the Indeed option
 
 TESTS
   python tests/test_jobhunter.py

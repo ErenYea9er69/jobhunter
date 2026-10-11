@@ -203,7 +203,11 @@ class PipelineTests(Base):
 class SourceParserTests(Base):
     def test_major_boards_are_always_attempted(self):
         self.assertTrue(sources.LinkedInGuest().available())
-        self.assertTrue(sources.IndeedJobSpy().available())
+        self.assertTrue(sources.Indeed().available())
+        self.assertTrue(sources.ZipRecruiter().available())
+        self.assertTrue(sources.Bayt().available())
+        self.assertTrue(sources.Naukri().available())
+        self.assertTrue(sources.HelloWork().available())
 
     def test_source_hierarchy_prefers_direct_employer_application(self):
         jobs = [

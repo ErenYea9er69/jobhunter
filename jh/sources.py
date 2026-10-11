@@ -4,7 +4,6 @@ import datetime
 import functools
 import html
 import http.cookiejar
-import importlib
 import json
 import re
 import secrets
@@ -26,9 +25,9 @@ BREAKER_COOLDOWN = 300
 # final opportunity rank.
 SOURCE_RANKS = {
     "Greenhouse": 100, "Lever": 100, "Ashby": 100, "SmartRecruiters": 100, "Workable": 100,
-    "LinkedIn": 96, "Indeed": 95, "ZipRecruiter": 94, "Glassdoor": 93, "Adzuna": 84, "Hacker News": 80,
+    "LinkedIn": 96, "Indeed": 95, "ZipRecruiter": 94, "Adzuna": 84, "Hacker News": 80,
     "We Work Remotely": 78, "Remotive": 76, "Himalayas": 75, "Jobicy": 72, "Arbeitnow": 70, "RemoteOK": 68,
-    "Bayt": 68, "Naukri": 68, "HelloWork": 66, "BDJobs": 65,
+    "Bayt": 68, "Naukri": 68, "HelloWork": 66,
 }
 
 
@@ -42,7 +41,7 @@ def source_rank(source, tier=""):
 def source_kind(source, tier=""):
     if str(tier).startswith("Direct company ATS") or source in {"Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workable"}:
         return "Direct employer ATS"
-    if source in {"LinkedIn", "Indeed", "ZipRecruiter", "Glassdoor", "Bayt", "Naukri", "HelloWork", "BDJobs"}:
+    if source in {"LinkedIn", "Indeed", "ZipRecruiter", "Bayt", "Naukri", "HelloWork"}:
         return "Major job board"
     if source == "Adzuna":
         return "Job aggregator"
@@ -513,7 +512,7 @@ class LinkedInGuest(Source):
             except Exception:
                 pass
 
-    def _fetch_builtin(self, query, location):
+    def fetch(self, query, location):
         self._warmup()
         out = []
         seen_ids = set()
@@ -603,48 +602,6 @@ class LinkedInGuest(Source):
 
         return out[:100]
 
-    def fetch(self, query, location):
-        try:
-            jobspy = importlib.import_module("jobspy")
-            scrape_jobs = jobspy.scrape_jobs
-            is_remote = "remote" in f"{query} {location}".lower()
-            df = scrape_jobs(
-                site_name=["linkedin"],
-                search_term=query or "software engineer",
-                location=location or "",
-                is_remote=is_remote,
-                results_wanted=40,
-                hours_old=24 * 30,
-                fetch_description=False,
-            )
-            if df is not None and not df.empty:
-                out = []
-                for r in df.to_dict("records"):
-                    min_a, max_a = r.get("min_amount"), r.get("max_amount")
-                    min_ok = min_a is not None and min_a == min_a and str(min_a).lower() != "nan"
-                    max_ok = max_a is not None and max_a == max_a and str(max_a).lower() != "nan"
-                    sal = f"${int(min_a):,} - ${int(max_a):,}" if (min_ok and max_ok) else f"${int(min_a):,}+" if min_ok else f"Up to ${int(max_a):,}" if max_ok else ""
-                    out.append(make_job(
-                        id=f"linkedin-{r.get('id')}",
-                        title=r.get("title") or "",
-                        company=r.get("company") or "",
-                        location=r.get("location") or "",
-                        work_mode="Remote" if r.get("is_remote") else "",
-                        salary=sal,
-                        url=r.get("job_url") or "",
-                        description=r.get("description") or "",
-                        posted_at=str(r.get("date_posted") or ""),
-                        source=self.name,
-                        source_credit="LinkedIn (via JobSpy)",
-                        source_tier=self.tier,
-                    ))
-                if len(out) >= 20:
-                    return out
-        except Exception:
-            pass
-
-        return self._fetch_builtin(query, location)
-
     def enrich(self, job):
         m = re.search(r"(\d{6,})", job.get("id", ""))
         if not m:
@@ -663,86 +620,6 @@ class LinkedInGuest(Source):
         except Exception:
             pass
         return job
-
-
-class IndeedJobSpy(Source):
-    name, tier = "Indeed", "Major job board"
-
-    def available(self):
-        # JobSpy is an acceleration/coverage enhancement, not a requirement.
-        # The built-in parser below keeps Indeed in every search on a stdlib-only install.
-        return True
-
-    def unavailable_reason(self):
-        return ""
-
-    @staticmethod
-    def _field(fragment, patterns, limit=500):
-        for pattern in patterns:
-            m = re.search(pattern, fragment, re.I | re.S)
-            if m:
-                value = html_to_text(html.unescape(m.group(1)), limit)
-                if value:
-                    return value
-        return ""
-
-    def _fetch_builtin(self, query, location):
-        """Small public-results fallback when python-jobspy is not installed."""
-        params = {"q": query or "software engineer", "l": location or "", "fromage": "14"}
-        url = "https://www.indeed.com/jobs?" + urllib.parse.urlencode(params)
-        try:
-            page = http_get(url, headers={"Accept": "text/html",
-                                          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"}, retries=0)
-        except HttpError:
-            raise HttpError("Indeed requires python-jobspy for Cloudflare bypass. Other feeds active.")
-        out = []
-        for match in re.finditer(r'data-jk=["\']([^"\']+)["\']', page, re.I):
-            start, end = max(0, match.start() - 1500), min(len(page), match.end() + 6500)
-            card = page[start:end]
-            title = self._field(card, [r'class=["\'][^"\']*jobTitle[^"\']*["\'][^>]*>.*?<span[^>]*>(.*?)</span>',
-                                       r'class=["\'][^"\']*jobTitle[^"\']*["\'][^>]*>.*?>(.*?)</a>'], 180)
-            company = self._field(card, [r'data-testid=["\']company-name["\'][^>]*>(.*?)</',
-                                         r'class=["\'][^"\']*companyName[^"\']*["\'][^>]*>(.*?)</'], 180)
-            loc = self._field(card, [r'data-testid=["\']text-location["\'][^>]*>(.*?)</',
-                                    r'class=["\'][^"\']*companyLocation[^"\']*["\'][^>]*>(.*?)</'], 180)
-            desc = self._field(card, [r'class=["\'][^"\']*job-snippet[^"\']*["\'][^>]*>(.*?)</'], 3000)
-            if not title or not company:
-                continue
-            jid = match.group(1)
-            out.append(make_job(id=f"indeed-{jid}", title=title, company=company, location=loc,
-                                work_mode="Remote" if "remote" in f"{loc} {desc}".lower() else "",
-                                url=f"https://www.indeed.com/viewjob?jk={urllib.parse.quote(jid)}",
-                                description=desc, source=self.name, source_credit="Indeed public results",
-                                source_tier=self.tier))
-        return out
-
-    def fetch(self, query, location):
-        try:
-            jobspy = importlib.import_module("jobspy")
-            scrape_jobs = jobspy.scrape_jobs
-        except (ImportError, AttributeError):
-            return self._fetch_builtin(query, location)
-        is_remote = "remote" in f"{query} {location}".lower()
-        df = scrape_jobs(site_name=["indeed"], search_term=query or "software engineer", location=location or "",
-                         is_remote=is_remote, results_wanted=40, hours_old=24 * 30)
-        out = []
-        for r in df.to_dict("records"):
-            min_a, max_a = r.get("min_amount"), r.get("max_amount")
-            min_ok = min_a is not None and min_a == min_a and str(min_a).lower() != "nan"
-            max_ok = max_a is not None and max_a == max_a and str(max_a).lower() != "nan"
-            if min_ok and max_ok:
-                sal = f"${int(min_a):,} - ${int(max_a):,}"
-            elif min_ok:
-                sal = f"${int(min_a):,}+"
-            elif max_ok:
-                sal = f"Up to ${int(max_a):,}"
-            else:
-                sal = ""
-            out.append(make_job(id=f"indeed-{r.get('id')}", title=r.get("title"), company=r.get("company"),
-                                location=r.get("location"), work_mode="Remote" if r.get("is_remote") else "", salary=sal,
-                                url=r.get("job_url"), description=r.get("description") or "", posted_at=str(r.get("date_posted") or ""),
-                                source=self.name, source_credit="Indeed (via JobSpy)", source_tier=self.tier))
-        return out
 
 
 def _fetch_html_tls(url, headers=None, impersonate="chrome", timeout=8):
@@ -791,11 +668,8 @@ def _generate_nkparam(page="srp"):
     return base64.b64encode(cipher.to_bytes(size, "big")).decode()
 
 
-class JobSpySource(Source):
-    tier = "Major job board"
-    site_key = ""
-    default_location = ""
-    results_wanted = 20
+class Indeed(Source):
+    name, tier = "Indeed", "Major job board"
 
     def available(self):
         return True
@@ -803,65 +677,57 @@ class JobSpySource(Source):
     def unavailable_reason(self):
         return ""
 
-    def _fetch_jobspy(self, query, location):
-        try:
-            jobspy = importlib.import_module("jobspy")
-            scrape_jobs = jobspy.scrape_jobs
-        except (ImportError, AttributeError):
-            return []
-
-        kw = query or "software engineer"
-        loc = location or self.default_location
-        is_remote = "remote" in f"{kw} {loc}".lower()
-        try:
-            df = scrape_jobs(
-                site_name=[self.site_key],
-                search_term=kw,
-                location=loc,
-                is_remote=is_remote,
-                results_wanted=self.results_wanted,
-                hours_old=24 * 30,
-                fetch_description=False,
-            )
-        except Exception:
-            return []
-
-        if df is None or df.empty:
-            return []
-
-        out = []
-        for r in df.to_dict("records"):
-            min_a, max_a = r.get("min_amount"), r.get("max_amount")
-            min_ok = min_a is not None and min_a == min_a and str(min_a).lower() != "nan"
-            max_ok = max_a is not None and max_a == max_a and str(max_a).lower() != "nan"
-            sal = f"${int(min_a):,} - ${int(max_a):,}" if (min_ok and max_ok) else f"${int(min_a):,}+" if min_ok else f"Up to ${int(max_a):,}" if max_ok else ""
-            jid = str(r.get("id") or abs(hash(str(r.get("job_url")) + str(r.get("title")))))
-            out.append(make_job(
-                id=f"{self.site_key}-{jid}",
-                title=_safe_text(r.get("title")),
-                company=_safe_text(r.get("company")),
-                location=_safe_text(r.get("location")),
-                work_mode="Remote" if r.get("is_remote") else "",
-                salary=sal,
-                url=_safe_text(r.get("job_url")),
-                description=_safe_text(r.get("description")),
-                posted_at=_safe_text(r.get("date_posted")),
-                source=self.name,
-                source_credit=f"{self.name} (via JobSpy)",
-                source_tier=self.tier,
-            ))
-        return out
+    @staticmethod
+    def _field(fragment, patterns, limit=500):
+        for pattern in patterns:
+            m = re.search(pattern, fragment, re.I | re.S)
+            if m:
+                value = html_to_text(html.unescape(m.group(1)), limit)
+                if value:
+                    return value
+        return ""
 
     def fetch(self, query, location):
-        return self._fetch_jobspy(query, location)
+        """Native Indeed public scraper using TLS impersonation to bypass Cloudflare."""
+        params = {"q": query or "software engineer", "l": location or "", "fromage": "14"}
+        url = "https://www.indeed.com/jobs?" + urllib.parse.urlencode(params)
+        try:
+            page = _fetch_html_tls(url, impersonate="chrome")
+        except Exception:
+            return []
+        out = []
+        for match in re.finditer(r'data-jk=["\']([^"\']+)["\']', page, re.I):
+            start, end = max(0, match.start() - 1500), min(len(page), match.end() + 6500)
+            card = page[start:end]
+            title = self._field(card, [r'class=["\'][^"\']*jobTitle[^"\']*["\'][^>]*>.*?<span[^>]*>(.*?)</span>',
+                                       r'class=["\'][^"\']*jobTitle[^"\']*["\'][^>]*>.*?>(.*?)</a>'], 180)
+            company = self._field(card, [r'data-testid=["\']company-name["\'][^>]*>(.*?)</',
+                                         r'class=["\'][^"\']*companyName[^"\']*["\'][^>]*>(.*?)</'], 180)
+            loc = self._field(card, [r'data-testid=["\']text-location["\'][^>]*>(.*?)</',
+                                    r'class=["\'][^"\']*companyLocation[^"\']*["\'][^>]*>(.*?)</'], 180)
+            desc = self._field(card, [r'class=["\'][^"\']*job-snippet[^"\']*["\'][^>]*>(.*?)</'], 3000)
+            if not title or not company:
+                continue
+            jid = match.group(1)
+            out.append(make_job(id=f"indeed-{jid}", title=title, company=company, location=loc,
+                                work_mode="Remote" if "remote" in f"{loc} {desc}".lower() else "",
+                                url=f"https://www.indeed.com/viewjob?jk={urllib.parse.quote(jid)}",
+                                description=desc, source=self.name, source_credit="Indeed public results",
+                                source_tier=self.tier))
+        return out
 
 
-class ZipRecruiterJobSpy(JobSpySource):
-    name, site_key = "ZipRecruiter", "zip_recruiter"
+class ZipRecruiter(Source):
+    name, tier = "ZipRecruiter", "Major job board"
     default_location = "US"
-    results_wanted = 25
 
-    def _fetch_builtin(self, query, location):
+    def available(self):
+        return True
+
+    def unavailable_reason(self):
+        return ""
+
+    def fetch(self, query, location):
         q = urllib.parse.quote(query or "software engineer")
         loc = urllib.parse.quote(location or self.default_location)
         url = f"https://www.ziprecruiter.com/jobs-search?search={q}&location={loc}"
@@ -902,31 +768,24 @@ class ZipRecruiterJobSpy(JobSpySource):
                     url=u,
                     description=desc,
                     source=self.name,
-                    source_credit="ZipRecruiter",
+                    source_credit="ZipRecruiter public listing",
                     source_tier=self.tier
                 ))
             return jobs
         except Exception:
             return []
 
+
+class Bayt(Source):
+    name, tier = "Bayt", "Major job board"
+
+    def available(self):
+        return True
+
+    def unavailable_reason(self):
+        return ""
+
     def fetch(self, query, location):
-        jobs = self._fetch_builtin(query, location)
-        if len(jobs) >= 5:
-            return jobs
-        fallback = self._fetch_jobspy(query, location)
-        return fallback or jobs
-
-
-class GlassdoorJobSpy(JobSpySource):
-    name, site_key = "Glassdoor", "glassdoor"
-    results_wanted = 20
-
-
-class BaytJobSpy(JobSpySource):
-    name, site_key = "Bayt", "bayt"
-    results_wanted = 25
-
-    def _fetch_builtin(self, query, location):
         slug = urllib.parse.quote("-".join((query or "software engineer").lower().split()))
         url = f"https://www.bayt.com/en/international/jobs/{slug}-jobs/"
         try:
@@ -961,26 +820,24 @@ class BaytJobSpy(JobSpySource):
                     salary=sal.group(1) if sal else "",
                     description=html.unescape(re.sub(r'<[^>]+>', '', desc.group(1)).strip()) if desc else "",
                     source=self.name,
-                    source_credit="Bayt.com",
+                    source_credit="Bayt.com public listing",
                     source_tier=self.tier
                 ))
             return jobs
         except Exception:
             return []
 
+
+class Naukri(Source):
+    name, tier = "Naukri", "Major job board"
+
+    def available(self):
+        return True
+
+    def unavailable_reason(self):
+        return ""
+
     def fetch(self, query, location):
-        jobs = self._fetch_builtin(query, location)
-        if len(jobs) >= 5:
-            return jobs
-        fallback = self._fetch_jobspy(query, location)
-        return fallback or jobs
-
-
-class NaukriJobSpy(JobSpySource):
-    name, site_key = "Naukri", "naukri"
-    results_wanted = 20
-
-    def _fetch_builtin(self, query, location):
         url = f"https://www.naukri.com/jobapi/v3/search?noOfResults=20&urlType=search_by_keyword&searchType=adv&k={urllib.parse.quote(query or 'software engineer')}"
         hdrs = {
             "appid": "109",
@@ -1013,26 +870,24 @@ class NaukriJobSpy(JobSpySource):
                     url=u,
                     description=desc,
                     source=self.name,
-                    source_credit="Naukri.com",
+                    source_credit="Naukri.com public listing",
                     source_tier=self.tier
                 ))
             return jobs
         except Exception:
             return []
 
+
+class HelloWork(Source):
+    name, tier = "HelloWork", "Major job board"
+
+    def available(self):
+        return True
+
+    def unavailable_reason(self):
+        return ""
+
     def fetch(self, query, location):
-        jobs = self._fetch_builtin(query, location)
-        if len(jobs) >= 5:
-            return jobs
-        fallback = self._fetch_jobspy(query, location)
-        return fallback or jobs
-
-
-class HelloWorkJobSpy(JobSpySource):
-    name, site_key = "HelloWork", "hellowork"
-    results_wanted = 20
-
-    def _fetch_builtin(self, query, location):
         url = f"https://www.hellowork.com/fr-fr/emploi/recherche.html?k={urllib.parse.quote(query or 'software engineer')}"
         try:
             page = _fetch_html_tls(url, impersonate="chrome")
@@ -1062,31 +917,18 @@ class HelloWorkJobSpy(JobSpySource):
                     location=lname,
                     url=url_full,
                     source=self.name,
-                    source_credit="HelloWork.com",
+                    source_credit="HelloWork.com public listing",
                     source_tier=self.tier
                 ))
             return jobs
         except Exception:
             return []
 
-    def fetch(self, query, location):
-        jobs = self._fetch_builtin(query, location)
-        if len(jobs) >= 5:
-            return jobs
-        fallback = self._fetch_jobspy(query, location)
-        return fallback or jobs
-
-
-class BDJobsJobSpy(JobSpySource):
-    name, site_key = "BDJobs", "bdjobs"
-    results_wanted = 20
-
 
 SEARCH_SOURCES = [
     Himalayas(), Remotive(), Jobicy(), Arbeitnow(), RemoteOK(), WeWorkRemotely(),
-    HackerNewsHiring(), Adzuna(), LinkedInGuest(), IndeedJobSpy(),
-    ZipRecruiterJobSpy(), GlassdoorJobSpy(), BaytJobSpy(),
-    NaukriJobSpy(), HelloWorkJobSpy(), BDJobsJobSpy()
+    HackerNewsHiring(), Adzuna(), LinkedInGuest(), Indeed(),
+    ZipRecruiter(), Bayt(), Naukri(), HelloWork()
 ]
 
 
