@@ -787,45 +787,72 @@ class Bayt(Source):
 
     def fetch(self, query, location):
         slug = urllib.parse.quote("-".join((query or "software engineer").lower().split()))
-        url = f"https://www.bayt.com/en/international/jobs/{slug}-jobs/"
-        try:
-            page = _fetch_html_tls(url, impersonate="chrome")
-            cards = re.findall(r'<li[^>]*data-js-job[^>]*>(.*?)</li>', page, re.S)
-            jobs = []
-            seen = set()
-            for card in cards:
-                t = re.search(r'<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([^<]+)</a>', card)
-                c = re.search(r'job-company-location-wrapper.*?<a[^>]*>([^<]+)</a>', card, re.S)
-                l = re.search(r'jb-label-location.*?<span>([^<]+)</span>', card, re.S)
-                d = re.search(r'data-automation-jobactivedate="([^"]*)"', card)
-                desc = re.search(r'class="jb-descr[^"]*"[^>]*>(.*?)</div>', card, re.S)
-                sal = re.search(r'data-automation-jobsalary="([^"]*)"', card)
-                if not t:
-                    continue
-                link = "https://www.bayt.com" + t.group(1).split("?")[0]
-                title = html.unescape(t.group(2).strip())
-                comp = html.unescape((c.group(1) if c else "").strip())
-                loc = html.unescape((l.group(1) if l else "").strip())
-                jid = str(abs(hash(link)))
-                if jid in seen:
-                    continue
-                seen.add(jid)
-                jobs.append(make_job(
-                    id=f"bayt-{jid}",
-                    title=title,
-                    company=comp,
-                    location=loc,
-                    url=link,
-                    posted_at=d.group(1) if d else "",
-                    salary=sal.group(1) if sal else "",
-                    description=html.unescape(re.sub(r'<[^>]+>', '', desc.group(1)).strip()) if desc else "",
-                    source=self.name,
-                    source_credit="Bayt.com public listing",
-                    source_tier=self.tier
-                ))
-            return jobs
-        except Exception:
-            return []
+        loc_lower = (location or "").lower().strip()
+
+        BAYT_COUNTRIES = {
+            "tunisia": "tunisia", "tunis": "tunisia", "tunisie": "tunisia",
+            "morocco": "morocco", "maroc": "morocco", "casablanca": "morocco",
+            "algeria": "algeria", "algérie": "algeria", "alger": "algeria",
+            "egypt": "egypt", "cairo": "egypt",
+            "saudi": "saudi-arabia", "saudi arabia": "saudi-arabia", "ksa": "saudi-arabia", "riyadh": "saudi-arabia",
+            "uae": "uae", "dubai": "uae", "abu dhabi": "uae",
+            "qatar": "qatar", "doha": "qatar",
+            "kuwait": "kuwait",
+            "bahrain": "bahrain",
+            "oman": "oman", "muscat": "oman",
+            "jordan": "jordan", "amman": "jordan",
+            "lebanon": "lebanon", "beirut": "lebanon",
+            "iraq": "iraq",
+        }
+        country_slug = "international"
+        for k, v in BAYT_COUNTRIES.items():
+            if k in loc_lower:
+                country_slug = v
+                break
+
+        urls = [f"https://www.bayt.com/en/{country_slug}/jobs/{slug}-jobs/"]
+        if country_slug != "international":
+            urls.append(f"https://www.bayt.com/en/international/jobs/{slug}-jobs/")
+
+        jobs = []
+        seen = set()
+        for url in urls:
+            try:
+                page = _fetch_html_tls(url, impersonate="chrome")
+                cards = re.findall(r'<li[^>]*data-js-job[^>]*>(.*?)</li>', page, re.S)
+                for card in cards:
+                    t = re.search(r'<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([^<]+)</a>', card)
+                    c = re.search(r'job-company-location-wrapper.*?<a[^>]*>([^<]+)</a>', card, re.S)
+                    l = re.search(r'jb-label-location.*?<span>([^<]+)</span>', card, re.S)
+                    d = re.search(r'data-automation-jobactivedate="([^"]*)"', card)
+                    desc = re.search(r'class="jb-descr[^"]*"[^>]*>(.*?)</div>', card, re.S)
+                    sal = re.search(r'data-automation-jobsalary="([^"]*)"', card)
+                    if not t:
+                        continue
+                    link = "https://www.bayt.com" + t.group(1).split("?")[0]
+                    title = html.unescape(t.group(2).strip())
+                    comp = html.unescape((c.group(1) if c else "").strip())
+                    loc = html.unescape((l.group(1) if l else "").strip())
+                    jid = str(abs(hash(link)))
+                    if jid in seen:
+                        continue
+                    seen.add(jid)
+                    jobs.append(make_job(
+                        id=f"bayt-{jid}",
+                        title=title,
+                        company=comp,
+                        location=loc or (country_slug.replace("-", " ").title() if country_slug != "international" else ""),
+                        url=link,
+                        posted_at=d.group(1) if d else "",
+                        salary=sal.group(1) if sal else "",
+                        description=html.unescape(re.sub(r'<[^>]+>', '', desc.group(1)).strip()) if desc else "",
+                        source=self.name,
+                        source_credit="Bayt.com public listing",
+                        source_tier=self.tier
+                    ))
+            except Exception:
+                continue
+        return jobs
 
 
 class Naukri(Source):

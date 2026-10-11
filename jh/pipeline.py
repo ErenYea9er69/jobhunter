@@ -117,19 +117,51 @@ def _passes(job, work_mode, location):
         if wm != jm:
             return False
     if location and location.lower() not in ("remote", "worldwide", "any"):
+        from .scoring import classify_job_country
         loc = (job.get("location") or "").lower()
+        req_country = classify_job_country(location)
+        job_country = job.get("country") or classify_job_country(loc, job.get("title", ""), job.get("description", ""))
         tokens = [t.strip() for t in re.split(r"[,/]", location.lower()) if len(t.strip()) > 1]
+
         if jm != "remote":
-            if tokens and not any(t in loc for t in tokens):
+            # On-site or hybrid: must match the target city/tokens or target country
+            matches_token = any(t in loc for t in tokens) if tokens else False
+            matches_country = (req_country != "Worldwide" and job_country == req_country)
+            if not (matches_token or matches_country):
                 return False
         else:
-            # For remote jobs: reject postings explicitly restricted to conflicting regions
-            if any(t in ("uk", "united kingdom", "london", "europe", "germany", "france") for t in tokens):
-                if re.search(r"\b(us only|u\.s\. only|united states only|canada only|india only|latam only)\b", loc):
-                    return False
-            elif any(t in ("us", "usa", "united states", "new york", "san francisco", "austin", "california") for t in tokens):
-                if re.search(r"\b(uk only|europe only|emea only|germany only|india only)\b", loc):
-                    return False
+            # Remote job:
+            # 1. Matches requested country directly (e.g. Remote within Tunisia)
+            if req_country != "Worldwide" and job_country == req_country:
+                return True
+
+            text_hay = f"{loc} {job.get('description', '')[:500]}".lower()
+
+            is_us_only = bool(re.search(r"\b(us only|u\.s\. only|united states only|must reside in (the )?us|must be located in (the )?united states)\b", text_hay))
+            is_uk_only = bool(re.search(r"\b(uk only|united kingdom only|must reside in (the )?uk)\b", text_hay))
+            is_eu_only = bool(re.search(r"\b(eu only|europe only|emea only|schengen)\b", text_hay))
+            is_can_only = bool(re.search(r"\b(canada only|must reside in canada)\b", text_hay))
+            is_ind_only = bool(re.search(r"\b(india only|must reside in india)\b", text_hay))
+
+            if req_country == "United States" and is_us_only:
+                return True
+            if req_country == "United Kingdom" and is_uk_only:
+                return True
+            if req_country in ("Germany", "France", "Spain", "Italy", "Netherlands", "Poland") and is_eu_only:
+                return True
+            if req_country == "Canada" and is_can_only:
+                return True
+            if req_country == "India" and is_ind_only:
+                return True
+
+            # If it has regional restrictions for another country, reject
+            if is_us_only or is_uk_only or is_can_only or is_ind_only:
+                return False
+
+            # If job is pinned to a different specific country, reject
+            if job_country != "Worldwide" and req_country != "Worldwide" and job_country != req_country:
+                return False
+
     return True
 
 

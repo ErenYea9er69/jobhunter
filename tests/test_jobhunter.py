@@ -106,6 +106,19 @@ class ScoreTests(Base):
         pipeline._rank_opportunity(job)
         self.assertEqual(job["opportunity_score"], 30)
 
+    def test_tunisia_country_mapping_and_filtering(self):
+        self.assertEqual(scoring.classify_job_country("Tunis, Tunisia"), "Tunisia")
+        self.assertEqual(scoring.classify_job_country("Ariana, Tunisia"), "Tunisia")
+        self.assertEqual(scoring.classify_job_country("Sousse"), "Tunisia")
+
+        tunisia_job = {"location": "Tunis, Tunisia", "work_mode": "On-site"}
+        remote_global = {"location": "Remote - Worldwide", "work_mode": "Remote"}
+        us_only_job = {"location": "Remote (US Only)", "work_mode": "Remote"}
+
+        self.assertTrue(pipeline._passes(tunisia_job, "any", "Tunisia"))
+        self.assertTrue(pipeline._passes(remote_global, "any", "Tunisia"))
+        self.assertFalse(pipeline._passes(us_only_job, "any", "Tunisia"))
+
 
 class ParserTests(Base):
     def test_structure_is_read_not_invented(self):
