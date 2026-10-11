@@ -155,6 +155,11 @@
     return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
 
+  function cleanTitle(t) {
+    if (!t) return '';
+    return String(t).replace(/\s*—\s*/g, ' - ').replace(/\s*–\s*/g, ' - ');
+  }
+
   async function api(url, options = {}) {
     options.headers = options.headers || {};
     if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
@@ -292,20 +297,12 @@
 
   // ------------------------------------------------------------ theme, menu
   function initTheme() {
-    let saved = 'auto';
-    try { saved = localStorage.getItem('jh-theme') || 'auto'; } catch (e) { /* ignore */ }
-    setTheme(saved, false);
-    $('#themeSeg').addEventListener('click', e => {
-      const b = e.target.closest('[data-theme-choice]');
-      if (b) setTheme(b.dataset.themeChoice, true);
-    });
-  }
-  function setTheme(choice, persist) {
+    // Automatically adheres to OS / browser preference via CSS @media (prefers-color-scheme: dark).
+    // Gimmick dark mode toggle buttons removed to keep UI natural and clean.
     const root = document.documentElement;
-    if (choice === 'light' || choice === 'dark') root.setAttribute('data-theme', choice); else root.removeAttribute('data-theme');
-    $$('[data-theme-choice]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.themeChoice === choice)));
-    if (persist) { try { choice === 'auto' ? localStorage.removeItem('jh-theme') : localStorage.setItem('jh-theme', choice); } catch (e) { /* ignore */ } }
+    root.removeAttribute('data-theme');
   }
+
   function closeMenu() {
     const m = $('#moreMenu');
     if (m && !m.hidden) { m.hidden = true; $('#moreBtn').setAttribute('aria-expanded', 'false'); }
@@ -916,7 +913,7 @@
           if (stepSub3) stepSub3.innerHTML = `${data.total}/${data.total} • <span class="step-eta-text">Done</span>`;
           if (miniBar) miniBar.style.width = '100%';
           if (metricDedup) metricDedup.textContent = `${data.total} / ${data.total} scored`;
-          if (titleEl) titleEl.textContent = 'Scoring complete — finalizing results';
+          if (titleEl) titleEl.textContent = 'Scoring complete: finalizing results';
           if (descEl) descEl.textContent = `All ${data.total} roles scored against your resume. Sorting results...`;
           const barPct = 97;
           if (barEl) barEl.style.width = barPct + '%';
@@ -1384,7 +1381,7 @@
     cSel.innerHTML = `<option value="all">All Countries (${all.length})</option>` +
       sorted.map(([c, count]) => `<option value="${esc(c)}"${c === curC ? ' selected' : ''}>${esc(c)} (${count})</option>`).join('');
 
-    exSel.innerHTML = `<option value="">🚫 Choose country to exclude...</option>` +
+    exSel.innerHTML = `<option value="">Choose country to exclude...</option>` +
       sorted.map(([c, count]) => {
         const disabled = S.filters.excludedCountries && S.filters.excludedCountries.has(c);
         return `<option value="${esc(c)}"${disabled ? ' disabled' : ''}>${esc(c)} (${count} jobs)</option>`;
@@ -1401,7 +1398,7 @@
     }
     wrap.innerHTML = ex.map(c => `
       <span class="active-filter-tag is-excluded">
-        <span>🚫 ${esc(c)}</span>
+        <span>Exclude: ${esc(c)}</span>
         <button type="button" data-remove-excluded="${esc(c)}" title="Remove exclusion" aria-label="Remove exclusion">&times;</button>
       </span>
     `).join('');
@@ -1466,33 +1463,8 @@
     setFacetCountText('cntApplied', all.filter(j => jobIsApplied(j)).length);
     setFacetCountText('cntSaved', all.filter(j => jobIsSaved(j)).length);
 
-    renderSkillsFacetCloud(all);
     renderCountrySelects(all);
     renderExcludedTags();
-  }
-
-  function renderSkillsFacetCloud(all) {
-    const wrap = $('#skillsFacetChips');
-    if (!wrap) return;
-    const skillCounts = {};
-    for (const j of all) {
-      for (const s of jobSkillsList(j)) {
-        if (s && s.length > 1) {
-          skillCounts[s] = (skillCounts[s] || 0) + 1;
-        }
-      }
-    }
-    const topSkills = Object.entries(skillCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 16);
-
-    wrap.innerHTML = topSkills.map(([name, count]) => {
-      const active = S.filters.selectedSkills && S.filters.selectedSkills.has(name);
-      return `<button type="button" class="skill-facet-chip${active ? ' is-active' : ''}" data-skill="${esc(name)}">
-        <span>${esc(name)}</span>
-        <span class="f-cnt">(${count})</span>
-      </button>`;
-    }).join('');
   }
 
   function renderActiveFilterTags() {
@@ -1513,7 +1485,7 @@
     if (f.country && f.country !== 'all') tags.push({ type: 'country', label: `Country: ${f.country}` });
     if (f.excludedCountries && f.excludedCountries.size > 0) {
       f.excludedCountries.forEach(ex => {
-        tags.push({ type: 'exclude_country', label: `🚫 Exclude: ${ex}`, val: ex, isExcluded: true });
+        tags.push({ type: 'exclude_country', label: `Exclude: ${ex}`, val: ex, isExcluded: true });
       });
     }
 
@@ -1529,11 +1501,6 @@
     if (f.directAtsOnly) tags.push({ type: 'directAtsOnly', label: 'Direct ATS Only' });
     if (f.hideApplied) tags.push({ type: 'hideApplied', label: 'Hide Applied' });
     if (f.savedOnly) tags.push({ type: 'savedOnly', label: 'Saved Only' });
-    if (f.selectedSkills && f.selectedSkills.size > 0) {
-      f.selectedSkills.forEach(skill => {
-        tags.push({ type: 'skill', label: `Skill: ${skill}`, val: skill });
-      });
-    }
 
     // Badge on More Filters button
     const drawerActiveCount = [
@@ -1544,8 +1511,7 @@
       f.freshnessDays > 0,
       f.directAtsOnly,
       f.hideApplied,
-      f.savedOnly,
-      f.selectedSkills.size > 0
+      f.savedOnly
     ].filter(Boolean).length;
 
     const drawerBadge = $('#moreFiltersCountBadge');
@@ -1762,7 +1728,7 @@
     const fallbackBanner = $('#fallbackBanner');
     if (fallbackBanner) {
       if (meta.fallback_notice) {
-        fallbackBanner.innerHTML = `<span class="fallback-icon">🌍</span><span>${esc(meta.fallback_notice)}</span>`;
+        fallbackBanner.innerHTML = `${ico('pin')}<span>${esc(meta.fallback_notice)}</span>`;
         fallbackBanner.hidden = false;
       } else {
         fallbackBanner.hidden = true;
@@ -1837,7 +1803,7 @@
       const isDirectAts = j.source_kind === 'Direct employer ATS' || String(j.source_tier || '').startsWith('Direct');
       const isFamous = isFamousJob(j);
       return `<button type="button" class="job-item${key === S.selectedKey ? ' is-selected' : ''}" data-action="job-select" data-key="${esc(key)}">
-        <span class="job-item-title">${esc(j.title)}</span>
+        <span class="job-item-title">${esc(cleanTitle(j.title))}</span>
         <span class="job-item-company">${esc(j.company)}</span>
         ${showScore ? ring(j.score) : ''}
         <span class="job-item-meta">
@@ -1882,7 +1848,7 @@
       <div class="detail-body">
         <div class="detail-top">
           <div>
-            <h2 class="detail-title">${esc(j.title)}</h2>
+            <h2 class="detail-title">${esc(cleanTitle(j.title))}</h2>
             <p class="detail-company">${esc(j.company)} ${isFamousJob(j) ? `<span class="chip chip-famous" title="Recognized Big Tech & Prominent AI company">Big Tech</span>` : ''} ${isDirectAts ? `<span class="chip chip-ok" title="Direct employer ATS">${ico('shield')}Direct ATS</span>` : ''}</p>
           </div>
           ${showScore ? ring(score, true) : ''}
@@ -1983,7 +1949,7 @@
   function renderWsHeader() {
     const w = S.ws, j = w.job;
     if (!j) return;
-    $('#wsTitle').textContent = j.title || 'Job';
+    $('#wsTitle').textContent = cleanTitle(j.title) || 'Job';
     const loc = String(j.location || '');
     $('#wsMeta').textContent = [j.company, loc, loc.toLowerCase().includes(String(j.work_mode || '').toLowerCase()) ? '' : j.work_mode, j.salary].filter(Boolean).join(', ');
     const sc = $('#wsScore');
@@ -2494,16 +2460,16 @@
         <div class="col-head"><span>${st.label}</span><span class="count">${items.length}</span></div>
         <div class="col-body">${items.length ? items.map(a => `
           <article class="kcard" draggable="true" data-id="${esc(a.id)}">
-            <div class="kcard-title">${esc(a.title)}</div>
+            <div class="kcard-title">${esc(cleanTitle(a.title))}</div>
             <div class="kcard-company">${esc(a.company)}</div>
             <div class="kcard-meta">${a.location ? `<span>${esc(a.location)}</span>` : ''}${a.salary ? `<span>${esc(a.salary)}</span>` : ''}</div>
             ${followHtml(a)}
             ${a.notes ? `<div class="kcard-notes">${esc(a.notes)}</div>` : ''}
             <div class="kcard-foot">
-              <select aria-label="Stage for ${esc(a.title)}" data-action="app-stage" data-id="${esc(a.id)}">${STAGES.map(s => `<option value="${s.key}" ${s.key === a.status ? 'selected' : ''}>${s.label}</option>`).join('')}</select>
+              <select aria-label="Stage for ${esc(cleanTitle(a.title))}" data-action="app-stage" data-id="${esc(a.id)}">${STAGES.map(s => `<option value="${s.key}" ${s.key === a.status ? 'selected' : ''}>${s.label}</option>`).join('')}</select>
               ${a.job_data && (a.job_data.title || a.job_data.description) ? `<button type="button" class="icon-btn" data-action="app-open" data-id="${esc(a.id)}" title="Open tailoring tools" aria-label="Open tailoring tools">${ico('file')}</button>` : ''}
-              <button type="button" class="icon-btn" data-action="app-edit" data-id="${esc(a.id)}" title="Edit" aria-label="Edit ${esc(a.title)}">${ico('edit')}</button>
-              <button type="button" class="icon-btn" data-action="app-delete" data-id="${esc(a.id)}" title="Remove" aria-label="Remove ${esc(a.title)}">${ico('trash')}</button>
+              <button type="button" class="icon-btn" data-action="app-edit" data-id="${esc(a.id)}" title="Edit" aria-label="Edit ${esc(cleanTitle(a.title))}">${ico('edit')}</button>
+              <button type="button" class="icon-btn" data-action="app-delete" data-id="${esc(a.id)}" title="Remove" aria-label="Remove ${esc(cleanTitle(a.title))}">${ico('trash')}</button>
             </div>
           </article>`).join('') : '<div class="col-empty">Nothing here</div>'}</div>
       </section>`;
@@ -2529,7 +2495,7 @@
   async function deleteApp(id) {
     const app = S.applications.find(a => a.id === id);
     if (!app) return;
-    if (!await confirmDialog('Remove this application?', `${app.title} at ${app.company} will leave your pipeline.`, 'Remove')) return;
+    if (!await confirmDialog('Remove this application?', `${cleanTitle(app.title)} at ${app.company} will leave your pipeline.`, 'Remove')) return;
     try {
       await api(`/api/applications/${encodeURIComponent(id)}`, { method: 'DELETE' });
       S.applications = S.applications.filter(a => a.id !== id);
@@ -2587,7 +2553,7 @@
       else if (r) status = `<span class="chip ${r.matches ? 'chip-ok' : ''}">${r.matches} matching of ${r.total} open</span>`;
       else if (w.last_checked) status = `<span class="muted small">Checked ${esc(timeAgo(w.last_checked))}, ${w.active_matches_count || 0} matching</span>`;
       else status = '<span class="muted small">Not checked yet</span>';
-      const top = r && r.top && r.top.length ? `<ul class="wl-roles">${r.top.map(t => `<li><a href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">${esc(t.title)}</a><span class="chip chip-info">${Math.round(t.score)}%</span></li>`).join('')}</ul>` : '';
+      const top = r && r.top && r.top.length ? `<ul class="wl-roles">${r.top.map(t => `<li><a href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">${esc(cleanTitle(t.title))}</a><span class="chip chip-info">${Math.round(t.score)}%</span></li>`).join('')}</ul>` : '';
       return `<article class="wl-card">
         <div class="wl-name">${esc(w.company_name)}<span class="chip">${esc(w.board_type)}</span></div>
         <p class="muted small">Role keyword: ${esc(w.target_role || 'any role')}</p>
@@ -2636,7 +2602,7 @@
       S.digestJobs = jobs;
       body.innerHTML = `<p class="digest-intro">${esc(d.summary || '')}</p>` + (jobs.length ? jobs.map((j, i) => `
         <div class="digest-row">
-          <div><h3>${esc(j.title)}</h3><p>${esc(j.company)}${j.location ? `, ${esc(j.location)}` : ''}${j.salary ? `, ${esc(j.salary)}` : ''}</p>
+          <div><h3>${esc(cleanTitle(j.title))}</h3><p>${esc(j.company)}${j.location ? `, ${esc(j.location)}` : ''}${j.salary ? `, ${esc(j.salary)}` : ''}</p>
             ${(j.matched_skills || []).length ? `<p>Matches ${(j.matched_skills || []).slice(0, 4).map(esc).join(', ')}</p>` : ''}</div>
           <div class="side">${ring(j.score)}<button type="button" class="btn btn-primary btn-sm" data-action="digest-open" data-i="${i}">Tailor</button></div>
         </div>`).join('') : `<div class="empty" style="border:0">${ico('mail')}<h3>Nothing above the cutoff</h3><p>Lower the cutoff, or search again after you update your resume.</p></div>`);
@@ -3050,23 +3016,6 @@
         if (fl === 'direct_ats') S.filters.directAtsOnly = !S.filters.directAtsOnly;
         else if (fl === 'hide_applied') S.filters.hideApplied = !S.filters.hideApplied;
         else if (fl === 'saved_only') S.filters.savedOnly = !S.filters.savedOnly;
-        if (S.searchHasRun) filterAndRender();
-      });
-    }
-
-    // drawer: tech stack facet chips
-    const skillsWrap = $('#skillsFacetChips');
-    if (skillsWrap) {
-      skillsWrap.addEventListener('click', e => {
-        const b = e.target.closest('[data-skill]');
-        if (!b) return;
-        const s = b.dataset.skill;
-        if (!S.filters.selectedSkills) S.filters.selectedSkills = new Set();
-        if (S.filters.selectedSkills.has(s)) {
-          S.filters.selectedSkills.delete(s);
-        } else {
-          S.filters.selectedSkills.add(s);
-        }
         if (S.searchHasRun) filterAndRender();
       });
     }

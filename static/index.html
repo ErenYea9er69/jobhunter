@@ -69,15 +69,6 @@
           <div class="menu" id="moreMenu" hidden>
             <a href="#/digest" data-nav="digest"><svg class="i" aria-hidden="true"><use href="#i-mail"/></svg>Morning digest</a>
             <a href="#/privacy" data-nav="privacy"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Sources and privacy</a>
-            <div class="menu-sep" role="separator"></div>
-            <div class="menu-row" role="group" aria-label="Theme">
-              <span>Theme</span>
-              <div class="segmented segmented-sm" id="themeSeg">
-                <button type="button" data-theme-choice="auto" aria-pressed="true">Auto</button>
-                <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
-                <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
-              </div>
-            </div>
           </div>
         </div>
         <a class="profile-link" href="#/resume" id="profileLink" title="Your resume profile">
@@ -213,7 +204,7 @@
                 <div class="country-exclude-wrap">
                   <div class="country-exclude-actions">
                     <select id="excludeCountrySelect" aria-label="Add country to exclude">
-                      <option value="">🚫 Choose country to exclude...</option>
+                      <option value="">Choose country to exclude...</option>
                     </select>
                     <div class="quick-exclude-chips" id="quickExcludeChips">
                       <button type="button" class="btn-quick-exclude" data-exclude-country="India">+ Exclude India <span class="f-cnt" id="cntExIndia"></span></button>
@@ -269,15 +260,6 @@
                   <button type="button" class="qchip" id="btnFlagSavedOnly" data-flag="saved_only">Saved Only <span class="f-cnt" id="cntSaved"></span></button>
                 </div>
               </div>
-            </div>
-
-            <!-- Top Skills Facet Cloud -->
-            <div class="skills-facet-row" id="skillsFacetRow">
-              <div class="skills-facet-header">
-                <span class="drawer-label">Skills & Tech Stack Facets</span>
-                <span class="skills-facet-hint">Click tags to filter by required technology</span>
-              </div>
-              <div class="skills-facet-chips" id="skillsFacetChips"></div>
             </div>
           </div>
 
@@ -428,14 +410,14 @@
           <section class="card" aria-labelledby="skillsTitle">
             <div class="card-head">
               <div>
-                <h2 class="card-title" id="skillsTitle">Skills</h2>
-                <p class="muted">Match scores and gap reports compare these with each posting.</p>
+                <h2 class="card-title" id="skillsTitle">Core competencies</h2>
+                <p class="muted">Technical proficiencies evaluated against role requirements.</p>
               </div>
             </div>
             <div class="tags" id="profileSkillsTags"></div>
             <div class="add-row">
-              <label for="newSkill" class="sr-only">Add a skill</label>
-              <input type="text" id="newSkill" placeholder="Add a skill, then press Enter">
+              <label for="newSkill" class="sr-only">Add competency</label>
+              <input type="text" id="newSkill" placeholder="Add competency, then press Enter">
               <button type="button" class="btn btn-secondary btn-sm" data-action="skill-add">Add</button>
             </div>
           </section>
