@@ -56,11 +56,28 @@ def build():
         zip_file = zip_base + ".zip"
         size_mb = os.path.getsize(zip_file) // (1024 * 1024) if os.path.isfile(zip_file) else 0
 
+        # Check for Inno Setup compiler to create setup installer
+        iscc_paths = [
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 7\ISCC.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"),
+            r"C:\Program Files\Inno Setup 7\ISCC.exe",
+            r"C:\Program Files\Inno Setup 6\ISCC.exe",
+            r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            shutil.which("iscc") or "",
+        ]
+        iscc_exe = next((p for p in iscc_paths if p and os.path.isfile(p)), None)
+        setup_exe = os.path.join(BASE_DIR, "dist", "JobHunter-Setup.exe")
+        if iscc_exe and os.path.isfile(os.path.join(BASE_DIR, "installer.iss")):
+            print("\nCompiling Windows Setup Installer...")
+            subprocess.run([iscc_exe, os.path.join(BASE_DIR, "installer.iss")], cwd=BASE_DIR)
+
+        setup_size = f"{os.path.getsize(setup_exe) / (1024 * 1024):.1f} MB" if os.path.isfile(setup_exe) else "N/A"
+
         print("\n" + "=" * 60)
         print("BUILD SUCCESSFUL!")
-        print(f"1. Desktop Executable: {exe_file}")
-        print(f"2. Distribution ZIP:   {zip_file} ({size_mb} MB)")
-        print("Users can download this ZIP, extract it, and double-click JobHunter.exe!")
+        print(f"1. Setup Installer:    {setup_exe} ({setup_size})")
+        print(f"2. Standalone Folder:  {exe_file}")
+        print(f"3. Distribution ZIP:   {zip_file} ({size_mb} MB)")
         print("=" * 60)
     else:
         print("\nPyInstaller build failed with returncode:", res.returncode)
