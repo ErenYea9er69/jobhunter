@@ -14,7 +14,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from . import ats, config, db, digest, exporters, pipeline, resume_parser, refit, tracker, __version__
 
 log = logging.getLogger("jobhunter")
-TOKEN = os.environ.get("JH_TOKEN") or ("jobhunter-vercel-token" if os.environ.get("VERCEL") else secrets.token_urlsafe(24))
+TOKEN = os.environ.get("JH_TOKEN") or secrets.token_urlsafe(24)
 ROUTES = {}
 
 
@@ -293,11 +293,8 @@ def _find_static_dir():
     for d in [
         getattr(config, "STATIC_DIR", ""),
         os.path.join(config.BASE_DIR, "public"),
-        os.path.join(config.BASE_DIR, "static"),
         os.path.join(os.getcwd(), "public"),
-        os.path.join(os.getcwd(), "static"),
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public"),
-        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static"),
     ]:
         if d and os.path.isdir(d):
             return os.path.abspath(d)
@@ -309,11 +306,8 @@ def _find_static_file(rel_path):
     for d in [
         getattr(config, "STATIC_DIR", ""),
         os.path.join(config.BASE_DIR, "public"),
-        os.path.join(config.BASE_DIR, "static"),
         os.path.join(os.getcwd(), "public"),
-        os.path.join(os.getcwd(), "static"),
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public"),
-        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static"),
     ]:
         if d and os.path.isdir(d):
             p = os.path.join(d, rel)
@@ -343,10 +337,8 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def _host_ok(self):
-        if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
-            return True
         host = (self.headers.get("Host") or "").split(":")[0].lower()
-        return host in ("127.0.0.1", "localhost", "[::1]") or host == config.HOST.lower() or host.endswith(".vercel.app")
+        return host in ("127.0.0.1", "localhost", "[::1]") or host == config.HOST.lower()
 
     def _stream_search(self, q):
         g = lambda k, d="": q.get(k, [d])[0]
@@ -394,8 +386,6 @@ class Handler(SimpleHTTPRequestHandler):
             return False
         token_in_query = f"token={TOKEN}" in (parsed.query or "")
         token_valid = (self.headers.get("X-JH-Token") == TOKEN) or token_in_query
-        if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
-            token_valid = True
         if not token_valid:
             return self._json({"error": "Missing or invalid session token. Reload the page."}, 401)
         if method == "GET" and path == "/api/search/stream":
@@ -496,15 +486,59 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
 
 
-def run():
+def create_server(host=None, port=None):
+    h = host or config.HOST
+    start_port = port or config.PORT
+    srv = None
+    actual_port = start_port
+    for p in range(start_port, start_port + 25):
+        try:
+            srv = ThreadingHTTPServer((h, p), Handler)
+            actual_port = p
+            break
+        except OSError:
+            if port is not None:
+                raise
+            continue
+
+    if srv is None:
+        srv = ThreadingHTTPServer((h, 0), Handler)
+        actual_port = srv.server_address[1]
+
+    srv.daemon_threads = True
+    config.HOST = h
+    config.PORT = actual_port
+    return srv, actual_port
+
+
+def start_background_server(host=None, port=None):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     db.init_db()
     digest.start_scheduler()
-    srv = ThreadingHTTPServer((config.HOST, config.PORT), Handler)
-    srv.daemon_threads = True
-    log.info("JobHunter %s on http://%s:%d  (LLM: %s, demo: %s)", __version__, config.HOST, config.PORT,
+    srv, actual_port = create_server(host, port)
+    log.info("JobHunter %s background server started on http://%s:%d (LLM: %s, demo: %s)",
+             __version__, config.HOST, actual_port,
+             "on" if refit.llm_available() else "off", config.DEMO)
+    import threading
+    th = threading.Thread(target=srv.serve_forever, daemon=True, name="JobHunterServer")
+    th.start()
+    return srv, actual_port
+
+
+def run(host=None, port=None):
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    db.init_db()
+    digest.start_scheduler()
+    srv, actual_port = create_server(host, port)
+    log.info("JobHunter %s on http://%s:%d  (LLM: %s, demo: %s)", __version__, config.HOST, actual_port,
              "on" if refit.llm_available() else "off", config.DEMO)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         log.info("Stopped.")
+    finally:
+        try:
+            srv.server_close()
+        except Exception:
+            pass
+

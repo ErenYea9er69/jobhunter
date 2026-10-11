@@ -1,12 +1,27 @@
 """Runtime configuration. Every value reads from an environment variable with a safe default."""
 import os
+import sys
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STATIC_DIR = os.path.join(BASE_DIR, "public") if os.path.isdir(os.path.join(BASE_DIR, "public")) else os.path.join(BASE_DIR, "static")
+# Support PyInstaller frozen bundles
+if getattr(sys, "frozen", False):
+    BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.executable)))
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    if os.environ.get("JH_DATA_DIR"):
+        DATA_DIR = os.environ["JH_DATA_DIR"]
+    else:
+        portable_dir = os.path.join(exe_dir, "data")
+        try:
+            os.makedirs(portable_dir, exist_ok=True)
+            test_file = os.path.join(portable_dir, ".test_write")
+            with open(test_file, "w") as f:
+                f.write("1")
+            os.remove(test_file)
+            DATA_DIR = portable_dir
+        except Exception:
+            local_appdata = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+            DATA_DIR = os.path.join(local_appdata, "JobHunter", "data")
+            os.makedirs(DATA_DIR, exist_ok=True)
 
-if os.environ.get("VERCEL"):
-    DATA_DIR = os.environ.get("JH_DATA_DIR", "/tmp/jobhunter_data")
-    os.makedirs(DATA_DIR, exist_ok=True)
     src_db = os.path.join(BASE_DIR, "data", "jobhunter.db")
     dst_db = os.path.join(DATA_DIR, "jobhunter.db")
     if os.path.isfile(src_db) and not os.path.isfile(dst_db):
@@ -16,8 +31,10 @@ if os.environ.get("VERCEL"):
         except Exception:
             pass
 else:
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DATA_DIR = os.environ.get("JH_DATA_DIR", os.path.join(BASE_DIR, "data"))
 
+STATIC_DIR = os.path.join(BASE_DIR, "public")
 DB_PATH = os.path.join(DATA_DIR, "jobhunter.db")
 
 HOST = os.environ.get("JH_HOST", "127.0.0.1")
