@@ -84,6 +84,28 @@ class ScoreTests(Base):
         r = scoring.score_job({"title": "Software Engineer", "description": ""}, DEMO_PROFILE)
         self.assertEqual(r["confidence"], "low")
 
+    def test_non_software_engineering_does_not_match_tech_candidate(self):
+        r = scoring.score_job({"title": "Civil Engineer", "description": "Construction site planning, AutoCAD and structural engineering"}, DEMO_PROFILE)
+        self.assertLess(r["score"], 40)
+
+    def test_seniority_gap_penalizes_extreme_mismatches(self):
+        junior_profile = dict(DEMO_PROFILE, target_title="Junior Python Developer", years_of_experience=1)
+        r = scoring.score_job({"title": "Director of Engineering", "description": "10+ years required with Python and Docker"}, junior_profile)
+        self.assertLess(r["score"], 50)
+        self.assertIn("above your experience level", r["rationale"])
+
+    def test_geographic_restriction_mismatch_penalized(self):
+        uk_profile = dict(DEMO_PROFILE, preferred_locations=["London", "United Kingdom"], location="London")
+        r = scoring.score_job({"title": "Senior Python Developer", "location": "Remote, US",
+                               "description": "Must be located in United States. US Citizen only."}, uk_profile)
+        self.assertLess(r["score"], 45)
+        self.assertIn("Geographic restriction", r["rationale"])
+
+    def test_opportunity_score_does_not_inflate_unqualified_job(self):
+        job = {"score": 30, "source_rank": 100, "source_kind": "Direct employer ATS", "sources": [{"source_rank": 100}]}
+        pipeline._rank_opportunity(job)
+        self.assertEqual(job["opportunity_score"], 30)
+
 
 class ParserTests(Base):
     def test_structure_is_read_not_invented(self):

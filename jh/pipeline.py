@@ -119,8 +119,17 @@ def _passes(job, work_mode, location):
     if location and location.lower() not in ("remote", "worldwide", "any"):
         loc = (job.get("location") or "").lower()
         tokens = [t.strip() for t in re.split(r"[,/]", location.lower()) if len(t.strip()) > 1]
-        if jm != "remote" and tokens and not any(t in loc for t in tokens):
-            return False
+        if jm != "remote":
+            if tokens and not any(t in loc for t in tokens):
+                return False
+        else:
+            # For remote jobs: reject postings explicitly restricted to conflicting regions
+            if any(t in ("uk", "united kingdom", "london", "europe", "germany", "france") for t in tokens):
+                if re.search(r"\b(us only|u\.s\. only|united states only|canada only|india only|latam only)\b", loc):
+                    return False
+            elif any(t in ("us", "usa", "united states", "new york", "san francisco", "austin", "california") for t in tokens):
+                if re.search(r"\b(uk only|europe only|emea only|germany only|india only)\b", loc):
+                    return False
     return True
 
 
@@ -143,16 +152,21 @@ def _rank_opportunity(job):
     """Combine fit with source authority and evidence of a real opening.
 
     A famous board alone cannot make a poor match outrank a good one: fit is
-    weighted at 70%. The remaining points reward direct employer application
-    links, corroborating sources, readable descriptions and fresh postings.
+    dominant (78%). Poor fits (< 45%) are never artificially inflated.
     """
+    fit = job.get("score", 0)
     source_rank = max([job.get("source_rank", 0)] + [s.get("source_rank", 0) for s in job.get("sources", [])])
     direct = 10 if job.get("source_kind") == "Direct employer ATS" else 0
     corroboration = min(10, max(0, len(job.get("sources", [])) - 1) * 4)
     description = min(10, round(len(job.get("description", "") or "") / 700 * 10))
     freshness = job.get("score_breakdown", {}).get("freshness", 0) * 2
     evidence = min(30, direct + corroboration + description + freshness)
-    opportunity = int(round(job.get("score", 0) * 0.70 + source_rank * 0.20 + (evidence / 30) * 10))
+
+    if fit < 45:
+        opportunity = fit
+    else:
+        opportunity = int(round(fit * 0.78 + source_rank * 0.14 + (evidence / 30) * 8))
+
     kind = job.get("source_kind") or "Job source"
     job["opportunity_score"] = max(0, min(100, opportunity))
     job["ranking"] = {
@@ -412,6 +426,7 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
     db.replace_search_jobs(merged, query=query, location=location, sources=statuses)
 
     # Filter according to requested params for immediate response
+    bad_keys = [k.lower().strip() for k in profile.get("excluded_keywords", []) if k and k.strip()]
     filtered = []
     for j in merged:
         if famous_mode == "hide" and j.get("is_famous"):
@@ -422,6 +437,10 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
             continue
         if min_score and j["score"] < int(min_score):
             continue
+        if bad_keys:
+            j_text = f"{j.get('title', '')} {j.get('description', '')}".lower()
+            if any(k in j_text for k in bad_keys):
+                continue
         filtered.append(j)
     filtered = filtered[: (limit or config.MAX_RESULTS)]
     _remember(filtered)

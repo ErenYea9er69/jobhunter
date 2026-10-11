@@ -258,6 +258,18 @@ def derive_target_roles(profile):
     return roles_ordered
 
 
+NON_SOFTWARE_DISCIPLINES = {
+    "civil", "mechanical", "electrical", "chemical", "structural", "petroleum", "biomedical",
+    "aerospace", "aeronautical", "mining", "locomotive", "geotechnical", "audio", "acoustic",
+    "nuclear", "marine", "hardware", "hvac", "environmental"
+}
+
+SPECIALIZED_LANGUAGES = {
+    "rust", "golang", "go", "swift", "kotlin", "ruby", "php", "scala", "c++", "c#",
+    "salesforce", "sap", "flutter", "react native", "solidity"
+}
+
+
 def _title_score(job_title, profile):
     candidates = derive_target_roles(profile)
     jt = title_tokens(job_title)
@@ -265,6 +277,12 @@ def _title_score(job_title, profile):
         return 0.0
 
     cand_skills = {s.lower() for s in profile.get("skills", [])}
+
+    # Reject non-software engineering disciplines (e.g. Civil Engineer, Petroleum Engineer)
+    # when candidate is in software/tech
+    if any(w in jt for w in NON_SOFTWARE_DISCIPLINES) and not any(w in cand_skills for w in NON_SOFTWARE_DISCIPLINES):
+        return 0.05
+
     is_engineer = "engineer" in jt
     is_job_backend = "back" in jt and "end" in jt
     is_job_frontend = "front" in jt and "end" in jt
@@ -290,7 +308,7 @@ def _title_score(job_title, profile):
                 s = max(s, 0.88)
             elif is_job_fullstack:
                 s = max(s, 1.0)
-            elif not (is_job_backend or is_job_frontend or is_job_fullstack):
+            elif any(w in jt for w in ("software", "web", "application", "platform", "systems", "cloud", "api", "tech", "code", "dev")):
                 s = max(s, 0.90)
         elif is_cand_backend and is_engineer:
             if is_job_fullstack or ("software" in jt):
@@ -299,13 +317,13 @@ def _title_score(job_title, profile):
             if is_job_fullstack or ("web" in jt) or ("software" in jt):
                 s = max(s, 0.85)
 
-        # Tech stack alignment: job title specifies a core language/framework in candidate's skills
-        # e.g., 'Python Developer', 'React Engineer', 'Node.js Developer'
-        if is_engineer:
-            for w in jt:
-                if w in cand_skills:
-                    s = max(s, 0.92 if is_cand_fullstack else 0.88)
-                    break
+        # Specialized language alignment: job title specifies a distinct language
+        title_langs = {w for w in jt if w in SPECIALIZED_LANGUAGES}
+        if title_langs:
+            if any(l in cand_skills for l in title_langs):
+                s = max(s, 0.92 if is_cand_fullstack else 0.88)
+            else:
+                s *= 0.65
 
         weight = 1.0 if i < 2 else 0.90
         best = max(best, s * weight)
@@ -481,22 +499,91 @@ def score_job(job, profile):
     else:
         skill_pts = 18 + (title_ratio * 10)  # unknown requirements: neutral baseline + title alignment boost
 
-    # Seniority and years
-    sen_pts = 7.0
-    jl, y = level_of(job.get("title", "")), float(profile.get("years_of_experience") or 0)
-    if y:
-        cl = years_to_level(y)
-        if jl is not None:
-            sen_pts = {0: 10, 1: 6, 2: 2}.get(abs(jl - cl), 0) if jl >= cl else {0: 10, 1: 7, 2: 4}.get(abs(jl - cl), 1)
-        need = sk.years_required(job.get("description", ""))
-        if need:
-            sen_pts = min(sen_pts, 10 if y >= need else 7 if y >= need - 1 else 3 if y >= need - 2 else 0)
+    notes = []
 
-    # Work mode and location
+    # Core required skill verification (must-have requirements)
+    core_penalty = 0
+    core_required = [s for s, w in weights.items() if w >= 0.95]
+    if len(core_required) >= 2:
+        matched_core = [s for s in core_required if s in matched]
+        if not matched_core:
+            core_penalty = 22
+            missing_core = [s for s in core_required if s in missing]
+            notes.append("Missing core required technologies: " + ", ".join(missing_core[:3]))
+
+    # Seniority and leveling alignment
+    sen_pts = 7.0
+    sen_penalty = 0
+    jl, y = level_of(job.get("title", "")), float(profile.get("years_of_experience") or 0)
+    job_sen_class = classify_job_seniority(job.get("title", ""), text)
+    if jl is None:
+        jl = 0 if job_sen_class == "intern" else 1 if job_sen_class == "junior" else 3 if job_sen_class == "senior" else 4 if job_sen_class == "lead_staff" else 2
+
+    cl = years_to_level(y) if y else (level_of(profile.get("target_title", "")) or 2)
+    need_yrs = sk.years_required(job.get("description", ""))
+
+    level_diff = jl - cl
+    if level_diff >= 3 or (need_yrs and y and y <= need_yrs - 4):
+        sen_pts = 0
+        sen_penalty = 25
+        notes.append(f"Seniority level ({job_sen_class.replace('_', ' ').title()}{f' / {need_yrs}+ yrs' if need_yrs else ''}) is significantly above your experience level ({int(y)} yrs).")
+    elif level_diff == 2 or (need_yrs and y and y <= need_yrs - 2):
+        sen_pts = 2
+        sen_penalty = 12
+        notes.append(f"Requires higher seniority level ({f'{need_yrs}+ yrs required vs your {int(y)} yrs' if need_yrs else 'senior level'}).")
+    elif level_diff <= -3:
+        sen_pts = 1
+        sen_penalty = 20
+        notes.append("Entry/internship role intended for students or new graduates.")
+    elif level_diff in (0, 1, -1):
+        sen_pts = 10 if level_diff == 0 else 8
+        sen_penalty = 0
+    else:
+        sen_pts = 5
+        sen_penalty = 0
+
+    # Work mode, geographic and location compatibility
     jm, cm = _mode_of(job), (profile.get("work_mode") or "Any").lower()
     prefs = [p.lower() for p in profile.get("preferred_locations", []) if p and p.lower() not in ("remote", "worldwide")]
     loc = (job.get("location") or "").lower()
-    if cm in ("any", ""):
+
+    # Detect candidate country from preferred_locations and home location
+    cand_loc_str = " ".join(profile.get("preferred_locations", []) + [profile.get("location", "")])
+    cand_countries = set()
+    for pat, cname in COUNTRY_MAP:
+        if pat.search(cand_loc_str):
+            cand_countries.add(cname)
+    cand_has_specific_country = bool(cand_countries - {"Worldwide"})
+
+    job_country = classify_job_country(job.get("location"), job.get("title"), text)
+
+    # Detect strict country requirements in job description/location
+    us_restricted = bool(re.search(r"\b(us only|u\.s\. only|must reside in (the )?us|must be located in (the )?united states|us citizen|green card|security clearance|authorized to work in the (us|united states))\b", text, re.I))
+    uk_restricted = bool(re.search(r"\b(uk only|must be located in (the )?united kingdom|right to work in the uk|must reside in the uk)\b", text, re.I))
+    canada_restricted = bool(re.search(r"\b(canada only|must reside in canada|authorized to work in canada)\b", text, re.I))
+    eu_restricted = bool(re.search(r"\b(eu only|must be based in europe|emea only|schengen)\b", text, re.I))
+
+    geo_blocked = False
+    if cand_has_specific_country:
+        if us_restricted and "United States" not in cand_countries:
+            geo_blocked = True
+            notes.append("Geographic restriction: Posting requires US residency or citizenship.")
+        elif uk_restricted and "United Kingdom" not in cand_countries:
+            geo_blocked = True
+            notes.append("Geographic restriction: Posting requires UK residency / work authorization.")
+        elif canada_restricted and "Canada" not in cand_countries:
+            geo_blocked = True
+            notes.append("Geographic restriction: Posting requires Canada residency.")
+        elif eu_restricted and not (cand_countries & {"Germany", "France", "Netherlands", "Ireland", "Spain", "Poland", "Sweden", "Italy", "Portugal", "Austria", "Belgium", "Denmark", "Finland"}):
+            geo_blocked = True
+            notes.append("Geographic restriction: Posting requires European/EU residency.")
+        elif jm in ("hybrid", "onsite") and job_country not in ("Worldwide", "") and job_country not in cand_countries:
+            geo_blocked = True
+            notes.append(f"Location mismatch: Role is {jm} in {job_country}, outside your preferred location.")
+
+    if geo_blocked:
+        mode_pts = 0
+    elif cm in ("any", ""):
         mode_pts = 8 if jm != "unknown" else 6
     elif cm in jm or (cm == "remote" and jm == "remote"):
         mode_pts = 10
@@ -504,23 +591,34 @@ def score_job(job, profile):
         mode_pts = 5
     else:
         mode_pts = 2
-    if jm in ("hybrid", "onsite") and prefs:
+    if not geo_blocked and jm in ("hybrid", "onsite") and prefs:
         mode_pts = max(mode_pts, 9 if any(p.split(",")[0] in loc for p in prefs) else mode_pts - 2)
     mode_pts = max(0, min(10, mode_pts))
 
-    # Freshness and salary
+    # Freshness and salary alignment
     age = days_since(job.get("posted_at"))
     fresh_pts = 3 if age is None else 5 if age <= 7 else 4 if age <= 21 else 2 if age <= 45 else 0
+    if age is not None and age > 60:
+        notes.append(f"Posted {age} days ago (may be filled).")
+
     sal_pts = 3
     want = float(profile.get("min_salary") or 0)
     ann = annualize(parse_salary(job.get("salary", "")))
     if want and ann:
-        sal_pts = 5 if ann[1] >= want else 0
+        if ann[1] >= want:
+            sal_pts = 5
+        elif ann[1] < want * 0.80:
+            sal_pts = 0
+            notes.append(f"Salary ({job.get('salary')}) is below your minimum target (${int(want):,}).")
+        else:
+            sal_pts = 2
     elif ann:
         sal_pts = 4
 
-    score = skill_pts + title_pts + sen_pts + mode_pts + fresh_pts + sal_pts
-    notes = []
+    score = skill_pts + title_pts + sen_pts + mode_pts + fresh_pts + sal_pts - sen_penalty - core_penalty
+    if geo_blocked:
+        score = min(score, 38)
+
     # Domain gate: a different profession with almost no skill overlap must not look like a fit.
     if title_ratio < 0.12 and len(matched) <= 1:
         score = min(score, 32)
@@ -564,6 +662,6 @@ def score_job(job, profile):
         "salary_annual_max": int(ann[1]) if ann else 0,
         "has_salary": bool(ann),
         "seniority": classify_job_seniority(job.get("title"), text),
-        "country": classify_job_country(job.get("location"), job.get("title"), text),
+        "country": job_country,
         "company_stage": classify_company_stage(job),
     }
