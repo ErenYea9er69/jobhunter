@@ -9,7 +9,7 @@
     /* Apply the saved theme before first paint so the page never flashes the wrong colors. */
     try { var t = localStorage.getItem('jh-theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
   </script>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=2.2">
   <meta name="jh-token" content="jobhunter-vercel-token">
 </head>
 <body>
@@ -701,6 +701,6 @@
 
   <div class="toasts" id="toastContainer" role="status" aria-live="polite"></div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2.2"></script>
 </body>
 </html>
