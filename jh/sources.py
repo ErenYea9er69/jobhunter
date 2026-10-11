@@ -21,16 +21,34 @@ from .util import (HttpError, clean_salary_label, clean_job_type, extract_job_se
 BREAKER_FAILS = 3
 BREAKER_COOLDOWN = 300
 
-# Ranking is deliberately transparent.  This is source authority/directness,
-# not a claim that a company or a posting is objectively "famous".  Fit is
-# calculated separately by scoring.py and remains the largest part of the
-# final opportunity rank.
+# Sources that gate applications behind paid candidate memberships, paywalls, or upsells:
+PAID_OR_GATED_SOURCES = {
+    "We Work Remotely": "Prompts candidates for paid WWR Pro membership / paywalled apply links",
+    "Remotive": "Prompts candidates for paid Remotive Community ($99+) membership to apply",
+}
+
+# Ranking: 100% Free sources ALWAYS outrank paid/gated sources!
+# Direct employer ATS (100) > Free Major Job Boards (88-96) > Free Feeds (70-85) > Paid/Gated Feeds (30-35)
 SOURCE_RANKS = {
     "Greenhouse": 100, "Lever": 100, "Ashby": 100, "SmartRecruiters": 100, "Workable": 100,
-    "LinkedIn": 96, "Indeed": 95, "ZipRecruiter": 94, "Adzuna": 84, "Hacker News": 80,
-    "We Work Remotely": 78, "Remotive": 76, "Himalayas": 75, "Jobicy": 72, "Arbeitnow": 70, "RemoteOK": 68,
-    "Bayt": 68, "Naukri": 68, "HelloWork": 66,
+    "LinkedIn": 96, "Indeed": 95, "ZipRecruiter": 94, "Hacker News": 92,
+    "Bayt": 88, "Naukri": 88, "HelloWork": 88,
+    "Himalayas": 85, "Jobicy": 82, "Arbeitnow": 80,
+    "We Work Remotely": 78, "Remotive": 76, "RemoteOK": 75, "Adzuna": 70,
 }
+
+
+def is_free_to_apply(source):
+    """Return True if candidate can apply 100% free without membership paywalls."""
+    return source not in PAID_OR_GATED_SOURCES
+
+
+def apply_cost_note(source):
+    if source in PAID_OR_GATED_SOURCES:
+        return PAID_OR_GATED_SOURCES[source]
+    if source in {"Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workable"}:
+        return "100% Free Official Employer ATS"
+    return "100% Free to apply"
 
 
 def source_rank(source, tier=""):
@@ -103,11 +121,21 @@ def make_job(**kw):
         elif re.search(r"\b(intern|internship)\b", t_low):
             seniority = "Intern"
 
+    # Check if a direct free ATS URL can be extracted from description (especially for paid/gated feeds)
+    direct_apply_url = kw.get("direct_apply_url") or ""
+    if not direct_apply_url and desc and not is_free_to_apply(kw.get("source")):
+        ats_m = re.search(r"https?://(?:boards\.greenhouse\.io|jobs\.lever\.co|jobs\.ashbyhq\.com|app\.join\.com|apply\.workable\.com|jobs\.smartrecruiters\.com)/[^\s\"\'<>]+", desc, re.I)
+        if ats_m:
+            direct_apply_url = ats_m.group(0).rstrip(".,;)")
+
     return {
         "id": kw["id"], "title": title, "company": company,
         "location": loc or ("Remote" if mode == "Remote" else ""), "work_mode": mode,
         "salary": sal, "job_type": job_type, "seniority": seniority,
         "url": _safe_text(kw.get("url")),
+        "direct_apply_url": direct_apply_url,
+        "is_free_to_apply": is_free_to_apply(kw["source"]),
+        "apply_cost_note": apply_cost_note(kw["source"]),
         "description": desc,
         "responsibilities": responsibilities,
         "qualifications": qualifications,

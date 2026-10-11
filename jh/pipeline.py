@@ -203,11 +203,13 @@ def _rank_opportunity(job):
         opportunity = min(100, opportunity + 8)
 
     kind = job.get("source_kind") or "Job source"
+    is_free = job.get("is_free_to_apply") is not False
     job["opportunity_score"] = max(0, min(100, opportunity))
     job["ranking"] = {
         "source_authority": source_rank, "source_kind": kind,
         "evidence_points": evidence,
-        "reason": f"{kind}; {len(job.get('sources', []))} source(s); {'direct employer application link' if direct else 'board/feed application link'}{'; Wishlist dream company' if job.get('is_dream_company') else ''}"
+        "is_free_to_apply": is_free,
+        "reason": f"{kind}; {len(job.get('sources', []))} source(s); {'100% Free apply' if is_free else 'Paid/gated board'}; {'direct employer application link' if direct else 'board/feed application link'}{'; Wishlist dream company' if job.get('is_dream_company') else ''}"
     }
 
 

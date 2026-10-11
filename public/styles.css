@@ -241,6 +241,134 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
 [data-theme="dark"] .chip-seniority { background: rgba(245, 158, 11, 0.18); color: #fbbf24; border-color: rgba(245, 158, 11, 0.35); }
 .chip-outline { background: transparent; border-color: var(--line-strong); }
 
+/* Source badges */
+.chip-src-count {
+  display: inline-block;
+  font-size: 10.5px;
+  padding: 1px 5px;
+  background: var(--surface-3);
+  border-radius: 999px;
+  font-weight: 700;
+  margin-left: 2px;
+}
+.chip-src-official {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  border-color: rgba(16, 185, 129, 0.28);
+  font-weight: 650;
+}
+[data-theme="dark"] .chip-src-official {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+.chip-src-linkedin {
+  background: rgba(10, 102, 194, 0.1);
+  color: #0a66c2;
+  border-color: rgba(10, 102, 194, 0.25);
+  font-weight: 600;
+}
+[data-theme="dark"] .chip-src-linkedin {
+  background: rgba(10, 102, 194, 0.2);
+  color: #60a5fa;
+  border-color: rgba(10, 102, 194, 0.35);
+}
+.chip-src-indeed {
+  background: rgba(37, 87, 167, 0.1);
+  color: #2557a7;
+  border-color: rgba(37, 87, 167, 0.25);
+  font-weight: 600;
+}
+[data-theme="dark"] .chip-src-indeed {
+  background: rgba(37, 87, 167, 0.2);
+  color: #818cf8;
+  border-color: rgba(37, 87, 167, 0.35);
+}
+.chip-src-zip {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+  border-color: rgba(16, 185, 129, 0.25);
+  font-weight: 600;
+}
+[data-theme="dark"] .chip-src-zip {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+}
+.chip-src-free {
+  background: var(--surface-3);
+  color: var(--text-2);
+  border-color: var(--line);
+  font-weight: 600;
+}
+.chip-src-gated {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  border-color: rgba(245, 158, 11, 0.3);
+  font-weight: 600;
+}
+[data-theme="dark"] .chip-src-gated {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+.chip-best-apply {
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.apply-cost-tag {
+  font-size: 11px;
+  opacity: 0.85;
+  margin-left: 2px;
+  font-weight: 600;
+}
+.apply-rec-tag {
+  font-size: 10px;
+  background: var(--surface);
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-left: 3px;
+  font-weight: 700;
+}
+.gated-warning-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.gated-warning-banner .i {
+  color: var(--warning);
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+
+.free-bypass-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.free-bypass-banner .i {
+  color: var(--success);
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+
 .text-ok { color: var(--success); }
 .text-bonus { color: #9333ea; }
 [data-theme="dark"] .text-bonus { color: #c084fc; }
@@ -593,6 +721,7 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
 .job-item:hover { border-color: var(--line-strong); background: var(--surface-2); }
 .job-item.is-selected { border-color: var(--brand); box-shadow: inset 3px 0 0 var(--brand); background: var(--surface); }
 .job-item-title { font-weight: 650; font-size: 15px; line-height: 1.35; }
+.job-item-sub { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
 .job-item-company { color: var(--text-2); font-size: 14px; }
 .job-item-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; color: var(--text-3); font-size: 13px; margin-top: 4px; }
 .job-item-meta span { display: inline-flex; align-items: center; gap: 4px; }

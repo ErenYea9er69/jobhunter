@@ -246,16 +246,67 @@
   };
 
   function jobSources(j) {
-    return (j.sources && j.sources.length) ? j.sources : [{ source: j.source, url: j.url }];
+    return (j.sources && j.sources.length) ? j.sources : [{ source: j.source, url: j.url, is_free_to_apply: j.is_free_to_apply }];
   }
   function isDirect(s) {
     const name = String(s.source || '');
     return String(s.source_tier || '').includes('Direct company ATS') || /Greenhouse|Ashby|Lever|SmartRecruiters|Workable/i.test(name);
   }
-  function bestApplyUrl(j) {
+  function isFreeSource(s) {
+    if (s.is_free_to_apply !== undefined && s.is_free_to_apply !== null) return Boolean(s.is_free_to_apply);
+    const src = String(s.source || '');
+    return !/We Work Remotely|Remotive/i.test(src);
+  }
+
+  /** Return the optimal application source - ALWAYS prefers 100% free options over paywalled/gated boards. */
+  function bestApplySource(j) {
     const list = jobSources(j).filter(s => s.url);
+    if (!list.length) return { source: j.source || 'Direct', url: j.url || '', is_free_to_apply: true };
+
+    // 1. Top priority: Official direct employer ATS (Greenhouse, Lever, Ashby, Workable, SmartRecruiters)
     const direct = list.find(isDirect);
-    return (direct || list[0] || {}).url || '';
+    if (direct) return direct;
+
+    // 2. Second priority: 100% Free major job boards (LinkedIn, Indeed, ZipRecruiter, Bayt, etc.)
+    const freeMajor = list.find(s => isFreeSource(s) && /LinkedIn|Indeed|ZipRecruiter|Hacker News|Bayt|Naukri|HelloWork/i.test(String(s.source || '')));
+    if (freeMajor) return freeMajor;
+
+    // 3. Third priority: Any other free remote feed (Himalayas, Jobicy, Arbeitnow, RemoteOK)
+    const otherFree = list.find(isFreeSource);
+    if (otherFree) return otherFree;
+
+    // 4. Last resort: Paid/gated source (We Work Remotely, Remotive)
+    return list[0];
+  }
+
+  function bestApplyUrl(j) {
+    return (bestApplySource(j) || {}).url || j.url || '';
+  }
+
+  function formatSourceBadge(j) {
+    const best = bestApplySource(j);
+    const src = best.source || j.source || 'Direct';
+    const isDirectAts = isDirect(best);
+    const isFree = isFreeSource(best);
+    const count = (j.sources || []).length;
+    const more = count > 1 ? ` <span class="chip-src-count" title="Available on ${count} different job sites">+${count - 1}</span>` : '';
+
+    if (isDirectAts) {
+      return `<span class="chip chip-source chip-src-official" title="Official Employer Careers Portal (${esc(src)}) - 100% Free Application">${ico('shield')}Official Site (${esc(src)})${more}</span>`;
+    }
+    if (/linkedin/i.test(src)) {
+      return `<span class="chip chip-source chip-src-linkedin" title="Found on LinkedIn - 100% Free to apply">${ico('external')}via LinkedIn${more}</span>`;
+    }
+    if (/indeed/i.test(src)) {
+      return `<span class="chip chip-source chip-src-indeed" title="Found on Indeed - 100% Free to apply">${ico('external')}via Indeed${more}</span>`;
+    }
+    if (/ziprecruiter/i.test(src)) {
+      return `<span class="chip chip-source chip-src-zip" title="Found on ZipRecruiter - 100% Free to apply">${ico('external')}via ZipRecruiter${more}</span>`;
+    }
+    if (!isFree) {
+      return `<span class="chip chip-source chip-src-gated" title="Only found on ${esc(src)} - Platform charges or prompts for paid membership to apply">${ico('alert')}on ${esc(src)} (Paid to apply)${more}</span>`;
+    }
+    return `<span class="chip chip-source chip-src-free" title="Found on ${esc(src)} - 100% Free to apply">${ico('external')}via ${esc(src)}${more}</span>`;
   }
 
   const val = id => ($('#' + id) || {}).value || '';
@@ -1862,7 +1913,10 @@
       const isFamous = isFamousJob(j);
       return `<button type="button" class="job-item${key === S.selectedKey ? ' is-selected' : ''}" data-action="job-select" data-key="${esc(key)}">
         <span class="job-item-title">${esc(cleanTitle(j.title))}</span>
-        <span class="job-item-company">${esc(j.company)}</span>
+        <div class="job-item-sub">
+          <span class="job-item-company">${esc(j.company)}</span>
+          ${formatSourceBadge(j)}
+        </div>
         ${showScore ? ring(j.score) : ''}
         <span class="job-item-meta">
           <span>${ico('pin')}${esc(j.location || 'Remote')}</span>
@@ -1872,12 +1926,23 @@
           ${showScore && required ? `<span>${matched} of ${required} skills</span>` : ''}
           ${j.is_dream_company ? `<span class="chip chip-famous" title="Your Dream Wishlist Company">${ico('star')}Wishlist</span>` : ''}
           ${j.bonus_matches && j.bonus_matches.length ? `<span class="chip chip-bonus" title="Matches preferred qualifications">${ico('bolt')}+${j.bonus_matches.length} bonus</span>` : ''}
-          ${isFamous ? '<span class="chip chip-famous" title="Recognized Big Tech & Prominent AI company">Big Tech</span>' : ''}
-          ${isDirectAts ? `<span class="chip chip-ok" title="Direct employer careers board">${ico('shield')}Direct ATS</span>` : ''}
+          ${(() => {
+            const srcs = jobSources(j);
+            const hasGated = srcs.some(s => !isFreeSource(s));
+            const hasFree = srcs.some(isFreeSource);
+            if (hasFree && hasGated) {
+              const gated = srcs.find(s => !isFreeSource(s)) || {};
+              return `<span class="chip chip-ok" title="Also on ${esc(gated.source || 'paid site')} (Paid), but JobHunter prioritized the 100% Free Apply link on ${esc(j.source)}!">${ico('shield')}Free apply (bypasses ${esc(gated.source || 'paid site')})</span>`;
+            }
+            if (!hasFree) {
+              return `<span class="chip chip-warn" title="Listed on ${esc(j.source)} - Platform charges or prompts for paid membership to apply">${ico('alert')}Need to pay to apply ($)</span>`;
+            }
+            return `<span class="chip chip-ok" title="100% Free to apply - No fees or paywalls">${ico('check')}Free apply</span>`;
+          })()}
           ${j.score >= 85 ? '<span class="chip chip-ok">Top Match</span>' : ''}
           ${j.is_new ? '<span class="chip chip-info">New</span>' : ''}
           ${j.is_sample ? '<span class="chip chip-warn">Sample</span>' : ''}
-          ${jobSources(j).length > 1 ? `<span>${jobSources(j).length} sources</span>` : ''}
+          ${jobSources(j).length > 1 ? `<span>${jobSources(j).length} sites</span>` : ''}
         </span>
       </button>`;
     }).join('');
@@ -1997,7 +2062,13 @@
         <div class="detail-top">
           <div>
             <h2 class="detail-title">${esc(cleanTitle(j.title))}</h2>
-            <p class="detail-company">${esc(j.company)} ${isDreamCompany ? `<span class="chip chip-famous" title="Your Dream Wishlist Company">${ico('star')}Wishlist</span>` : ''} ${isFamousJob(j) ? `<span class="chip chip-famous" title="Recognized Big Tech & Prominent AI company">Big Tech</span>` : ''} ${isDirectAts ? `<span class="chip chip-ok" title="Direct employer ATS">${ico('shield')}Direct ATS</span>` : ''}</p>
+            <p class="detail-company">
+              ${esc(j.company)}
+              ${formatSourceBadge(j)}
+              ${isDreamCompany ? `<span class="chip chip-famous" title="Your Dream Wishlist Company">${ico('star')}Wishlist</span>` : ''}
+              ${isFamousJob(j) ? `<span class="chip chip-famous" title="Recognized Big Tech & Prominent AI company">Big Tech</span>` : ''}
+              ${isFreeSource(j) ? `<span class="chip chip-ok" title="100% Free Application - No fees">${ico('check')}Free Apply</span>` : `<span class="chip chip-warn" title="Site may prompt for paid membership">${ico('alert')}Paid Site</span>`}
+            </p>
           </div>
           ${showScore ? ring(score, true) : ''}
         </div>
@@ -2212,8 +2283,49 @@
           </div>
         ` : ''}
 
-        ${sources.length ? `<div class="detail-block"><h3>${sources.length > 1 ? `Posted on ${sources.length} sites` : 'Where to apply'}</h3>
-          <div class="apply-links">${sources.map(s => `<a class="chip chip-outline" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.source)}${isDirect(s) ? ', company site' : ''}${ico('external')}</a>`).join('')}</div></div>` : ''}
+        ${sources.length ? `
+          <div class="detail-block detail-apply-block">
+            <div class="block-header-row">
+              <h3>${sources.length > 1 ? `Where to apply (${sources.length} sources found)` : 'Where to apply'}</h3>
+              ${sources.some(isFreeSource) ? `<span class="chip chip-ok" title="100% Free application prioritized">${ico('shield')}Free option prioritized</span>` : ''}
+            </div>
+            ${sources.some(isFreeSource) && sources.some(s => !isFreeSource(s)) ? `
+              <div class="free-bypass-banner">
+                ${ico('shield')}
+                <div>
+                  <strong>Free Application Found!</strong>
+                  <span>This position was also found on <b>${esc(((sources.find(s => !isFreeSource(s)) || {}).source) || 'a paid site')}</b> (which charges or prompts for paid membership), but JobHunter found the exact same job on <b>${esc(j.source)}</b> where applying is <b>100% FREE</b>. The primary Apply button uses this free link!</span>
+                </div>
+              </div>
+            ` : (!sources.some(isFreeSource) ? `
+              <div class="gated-warning-banner">
+                ${ico('alert')}
+                <div>
+                  <strong>Heads-up on this source:</strong>
+                  <span>This position was sourced from <b>${esc(j.source)}</b>, which may prompt for a paid subscription or account to submit applications.</span>
+                </div>
+              </div>
+            ` : '')}
+            <div class="apply-links">
+              ${sources.map(s => {
+                const free = isFreeSource(s);
+                const direct = isDirect(s);
+                const isBest = s.url === apply;
+                return `
+                  <a class="chip ${isBest ? (free ? 'chip-best-apply chip-ok' : 'chip-best-apply chip-warn') : (free ? 'chip-outline' : 'chip-warn')}"
+                     href="${esc(s.url)}" target="_blank" rel="noopener noreferrer"
+                     title="${free ? '100% Free to apply' : 'Site may require paid membership'}">
+                    ${free ? (isBest ? ico('check') : '') : ico('alert')}
+                    ${esc(s.source)}${direct ? ' (Official Site)' : ''}
+                    <span class="apply-cost-tag">${free ? '• Free' : '• Paid/Gated'}</span>
+                    ${isBest ? '<span class="apply-rec-tag">Primary</span>' : ''}
+                    ${ico('external')}
+                  </a>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
 
         <p class="credit">Source: ${esc(j.source_credit || j.source || '')}</p>
       </div>`;

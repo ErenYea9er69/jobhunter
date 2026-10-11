@@ -5,7 +5,7 @@ import urllib.parse
 
 from .scoring import title_tokens
 from .util import normalize_company, parse_date
-from .sources import source_rank, source_kind
+from .sources import source_rank, source_kind, is_free_to_apply, apply_cost_note
 
 ATS_SOURCES = ("Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workable")
 TRACKING = re.compile(r"^(utm_|ref|source|gh_src|lever-source|trk|trackingid|refid)", re.I)
@@ -66,11 +66,35 @@ def merge_jobs(raw_jobs):
         job["_tk"] = _title_key(job.get("title", ""))
         job["_lc"] = _loc_class(job)
         norm_co = normalize_company(job["company"])
-        entry = {"source": job.get("source", "Unknown"), "url": canonical_url(job.get("url")),
-                 "source_credit": job.get("source_credit", job.get("source", "")),
-                 "source_tier": job.get("source_tier", ""),
-                 "source_rank": job.get("source_rank", source_rank(job.get("source", "Unknown"), job.get("source_tier", ""))),
-                 "source_kind": job.get("source_kind", source_kind(job.get("source", "Unknown"), job.get("source_tier", "")))}
+
+        is_free = job.get("is_free_to_apply")
+        if is_free is None:
+            is_free = is_free_to_apply(job.get("source", "Unknown"))
+        cost_note = job.get("apply_cost_note") or apply_cost_note(job.get("source", "Unknown"))
+
+        entry = {
+            "source": job.get("source", "Unknown"),
+            "url": canonical_url(job.get("url")),
+            "source_credit": job.get("source_credit", job.get("source", "")),
+            "source_tier": job.get("source_tier", ""),
+            "source_rank": job.get("source_rank", source_rank(job.get("source", "Unknown"), job.get("source_tier", ""))),
+            "source_kind": job.get("source_kind", source_kind(job.get("source", "Unknown"), job.get("source_tier", ""))),
+            "is_free_to_apply": is_free,
+            "apply_cost_note": cost_note
+        }
+
+        direct_entry = None
+        if job.get("direct_apply_url"):
+            direct_entry = {
+                "source": "Official ATS",
+                "url": canonical_url(job["direct_apply_url"]),
+                "source_credit": "Direct Official Application (found in posting)",
+                "source_tier": "Direct company ATS",
+                "source_rank": 99,
+                "source_kind": "Direct employer ATS",
+                "is_free_to_apply": True,
+                "apply_cost_note": "100% Free Official Employer ATS (no middleman)"
+            }
 
         # Fast path 1: exact company + title_key + loc match
         exact_key = (norm_co, job["_tk"], job["_lc"])
@@ -87,23 +111,55 @@ def merge_jobs(raw_jobs):
 
         if target is None:
             g = dict(job)
-            g["sources"] = [entry]
-            g["source_names"] = [entry["source"]]
-            g.setdefault("source_rank", entry["source_rank"])
-            g.setdefault("source_kind", entry["source_kind"])
-            g["url"] = entry["url"]
+            all_entries = [entry]
+            if direct_entry:
+                all_entries.insert(0, direct_entry)
+            g["sources"] = all_entries
+            g["source_names"] = [s["source"] for s in all_entries]
+            prime = all_entries[0]
+            g["url"] = prime["url"]
+            g["source"] = prime["source"]
+            g["source_rank"] = prime["source_rank"]
+            g["source_kind"] = prime["source_kind"]
+            g["is_free_to_apply"] = prime["is_free_to_apply"]
+            g["apply_cost_note"] = prime["apply_cost_note"]
             by_company.setdefault(norm_co, []).append(g)
             by_exact[exact_key] = g
             groups.append(g)
             continue
 
-        if not any(s["source"] == entry["source"] and s["url"] == entry["url"] for s in target["sources"]):
-            target["sources"].append(entry)
-            target["source_names"].append(entry["source"])
-        if entry["source_rank"] > target.get("source_rank", 0):
-            target.update(url=entry["url"], source=entry["source"], source_tier=entry["source_tier"],
-                          source_credit=entry["source_credit"], source_rank=entry["source_rank"],
-                          source_kind=entry["source_kind"])
+        new_entries = [entry]
+        if direct_entry:
+            new_entries.append(direct_entry)
+
+        for ent in new_entries:
+            if not any(s["source"] == ent["source"] and s["url"] == ent["url"] for s in target["sources"]):
+                target["sources"].append(ent)
+                if ent["source"] not in target["source_names"]:
+                    target["source_names"].append(ent["source"])
+
+            # Rule: 100% Free application sources ALWAYS beat paid/gated sources!
+            is_ent_free = ent.get("is_free_to_apply", True)
+            is_target_free = target.get("is_free_to_apply", True)
+
+            should_replace = False
+            if is_ent_free and not is_target_free:
+                should_replace = True
+            elif is_ent_free == is_target_free and ent["source_rank"] > target.get("source_rank", 0):
+                should_replace = True
+
+            if should_replace:
+                target.update(
+                    url=ent["url"],
+                    source=ent["source"],
+                    source_tier=ent["source_tier"],
+                    source_credit=ent["source_credit"],
+                    source_rank=ent["source_rank"],
+                    source_kind=ent["source_kind"],
+                    is_free_to_apply=ent["is_free_to_apply"],
+                    apply_cost_note=ent.get("apply_cost_note", "")
+                )
+
         if len(job.get("description", "")) > len(target.get("description", "")):
             target["description"] = job["description"]
         if job.get("salary") and not target.get("salary"):
@@ -135,5 +191,15 @@ def merge_jobs(raw_jobs):
         g.pop("_tk", None)
         g.pop("_lc", None)
         g["job_key"] = job_key(g)
-        g["sources"].sort(key=lambda s: (-s.get("source_rank", 0), s["source"]))
+        # Sort: 100% Free sources FIRST, then highest authority rank, then source name
+        g["sources"].sort(key=lambda s: (not s.get("is_free_to_apply", True), -s.get("source_rank", 0), s["source"]))
+        best_src = g["sources"][0]
+        g["url"] = best_src["url"]
+        g["source"] = best_src["source"]
+        g["source_tier"] = best_src.get("source_tier", g.get("source_tier", ""))
+        g["source_rank"] = best_src.get("source_rank", g.get("source_rank", 50))
+        g["source_kind"] = best_src.get("source_kind", g.get("source_kind", "Job source"))
+        g["is_free_to_apply"] = best_src.get("is_free_to_apply", True)
+        g["apply_cost_note"] = best_src.get("apply_cost_note", "")
+
     return groups
