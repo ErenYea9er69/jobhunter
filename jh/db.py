@@ -149,6 +149,30 @@ def replace_search_jobs(jobs, query="", location="", sources=None):
                   (query, location, len(jobs), json.dumps(sources or []), now))
 
 
+def update_search_job(job):
+    """Update a single job in search_jobs cache if it exists."""
+    from . import dedup
+    key = job.get("job_key") or dedup.job_key(job) or job.get("id")
+    if not key:
+        return False
+    now = now_iso()
+    with session() as c:
+        row = c.execute("SELECT job_key FROM search_jobs WHERE job_key=?", (key,)).fetchone()
+        if row:
+            c.execute("""
+                UPDATE search_jobs
+                SET title=?, company=?, location=?, work_mode=?, score=?, opportunity_score=?,
+                    job_json=?, updated_at=?
+                WHERE job_key=?
+            """, (
+                job.get("title", ""), job.get("company", ""), job.get("location", ""),
+                job.get("work_mode", ""), job.get("score", 0), job.get("opportunity_score", 0),
+                json.dumps(job), now, key
+            ))
+            return True
+    return False
+
+
 def get_saved_search_jobs():
     """Retrieve saved search jobs from DB ordered by opportunity_score and score."""
     with session() as c:

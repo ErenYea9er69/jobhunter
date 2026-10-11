@@ -158,6 +158,219 @@ def clean_salary_label(text):
     return str(text).strip() if parse_salary(text) else ""
 
 
+def clean_job_type(val):
+    """Normalize employment types: Contract, Full-time, Part-time, Internship, Freelance, Temporary."""
+    if not val:
+        return ""
+    if isinstance(val, (list, tuple, set)):
+        items = [clean_job_type(x) for x in val if x]
+        items = [x for x in items if x]
+        return items[0] if items else ""
+    s = str(val).lower().strip().replace("-", " ").replace("_", " ")
+    if re.search(r"\b(contract|contractor|c2c|w2|freelance|freelancer|consultant|subcontract)\b", s):
+        return "Contract"
+    if re.search(r"\b(full\s*time|permanent|cdi|regular|direct\s*hire)\b", s):
+        return "Full-time"
+    if re.search(r"\b(part\s*time)\b", s):
+        return "Part-time"
+    if re.search(r"\b(intern|internship|stage|alternance|apprentice)\b", s):
+        return "Internship"
+    if re.search(r"\b(temporary|temp|cdd)\b", s):
+        return "Temporary"
+    return str(val).strip().title() if len(str(val).strip()) <= 20 else ""
+
+
+def format_schema_salary(sal_obj):
+    """Format schema.org MonetaryAmount or QuantitativeValue into readable string."""
+    if not sal_obj:
+        return ""
+    if isinstance(sal_obj, str):
+        return sal_obj.strip()
+    if not isinstance(sal_obj, dict):
+        return ""
+    cur = sal_obj.get("currency", "USD") or "USD"
+    cur_sym = "€" if cur == "EUR" else "£" if cur == "GBP" else "$"
+    val = sal_obj.get("value")
+    unit = str(sal_obj.get("unitText") or "").lower()
+    if isinstance(val, dict):
+        min_v = val.get("minValue") or val.get("min")
+        max_v = val.get("maxValue") or val.get("max")
+        unit = str(val.get("unitText") or unit).lower()
+        if min_v and max_v:
+            min_str = f"{int(min_v):,}" if float(min_v).is_integer() else f"{float(min_v):.2f}"
+            max_str = f"{int(max_v):,}" if float(max_v).is_integer() else f"{float(max_v):.2f}"
+            unit_str = f" / {unit.lower()}" if unit else ""
+            return f"{cur_sym}{min_str} - {cur_sym}{max_str}{unit_str}"
+        elif min_v:
+            min_str = f"{int(min_v):,}" if float(min_v).is_integer() else f"{float(min_v):.2f}"
+            unit_str = f" / {unit.lower()}" if unit else ""
+            return f"{cur_sym}{min_str}{unit_str}"
+    elif isinstance(val, (int, float)):
+        val_str = f"{int(val):,}" if float(val).is_integer() else f"{float(val):.2f}"
+        unit_str = f" / {unit.lower()}" if unit else ""
+        return f"{cur_sym}{val_str}{unit_str}"
+    return ""
+
+
+def extract_job_sections(text):
+    """Parse structured sections: responsibilities, qualifications, how to apply, contact info."""
+    if not text:
+        return {}
+    sections = {
+        "responsibilities": [],
+        "qualifications": [],
+        "preferred_qualifications": [],
+        "how_to_apply": "",
+        "contact_email": "",
+        "contact_website": "",
+        "salary_text": "",
+        "job_type": "",
+    }
+    # 1. Email extraction
+    email_m = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text)
+    if email_m:
+        sections["contact_email"] = email_m.group(0)
+
+    # 2. Website extraction
+    site_m = re.search(r'(?:Website|Apply at|Careers):\s*(https?://[^\s]+|[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:/[^\s]*)?)', text, re.I)
+    if site_m:
+        url = site_m.group(1).strip()
+        if not url.startswith("http"):
+            url = f"https://{url}"
+        sections["contact_website"] = url
+
+    # 3. Pay / Salary in text
+    pay_m = re.search(r'(?:Pay|Salary|Compensation|Rate):\s*([^\n\r]+)', text, re.I)
+    if pay_m:
+        sections["salary_text"] = pay_m.group(1).strip()
+
+    # 4. Job type in text
+    type_m = re.search(r'(?:Job Type|Employment Type|Contract Type):\s*([^\n\r]+)', text, re.I)
+    if type_m:
+        sections["job_type"] = type_m.group(1).strip()
+
+    # 5. Section headers parsing
+    lines = text.split("\n")
+    current_sec = None
+    buffer = []
+
+    SEC_PATTERNS = [
+        ("responsibilities", re.compile(r'^(?:Key\s+)?Responsibilities(?:\s+and\s+Duties)?|^What\s+You(?:\'ll| will)\s+Do|^Missions(?:\s+du\s+poste)?', re.I)),
+        ("preferred_qualifications", re.compile(r'^Preferred\s+Qualifications|^Nice\s+to\s+Have|^Bonus\s+Points', re.I)),
+        ("qualifications", re.compile(r'^(?:Required\s+)?Qualifications|^Requirements|^What\s+You\s+Bring|^Profil\s+recherch[ée]|^Comp[ée]tences', re.I)),
+        ("how_to_apply", re.compile(r'^How\s+to\s+Apply|^To\s+Apply|^Application\s+Process|^Comment\s+postuler', re.I)),
+    ]
+
+    def flush(sec, items):
+        if not sec or not items:
+            return
+        cleaned = [re.sub(r'^[\s*\-•–—]+', '', it).strip() for it in items if it.strip()]
+        cleaned = [c for c in cleaned if c and len(c) > 3]
+        if sec in ("responsibilities", "qualifications", "preferred_qualifications"):
+            sections[sec].extend(cleaned)
+        elif sec == "how_to_apply":
+            sections["how_to_apply"] = "\n".join(items).strip()
+
+    for line in lines:
+        sline = line.strip()
+        if not sline:
+            continue
+        clean_header = re.sub(r'[:#*_-]+', '', sline).strip()
+        matched_sec = None
+        for sec_name, pat in SEC_PATTERNS:
+            if pat.search(clean_header):
+                matched_sec = sec_name
+                break
+
+        if matched_sec:
+            flush(current_sec, buffer)
+            current_sec = matched_sec
+            buffer = []
+        else:
+            if current_sec:
+                if re.match(r'^(?:Pay|Salary|Work Location|About Us|Benefits|Equal Opportunity):', sline, re.I):
+                    flush(current_sec, buffer)
+                    current_sec = None
+                    buffer = []
+                else:
+                    buffer.append(sline)
+
+    flush(current_sec, buffer)
+    return sections
+
+
+def parse_schema_job_posting(html_or_dict):
+    """Parse schema.org JobPosting from HTML text or JSON dict."""
+    if not html_or_dict:
+        return {}
+    if isinstance(html_or_dict, dict):
+        d = html_or_dict
+    else:
+        matches = re.findall(r'<script[^>]*type=[\'"]application/ld\+json[\'"][^>]*>(.*?)</script>', str(html_or_dict), re.S)
+        d = None
+        for m in matches:
+            try:
+                cand = json.loads(m.strip())
+                if isinstance(cand, list):
+                    cand = next((c for c in cand if isinstance(c, dict) and c.get("@type") == "JobPosting"), None)
+                if isinstance(cand, dict) and cand.get("@type") == "JobPosting":
+                    d = cand
+                    break
+                elif isinstance(cand, dict) and isinstance(cand.get("@graph"), list):
+                    cand = next((c for c in cand["@graph"] if isinstance(c, dict) and c.get("@type") == "JobPosting"), None)
+                    if cand:
+                        d = cand
+                        break
+            except Exception:
+                continue
+        if not d:
+            return {}
+
+    title = d.get("title") or ""
+    comp = d.get("hiringOrganization")
+    company = comp.get("name") if isinstance(comp, dict) else (str(comp or "") if comp else "")
+    loc = d.get("jobLocation")
+    loc_str = ""
+    if isinstance(loc, dict):
+        addr = loc.get("address")
+        if isinstance(addr, dict):
+            parts = [addr.get("addressLocality"), addr.get("addressRegion"), addr.get("addressCountry")]
+            loc_str = ", ".join(p for p in parts if p)
+        elif isinstance(addr, str):
+            loc_str = addr
+    elif isinstance(loc, list) and loc:
+        loc_str = str(loc[0])
+
+    sal = format_schema_salary(d.get("baseSalary"))
+    emp_type = clean_job_type(d.get("employmentType"))
+    desc_raw = d.get("description") or ""
+    desc_text = html_to_text(desc_raw) if desc_raw else ""
+    date_posted = d.get("datePosted") or ""
+
+    sections = extract_job_sections(desc_text)
+    if not sal and sections.get("salary_text"):
+        sal = sections["salary_text"]
+    if not emp_type and sections.get("job_type"):
+        emp_type = clean_job_type(sections["job_type"])
+
+    return {
+        "title": title,
+        "company": company,
+        "location": loc_str,
+        "salary": sal,
+        "job_type": emp_type,
+        "description": desc_text,
+        "posted_at": date_posted,
+        "responsibilities": sections.get("responsibilities", []),
+        "qualifications": sections.get("qualifications", []),
+        "preferred_qualifications": sections.get("preferred_qualifications", []),
+        "how_to_apply": sections.get("how_to_apply", ""),
+        "contact_email": sections.get("contact_email", ""),
+        "contact_website": sections.get("contact_website", ""),
+    }
+
+
+
 # ---------------------------------------------------------------- http
 
 class HttpError(Exception):

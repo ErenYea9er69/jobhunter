@@ -96,6 +96,7 @@
     applications: [],
     watchlist: [],
     watchResults: {},
+    enrichingKeys: new Set(),
     ws: { job: null, key: '', tab: 'strategy', from: 'jobs', refinement: null, decisions: {}, ats: null, atsFresh: false,
           strategy: null, gaps: null, cover: {}, prep: null, tone: 'direct', showUnchanged: false, seq: 0 }
   };
@@ -1838,7 +1839,8 @@
         <span class="job-item-meta">
           <span>${ico('pin')}${esc(j.location || 'Remote')}</span>
           ${j.work_mode ? `<span>${ico('briefcase')}${esc(j.work_mode)}</span>` : ''}
-          ${j.salary ? `<span>${esc(j.salary)}</span>` : ''}
+          ${j.job_type ? `<span class="chip chip-contract">${esc(j.job_type)}</span>` : ''}
+          ${j.salary ? `<span class="chip chip-salary">${ico('dollar')}${esc(j.salary)}</span>` : ''}
           ${showScore && required ? `<span>${matched} of ${required} skills</span>` : ''}
           ${isFamous ? '<span class="chip chip-famous" title="Recognized Big Tech & Prominent AI company">Big Tech</span>' : ''}
           ${isDirectAts ? `<span class="chip chip-ok" title="Direct employer careers board">${ico('shield')}Direct ATS</span>` : ''}
@@ -1851,9 +1853,82 @@
     }).join('');
   }
 
-  const selectedJob = () => S.jobs.find(j => jobKey(j) === S.selectedKey) || null;
+  const selectedJob = () => (S.jobs || []).find(j => jobKey(j) === S.selectedKey) || ((S.allJobs || []).find(j => jobKey(j) === S.selectedKey)) || null;
   const savedApp = j => S.applications.find(a => (a.job_id && j.id && a.job_id === j.id) ||
     (String(a.title).toLowerCase() === String(j.title).toLowerCase() && String(a.company).toLowerCase() === String(j.company).toLowerCase()));
+
+  function formatJobDescription(text) {
+    if (!text) return '';
+    const clean = esc(text);
+    const paragraphs = clean.split(/\n{2,}/);
+    return paragraphs.map(p => {
+      const lines = p.split('\n').map(l => l.trim()).filter(Boolean);
+      if (!lines.length) return '';
+      const isBulletList = lines.length > 1 && lines.every(l => /^[-*•·]/.test(l));
+      if (isBulletList) {
+        return `<ul class="desc-list">${lines.map(l => `<li>${l.replace(/^[-*•·]\s*/, '')}</li>`).join('')}</ul>`;
+      }
+      return `<p class="desc-p">${lines.join('<br>')}</p>`;
+    }).filter(Boolean).join('');
+  }
+
+  async function triggerJobEnrichment(job, force = false) {
+    if (!job) return;
+    const key = jobKey(job);
+    if (!force && job.enriched) return;
+    if (S.enrichingKeys && S.enrichingKeys.has(key)) return;
+
+    const hasRichData = job.description && job.description.length >= 1500 &&
+      ((job.responsibilities && job.responsibilities.length) || (job.qualifications && job.qualifications.length)) &&
+      (job.salary || job.job_type);
+    if (!force && hasRichData && !job.needs_enrichment) return;
+
+    if (!S.enrichingKeys) S.enrichingKeys = new Set();
+    S.enrichingKeys.add(key);
+
+    if (S.selectedKey === key && S.view === 'jobs') {
+      renderDetail();
+    }
+
+    try {
+      const res = await api('/api/job-details', {
+        method: 'POST',
+        body: { job }
+      });
+      if (res && res.job) {
+        const enriched = res.job;
+        Object.assign(job, enriched);
+        job.enriched = true;
+
+        const updateInList = list => {
+          if (!list) return;
+          for (let i = 0; i < list.length; i++) {
+            if (jobKey(list[i]) === key) {
+              Object.assign(list[i], enriched);
+              list[i].enriched = true;
+            }
+          }
+        };
+        updateInList(S.jobs);
+        updateInList(S.allJobs);
+        updateInList(S.jobsRanked);
+
+        if (S.ws && S.ws.key === key && S.ws.job) {
+          Object.assign(S.ws.job, enriched);
+          S.ws.job.enriched = true;
+        }
+
+        renderList();
+      }
+    } catch (err) {
+      console.warn('Job enrichment error:', err);
+    } finally {
+      if (S.enrichingKeys) S.enrichingKeys.delete(key);
+      if (S.selectedKey === key && S.view === 'jobs') {
+        renderDetail();
+      }
+    }
+  }
 
   function renderDetail() {
     const el = $('#jobDetail');
@@ -1871,6 +1946,14 @@
     const posted = j.posted_at ? timeAgo(j.posted_at) : '';
     const saved = savedApp(j);
     const isDirectAts = j.source_kind === 'Direct employer ATS' || String(j.source_tier || '').startsWith('Direct');
+    const key = jobKey(j);
+    const isEnriching = S.enrichingKeys && S.enrichingKeys.has(key);
+    const responsibilities = Array.isArray(j.responsibilities) ? j.responsibilities : [];
+    const qualifications = Array.isArray(j.qualifications) ? j.qualifications : [];
+    const prefQualifications = Array.isArray(j.preferred_qualifications) ? j.preferred_qualifications : [];
+    const hasOverview = !!(j.salary || j.job_type || j.work_mode || j.location);
+    const hasContact = !!(j.contact_email || j.contact_website || j.how_to_apply);
+    const isLongDesc = desc.length > 1200;
 
     el.innerHTML = `
       <button type="button" class="btn btn-ghost btn-sm detail-close" data-action="detail-close">${ico('back')}Back to results</button>
@@ -1884,17 +1967,38 @@
         </div>
         <div class="detail-facts">
           <span>${ico('pin')}${esc(j.location || 'Remote')}</span>
-          ${j.work_mode ? `<span>${ico('briefcase')}${esc(j.work_mode)}</span>` : ''}
-          ${j.salary ? `<span>${esc(j.salary)}</span>` : ''}
+          ${j.work_mode && !String(j.location || '').toLowerCase().includes(String(j.work_mode).toLowerCase()) ? `<span>${ico('briefcase')}${esc(j.work_mode)}</span>` : ''}
+          ${j.job_type ? `<span class="chip chip-contract">${ico('briefcase')}${esc(j.job_type)}</span>` : ''}
+          ${j.salary ? `<span class="chip chip-salary">${ico('dollar')}${esc(j.salary)}</span>` : ''}
+          ${j.seniority ? `<span class="chip chip-seniority">${esc(j.seniority)}</span>` : ''}
           ${posted ? `<span>${ico('clock')}Posted ${esc(posted)}</span>` : ''}
         </div>
         <div class="detail-actions">
-        <button type="button" class="btn btn-primary" data-action="job-strategy">${ico('bolt')}AI Strategy</button>
-        <button type="button" class="btn btn-secondary" data-action="job-tailor">${ico('file')}Tailor resume</button>
-        <button type="button" class="btn btn-secondary" data-action="job-save" ${saved ? 'disabled' : ''}>${ico('bookmark')}${saved ? 'Saved' : 'Save'}</button>
-        ${apply ? `<a class="btn btn-secondary" href="${esc(apply)}" target="_blank" rel="noopener noreferrer">${ico('external')}Apply</a>` : ''}
-        <button type="button" class="btn btn-ghost" data-action="job-hunt" title="Tailor your resume, write a cover letter and prep notes, then save it all to Applications">${ico('bolt')}Prepare everything</button>
+          <button type="button" class="btn btn-primary" data-action="job-strategy">${ico('bolt')}AI Strategy</button>
+          <button type="button" class="btn btn-secondary" data-action="job-tailor">${ico('file')}Tailor resume</button>
+          <button type="button" class="btn btn-secondary" data-action="job-save" ${saved ? 'disabled' : ''}>${ico('bookmark')}${saved ? 'Saved' : 'Save'}</button>
+          ${apply ? `<a class="btn btn-secondary" href="${esc(apply)}" target="_blank" rel="noopener noreferrer">${ico('external')}Apply</a>` : ''}
+          <button type="button" class="btn btn-ghost" data-action="job-hunt" title="Tailor your resume, write a cover letter and prep notes, then save it all to Applications">${ico('bolt')}Prepare everything</button>
+          ${!j.enriched ? `<button type="button" class="btn btn-ghost btn-xs" data-action="job-enrich-now" title="Fetch complete details from original posting">${ico('refresh')}Enrich</button>` : ''}
         </div>
+
+        ${isEnriching ? `
+          <div class="enrich-status-banner">
+            <span class="spinner-sm"></span>
+            <span>Fetching complete posting details (salary, responsibilities, requirements, contact)...</span>
+          </div>
+        ` : ''}
+
+        ${hasOverview ? `
+          <div class="detail-block detail-card-overview">
+            <div class="job-overview-grid">
+              ${j.salary ? `<div class="overview-item"><span class="overview-icon">${ico('dollar')}</span><div><span class="overview-label">Pay / Salary</span><span class="overview-value text-salary">${esc(j.salary)}</span></div></div>` : ''}
+              ${j.job_type ? `<div class="overview-item"><span class="overview-icon">${ico('briefcase')}</span><div><span class="overview-label">Job type</span><span class="overview-value">${esc(j.job_type)}</span></div></div>` : ''}
+              ${j.work_mode ? `<div class="overview-item"><span class="overview-icon">${ico('pin')}</span><div><span class="overview-label">Work mode</span><span class="overview-value">${esc(j.work_mode)}</span></div></div>` : ''}
+              ${j.location ? `<div class="overview-item"><span class="overview-icon">${ico('building')}</span><div><span class="overview-label">Location</span><span class="overview-value">${esc(j.location)}</span></div></div>` : ''}
+            </div>
+          </div>
+        ` : ''}
 
         ${showScore ? `<div class="detail-block"><h3>Why it fits</h3>
           <div class="fit-box">
@@ -1904,7 +2008,74 @@
             ${missing.length ? `<div class="fit-row"><strong>Missing</strong>${missing.map(s => `<span class="chip chip-warn">${esc(s)}</span>`).join('')}</div>` : ''}
           </div></div>` : ''}
 
-        ${desc ? `<div class="detail-block"><h3>About the role</h3><p class="desc">${esc(desc.length > 3000 ? desc.slice(0, 3000) + '...' : desc)}</p></div>` : ''}
+        ${hasContact ? `
+          <div class="detail-block detail-contact-block">
+            <h3>How to apply & Employer contact</h3>
+            <div class="contact-card">
+              ${j.contact_email ? `
+                <div class="contact-row">
+                  <span class="contact-label">Employer Email</span>
+                  <div class="contact-action-group">
+                    <a href="mailto:${esc(j.contact_email)}" class="contact-email">${ico('mail')}${esc(j.contact_email)}</a>
+                    <button type="button" class="btn btn-xs btn-ghost" data-action="copy-text" data-text="${esc(j.contact_email)}" title="Copy email address">${ico('copy')}Copy</button>
+                  </div>
+                </div>
+              ` : ''}
+              ${j.contact_website ? `
+                <div class="contact-row">
+                  <span class="contact-label">Company Website</span>
+                  <a href="${esc(j.contact_website)}" target="_blank" rel="noopener noreferrer" class="contact-web-link">${esc(j.contact_website)} ${ico('external')}</a>
+                </div>
+              ` : ''}
+              ${j.how_to_apply ? `
+                <div class="contact-instructions">
+                  <strong>Application Instructions</strong>
+                  <p>${esc(j.how_to_apply)}</p>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        ` : ''}
+
+        ${responsibilities.length ? `
+          <div class="detail-block">
+            <h3>Key responsibilities</h3>
+            <ul class="job-bullet-list bullet-resp">
+              ${responsibilities.map(r => `<li>${esc(r)}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+
+        ${qualifications.length ? `
+          <div class="detail-block">
+            <h3>Requirements & Qualifications</h3>
+            <ul class="job-bullet-list bullet-req">
+              ${qualifications.map(q => `<li>${esc(q)}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+
+        ${prefQualifications.length ? `
+          <div class="detail-block">
+            <h3>Preferred qualifications</h3>
+            <ul class="job-bullet-list bullet-pref">
+              ${prefQualifications.map(q => `<li>${esc(q)}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+
+        ${desc ? `
+          <div class="detail-block">
+            <div class="block-header-row">
+              <h3>Full job description</h3>
+              ${isLongDesc ? `<button type="button" class="btn-link desc-toggle-link" data-action="toggle-desc"><span>Show full description</span></button>` : ''}
+            </div>
+            <div class="desc-wrap ${isLongDesc ? 'is-collapsed' : 'is-expanded'}" id="jobDescWrap">
+              <div class="desc-content">${formatJobDescription(desc)}</div>
+            </div>
+            ${isLongDesc ? `<button type="button" class="desc-toggle-btn" data-action="toggle-desc">${ico('chevron')}<span>Show full description</span></button>` : ''}
+          </div>
+        ` : ''}
 
         ${sources.length ? `<div class="detail-block"><h3>${sources.length > 1 ? `Posted on ${sources.length} sites` : 'Where to apply'}</h3>
           <div class="apply-links">${sources.map(s => `<a class="chip chip-outline" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.source)}${isDirect(s) ? ', company site' : ''}${ico('external')}</a>`).join('')}</div></div>` : ''}
@@ -1917,6 +2088,10 @@
     S.selectedKey = key;
     $$('#jobList .job-item').forEach(b => b.classList.toggle('is-selected', b.dataset.key === key));
     renderDetail();
+    const j = selectedJob();
+    if (j) {
+      triggerJobEnrichment(j);
+    }
     if (isNarrow()) {
       const d = $('#jobDetail');
       d.classList.add('is-open'); d.scrollTop = 0;
@@ -2787,6 +2962,30 @@
       runSearch({ forceRefresh: false });
     },
     'job-select': el => selectJob(el.dataset.key),
+    'job-enrich-now': () => {
+      const j = selectedJob();
+      if (j) triggerJobEnrichment(j, true);
+    },
+    'toggle-desc': () => {
+      const wrap = $('#jobDescWrap');
+      if (!wrap) return;
+      const isExpanded = wrap.classList.toggle('is-expanded');
+      wrap.classList.toggle('is-collapsed', !isExpanded);
+      $$('[data-action="toggle-desc"]').forEach(b => {
+        const span = b.querySelector('span');
+        if (span) span.textContent = isExpanded ? 'Show less' : 'Show full description';
+        else b.textContent = isExpanded ? 'Show less' : 'Show full description';
+      });
+    },
+    'copy-text': el => {
+      const t = el.dataset.text;
+      if (!t) return;
+      navigator.clipboard.writeText(t).then(() => {
+        toast(`Copied: ${t}`);
+      }).catch(() => {
+        toast('Copied to clipboard');
+      });
+    },
     'job-strategy': () => openWorkspace(selectedJob(), 'strategy', 'jobs'),
     'job-tailor': () => openWorkspace(selectedJob(), 'resume', 'jobs'),
     'job-save': () => saveJob(selectedJob()),

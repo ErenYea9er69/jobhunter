@@ -14,7 +14,9 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 from . import config
-from .util import (HttpError, clean_salary_label, html_to_text, http_get, http_get_json, iso_or_empty, now_iso)
+from .util import (HttpError, clean_salary_label, clean_job_type, extract_job_sections,
+                    format_schema_salary, html_to_text, http_get, http_get_json,
+                    iso_or_empty, now_iso, parse_schema_job_posting)
 
 BREAKER_FAILS = 3
 BREAKER_COOLDOWN = 300
@@ -57,24 +59,68 @@ def _safe_text(val):
 
 def make_job(**kw):
     """Build a job dict in the shared schema. Unknown data stays empty rather than being invented."""
-    desc = html_to_text(kw.get("description", ""), 7000)
+    desc = html_to_text(kw.get("description", ""), 12000)
     loc = _safe_text(kw.get("location"))
     title = _safe_text(kw.get("title"))
     company = _safe_text(kw.get("company"))
     mode = _safe_text(kw.get("work_mode"))
-    blob = f"{title} {loc} {desc[:600]}".lower()
+    blob = f"{title} {loc} {desc[:800]}".lower()
     if not mode:
         mode = "Remote" if re.search(r"\bremote\b|anywhere|worldwide", blob) else \
                "Hybrid" if "hybrid" in blob else "On-site" if loc else ""
+
+    sal = clean_salary_label(kw.get("salary", ""))
+    job_type = clean_job_type(kw.get("job_type", ""))
+
+    # Auto-extract sections if description is present
+    sections = extract_job_sections(desc) if desc else {}
+    if not sal and sections.get("salary_text"):
+        sal = clean_salary_label(sections["salary_text"]) or sections["salary_text"]
+    if not job_type and sections.get("job_type"):
+        job_type = clean_job_type(sections["job_type"])
+    if not job_type:
+        title_blob = f"{title} {desc[:400]}".lower()
+        if re.search(r"\b(contract|contractor|freelance|c2c)\b", title_blob):
+            job_type = "Contract"
+        elif re.search(r"\b(intern|internship|stage)\b", title_blob):
+            job_type = "Internship"
+        elif re.search(r"\b(part[-\s]time)\b", title_blob):
+            job_type = "Part-time"
+
+    responsibilities = kw.get("responsibilities") or sections.get("responsibilities", [])
+    qualifications = kw.get("qualifications") or sections.get("qualifications", [])
+    pref_qualifications = kw.get("preferred_qualifications") or sections.get("preferred_qualifications", [])
+    how_to_apply = kw.get("how_to_apply") or sections.get("how_to_apply", "")
+    contact_email = kw.get("contact_email") or sections.get("contact_email", "")
+    contact_website = kw.get("contact_website") or sections.get("contact_website", "")
+    seniority = _safe_text(kw.get("seniority", ""))
+    if not seniority:
+        t_low = title.lower()
+        if re.search(r"\b(senior|sr\.?|lead|principal|staff|architect)\b", t_low):
+            seniority = "Senior"
+        elif re.search(r"\b(junior|jr\.?|entry|associate|graduate)\b", t_low):
+            seniority = "Junior / Entry"
+        elif re.search(r"\b(intern|internship)\b", t_low):
+            seniority = "Intern"
+
     return {
         "id": kw["id"], "title": title, "company": company,
         "location": loc or ("Remote" if mode == "Remote" else ""), "work_mode": mode,
-        "salary": clean_salary_label(kw.get("salary", "")), "url": _safe_text(kw.get("url")),
-        "description": desc, "posted_at": iso_or_empty(kw.get("posted_at")),
+        "salary": sal, "job_type": job_type, "seniority": seniority,
+        "url": _safe_text(kw.get("url")),
+        "description": desc,
+        "responsibilities": responsibilities,
+        "qualifications": qualifications,
+        "preferred_qualifications": pref_qualifications,
+        "how_to_apply": how_to_apply,
+        "contact_email": contact_email,
+        "contact_website": contact_website,
+        "posted_at": iso_or_empty(kw.get("posted_at")),
         "source": kw["source"], "source_credit": kw.get("source_credit", kw["source"]),
         "source_tier": kw.get("source_tier", ""), "source_rank": source_rank(kw["source"], kw.get("source_tier", "")),
         "source_kind": source_kind(kw["source"], kw.get("source_tier", "")), "tags": kw.get("tags", []),
         "needs_enrichment": bool(kw.get("needs_enrichment")),
+        "enriched": bool(kw.get("enriched")),
     }
 
 
@@ -145,8 +191,9 @@ class Remotive(Source):
         data = http_get_json(url)
         return [make_job(id=f"remotive-{j['id']}", title=j.get("title"), company=j.get("company_name"),
                          location=j.get("candidate_required_location"), work_mode="Remote", salary=j.get("salary"),
-                         url=j.get("url"), description=j.get("description"), posted_at=j.get("publication_date"),
-                         source=self.name, source_credit="Remotive (remotive.com)", source_tier=self.tier,
+                         job_type=j.get("job_type"), url=j.get("url"), description=j.get("description"),
+                         posted_at=j.get("publication_date"), source=self.name,
+                         source_credit="Remotive (remotive.com)", source_tier=self.tier,
                          tags=j.get("tags", [])) for j in data.get("jobs", [])]
 
 
@@ -168,7 +215,8 @@ class Jobicy(Source):
                 continue
             sal = f"{j.get('annualSalaryMin')} - {j.get('annualSalaryMax')} {j.get('salaryCurrency', '')}" if j.get("annualSalaryMin") else ""
             out.append(make_job(id=f"jobicy-{j['id']}", title=j.get("jobTitle"), company=j.get("companyName"),
-                                location=j.get("jobGeo"), work_mode="Remote", salary=sal, url=j.get("url"),
+                                location=j.get("jobGeo"), work_mode="Remote", salary=sal, job_type=j.get("jobType"),
+                                seniority=j.get("jobLevel"), url=j.get("url"),
                                 description=j.get("jobDescription"), posted_at=j.get("pubDate"), source=self.name,
                                 source_credit="Jobicy Remote Jobs", source_tier=self.tier))
         return out
@@ -185,8 +233,9 @@ class Arbeitnow(Source):
                 continue
             out.append(make_job(id=f"arbeitnow-{j.get('slug')}", title=j.get("title"), company=j.get("company_name"),
                                 location=j.get("location"), work_mode="Remote" if j.get("remote") else "",
-                                url=j.get("url"), description=j.get("description"), posted_at=j.get("created_at"),
-                                source=self.name, source_credit="Arbeitnow", source_tier=self.tier, tags=j.get("tags", [])))
+                                job_type=j.get("job_types"), url=j.get("url"), description=j.get("description"),
+                                posted_at=j.get("created_at"), source=self.name, source_credit="Arbeitnow",
+                                source_tier=self.tier, tags=j.get("tags", [])))
         return out[:60]
 
 
@@ -238,7 +287,8 @@ class Himalayas(Source):
             guid = j.get("guid") or abs(hash(j.get("applicationLink", "") or title))
             out.append(make_job(id=f"himalayas-{guid}",
                                 title=title, company=comp, location=loc, work_mode="Remote", salary=sal,
-                                url=j.get("applicationLink"), description=desc, posted_at=j.get("pubDate"),
+                                job_type=j.get("employmentType"), url=j.get("applicationLink"),
+                                description=desc, posted_at=j.get("pubDate"),
                                 source=self.name, source_credit="Himalayas (himalayas.app)", source_tier=self.tier))
         return out[:60]
 
@@ -339,8 +389,9 @@ class Adzuna(Source):
         out = []
         for j in data.get("results", []):
             sal = f"{int(j['salary_min'])} - {int(j['salary_max'])}" if j.get("salary_min") and j.get("salary_max") and not j.get("salary_is_predicted") in ("1", 1) else ""
+            c_type = f"{j.get('contract_type') or ''} {j.get('contract_time') or ''}".strip()
             out.append(make_job(id=f"adzuna-{j['id']}", title=j.get("title"), company=(j.get("company") or {}).get("display_name"),
-                                location=(j.get("location") or {}).get("display_name"), salary=sal, url=j.get("redirect_url"),
+                                location=(j.get("location") or {}).get("display_name"), salary=sal, job_type=c_type, url=j.get("redirect_url"),
                                 description=j.get("description"), posted_at=j.get("created"), source=self.name,
                                 source_credit="Powered by Adzuna", source_tier=self.tier))
         return out
@@ -388,8 +439,9 @@ class Lever(_Board):
                                 location=cat.get("location") or ", ".join(cat.get("allLocations", [])),
                                 work_mode=(j.get("workplaceType") or "").title().replace("Onsite", "On-site"),
                                 salary=f"{sal.get('min')} - {sal.get('max')} {sal.get('currency', '')}" if sal.get("min") else "",
-                                url=j.get("hostedUrl"), description=desc, posted_at=j.get("createdAt"),
-                                source=self.name, source_credit=f"{name} on Lever", source_tier=self.tier))
+                                job_type=cat.get("commitment"), url=j.get("hostedUrl"), description=desc,
+                                posted_at=j.get("createdAt"), source=self.name, source_credit=f"{name} on Lever",
+                                source_tier=self.tier))
         return out
 
 
@@ -406,8 +458,8 @@ class Ashby(_Board):
             comp = (j.get("compensation") or {}).get("compensationTierSummary") or ""
             out.append(make_job(id=f"ashby-{slug}-{j.get('id')}", title=j.get("title"), company=name,
                                 location=j.get("location"), work_mode="Remote" if j.get("isRemote") else
-                                (j.get("workplaceType") or "").title(), salary=comp, url=j.get("jobUrl"),
-                                description=j.get("descriptionHtml") or j.get("descriptionPlain"),
+                                (j.get("workplaceType") or "").title(), salary=comp, job_type=j.get("employmentType"),
+                                url=j.get("jobUrl"), description=j.get("descriptionHtml") or j.get("descriptionPlain"),
                                 posted_at=j.get("publishedAt"), source=self.name,
                                 source_credit=f"{name} on Ashby", source_tier=self.tier))
         return out
@@ -423,9 +475,10 @@ class Workable(_Board):
         for j in data.get("jobs", []):
             loc = ", ".join(x for x in (j.get("city"), j.get("state"), j.get("country")) if x)
             out.append(make_job(id=f"workable-{slug}-{j.get('shortcode')}", title=j.get("title"), company=name, location=loc,
-                                work_mode="Remote" if j.get("telecommuting") else "", url=j.get("url") or j.get("application_url"),
-                                description=j.get("description"), posted_at=j.get("published_on") or j.get("created_at"),
-                                source=self.name, source_credit=f"{name} on Workable", source_tier=self.tier))
+                                work_mode="Remote" if j.get("telecommuting") else "", job_type=j.get("employment_type"),
+                                url=j.get("url") or j.get("application_url"), description=j.get("description"),
+                                posted_at=j.get("published_on") or j.get("created_at"), source=self.name,
+                                source_credit=f"{name} on Workable", source_tier=self.tier))
         return out
 
 
@@ -454,6 +507,13 @@ class SmartRecruiters(_Board):
         sec = (d.get("jobAd") or {}).get("sections") or {}
         text = "\n".join(html_to_text(sec[k].get("text", "")) for k in ("jobDescription", "qualifications", "additionalInformation") if k in sec)
         job["description"] = text
+        if d.get("typeOfEmployment"):
+            job["job_type"] = clean_job_type(d.get("typeOfEmployment"))
+        secs = extract_job_sections(text)
+        for k in ("responsibilities", "qualifications", "preferred_qualifications", "how_to_apply", "contact_email", "contact_website"):
+            if secs.get(k):
+                job[k] = secs[k]
+        job["enriched"] = True
         job["needs_enrichment"] = False
         return job
 
@@ -615,8 +675,38 @@ class LinkedInGuest(Source):
             page = http_get(f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{m.group(1)}", headers=headers, retries=0)
             d = re.search(r'show-more-less-html__markup[^>]*>(.*?)</div>', page, re.S)
             if d:
-                job["description"] = html_to_text(d.group(1))
-                job["needs_enrichment"] = False
+                full_desc = html_to_text(d.group(1))
+                job["description"] = full_desc
+                secs = extract_job_sections(full_desc)
+                for k, v in secs.items():
+                    if v and not job.get(k):
+                        job[k] = v
+
+            # Extract criteria items (Employment type, Seniority level, Industries)
+            criteria = re.findall(r'<li[^>]*class="description__job-criteria-item"[^>]*>(.*?)</li>', page, re.S)
+            for c in criteria:
+                hdr = re.search(r'<h3[^>]*>(.*?)</h3>', c, re.S)
+                val = re.search(r'<span[^>]*class="description__job-criteria-text[^"]*"[^>]*>(.*?)</span>', c, re.S)
+                if hdr and val:
+                    h_text = html_to_text(hdr.group(1)).lower()
+                    v_text = html_to_text(val.group(1)).strip()
+                    if "employment type" in h_text:
+                        job["job_type"] = clean_job_type(v_text)
+                    elif "seniority" in h_text:
+                        job["seniority"] = v_text
+                    elif "industries" in h_text and v_text:
+                        job.setdefault("tags", []).append(v_text)
+
+            # Check for ld+json if salary missing
+            if not job.get("salary"):
+                parsed = parse_schema_job_posting(page)
+                if parsed.get("salary"):
+                    job["salary"] = parsed["salary"]
+                if parsed.get("job_type") and not job.get("job_type"):
+                    job["job_type"] = parsed["job_type"]
+
+            job["enriched"] = True
+            job["needs_enrichment"] = False
         except Exception:
             pass
         return job
@@ -706,15 +796,67 @@ class Indeed(Source):
             loc = self._field(card, [r'data-testid=["\']text-location["\'][^>]*>(.*?)</',
                                     r'class=["\'][^"\']*companyLocation[^"\']*["\'][^>]*>(.*?)</'], 180)
             desc = self._field(card, [r'class=["\'][^"\']*job-snippet[^"\']*["\'][^>]*>(.*?)</'], 3000)
+            sal = self._field(card, [r'class=["\'][^"\']*(?:salary-snippet-container|metadata\s+salary-snippet|css-55yg5b)[^"\']*["\'][^>]*>(.*?)</',
+                                     r'data-testid=["\']attribute_snippet_testid["\'][^>]*>(\$[^<]+)</',
+                                     r'class=["\'][^"\']*jobMetaDataGroup[^"\']*["\'][^>]*>.*?(\$[\d,\.]+[^\n<]+)'], 100)
+            job_type = self._field(card, [r'data-testid=["\']attribute_snippet_testid["\'][^>]*>(Full-time|Part-time|Contract|Internship|Temporary)</'], 50)
             if not title or not company:
                 continue
             jid = match.group(1)
             out.append(make_job(id=f"indeed-{jid}", title=title, company=company, location=loc,
+                                salary=sal, job_type=job_type,
                                 work_mode="Remote" if "remote" in f"{loc} {desc}".lower() else "",
                                 url=f"https://www.indeed.com/viewjob?jk={urllib.parse.quote(jid)}",
                                 description=desc, source=self.name, source_credit="Indeed public results",
-                                source_tier=self.tier))
+                                source_tier=self.tier, needs_enrichment=True))
         return out
+
+    def enrich(self, job):
+        jid = ""
+        m = re.search(r"jk=([a-zA-Z0-9_-]+)", job.get("url", ""))
+        if m:
+            jid = m.group(1)
+        elif job.get("id", "").startswith("indeed-"):
+            jid = job["id"].replace("indeed-", "")
+        if not jid:
+            return job
+
+        detail_url = f"https://www.indeed.com/m/viewjob?jk={urllib.parse.quote(jid)}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
+        try:
+            page = _fetch_html_tls(detail_url, impersonate="chrome", headers=headers)
+            parsed = parse_schema_job_posting(page)
+            if parsed and parsed.get("description"):
+                if parsed.get("salary"):
+                    job["salary"] = parsed["salary"]
+                if parsed.get("job_type"):
+                    job["job_type"] = parsed["job_type"]
+                job["description"] = parsed["description"]
+                for sec_key in ("responsibilities", "qualifications", "preferred_qualifications", "how_to_apply", "contact_email", "contact_website"):
+                    if parsed.get(sec_key):
+                        job[sec_key] = parsed[sec_key]
+                job["enriched"] = True
+                job["needs_enrichment"] = False
+            else:
+                idx = page.find('id="jobDescriptionText"')
+                if idx != -1:
+                    m_desc = re.search(r'id=[\'"]jobDescriptionText[\'"][^>]*>(.*?)</div>\s*<(?:div|footer)', page, re.S)
+                    if m_desc:
+                        full_desc = html_to_text(m_desc.group(1))
+                        if len(full_desc) > len(job.get("description", "")):
+                            job["description"] = full_desc
+                            secs = extract_job_sections(full_desc)
+                            for k, v in secs.items():
+                                if v and not job.get(k):
+                                    job[k] = v
+                            job["enriched"] = True
+                            job["needs_enrichment"] = False
+        except Exception:
+            pass
+        return job
 
 
 class ZipRecruiter(Source):
@@ -758,6 +900,7 @@ class ZipRecruiter(Source):
                         sal = f"${int(pay['minAnnual']):,} - ${int(pay['maxAnnual']):,}"
                     elif pay.get("min") and pay.get("max"):
                         sal = f"${int(pay['min']):,} - ${int(pay['max']):,}"
+                emp_type = clean_job_type(it.get("employmentType") or (pay.get("employmentType") if isinstance(pay, dict) else ""))
                 desc = it.get("shortDescription") or ""
                 jobs.append(make_job(
                     id=f"zip-{jid}",
@@ -765,15 +908,52 @@ class ZipRecruiter(Source):
                     company=str(comp or "").strip(),
                     location=str(loc_str or "").strip(),
                     salary=sal,
+                    job_type=emp_type,
                     url=u,
                     description=desc,
                     source=self.name,
                     source_credit="ZipRecruiter public listing",
-                    source_tier=self.tier
+                    source_tier=self.tier,
+                    needs_enrichment=True
                 ))
             return jobs
         except Exception:
             return []
+
+    def enrich(self, job):
+        url = job.get("url")
+        if not url or not url.startswith("http"):
+            return job
+        try:
+            page = _fetch_html_tls(url, impersonate="safari")
+            parsed = parse_schema_job_posting(page)
+            if parsed and parsed.get("description"):
+                if parsed.get("salary") and not job.get("salary"):
+                    job["salary"] = parsed["salary"]
+                if parsed.get("job_type"):
+                    job["job_type"] = parsed["job_type"]
+                if len(parsed["description"]) > len(job.get("description", "")):
+                    job["description"] = parsed["description"]
+                for sec_key in ("responsibilities", "qualifications", "preferred_qualifications", "how_to_apply", "contact_email", "contact_website"):
+                    if parsed.get(sec_key):
+                        job[sec_key] = parsed[sec_key]
+                job["enriched"] = True
+                job["needs_enrichment"] = False
+            else:
+                m = re.search(r'class=[\'"][^\'"]*job_description[^\'"]*[\'"][^>]*>(.*?)</div>', page, re.S)
+                if m:
+                    full_desc = html_to_text(m.group(1))
+                    if len(full_desc) > len(job.get("description", "")):
+                        job["description"] = full_desc
+                        secs = extract_job_sections(full_desc)
+                        for k, v in secs.items():
+                            if v and not job.get(k):
+                                job[k] = v
+                        job["enriched"] = True
+                        job["needs_enrichment"] = False
+        except Exception:
+            pass
+        return job
 
 
 class Bayt(Source):
@@ -848,11 +1028,48 @@ class Bayt(Source):
                         description=html.unescape(re.sub(r'<[^>]+>', '', desc.group(1)).strip()) if desc else "",
                         source=self.name,
                         source_credit="Bayt.com public listing",
-                        source_tier=self.tier
+                        source_tier=self.tier,
+                        needs_enrichment=True
                     ))
             except Exception:
                 continue
         return jobs
+
+    def enrich(self, job):
+        url = job.get("url")
+        if not url or not url.startswith("http"):
+            return job
+        try:
+            page = _fetch_html_tls(url, impersonate="chrome")
+            parsed = parse_schema_job_posting(page)
+            if parsed and parsed.get("description"):
+                if parsed.get("salary") and not job.get("salary"):
+                    job["salary"] = parsed["salary"]
+                if parsed.get("job_type"):
+                    job["job_type"] = parsed["job_type"]
+                if len(parsed["description"]) > len(job.get("description", "")):
+                    job["description"] = parsed["description"]
+                for sec_key in ("responsibilities", "qualifications", "preferred_qualifications", "how_to_apply", "contact_email", "contact_website"):
+                    if parsed.get(sec_key):
+                        job[sec_key] = parsed[sec_key]
+                job["enriched"] = True
+                job["needs_enrichment"] = False
+            else:
+                m = re.search(r'data-js-view="job-description"[^>]*>(.*?)</section>', page, re.S) or \
+                    re.search(r'class="jb-descr[^"]*"[^>]*>(.*?)</div>', page, re.S)
+                if m:
+                    full_desc = html_to_text(m.group(1))
+                    if len(full_desc) > len(job.get("description", "")):
+                        job["description"] = full_desc
+                        secs = extract_job_sections(full_desc)
+                        for k, v in secs.items():
+                            if v and not job.get(k):
+                                job[k] = v
+                        job["enriched"] = True
+                        job["needs_enrichment"] = False
+        except Exception:
+            pass
+        return job
 
 
 class Naukri(Source):
@@ -898,11 +1115,48 @@ class Naukri(Source):
                     description=desc,
                     source=self.name,
                     source_credit="Naukri.com public listing",
-                    source_tier=self.tier
+                    source_tier=self.tier,
+                    needs_enrichment=True
                 ))
             return jobs
         except Exception:
             return []
+
+    def enrich(self, job):
+        url = job.get("url")
+        if not url:
+            return job
+        try:
+            page = _fetch_html_tls(url, impersonate="chrome")
+            parsed = parse_schema_job_posting(page)
+            if parsed and parsed.get("description"):
+                if parsed.get("salary") and not job.get("salary"):
+                    job["salary"] = parsed["salary"]
+                if parsed.get("job_type"):
+                    job["job_type"] = parsed["job_type"]
+                if len(parsed["description"]) > len(job.get("description", "")):
+                    job["description"] = parsed["description"]
+                for sec_key in ("responsibilities", "qualifications", "preferred_qualifications", "how_to_apply", "contact_email", "contact_website"):
+                    if parsed.get(sec_key):
+                        job[sec_key] = parsed[sec_key]
+                job["enriched"] = True
+                job["needs_enrichment"] = False
+            else:
+                m = re.search(r'class="[^"]*styles_job-desc-container[^"]*"[^>]*>(.*?)</div>', page, re.S) or \
+                    re.search(r'class="[^"]*job-desc[^"]*"[^>]*>(.*?)</div>', page, re.S)
+                if m:
+                    full_desc = html_to_text(m.group(1))
+                    if len(full_desc) > len(job.get("description", "")):
+                        job["description"] = full_desc
+                        secs = extract_job_sections(full_desc)
+                        for k, v in secs.items():
+                            if v and not job.get(k):
+                                job[k] = v
+                        job["enriched"] = True
+                        job["needs_enrichment"] = False
+        except Exception:
+            pass
+        return job
 
 
 class HelloWork(Source):
@@ -918,38 +1172,165 @@ class HelloWork(Source):
         url = f"https://www.hellowork.com/fr-fr/emploi/recherche.html?k={urllib.parse.quote(query or 'software engineer')}"
         try:
             page = _fetch_html_tls(url, impersonate="chrome")
-            cards = re.findall(r'<li[^>]*data-id-storage-target=item[^>]*>(.*?)</li>', page, re.S)
             jobs = []
             seen = set()
-            for card in cards:
-                t = re.search(r'<h3[^>]*>(.*?)</h3>', card, re.S)
-                comp = re.search(r'data-cy="company-name"[^>]*>([^<]+)<', card)
-                loc = re.search(r'data-cy="location"[^>]*>([^<]+)<', card)
-                link = re.search(r'<a[^>]*href="(/fr-fr/emplois/[^"]+)"', card)
-                jid_m = re.search(r'data-id-storage-item-id="([^"]+)"', card)
-                if not (t and link):
-                    continue
-                title = html.unescape(re.sub(r'<[^>]+>', '', t.group(1)).strip())
-                cname = html.unescape(comp.group(1).strip()) if comp else ""
-                lname = html.unescape(loc.group(1).strip()) if loc else ""
-                url_full = f"https://www.hellowork.com{link.group(1)}"
-                jid = jid_m.group(1) if jid_m else str(abs(hash(url_full)))
+            for m in re.finditer(r'href="(/fr-fr/emplois/(\d+)\.html)"[^>]*title="([^"]+)"', page):
+                href, jid, raw_title = m.group(1), m.group(2), m.group(3)
                 if jid in seen:
                     continue
                 seen.add(jid)
+                title, sep, comp = raw_title.partition(" - ")
+                if not comp:
+                    title, comp = raw_title, ""
+
+                start, end = max(0, m.start() - 200), min(len(page), m.end() + 1000)
+                sub = page[start:end]
+                loc_m = re.search(r'data-cy="localisationCard"[^>]*>\s*([^<]+)', sub)
+                contract_m = re.search(r'data-cy="contractCard"[^>]*>\s*([^<]+)', sub)
+
+                loc = loc_m.group(1).strip() if loc_m else ""
+                contract = clean_job_type(contract_m.group(1).strip()) if contract_m else ""
+
+                url_full = f"https://www.hellowork.com{href}"
                 jobs.append(make_job(
                     id=f"hellowork-{jid}",
-                    title=title,
-                    company=cname,
-                    location=lname,
+                    title=title.strip(),
+                    company=comp.strip(),
+                    location=loc,
+                    job_type=contract,
                     url=url_full,
                     source=self.name,
                     source_credit="HelloWork.com public listing",
-                    source_tier=self.tier
+                    source_tier=self.tier,
+                    needs_enrichment=True
                 ))
             return jobs
         except Exception:
             return []
+
+    def enrich(self, job):
+        url = job.get("url")
+        if not url or not url.startswith("http"):
+            return job
+        try:
+            page = _fetch_html_tls(url, impersonate="chrome")
+            parsed = parse_schema_job_posting(page)
+            if parsed and parsed.get("description"):
+                if parsed.get("salary") and not job.get("salary"):
+                    job["salary"] = parsed["salary"]
+                if parsed.get("job_type"):
+                    job["job_type"] = parsed["job_type"]
+                if len(parsed["description"]) > len(job.get("description", "")):
+                    job["description"] = parsed["description"]
+                for sec_key in ("responsibilities", "qualifications", "preferred_qualifications", "how_to_apply", "contact_email", "contact_website"):
+                    if parsed.get(sec_key):
+                        job[sec_key] = parsed[sec_key]
+                job["enriched"] = True
+                job["needs_enrichment"] = False
+            else:
+                secs = []
+                for pat in (r'<section[^>]*data-cy="job-description"[^>]*>(.*?)</section>',
+                            r'<div[^>]*class="[^"]*content-job-description[^"]*"[^>]*>(.*?)</div>',
+                            r'<section[^>]*class="[^"]*job-description[^"]*"[^>]*>(.*?)</section>'):
+                    m = re.search(pat, page, re.S)
+                    if m:
+                        secs.append(html_to_text(m.group(1)))
+                if secs:
+                    full_desc = "\n\n".join(secs)
+                    if len(full_desc) > len(job.get("description", "")):
+                        job["description"] = full_desc
+                        jsecs = extract_job_sections(full_desc)
+                        for k, v in jsecs.items():
+                            if v and not job.get(k):
+                                job[k] = v
+                        job["enriched"] = True
+                        job["needs_enrichment"] = False
+        except Exception:
+            pass
+        return job
+
+
+def enrich_job(job):
+    """Universal enricher: fetch complete details, salary, job type, and sections for any job."""
+    if not job or not isinstance(job, dict):
+        return job
+    desc = job.get("description", "") or ""
+    # If already fully enriched with sections, no need to refetch
+    if job.get("enriched") and len(desc) > 800 and job.get("responsibilities"):
+        return job
+
+    src_name = job.get("source", "")
+    url = job.get("url", "")
+
+    # 1. Match by source class if available
+    by_name = {s.name: s for s in list(BOARDS.values()) + SEARCH_SOURCES if hasattr(s, "enrich")}
+    if src_name in by_name:
+        try:
+            job = by_name[src_name].enrich(job)
+            if job.get("enriched") or len(job.get("description", "") or "") > 500:
+                return job
+        except Exception:
+            pass
+
+    # 2. Match by URL domain
+    if "indeed.com" in url:
+        job = Indeed().enrich(job)
+    elif "linkedin.com" in url:
+        job = LinkedInGuest().enrich(job)
+    elif "ziprecruiter.com" in url:
+        job = ZipRecruiter().enrich(job)
+    elif "bayt.com" in url:
+        job = Bayt().enrich(job)
+    elif "hellowork.com" in url:
+        job = HelloWork().enrich(job)
+    elif url and url.startswith("http") and (not job.get("enriched") or len(job.get("description", "")) < 500):
+        # 3. Universal fallback: fetch target URL and parse schema.org JobPosting or HTML
+        try:
+            page = _fetch_html_tls(url)
+            parsed = parse_schema_job_posting(page)
+            if parsed and parsed.get("description"):
+                if parsed.get("salary") and not job.get("salary"):
+                    job["salary"] = parsed["salary"]
+                if parsed.get("job_type"):
+                    job["job_type"] = parsed["job_type"]
+                if len(parsed["description"]) > len(job.get("description", "")):
+                    job["description"] = parsed["description"]
+                for sec_key in ("responsibilities", "qualifications", "preferred_qualifications", "how_to_apply", "contact_email", "contact_website"):
+                    if parsed.get(sec_key):
+                        job[sec_key] = parsed[sec_key]
+                job["enriched"] = True
+                job["needs_enrichment"] = False
+            elif page:
+                m = re.search(r'<(?:article|main|div)[^>]*(?:id|class)=[\'"][^\'"]*(?:job[-_]?description|job[-_]?detail|posting[-_]?content|description)[^\'"]*[\'"][^>]*>(.*?)</(?:article|main|div)>', page, re.S | re.I)
+                if m:
+                    text = html_to_text(m.group(1))
+                    if len(text) > len(job.get("description", "")):
+                        job["description"] = text
+                        secs = extract_job_sections(text)
+                        for k, v in secs.items():
+                            if v and not job.get(k):
+                                job[k] = v
+                        job["enriched"] = True
+                        job["needs_enrichment"] = False
+        except Exception:
+            pass
+
+    # Make sure sections are populated if description is present
+    if job.get("raw_description") and len(job.get("raw_description", "")) > len(job.get("description", "")):
+        job["description"] = job["raw_description"]
+    desc_to_check = job.get("description") or ""
+    if desc_to_check:
+        secs = extract_job_sections(desc_to_check)
+        for k in ("responsibilities", "qualifications", "preferred_qualifications", "how_to_apply", "contact_email", "contact_website", "salary_text", "job_type"):
+            if secs.get(k):
+                if k == "salary_text" and not job.get("salary"):
+                    job["salary"] = secs[k]
+                elif k == "job_type" and not job.get("job_type"):
+                    job["job_type"] = clean_job_type(secs[k])
+                elif not job.get(k):
+                    job[k] = secs[k]
+
+    return job
 
 
 SEARCH_SOURCES = [

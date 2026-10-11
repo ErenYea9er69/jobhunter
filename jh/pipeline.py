@@ -448,12 +448,12 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
                 "enrich_count": len(to_enrich),
                 "est_seconds": 1.0
             })
-        by_name = {s.name: s for s in list(src.BOARDS.values()) + src.SEARCH_SOURCES}
-        futs = {_pool.submit(by_name[j["source"]].enrich, j): j for j in to_enrich if j["source"] in by_name}
-        d2, _ = cf.wait(list(futs), timeout=2.5)
+        futs = {_pool.submit(src.enrich_job, j): j for j in to_enrich}
+        d2, _ = cf.wait(list(futs), timeout=4.0)
         for f in d2:
             try:
-                f.result()
+                res_job = f.result()
+                futs[f].update(res_job)
                 futs[f].update(score_job(futs[f], profile))
                 _rank_opportunity(futs[f])
             except Exception:

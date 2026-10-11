@@ -108,6 +108,25 @@ def merge_jobs(raw_jobs):
             target["description"] = job["description"]
         if job.get("salary") and not target.get("salary"):
             target["salary"] = job["salary"]
+        if job.get("job_type") and not target.get("job_type"):
+            target["job_type"] = job["job_type"]
+        if job.get("seniority") and not target.get("seniority"):
+            target["seniority"] = job["seniority"]
+        if job.get("contact_email") and not target.get("contact_email"):
+            target["contact_email"] = job["contact_email"]
+        if job.get("contact_website") and not target.get("contact_website"):
+            target["contact_website"] = job["contact_website"]
+        if job.get("how_to_apply") and not target.get("how_to_apply"):
+            target["how_to_apply"] = job["how_to_apply"]
+        if job.get("responsibilities") and not target.get("responsibilities"):
+            target["responsibilities"] = job["responsibilities"]
+        if job.get("qualifications") and not target.get("qualifications"):
+            target["qualifications"] = job["qualifications"]
+        if job.get("preferred_qualifications") and not target.get("preferred_qualifications"):
+            target["preferred_qualifications"] = job["preferred_qualifications"]
+        if job.get("enriched"):
+            target["enriched"] = True
+            target["needs_enrichment"] = False
         da, db_ = parse_date(target.get("posted_at")), parse_date(job.get("posted_at"))
         if db_ and (not da or db_ > da):
             target["posted_at"] = job["posted_at"]

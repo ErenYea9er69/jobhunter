@@ -99,6 +99,21 @@ def r_sources(q, body):
     return {"sources": pipeline.health_report()}
 
 
+@route("POST", "/api/job-details")
+def r_job_details(q, body):
+    job = _job(body)
+    from . import sources as src
+    from .scoring import score_job
+    enriched = src.enrich_job(job)
+    profile = db.get_profile()
+    if not profile.get("_is_empty"):
+        scored = score_job(enriched, profile)
+        enriched.update(scored)
+        pipeline._rank_opportunity(enriched)
+    db.update_search_job(enriched)
+    return {"success": True, "job": enriched}
+
+
 @route("POST", "/api/refine")
 def r_refine(q, body):
     return refit.refine_resume_for_job(_job(body), _need_profile())
