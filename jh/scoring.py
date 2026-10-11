@@ -527,12 +527,49 @@ def classify_job_seniority(title, text=""):
 
 
 def score_job(job, profile):
-    text = f"{job.get('title', '')}\n{job.get('description', '')}\n{' '.join(job.get('tags', []) or [])}"
+    # Structured qualifications & preferred qualifications extraction
+    req_quals = job.get("qualifications") or []
+    pref_quals = job.get("preferred_qualifications") or []
+    resps = job.get("responsibilities") or []
+    req_text = "\n".join(req_quals) if isinstance(req_quals, list) else str(req_quals)
+    pref_text = "\n".join(pref_quals) if isinstance(pref_quals, list) else str(pref_quals)
+    resp_text = "\n".join(resps) if isinstance(resps, list) else str(resps)
+
+    all_texts = [
+        job.get("title", ""),
+        job.get("description", ""),
+        req_text,
+        pref_text,
+        resp_text,
+        " ".join(job.get("tags", []) or [])
+    ]
+    text = "\n".join(t for t in all_texts if t)
     weights = sk.extract_weighted(text)
     cand = set(profile.get("skills", []))
     cand_l = {c.lower() for c in cand}
+
+    req_skills = set(sk.extract(req_text)) if req_text else set()
+    pref_skills = set(sk.extract(pref_text)) if pref_text else set()
+
+    # Boost weights for explicit must-have requirements
+    for s in req_skills:
+        weights[s] = max(weights.get(s, 0.0), 1.0)
+
+    # Add or calibrate weights for skills that appear in preferred qualifications
+    for s in pref_skills:
+        if s not in req_skills:
+            if s in weights:
+                weights[s] = min(weights[s], 0.65)
+            else:
+                weights[s] = 0.65
+
     matched = sorted(s for s in weights if s in cand or s.lower() in cand_l)
     missing = sorted(s for s in weights if s not in matched)
+
+    # Specific subsets for deep matching
+    matched_required = sorted(s for s in matched if s in req_skills)
+    missing_required = sorted(s for s in missing if s in req_skills)
+    bonus_matches = sorted(s for s in matched if s in pref_skills and s not in req_skills)
 
     # Affinity: a sister technology in the same cluster earns partial credit (Postgres for MySQL).
     affinity, credit = [], {}
@@ -555,7 +592,18 @@ def score_job(job, profile):
     else:
         skill_pts = 18 + (title_ratio * 10)  # unknown requirements: neutral baseline + title alignment boost
 
+    # Bonus points for preferred qualifications
+    bonus_pts = min(4.0, len(bonus_matches) * 1.5)
+
     notes = []
+
+    # Highlight structured requirements in notes
+    if matched_required:
+        notes.append(f"Matches {len(matched_required)} core requirement{'s' if len(matched_required) > 1 else ''} ({', '.join(matched_required[:3])})")
+    if missing_required:
+        notes.append(f"Core requirement gap: {', '.join(missing_required[:3])}")
+    if bonus_matches:
+        notes.append(f"Bonus qualification match: {', '.join(bonus_matches[:3])}")
 
     # Core required skill verification (must-have requirements)
     core_penalty = 0
@@ -661,17 +709,67 @@ def score_job(job, profile):
     want = float(profile.get("min_salary") or 0)
     ann = annualize(parse_salary(job.get("salary", "")))
     if want and ann:
-        if ann[1] >= want:
+        want_annual = want * 2000 if want < 500 else want
+        if ann[1] >= want_annual:
             sal_pts = 5
-        elif ann[1] < want * 0.80:
+            notes.append(f"Salary ({job.get('salary')}) meets your minimum target.")
+        elif ann[1] < want_annual * 0.80:
             sal_pts = 0
-            notes.append(f"Salary ({job.get('salary')}) is below your minimum target (${int(want):,}).")
+            notes.append(f"Salary ({job.get('salary')}) is below your minimum target.")
         else:
             sal_pts = 2
     elif ann:
         sal_pts = 4
 
-    score = skill_pts + title_pts + sen_pts + mode_pts + fresh_pts + sal_pts - sen_penalty - core_penalty
+    # Job type / Contract preference matching
+    jt = (job.get("job_type") or "").lower()
+    raw_pref_types = profile.get("preferred_job_types") or []
+    if isinstance(raw_pref_types, str):
+        pref_types = [t.lower().strip() for t in raw_pref_types.split(",") if t.strip()]
+    else:
+        pref_types = [t.lower().strip() for t in raw_pref_types if isinstance(t, str) and t.strip()]
+    pref_types = [t for t in pref_types if t != "any"]
+    job_type_pts = 3
+    if jt and pref_types:
+        if any(p in jt for p in pref_types):
+            job_type_pts = 5
+            notes.append(f"Job type ({job.get('job_type')}) matches your preference.")
+        elif "full-time" in pref_types and "intern" in jt:
+            job_type_pts = 0
+            notes.append(f"Job type ({job.get('job_type')}) is an internship, but you prefer Full-time.")
+        elif "full-time" in pref_types and "contract" in jt:
+            job_type_pts = 2
+        elif "contract" in pref_types and "full-time" in jt:
+            job_type_pts = 2
+    elif jt:
+        job_type_pts = 4
+
+    # Dream companies alignment
+    comp_name = (job.get("company") or "").lower().strip()
+    raw_dream_comps = profile.get("dream_companies") or []
+    if isinstance(raw_dream_comps, str):
+        dream_comps = [c.lower().strip() for c in raw_dream_comps.split(",") if c.strip()]
+    else:
+        dream_comps = [c.lower().strip() for c in raw_dream_comps if isinstance(c, str) and c.strip()]
+    is_dream_company = False
+    if comp_name and dream_comps:
+        if any(dc in comp_name or comp_name in dc for dc in dream_comps):
+            is_dream_company = True
+            notes.append(f"Wishlist Company: {job.get('company')} is in your dream companies!")
+
+    # Dream role focus alignment
+    dream_role_text = (profile.get("dream_role") or "").strip().lower()
+    dream_role_bonus = 0
+    if dream_role_text and len(dream_role_text) > 10:
+        dream_tokens = set(re.findall(r"[a-z0-9+#]+", dream_role_text)) - STOP
+        job_tokens = set(re.findall(r"[a-z0-9+#]+", f"{job.get('title', '')} {job.get('description', '')[:1000]}".lower()))
+        overlap_count = len(dream_tokens & job_tokens)
+        if overlap_count >= 3:
+            dream_role_bonus = min(3, overlap_count // 2)
+            notes.append("Aligns with your dream role technical focus.")
+
+    dream_bonus = (3 if is_dream_company else 0) + dream_role_bonus + bonus_pts
+    score = (skill_pts + title_pts + sen_pts + mode_pts + fresh_pts + sal_pts + dream_bonus) - sen_penalty - core_penalty
     if geo_blocked:
         score = min(score, 38)
 
@@ -709,10 +807,25 @@ def score_job(job, profile):
     parts = [x.rstrip(".") for x in parts]
     rationale = f"{label} ({score}%). " + ". ".join(parts) + "." if parts else f"{label} ({score}%)."
     return {
-        "score": score, "matched_skills": matched, "missing_skills": missing, "affinity_matches": affinity,
-        "rationale": rationale, "confidence": confidence,
-        "score_breakdown": {"skills": round(skill_pts, 1), "title": round(title_pts, 1), "seniority": round(sen_pts, 1),
-                            "work_mode": round(mode_pts, 1), "freshness": fresh_pts, "salary": sal_pts},
+        "score": score,
+        "matched_skills": matched,
+        "missing_skills": missing,
+        "matched_required_skills": matched_required,
+        "missing_required_skills": missing_required,
+        "bonus_matches": bonus_matches,
+        "affinity_matches": affinity,
+        "rationale": rationale,
+        "confidence": confidence,
+        "is_dream_company": is_dream_company,
+        "score_breakdown": {
+            "skills": round(min(50, skill_pts + bonus_pts), 1),
+            "title": round(title_pts, 1),
+            "seniority": round(sen_pts, 1),
+            "work_mode": round(mode_pts, 1),
+            "salary": sal_pts,
+            "preferences": round(job_type_pts + dream_role_bonus + (3 if is_dream_company else 0), 1),
+            "freshness": fresh_pts
+        },
         "required_skills": {k: v for k, v in weights.items()},
         "salary_annual_min": int(ann[0]) if ann else 0,
         "salary_annual_max": int(ann[1]) if ann else 0,

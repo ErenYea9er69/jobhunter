@@ -21,6 +21,7 @@
       <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></symbol>
       <symbol id="i-briefcase" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/></symbol>
       <symbol id="i-dollar" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></symbol>
+      <symbol id="i-star" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
       <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></symbol>
       <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></symbol>
       <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
@@ -408,6 +409,46 @@
               <div class="form-field span-2"><label for="profLocation">Location</label><input type="text" id="profLocation"></div>
               <div class="form-field"><label for="profLinkedin">LinkedIn</label><input type="text" id="profLinkedin"></div>
               <div class="form-field"><label for="profGithub">GitHub or portfolio</label><input type="text" id="profGithub"></div>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="dreamJobTitle">
+            <div class="card-head">
+              <div>
+                <h2 class="card-title" id="dreamJobTitle"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg>Dream job &amp; Career preferences</h2>
+                <p class="muted">Set your target compensation, preferred contract types, wishlist companies, and dealbreakers.</p>
+              </div>
+            </div>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="profMinSalary">Minimum target salary ($/yr or $/hr)</label>
+                <input type="number" id="profMinSalary" placeholder="e.g. 100000 or 50" min="0" step="500">
+                <small class="muted">Used to score compensation fit and flag underpaying jobs.</small>
+              </div>
+              <div class="form-field">
+                <label for="profJobType">Preferred job types</label>
+                <select id="profJobType">
+                  <option value="Any">Any job type</option>
+                  <option value="Full-time">Full-time only</option>
+                  <option value="Contract">Contract / Freelance only</option>
+                  <option value="Full-time, Contract">Both Full-time &amp; Contract</option>
+                </select>
+                <small class="muted">Aligns with extracted contract tags (Contract, CDI, etc.).</small>
+              </div>
+              <div class="form-field span-2">
+                <label for="profDreamCompanies">Dream companies &amp; Wishlist employers</label>
+                <input type="text" id="profDreamCompanies" placeholder="e.g. OpenAI, Stripe, Vercel, Supabase, JSS Digital Design (comma-separated)">
+                <small class="muted">Jobs at these companies receive a score boost and prominent wishlist badge.</small>
+              </div>
+              <div class="form-field span-2">
+                <label for="profDreamRole">Ideal role &amp; what you want next</label>
+                <textarea id="profDreamRole" rows="2" placeholder="Describe your dream technical focus (e.g. Full-Stack or Backend role building scalable Next.js/React applications, cloud APIs on AWS, and AI systems)."></textarea>
+              </div>
+              <div class="form-field span-2">
+                <label for="profExcludedKeywords">Dealbreakers &amp; Excluded keywords</label>
+                <input type="text" id="profExcludedKeywords" placeholder="e.g. WordPress, PHP, On-call rotation, Security clearance (comma-separated)">
+                <small class="muted">Postings mentioning these keywords are filtered or marked as low-fit.</small>
+              </div>
             </div>
           </section>
 

@@ -199,12 +199,15 @@ def _rank_opportunity(job):
     else:
         opportunity = int(round(fit * 0.78 + source_rank * 0.14 + (evidence / 30) * 8))
 
+    if job.get("is_dream_company"):
+        opportunity = min(100, opportunity + 8)
+
     kind = job.get("source_kind") or "Job source"
     job["opportunity_score"] = max(0, min(100, opportunity))
     job["ranking"] = {
         "source_authority": source_rank, "source_kind": kind,
         "evidence_points": evidence,
-        "reason": f"{kind}; {len(job.get('sources', []))} source(s); {'direct employer application link' if direct else 'board/feed application link'}"
+        "reason": f"{kind}; {len(job.get('sources', []))} source(s); {'direct employer application link' if direct else 'board/feed application link'}{'; Wishlist dream company' if job.get('is_dream_company') else ''}"
     }
 
 

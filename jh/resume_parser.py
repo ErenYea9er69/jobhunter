@@ -412,6 +412,7 @@ def parse_resume(text):
         "location": location, "linkedin": linkedin.group(0) if linkedin else "", "github": github.group(0) if github else "",
         "target_title": target, "target_roles": target_roles, "years_of_experience": years, "work_mode": "Any",
         "preferred_locations": [location] if location else [], "min_salary": 0, "excluded_keywords": [],
+        "preferred_job_types": [], "dream_companies": [], "dream_role": "",
         "summary": summary, "skills": skill_list, "skills_by_category": by_cat,
         "experience": exp, "education": edu,
     }

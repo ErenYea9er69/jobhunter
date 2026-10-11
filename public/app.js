@@ -350,6 +350,11 @@
     q.skills = Array.isArray(q.skills) ? q.skills : [];
     q.experience = Array.isArray(q.experience) ? q.experience : [];
     q.education = Array.isArray(q.education) ? q.education : [];
+    q.preferred_job_types = Array.isArray(q.preferred_job_types) ? q.preferred_job_types : (q.preferred_job_types ? [q.preferred_job_types] : []);
+    q.dream_companies = Array.isArray(q.dream_companies) ? q.dream_companies : (q.dream_companies ? [q.dream_companies] : []);
+    q.dream_role = q.dream_role || '';
+    q.excluded_keywords = Array.isArray(q.excluded_keywords) ? q.excluded_keywords : (q.excluded_keywords ? [q.excluded_keywords] : []);
+    q.min_salary = q.min_salary || 0;
     return q;
   }
 
@@ -387,6 +392,17 @@
     set('profWorkMode', p.work_mode || 'Remote');
     set('profEmail', p.email); set('profPhone', p.phone); set('profLocation', p.location);
     set('profLinkedin', p.linkedin); set('profGithub', p.github); set('profSummary', p.summary);
+
+    // Dream Job & Career Preferences
+    set('profMinSalary', p.min_salary || '');
+    const jobTypeVal = Array.isArray(p.preferred_job_types) ? p.preferred_job_types.join(', ') : (p.preferred_job_types || 'Any');
+    set('profJobType', jobTypeVal || 'Any');
+    const dreamComps = Array.isArray(p.dream_companies) ? p.dream_companies.join(', ') : (p.dream_companies || '');
+    set('profDreamCompanies', dreamComps);
+    set('profDreamRole', p.dream_role || '');
+    const excl = Array.isArray(p.excluded_keywords) ? p.excluded_keywords.join(', ') : (p.excluded_keywords || '');
+    set('profExcludedKeywords', excl);
+
     renderSkills(); renderExperience(); renderEducation();
 
     const card = $('#intakeCard'), form = $('#profileForm');
@@ -480,11 +496,23 @@
   /** Read the form into one profile object. Keeps every field the form does not show. */
   function collectProfile() {
     const exp = parseInt(val('profExp'), 10);
+    const minSal = parseInt(val('profMinSalary'), 10);
+    const parseList = (id) => (val(id) || '').split(',').map(s => s.trim()).filter(Boolean);
+    const jobTypeVal = val('profJobType');
+    const prefJobTypes = (jobTypeVal && jobTypeVal !== 'Any')
+      ? jobTypeVal.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+
     return Object.assign({}, S.profile, {
       name: val('profName').trim(),
       target_title: val('profTitle').trim(),
       years_of_experience: isNaN(exp) ? 0 : exp,
       work_mode: val('profWorkMode') || 'Remote',
+      min_salary: isNaN(minSal) ? 0 : minSal,
+      preferred_job_types: prefJobTypes,
+      dream_companies: parseList('profDreamCompanies'),
+      dream_role: val('profDreamRole').trim(),
+      excluded_keywords: parseList('profExcludedKeywords'),
       email: val('profEmail').trim(), phone: val('profPhone').trim(), location: val('profLocation').trim(),
       linkedin: val('profLinkedin').trim(), github: val('profGithub').trim(), summary: val('profSummary').trim(),
       skills: (S.profile && S.profile.skills) || [],
@@ -1842,6 +1870,8 @@
           ${j.job_type ? `<span class="chip chip-contract">${esc(j.job_type)}</span>` : ''}
           ${j.salary ? `<span class="chip chip-salary">${ico('dollar')}${esc(j.salary)}</span>` : ''}
           ${showScore && required ? `<span>${matched} of ${required} skills</span>` : ''}
+          ${j.is_dream_company ? `<span class="chip chip-famous" title="Your Dream Wishlist Company">${ico('star')}Wishlist</span>` : ''}
+          ${j.bonus_matches && j.bonus_matches.length ? `<span class="chip chip-bonus" title="Matches preferred qualifications">${ico('bolt')}+${j.bonus_matches.length} bonus</span>` : ''}
           ${isFamous ? '<span class="chip chip-famous" title="Recognized Big Tech & Prominent AI company">Big Tech</span>' : ''}
           ${isDirectAts ? `<span class="chip chip-ok" title="Direct employer careers board">${ico('shield')}Direct ATS</span>` : ''}
           ${j.score >= 85 ? '<span class="chip chip-ok">Top Match</span>' : ''}
@@ -1942,6 +1972,12 @@
     const sources = jobSources(j).filter(s => s.url);
     const apply = bestApplyUrl(j);
     const matched = j.matched_skills || [], missing = j.missing_skills || [];
+    const matchedReq = j.matched_required_skills || [];
+    const missingReq = j.missing_required_skills || [];
+    const bonusMatches = j.bonus_matches || [];
+    const transferred = j.transferable_matches || [];
+    const sb = j.score_breakdown || null;
+    const isDreamCompany = !!j.is_dream_company;
     const desc = String(j.description || '');
     const posted = j.posted_at ? timeAgo(j.posted_at) : '';
     const saved = savedApp(j);
@@ -1961,7 +1997,7 @@
         <div class="detail-top">
           <div>
             <h2 class="detail-title">${esc(cleanTitle(j.title))}</h2>
-            <p class="detail-company">${esc(j.company)} ${isFamousJob(j) ? `<span class="chip chip-famous" title="Recognized Big Tech & Prominent AI company">Big Tech</span>` : ''} ${isDirectAts ? `<span class="chip chip-ok" title="Direct employer ATS">${ico('shield')}Direct ATS</span>` : ''}</p>
+            <p class="detail-company">${esc(j.company)} ${isDreamCompany ? `<span class="chip chip-famous" title="Your Dream Wishlist Company">${ico('star')}Wishlist</span>` : ''} ${isFamousJob(j) ? `<span class="chip chip-famous" title="Recognized Big Tech & Prominent AI company">Big Tech</span>` : ''} ${isDirectAts ? `<span class="chip chip-ok" title="Direct employer ATS">${ico('shield')}Direct ATS</span>` : ''}</p>
           </div>
           ${showScore ? ring(score, true) : ''}
         </div>
@@ -2000,13 +2036,112 @@
           </div>
         ` : ''}
 
-        ${showScore ? `<div class="detail-block"><h3>Why it fits</h3>
-          <div class="fit-box">
-            <p><span class="chip ${score >= 85 ? 'chip-ok' : score >= 70 ? 'chip-info' : score >= 50 ? 'chip-warn' : ''}">${tierOf(score).label}</span></p>
-            <p>${esc(j.rationale || '')}</p>
-            ${matched.length ? `<div class="fit-row"><strong>You have</strong>${matched.map(s => `<span class="chip chip-ok">${esc(s)}</span>`).join('')}</div>` : ''}
-            ${missing.length ? `<div class="fit-row"><strong>Missing</strong>${missing.map(s => `<span class="chip chip-warn">${esc(s)}</span>`).join('')}</div>` : ''}
-          </div></div>` : ''}
+        ${showScore ? `
+          <div class="detail-block fit-breakdown-card">
+            <div class="fit-header-row">
+              <div class="fit-title-group">
+                <h3>Match Analysis &amp; Why it fits</h3>
+                <div class="fit-badge-group">
+                  <span class="chip ${score >= 85 ? 'chip-ok' : score >= 70 ? 'chip-info' : score >= 50 ? 'chip-warn' : 'chip-outline'}">${tierOf(score).label} (${score}%)</span>
+                  ${isDreamCompany ? `<span class="chip chip-famous" title="Included in your Dream Companies wishlist">${ico('star')} Wishlist Employer</span>` : ''}
+                  ${j.confidence ? `<span class="chip chip-outline" title="Grounded Match Confidence">${ico('shield')}${Math.round(j.confidence * 100)}% Data Confidence</span>` : ''}
+                </div>
+              </div>
+            </div>
+
+            ${j.rationale ? `<p class="fit-rationale">${esc(j.rationale)}</p>` : ''}
+
+            ${sb ? `
+              <div class="fit-meters-section">
+                <h4 class="fit-subheading">Score Breakdown</h4>
+                <div class="fit-breakdown-grid">
+                  <div class="fit-meter">
+                    <div class="fit-meter-top">
+                      <span class="fit-meter-label">${ico('bolt')}Skills &amp; Tech Stack</span>
+                      <span class="fit-meter-val">${sb.skills || 0} / 50</span>
+                    </div>
+                    <div class="fit-meter-track"><div class="fit-meter-bar bar-skills" style="width:${Math.min(100, Math.round(((sb.skills || 0) / 50) * 100))}%"></div></div>
+                  </div>
+                  <div class="fit-meter">
+                    <div class="fit-meter-top">
+                      <span class="fit-meter-label">${ico('file')}Title Alignment</span>
+                      <span class="fit-meter-val">${sb.title || 0} / 20</span>
+                    </div>
+                    <div class="fit-meter-track"><div class="fit-meter-bar bar-title" style="width:${Math.min(100, Math.round(((sb.title || 0) / 20) * 100))}%"></div></div>
+                  </div>
+                  <div class="fit-meter">
+                    <div class="fit-meter-top">
+                      <span class="fit-meter-label">${ico('briefcase')}Seniority Level</span>
+                      <span class="fit-meter-val">${sb.seniority || 0} / 10</span>
+                    </div>
+                    <div class="fit-meter-track"><div class="fit-meter-bar bar-sen" style="width:${Math.min(100, Math.round(((sb.seniority || 0) / 10) * 100))}%"></div></div>
+                  </div>
+                  <div class="fit-meter">
+                    <div class="fit-meter-top">
+                      <span class="fit-meter-label">${ico('pin')}Work Mode / Location</span>
+                      <span class="fit-meter-val">${sb.work_mode || 0} / 10</span>
+                    </div>
+                    <div class="fit-meter-track"><div class="fit-meter-bar bar-mode" style="width:${Math.min(100, Math.round(((sb.work_mode || 0) / 10) * 100))}%"></div></div>
+                  </div>
+                  <div class="fit-meter">
+                    <div class="fit-meter-top">
+                      <span class="fit-meter-label">${ico('dollar')}Target Pay Fit</span>
+                      <span class="fit-meter-val">${sb.salary || 0} / 5</span>
+                    </div>
+                    <div class="fit-meter-track"><div class="fit-meter-bar bar-sal" style="width:${Math.min(100, Math.round(((sb.salary || 0) / 5) * 100))}%"></div></div>
+                  </div>
+                  <div class="fit-meter">
+                    <div class="fit-meter-top">
+                      <span class="fit-meter-label">${ico('star')}Role &amp; Company Fit</span>
+                      <span class="fit-meter-val">${sb.preferences || 0} / 5</span>
+                    </div>
+                    <div class="fit-meter-track"><div class="fit-meter-bar bar-pref" style="width:${Math.min(100, Math.round(((sb.preferences || 0) / 5) * 100))}%"></div></div>
+                  </div>
+                </div>
+              </div>
+            ` : ''}
+
+            <div class="fit-skills-section">
+              ${matchedReq.length ? `
+                <div class="fit-row">
+                  <strong class="fit-row-title text-ok">${ico('check')}Must-have requirements you have (${matchedReq.length}):</strong>
+                  <div class="fit-chips-wrap">${matchedReq.map(s => `<span class="chip chip-ok">${esc(s)}</span>`).join('')}</div>
+                </div>
+              ` : (matched.length ? `
+                <div class="fit-row">
+                  <strong class="fit-row-title text-ok">${ico('check')}Skills you match (${matched.length}):</strong>
+                  <div class="fit-chips-wrap">${matched.map(s => `<span class="chip chip-ok">${esc(s)}</span>`).join('')}</div>
+                </div>
+              ` : '')}
+
+              ${bonusMatches.length ? `
+                <div class="fit-row">
+                  <strong class="fit-row-title text-bonus">${ico('bolt')}Bonus &amp; Preferred qualifications you match (+${bonusMatches.length}):</strong>
+                  <div class="fit-chips-wrap">${bonusMatches.map(s => `<span class="chip chip-bonus">${esc(s)}</span>`).join('')}</div>
+                </div>
+              ` : ''}
+
+              ${missingReq.length ? `
+                <div class="fit-row">
+                  <strong class="fit-row-title text-warn">${ico('alert')}Core requirement gaps to bridge (${missingReq.length}):</strong>
+                  <div class="fit-chips-wrap">${missingReq.map(s => `<span class="chip chip-warn">${esc(s)}</span>`).join('')}</div>
+                </div>
+              ` : (missing.length ? `
+                <div class="fit-row">
+                  <strong class="fit-row-title text-warn">${ico('alert')}Missing skills (${missing.length}):</strong>
+                  <div class="fit-chips-wrap">${missing.map(s => `<span class="chip chip-warn">${esc(s)}</span>`).join('')}</div>
+                </div>
+              ` : '')}
+
+              ${transferred.length ? `
+                <div class="fit-row">
+                  <strong class="fit-row-title text-info">${ico('refresh')}Transferable skills recognized:</strong>
+                  <div class="fit-chips-wrap">${transferred.map(s => `<span class="chip chip-info">${esc(s)}</span>`).join('')}</div>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        ` : ''}
 
         ${hasContact ? `
           <div class="detail-block detail-contact-block">
@@ -3301,6 +3436,7 @@
 
     // profile form
     $('#profileForm').addEventListener('input', e => { if (e.target.id !== 'newSkill') markDirty(); });
+    $('#profileForm').addEventListener('change', e => { if (e.target.id !== 'newSkill') markDirty(); });
     $('#profileForm').addEventListener('submit', e => e.preventDefault());
     $('#newSkill').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addSkillFromInput(); } });
     $('#resumeFileInput').addEventListener('change', e => { handleFile(e.target.files[0]); e.target.value = ''; });
