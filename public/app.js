@@ -253,9 +253,9 @@
     return String(s.source_tier || '').includes('Direct company ATS') || /Greenhouse|Ashby|Lever|SmartRecruiters|Workable/i.test(name);
   }
   function isFreeSource(s) {
-    if (s.is_free_to_apply !== undefined && s.is_free_to_apply !== null) return Boolean(s.is_free_to_apply);
-    const src = String(s.source || '');
-    return !/We Work Remotely|Remotive/i.test(src);
+    if (s && s.is_free_to_apply !== undefined && s.is_free_to_apply !== null) return Boolean(s.is_free_to_apply);
+    const src = String((typeof s === 'string' ? s : (s && (s.source || s.name))) || '');
+    return !/We Work Remotely|Remotive|RemoteOK|Remote OK/i.test(src);
   }
 
   /** Return the optimal application source - ALWAYS prefers 100% free options over paywalled/gated boards. */
@@ -271,11 +271,11 @@
     const freeMajor = list.find(s => isFreeSource(s) && /LinkedIn|Indeed|ZipRecruiter|Hacker News|Bayt|Naukri|HelloWork/i.test(String(s.source || '')));
     if (freeMajor) return freeMajor;
 
-    // 3. Third priority: Any other free remote feed (Himalayas, Jobicy, Arbeitnow, RemoteOK)
+    // 3. Third priority: Any other free remote feed (Himalayas, Jobicy, Arbeitnow, Adzuna)
     const otherFree = list.find(isFreeSource);
     if (otherFree) return otherFree;
 
-    // 4. Last resort: Paid/gated source (We Work Remotely, Remotive)
+    // 4. Last resort: Paid/gated source (We Work Remotely, Remotive, RemoteOK)
     return list[0];
   }
 
@@ -714,7 +714,7 @@
 
   let searchTipTimer = null;
   let scoreEtaTimer = null;
-  let scoreEtaState = { current: 0, total: 350, estSeconds: 2.2, startTime: 0 };
+  let scoreEtaState = { current: 0, total: 0, estSeconds: 2.2, startTime: 0 };
 
   function stopScoreEtaTicker() {
     if (scoreEtaTimer) { clearInterval(scoreEtaTimer); scoreEtaTimer = null; }
@@ -724,10 +724,12 @@
     stopScoreEtaTicker();
     scoreEtaState = {
       current: 0,
-      total: total || 350,
+      total: total || 0,
       estSeconds: estSeconds || 2.2,
       startTime: Date.now()
     };
+
+    if (!scoreEtaState.total) return;
 
     scoreEtaTimer = setInterval(() => {
       if (scoreEtaState.current >= scoreEtaState.total) {
@@ -1934,10 +1936,7 @@
               const gated = srcs.find(s => !isFreeSource(s)) || {};
               return `<span class="chip chip-ok" title="Also on ${esc(gated.source || 'paid site')} (Paid), but JobHunter prioritized the 100% Free Apply link on ${esc(j.source)}!">${ico('shield')}Free apply (bypasses ${esc(gated.source || 'paid site')})</span>`;
             }
-            if (!hasFree) {
-              return `<span class="chip chip-warn" title="Listed on ${esc(j.source)} - Platform charges or prompts for paid membership to apply">${ico('alert')}Need to pay to apply ($)</span>`;
-            }
-            return `<span class="chip chip-ok" title="100% Free to apply - No fees or paywalls">${ico('check')}Free apply</span>`;
+            return '';
           })()}
           ${j.score >= 85 ? '<span class="chip chip-ok">Top Match</span>' : ''}
           ${j.is_new ? '<span class="chip chip-info">New</span>' : ''}
@@ -2067,7 +2066,16 @@
               ${formatSourceBadge(j)}
               ${isDreamCompany ? `<span class="chip chip-famous" title="Your Dream Wishlist Company">${ico('star')}Wishlist</span>` : ''}
               ${isFamousJob(j) ? `<span class="chip chip-famous" title="Recognized Big Tech & Prominent AI company">Big Tech</span>` : ''}
-              ${isFreeSource(j) ? `<span class="chip chip-ok" title="100% Free Application - No fees">${ico('check')}Free Apply</span>` : `<span class="chip chip-warn" title="Site may prompt for paid membership">${ico('alert')}Paid Site</span>`}
+              ${(() => {
+                const srcs = jobSources(j);
+                const hasGated = srcs.some(s => !isFreeSource(s));
+                const hasFree = srcs.some(isFreeSource);
+                if (hasFree && hasGated) {
+                  const gated = srcs.find(s => !isFreeSource(s)) || {};
+                  return `<span class="chip chip-ok" title="JobHunter prioritized the 100% Free Apply link!">${ico('shield')}Free apply (bypasses ${esc(gated.source || 'paid site')})</span>`;
+                }
+                return '';
+              })()}
             </p>
           </div>
           ${showScore ? ring(score, true) : ''}

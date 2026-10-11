@@ -462,6 +462,59 @@ class FamousFilterTests(Base):
         self.assertEqual(classify_company_stage({"company": "Stealth AI", "tags": ["startup"]}), "startup")
         self.assertEqual(classify_company_stage({"company": "Hedge (YC)", "tags": []}), "startup")
 
+    def test_paid_and_free_source_classification(self):
+        # Paid / paywalled platforms
+        self.assertFalse(sources.is_free_to_apply("RemoteOK"))
+        self.assertFalse(sources.is_free_to_apply("Remote OK"))
+        self.assertFalse(sources.is_free_to_apply("We Work Remotely"))
+        self.assertFalse(sources.is_free_to_apply("Remotive"))
+        self.assertIn("remoteok.com/premium", sources.apply_cost_note("RemoteOK"))
+
+        # Free platforms
+        self.assertTrue(sources.is_free_to_apply("Greenhouse"))
+        self.assertTrue(sources.is_free_to_apply("LinkedIn"))
+        self.assertTrue(sources.is_free_to_apply("Indeed"))
+        self.assertTrue(sources.is_free_to_apply("ZipRecruiter"))
+        self.assertTrue(sources.is_free_to_apply("Hacker News"))
+        self.assertTrue(sources.is_free_to_apply("Jobicy"))
+        self.assertTrue(sources.is_free_to_apply("Arbeitnow"))
+        self.assertTrue(sources.is_free_to_apply("Himalayas"))
+        self.assertTrue(sources.is_free_to_apply("Adzuna"))
+        self.assertTrue(sources.is_free_to_apply("Bayt"))
+        self.assertTrue(sources.is_free_to_apply("Naukri"))
+        self.assertTrue(sources.is_free_to_apply("HelloWork"))
+
+    def test_dedup_prefers_free_source_over_paid_remoteok(self):
+        paid_job = sources.make_job(id="rok-1", title="Staff Engineer", company="Vercel",
+                                    source="RemoteOK", url="https://remoteok.com/l/1", location="Remote")
+        free_job = sources.make_job(id="li-1", title="Staff Engineer", company="Vercel",
+                                    source="LinkedIn", url="https://linkedin.com/jobs/view/1", location="Remote")
+        merged = dedup.merge_jobs([paid_job, free_job])
+        self.assertEqual(len(merged), 1)
+        # LinkedIn is free, so it MUST win over RemoteOK
+        self.assertEqual(merged[0]["source"], "LinkedIn")
+        self.assertEqual(merged[0]["url"], "https://linkedin.com/jobs/view/1")
+        self.assertTrue(merged[0]["is_free_to_apply"])
+
+    def test_pipeline_retains_more_than_350_jobs(self):
+        db.save_profile(DEMO_PROFILE)
+        # Generate 400 unique candidate jobs
+        sample_jobs = [
+            sources.make_job(id=f"job-{i}", title=f"Python Engineer {i}", company=f"Company {i}",
+                             location="Remote", source="LinkedIn", description="Python development",
+                             url=f"https://example.com/{i}")
+            for i in range(400)
+        ]
+        class BulkSrc(sources.Source):
+            name, tier = "Bulk", "Major job board"
+            def fetch(self, q, l): return sample_jobs
+
+        with mock.patch.object(sources, "SEARCH_SOURCES", [BulkSrc()]):
+            res = pipeline.search("python", limit=500)
+            # Must return all 400 jobs, not artificially capped at 350
+            self.assertGreater(len(res["all_jobs"]), 350)
+            self.assertEqual(len(res["all_jobs"]), 400)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

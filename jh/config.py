@@ -29,7 +29,8 @@ SEARCH_DEADLINE_SECONDS = float(os.environ.get("JH_SEARCH_DEADLINE", "20"))
 SOURCE_TIMEOUT_SECONDS = float(os.environ.get("JH_SOURCE_TIMEOUT", "10"))
 CACHE_TTL_SECONDS = int(os.environ.get("JH_CACHE_TTL", "900"))
 STALE_CACHE_MAX_SECONDS = int(os.environ.get("JH_STALE_MAX", str(24 * 3600)))
-MAX_RESULTS = int(os.environ.get("JH_MAX_RESULTS", "150"))
+MAX_RESULTS = int(os.environ.get("JH_MAX_RESULTS", "1000"))
+MAX_SCORED_JOBS = int(os.environ.get("JH_MAX_SCORED_JOBS", "1500"))
 ENRICH_TOP_N = int(os.environ.get("JH_ENRICH_TOP_N", "12"))
 
 # Major job boards (LinkedIn, Indeed, ZipRecruiter, etc.) are built-in native scrapers

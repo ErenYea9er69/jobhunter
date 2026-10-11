@@ -407,10 +407,11 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
         j["is_famous"] = is_famous_company(j.get("company"))
 
     # Score all candidate opportunities for this query/location so DB and client have the full pool
-    if len(merged) > 350:
+    max_score_pool = getattr(config, "MAX_SCORED_JOBS", 1500)
+    if max_score_pool and len(merged) > max_score_pool:
         if query:
             merged.sort(key=lambda j: (any(w in (j.get("title") or "").lower() for w in syns), j.get("source_rank", 0)), reverse=True)
-        merged = merged[:350]
+        merged = merged[:max_score_pool]
 
     total_unique = len(merged)
     has_enrichable = any(j.get("needs_enrichment") for j in merged[:config.ENRICH_TOP_N])

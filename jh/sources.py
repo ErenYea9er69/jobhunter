@@ -23,8 +23,10 @@ BREAKER_COOLDOWN = 300
 
 # Sources that gate applications behind paid candidate memberships, paywalls, or upsells:
 PAID_OR_GATED_SOURCES = {
-    "We Work Remotely": "Prompts candidates for paid WWR Pro membership / paywalled apply links",
+    "We Work Remotely": "Prompts candidates for paid WWR Pro membership ($14.95/mo) / paywalled apply links",
     "Remotive": "Prompts candidates for paid Remotive Community ($99+) membership to apply",
+    "Remote OK": "Redirects candidates to remoteok.com/premium ($14.95/mo or $29.95 TopAccess paywall) to apply",
+    "RemoteOK": "Redirects candidates to remoteok.com/premium ($14.95/mo or $29.95 TopAccess paywall) to apply",
 }
 
 # Ranking: 100% Free sources ALWAYS outrank paid/gated sources!
@@ -33,20 +35,24 @@ SOURCE_RANKS = {
     "Greenhouse": 100, "Lever": 100, "Ashby": 100, "SmartRecruiters": 100, "Workable": 100,
     "LinkedIn": 96, "Indeed": 95, "ZipRecruiter": 94, "Hacker News": 92,
     "Bayt": 88, "Naukri": 88, "HelloWork": 88,
-    "Himalayas": 85, "Jobicy": 82, "Arbeitnow": 80,
-    "We Work Remotely": 78, "Remotive": 76, "RemoteOK": 75, "Adzuna": 70,
+    "Himalayas": 85, "Jobicy": 82, "Arbeitnow": 80, "Adzuna": 75,
+    "We Work Remotely": 35, "Remotive": 34, "Remote OK": 33, "RemoteOK": 33,
 }
 
 
 def is_free_to_apply(source):
     """Return True if candidate can apply 100% free without membership paywalls."""
-    return source not in PAID_OR_GATED_SOURCES
+    s = (source or "").strip()
+    return s not in PAID_OR_GATED_SOURCES and s.replace(" ", "") not in PAID_OR_GATED_SOURCES
 
 
 def apply_cost_note(source):
-    if source in PAID_OR_GATED_SOURCES:
-        return PAID_OR_GATED_SOURCES[source]
-    if source in {"Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workable"}:
+    s = (source or "").strip()
+    if s in PAID_OR_GATED_SOURCES:
+        return PAID_OR_GATED_SOURCES[s]
+    if s.replace(" ", "") in PAID_OR_GATED_SOURCES:
+        return PAID_OR_GATED_SOURCES[s.replace(" ", "")]
+    if s in {"Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workable"}:
         return "100% Free Official Employer ATS"
     return "100% Free to apply"
 
@@ -65,6 +71,9 @@ def source_kind(source, tier=""):
         return "Major job board"
     if source == "Adzuna":
         return "Job aggregator"
+    s = (source or "").strip()
+    if s in PAID_OR_GATED_SOURCES or s.replace(" ", "") in PAID_OR_GATED_SOURCES or "paid" in str(tier).lower() or "gated" in str(tier).lower():
+        return "Paid/Gated feed"
     return "Established job feed"
 
 
@@ -212,7 +221,7 @@ class Source:
 # ---------------------------------------------------------------- free feeds
 
 class Remotive(Source):
-    name, tier = "Remotive", "Free feed"
+    name, tier = "Remotive", "Paid/Gated feed"
 
     def fetch(self, query, location):
         url = "https://remotive.com/api/remote-jobs?limit=60" + (f"&search={urllib.parse.quote(query)}" if query else "")
@@ -268,7 +277,7 @@ class Arbeitnow(Source):
 
 
 class RemoteOK(Source):
-    name, tier = "RemoteOK", "Free feed"
+    name, tier = "RemoteOK", "Paid/Gated feed"
 
     def fetch(self, query, location):
         data = http_get_json("https://remoteok.com/api")
@@ -322,7 +331,7 @@ class Himalayas(Source):
 
 
 class WeWorkRemotely(Source):
-    name, tier = "We Work Remotely", "Free feed"
+    name, tier = "We Work Remotely", "Paid/Gated feed"
 
     def fetch(self, query, location):
         feeds = [
