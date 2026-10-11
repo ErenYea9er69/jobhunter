@@ -42,6 +42,8 @@
       <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol>
       <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></symbol>
       <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 00-14.9-3M4 5v4h4M4 13a8 8 0 0014.9 3M20 19v-4h-4"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></symbol>
     </defs>
   </svg>
 
@@ -69,6 +71,11 @@
           <div class="menu" id="moreMenu" hidden>
             <a href="#/digest" data-nav="digest"><svg class="i" aria-hidden="true"><use href="#i-mail"/></svg>Morning digest</a>
             <a href="#/privacy" data-nav="privacy"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Sources and privacy</a>
+            <div class="menu-sep" role="separator"></div>
+            <button type="button" class="menu-item-btn" id="themeToggleBtn">
+              <svg class="i" aria-hidden="true" id="themeIcon"><use href="#i-moon"/></svg>
+              <span id="themeLabel">Dark theme</span>
+            </button>
           </div>
         </div>
         <a class="profile-link" href="#/resume" id="profileLink" title="Your resume profile">

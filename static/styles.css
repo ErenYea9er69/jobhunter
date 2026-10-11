@@ -1,7 +1,8 @@
 /* ==========================================================================
    JobHunter interface
-   Two themes: White Coffee (light) and Dark Roast (dark).
-   Auto follows the device. Force one with data-theme="light" or "dark" on <html>.
+   Primary theme: White Coffee / Warm Editorial Paper (default)
+   Dark theme: Slate Obsidian (calm, high contrast, zero eye strain)
+   Force theme with data-theme="dark" on <html>.
    Edit colors only in the token blocks. Rules below never hard-code a color.
    ========================================================================== */
 
@@ -46,61 +47,36 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #16110d;
-  --surface: #1f1913;
-  --surface-2: #1a1510;
-  --surface-3: #271f18;
-  --line: #34291f;
-  --line-strong: #4a3b2d;
-  --text: #f3e8d8;
-  --text-2: #cdbaa5;
-  --text-3: #a69078;
-  --brand: #e0a96d;
-  --brand-hover: #edbc85;
-  --brand-on: #24170b;
-  --brand-soft: #2f2318;
-  --success: #86c79a;
-  --success-soft: #1c2b20;
-  --info: #7fd0cb;
-  --info-soft: #17292a;
-  --warning: #e6b265;
-  --warning-soft: #30240f;
-  --danger: #ec8f80;
-  --danger-soft: #34191a;
-  --famous: #caa1f5;
-  --famous-soft: #281938;
-  --scrim: rgba(0, 0, 0, 0.65);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.35);
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1b2129;
+  --surface-3: #222934;
+  --line: #262c36;
+  --line-strong: #373f4d;
+  --text: #f0f3f6;
+  --text-2: #9da7b3;
+  --text-3: #6b7785;
+  --brand: #dca565;
+  --brand-hover: #ebb577;
+  --brand-on: #12151b;
+  --brand-soft: rgba(220, 165, 101, 0.15);
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.15);
+  --info: #38bdf8;
+  --info-soft: rgba(56, 189, 248, 0.15);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.15);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.15);
+  --famous: #c084fc;
+  --famous-soft: rgba(192, 132, 252, 0.15);
+  --scrim: rgba(0, 0, 0, 0.75);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.45);
+  --paper: #161b22;
+  --paper-text: #f0f3f6;
+  --paper-muted: #9da7b3;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --bg: #16110d;
-    --surface: #1f1913;
-    --surface-2: #1a1510;
-    --surface-3: #271f18;
-    --line: #34291f;
-    --line-strong: #4a3b2d;
-    --text: #f3e8d8;
-    --text-2: #cdbaa5;
-    --text-3: #a69078;
-    --brand: #e0a96d;
-    --brand-hover: #edbc85;
-    --brand-on: #24170b;
-    --brand-soft: #2f2318;
-    --success: #86c79a;
-    --success-soft: #1c2b20;
-    --info: #7fd0cb;
-    --info-soft: #17292a;
-    --warning: #e6b265;
-    --warning-soft: #30240f;
-    --danger: #ec8f80;
-    --danger-soft: #34191a;
-    --scrim: rgba(0, 0, 0, 0.65);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.35);
-  }
-}
 
 /* 2. Base ------------------------------------------------------------------ */
 *, *::before, *::after { box-sizing: border-box; }
@@ -170,10 +146,9 @@ main:focus { outline: none; }
 .icon-btn:hover { background: var(--surface-3); color: var(--text); }
 .menu-wrap { position: relative; }
 .menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 250px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow); padding: 6px; z-index: 50; }
-.menu a { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--r-md); color: var(--text); }
-.menu a:hover, .menu a[aria-current="page"] { background: var(--surface-3); text-decoration: none; }
+.menu a, .menu-item-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; border-radius: var(--r-md); color: var(--text); background: transparent; border: 0; font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer; text-align: left; }
+.menu a:hover, .menu a[aria-current="page"], .menu-item-btn:hover { background: var(--surface-3); text-decoration: none; }
 .menu-sep { height: 1px; background: var(--line); margin: 6px 4px; }
-.menu-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 12px; color: var(--text-2); }
 .profile-link { display: flex; align-items: center; gap: 10px; padding: 4px 10px 4px 4px; border-radius: 999px; color: var(--text); border: 1px solid var(--line); }
 .profile-link:hover { background: var(--surface-3); text-decoration: none; }
 .avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--brand); color: var(--brand-on); font-size: 13px; font-weight: 700; }
@@ -690,7 +665,7 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   animation: pulse-ring 1.8s infinite;
 }
 :root[data-theme="dark"] .search-pulse-dot {
-  box-shadow: 0 0 0 0 rgba(224, 169, 109, 0.6);
+  box-shadow: 0 0 0 0 rgba(220, 165, 101, 0.6);
 }
 @keyframes pulse-ring {
   0% { box-shadow: 0 0 0 0 rgba(123, 75, 42, 0.6); }

@@ -297,10 +297,39 @@
 
   // ------------------------------------------------------------ theme, menu
   function initTheme() {
-    // Automatically adheres to OS / browser preference via CSS @media (prefers-color-scheme: dark).
-    // Gimmick dark mode toggle buttons removed to keep UI natural and clean.
+    // Light mode (White Coffee / Warm Editorial Paper) is the primary default theme.
+    // If the user explicitly saved 'dark', activate dark mode; otherwise always default to light.
+    let saved = 'light';
+    try { saved = localStorage.getItem('jh-theme') || 'light'; } catch (e) { /* ignore */ }
+    setTheme(saved, false);
+
+    const toggleBtn = $('#themeToggleBtn');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        setTheme(isDark ? 'light' : 'dark', true);
+        closeMenu();
+      });
+    }
+  }
+
+  function setTheme(choice, persist) {
     const root = document.documentElement;
-    root.removeAttribute('data-theme');
+    const isDark = choice === 'dark';
+    if (isDark) {
+      root.setAttribute('data-theme', 'dark');
+    } else {
+      root.removeAttribute('data-theme');
+    }
+    const icon = $('#themeIcon use');
+    if (icon) icon.setAttribute('href', isDark ? '#i-sun' : '#i-moon');
+    const label = $('#themeLabel');
+    if (label) label.textContent = isDark ? 'Light theme' : 'Dark theme';
+    if (persist) {
+      try {
+        localStorage.setItem('jh-theme', isDark ? 'dark' : 'light');
+      } catch (e) { /* ignore */ }
+    }
   }
 
   function closeMenu() {
