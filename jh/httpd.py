@@ -303,6 +303,9 @@ def _find_static_dir():
 
 def _find_static_file(rel_path):
     rel = rel_path.lstrip("/\\")
+    candidates = [rel]
+    if rel and not os.path.splitext(rel)[1]:
+        candidates.append(rel + ".html")
     for d in [
         getattr(config, "STATIC_DIR", ""),
         os.path.join(config.BASE_DIR, "public"),
@@ -310,9 +313,10 @@ def _find_static_file(rel_path):
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public"),
     ]:
         if d and os.path.isdir(d):
-            p = os.path.join(d, rel)
-            if os.path.isfile(p):
-                return os.path.abspath(p)
+            for cand in candidates:
+                p = os.path.join(d, cand)
+                if os.path.isfile(p):
+                    return os.path.abspath(p)
     return None
 
 
@@ -457,6 +461,19 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_header("X-Frame-Options", "DENY")
                 self.end_headers()
                 self.wfile.write(page)
+                return
+
+        if clean_path in ("/landing", "/landing.html"):
+            landing_file = _find_static_file("landing.html")
+            if landing_file and os.path.isfile(landing_file):
+                with open(landing_file, "rb") as f:
+                    content = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self.send_header("Cache-Control", "no-cache, must-revalidate")
+                self.end_headers()
+                self.wfile.write(content)
                 return
 
         asset_file = _find_static_file(clean_path)
