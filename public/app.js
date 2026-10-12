@@ -2081,15 +2081,15 @@
           ${j.is_new ? '<span class="chip chip-info">New</span>' : ''}
           ${j.is_sample ? '<span class="chip chip-warn">Sample</span>' : ''}
           ${jobSources(j).length > 1 ? `<span>${jobSources(j).length} sites</span>` : ''}
+          <span class="job-actions-wrap" onclick="event.stopPropagation()">
+            <span role="button" tabindex="0" class="chip chip-action chip-quick-save ${saved ? 'is-saved' : ''}" data-action="quick-save" data-key="${esc(key)}" title="${saved ? 'Already in Applications' : 'Save job to tracker'}">
+              ${ico('bookmark')}<span>${saved ? 'Saved' : 'Save'}</span>
+            </span>
+            <span role="button" tabindex="0" class="chip chip-action chip-quick-hide" data-action="quick-dismiss" data-key="${esc(key)}" title="Dismiss this job from recommendations">
+              ${ico('x')}<span>Hide</span>
+            </span>
+          </span>
         </span>
-        <div class="job-item-quick-actions" onclick="event.stopPropagation()">
-          <button type="button" class="btn-quick-act" data-action="quick-save" data-key="${esc(key)}" title="${saved ? 'Already in Applications' : 'Save job to tracker'}">
-            ${ico('bookmark')}<span>${saved ? 'Saved' : 'Save'}</span>
-          </button>
-          <button type="button" class="btn-quick-act" data-action="quick-dismiss" data-key="${esc(key)}" title="Dismiss this job from recommendations">
-            ${ico('x')}<span>Hide</span>
-          </button>
-        </div>
       </button>`;
     }).join('');
   }
