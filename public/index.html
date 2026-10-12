@@ -568,187 +568,21 @@
           </div>
         </div>
 
-        <!-- Collapsible Advanced Search / Legacy Filter Console -->
-        <div id="legacySearchSection" class="legacy-search-section" hidden>
-        <form class="searchbar" id="searchForm" role="search">
-          <label class="field-icon grow-2">
-            <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
-            <input type="search" id="searchQuery" placeholder="Role, tech stack, or company (e.g. Python, Full Stack)" aria-label="Job title, skill, or company" autocomplete="off">
-          </label>
-          <label class="field-icon grow-1">
-            <svg class="i" aria-hidden="true"><use href="#i-pin"/></svg>
-            <input type="text" id="searchLocation" placeholder="Location or 'Worldwide'" aria-label="Location" autocomplete="off">
-          </label>
-          <button type="submit" class="btn btn-primary btn-lg" id="btnSearch">
-            <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
-            <span>Search</span>
-          </button>
-          <button type="button" class="btn btn-secondary btn-lg" id="btnRefresh" title="Query live sources, refresh database cache, and fetch fresh listings">
-            <svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>
-            <span>Refresh</span>
-          </button>
+        <!-- Hidden Compatibility Form for background queries -->
+        <form id="searchForm" hidden aria-hidden="true">
+          <input type="search" id="searchQuery" hidden>
+          <input type="text" id="searchLocation" hidden>
+          <button type="submit" id="btnSearch" hidden></button>
+          <button type="button" id="btnRefresh" hidden></button>
+          <select id="autoReloadSelect" hidden><option value="300" selected>300</option></select>
+          <select id="searchMinScore" hidden><option value="0" selected>0</option></select>
+          <select id="searchFamousSelect" hidden><option value="all" selected>all</option></select>
+          <div id="fallbackBanner" hidden></div>
+          <div id="suggestChips" hidden></div>
+          <span id="lastSearchBadge" hidden></span>
         </form>
 
-        <div class="search-sub-bar">
-          <div class="chips" id="suggestChips" aria-label="Search ideas"></div>
-          <span class="last-search-badge" id="lastSearchBadge" hidden></span>
-        </div>
-
-        <!-- Unified Facet Filter Console -->
-        <div class="filter-console" id="filterConsole">
-          <div class="filter-primary-row">
-            <!-- Work Mode Segmented with live counts -->
-            <div class="segmented" id="workModeSeg" role="group" aria-label="Work mode">
-              <button type="button" data-mode="Any" aria-pressed="true">Any <span class="f-cnt" id="cntModeAny"></span></button>
-              <button type="button" data-mode="Remote" aria-pressed="false">Remote <span class="f-cnt" id="cntModeRemote"></span></button>
-              <button type="button" data-mode="Hybrid" aria-pressed="false">Hybrid <span class="f-cnt" id="cntModeHybrid"></span></button>
-              <button type="button" data-mode="Onsite" aria-pressed="false">On-site <span class="f-cnt" id="cntModeOnsite"></span></button>
-            </div>
-
-            <!-- Match Score Selector with live counts -->
-            <div class="segmented segmented-score" id="matchScoreSeg" role="group" aria-label="Minimum match fit">
-              <button type="button" data-min-score="0" aria-pressed="true">Any Score <span class="f-cnt" id="cntScore0"></span></button>
-              <button type="button" data-min-score="60" aria-pressed="false">60%+ <span class="f-cnt" id="cntScore60"></span></button>
-              <button type="button" data-min-score="70" aria-pressed="false">70%+ <span class="f-cnt" id="cntScore70"></span></button>
-              <button type="button" data-min-score="80" aria-pressed="false">80%+ <span class="f-cnt" id="cntScore80"></span></button>
-              <button type="button" data-min-score="85" aria-pressed="false">85%+ <span class="f-cnt" id="cntScore85"></span></button>
-            </div>
-            <select id="searchMinScore" hidden><option value="0">0</option><option value="60">60</option><option value="70">70</option><option value="80">80</option><option value="85">85</option></select>
-
-            <!-- Big Tech & Startups Selector with live counts -->
-            <div class="segmented segmented-famous" id="famousSeg" role="group" aria-label="Company type filter">
-              <button type="button" data-famous="all" aria-pressed="true">All Co. <span class="f-cnt" id="cntFamAll"></span></button>
-              <button type="button" data-famous="startups" aria-pressed="false">Startups &amp; Mid <span class="f-cnt" id="cntFamStartups"></span></button>
-              <button type="button" data-famous="only" aria-pressed="false">Big Tech <span class="f-cnt" id="cntFamOnly"></span></button>
-              <button type="button" data-famous="hide" aria-pressed="false">No Big Tech <span class="f-cnt" id="cntFamHide"></span></button>
-            </div>
-            <select id="searchFamousSelect" hidden><option value="all">all</option><option value="hide">hide</option><option value="startups">startups</option><option value="only">only</option></select>
-
-            <!-- Toggle More Filters Drawer -->
-            <button type="button" class="btn btn-secondary btn-sm btn-filter-drawer" id="btnToggleFiltersDrawer" aria-expanded="false" aria-controls="filtersDrawer">
-              <svg class="i" aria-hidden="true"><use href="#i-more"/></svg>
-              <span>More Filters</span>
-              <span class="filter-count-badge" id="moreFiltersCountBadge" hidden>0</span>
-            </button>
-
-            <!-- Auto-refresh interval select -->
-            <label class="inline-select auto-reload-select">
-              <svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>
-              <span>Auto-refresh</span>
-              <select id="autoReloadSelect">
-                <option value="0">Off</option>
-                <option value="30">Every 30 min</option>
-                <option value="60">Every 1 hour</option>
-                <option value="120">Every 2 hours</option>
-                <option value="300" selected>Every 5 hours</option>
-                <option value="720">Every 12 hours</option>
-                <option value="1440">Every 24 hours</option>
-              </select>
-            </label>
-          </div>
-
-          <!-- Secondary Expandable Filters Drawer -->
-          <div class="filters-drawer" id="filtersDrawer" hidden>
-            <div class="drawer-grid">
-              <!-- Target Country (Include) -->
-              <div class="drawer-group">
-                <span class="drawer-label">Target Country (Include)</span>
-                <div class="country-include-wrap">
-                  <div class="segmented segmented-sm" id="countryQuickSeg" role="group">
-                    <button type="button" data-country="all" aria-pressed="true">All</button>
-                    <button type="button" data-country="Worldwide" aria-pressed="false">Worldwide <span class="f-cnt" id="cntCtryWorldwide"></span></button>
-                    <button type="button" data-country="United States" aria-pressed="false">USA <span class="f-cnt" id="cntCtryUS"></span></button>
-                    <button type="button" data-country="United Kingdom" aria-pressed="false">UK <span class="f-cnt" id="cntCtryUK"></span></button>
-                    <button type="button" data-country="Germany" aria-pressed="false">Germany <span class="f-cnt" id="cntCtryDE"></span></button>
-                    <button type="button" data-country="Canada" aria-pressed="false">Canada <span class="f-cnt" id="cntCtryCA"></span></button>
-                  </div>
-                  <div class="country-select-row">
-                    <select id="countrySelect" aria-label="Select target country">
-                      <option value="all">More countries...</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Exclude Countries (Hide from results) -->
-              <div class="drawer-group">
-                <div class="drawer-label-row">
-                  <span class="drawer-label">Exclude Countries (Hide unwanted)</span>
-                  <span class="drawer-hint">Hide jobs from these countries</span>
-                </div>
-                <div class="country-exclude-wrap">
-                  <div class="country-exclude-actions">
-                    <select id="excludeCountrySelect" aria-label="Add country to exclude">
-                      <option value="">Choose country to exclude...</option>
-                    </select>
-                    <div class="quick-exclude-chips" id="quickExcludeChips">
-                      <button type="button" class="btn-quick-exclude" data-exclude-country="India">+ Exclude India <span class="f-cnt" id="cntExIndia"></span></button>
-                      <button type="button" class="btn-quick-exclude" data-exclude-country="United States">+ Exclude US <span class="f-cnt" id="cntExUS"></span></button>
-                    </div>
-                  </div>
-                  <div class="excluded-tags-list" id="excludedCountriesTags"></div>
-                </div>
-              </div>
-
-              <!-- Seniority -->
-              <div class="drawer-group">
-                <span class="drawer-label">Seniority Level</span>
-                <div class="segmented segmented-sm" id="senioritySeg" role="group">
-                  <button type="button" data-sen="all" aria-pressed="true">All</button>
-                  <button type="button" data-sen="junior" aria-pressed="false">Entry / Jr <span class="f-cnt" id="cntSenJr"></span></button>
-                  <button type="button" data-sen="mid" aria-pressed="false">Mid-Level <span class="f-cnt" id="cntSenMid"></span></button>
-                  <button type="button" data-sen="senior" aria-pressed="false">Senior <span class="f-cnt" id="cntSenSr"></span></button>
-                  <button type="button" data-sen="lead_staff" aria-pressed="false">Lead / Staff <span class="f-cnt" id="cntSenLead"></span></button>
-                </div>
-              </div>
-
-              <!-- Compensation / Salary -->
-              <div class="drawer-group">
-                <span class="drawer-label">Estimated Salary</span>
-                <div class="segmented segmented-sm" id="salarySeg" role="group">
-                  <button type="button" data-sal="0" aria-pressed="true">Any Pay</button>
-                  <button type="button" data-sal="disclosed" aria-pressed="false">Disclosed <span class="f-cnt" id="cntSalDisc"></span></button>
-                  <button type="button" data-sal="100k" aria-pressed="false">$100k+ <span class="f-cnt" id="cntSal100"></span></button>
-                  <button type="button" data-sal="140k" aria-pressed="false">$140k+ <span class="f-cnt" id="cntSal140"></span></button>
-                  <button type="button" data-sal="180k" aria-pressed="false">$180k+ <span class="f-cnt" id="cntSal180"></span></button>
-                </div>
-              </div>
-
-              <!-- Date Freshness -->
-              <div class="drawer-group">
-                <span class="drawer-label">Date Posted</span>
-                <div class="segmented segmented-sm" id="freshnessSeg" role="group">
-                  <button type="button" data-days="0" aria-pressed="true">Any time</button>
-                  <button type="button" data-days="1" aria-pressed="false">&lt; 24h <span class="f-cnt" id="cntFresh1"></span></button>
-                  <button type="button" data-days="7" aria-pressed="false">&lt; 7 days <span class="f-cnt" id="cntFresh7"></span></button>
-                  <button type="button" data-days="14" aria-pressed="false">&lt; 14 days <span class="f-cnt" id="cntFresh14"></span></button>
-                  <button type="button" data-days="30" aria-pressed="false">&lt; 30 days <span class="f-cnt" id="cntFresh30"></span></button>
-                </div>
-              </div>
-
-              <!-- Application Flags -->
-              <div class="drawer-group">
-                <span class="drawer-label">Application Filters</span>
-                <div class="toggle-group" id="flagsGroup">
-                  <button type="button" class="qchip" id="btnFlagDirectAts" data-flag="direct_ats">Direct ATS Only <span class="f-cnt" id="cntDirectAts"></span></button>
-                  <button type="button" class="qchip" id="btnFlagHideApplied" data-flag="hide_applied">Hide Applied <span class="f-cnt" id="cntApplied"></span></button>
-                  <button type="button" class="qchip" id="btnFlagSavedOnly" data-flag="saved_only">Saved Only <span class="f-cnt" id="cntSaved"></span></button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Fallback Notice Banner -->
-          <div class="fallback-banner" id="fallbackBanner" hidden></div>
-
-          <!-- Active Filter Tags Bar -->
-          <div class="active-filters-bar" id="activeFiltersBar" hidden>
-            <span class="active-filters-label">Active filters:</span>
-            <div class="active-filters-list" id="activeFiltersList"></div>
-            <button type="button" class="link-btn btn-clear-all-filters" id="btnClearAllFilters">Reset all filters</button>
-          </div>
-        </div>
-
+        <!-- Results Meta Bar directly above jobs split -->
         <div class="results-meta" id="resultsMeta">
           <p class="results-summary" id="resultsSummary" aria-live="polite"></p>
           <div class="results-tools" id="resultsTools">
@@ -766,7 +600,6 @@
           </div>
         </div>
         <div class="source-panel" id="sourcePanel" hidden></div>
-        </div><!-- /legacySearchSection -->
 
         <!-- Dedicated centered live search progress stage -->
         <div class="search-stage" id="searchProgressStage" hidden></div>
@@ -1165,8 +998,660 @@
     </form>
   </dialog>
 
+  <!-- ================= ALL FILTERS RIGHT-SIDE SLIDE-OVER DRAWER ================= -->
+  <div class="af-drawer-overlay" id="afDrawerOverlay" hidden aria-hidden="true">
+    <div class="af-drawer-backdrop" id="afDrawerBackdrop"></div>
+    <aside class="af-drawer-panel" id="afDrawerPanel" role="dialog" aria-modal="true" aria-label="All Filters">
+      
+      <!-- Top Header -->
+      <header class="af-drawer-header">
+        <div class="af-header-left">
+          <button type="button" class="af-btn-collapse" id="afBtnClose" aria-label="Close filters">
+            <svg class="af-chevron-icon" viewBox="0 0 20 20" fill="none"><path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2 class="af-header-title" id="afHeaderTitle">Full Stack Engineer, US</h2>
+        </div>
+        <div class="af-header-right">
+          <button type="button" class="af-btn-confirm" id="afBtnConfirm">Confirm</button>
+        </div>
+      </header>
+
+      <!-- Selected Active Filter Chips Bar -->
+      <div class="af-active-pills-bar" id="afActivePillsBar">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Main Body: Two Columns -->
+      <div class="af-drawer-body">
+        
+        <!-- Left Navigation Sidebar -->
+        <nav class="af-sidebar-nav" aria-label="Filter Categories">
+          <button type="button" class="af-nav-item is-active" data-af-target="afSecBasic">
+            <span class="af-nav-title">Basic Job Criteria</span>
+            <span class="af-nav-sub">Job Function / Job Type / Work Model...</span>
+          </button>
+          <button type="button" class="af-nav-item" data-af-target="afSecCompensation">
+            <span class="af-nav-title">Compensation &amp; Sponsorship</span>
+            <span class="af-nav-sub">Annual Salary / H1B Sponsorship</span>
+          </button>
+          <button type="button" class="af-nav-item" data-af-target="afSecInterests">
+            <span class="af-nav-title">Areas of Interests</span>
+            <span class="af-nav-sub">Industry / Skill / Role(IC/Manager)...</span>
+          </button>
+          <button type="button" class="af-nav-item" data-af-target="afSecCompany">
+            <span class="af-nav-title">Company Insights</span>
+            <span class="af-nav-sub">Company Search / Exclude Staffing Agency...</span>
+          </button>
+
+          <!-- Specific Companies Card at bottom -->
+          <div class="af-company-promo-card">
+            <div class="af-promo-title">Applying for specific companies?</div>
+            <div class="af-promo-desc">
+              Use filters in the <a href="javascript:void(0)" class="af-promo-link" id="afPromoCompanyLink">Company Insights</a> section to find your target companies.
+            </div>
+          </div>
+        </nav>
+
+        <!-- Right Scrollable Content Pane -->
+        <div class="af-content-pane" id="afContentPane">
+          
+          <!-- SECTION 1: Basic Job Criteria -->
+          <section class="af-section" id="afSecBasic">
+            <h3 class="af-sec-heading">Basic Job Criteria</h3>
+
+            <!-- Job Function -->
+            <div class="af-card-group">
+              <label class="af-field-label" for="afJobFunctionInput">
+                <span class="af-req-star">*</span> Job Function <span class="af-field-hint">(select from drop-down for best results)</span>
+              </label>
+              <div class="af-tag-input-container" id="afJobFunctionWrap">
+                <div class="af-tags-list" id="afJobFunctionChips">
+                  <span class="af-tag-chip" data-fn="Full Stack Engineer">
+                    <span>Full Stack Engineer</span>
+                    <button type="button" class="af-tag-remove" aria-label="Remove Full Stack Engineer">&times;</button>
+                  </span>
+                </div>
+                <div class="af-input-suggest-wrap">
+                  <input type="text" class="af-text-input" id="afJobFunctionInput" placeholder="Please select/enter your expected job function" autocomplete="off">
+                  <div class="af-suggest-menu" id="afJobFunctionSuggest" hidden>
+                    <button type="button" class="af-suggest-item" data-role="Full Stack Engineer">Full Stack Engineer</button>
+                    <button type="button" class="af-suggest-item" data-role="Backend Engineer">Backend Engineer</button>
+                    <button type="button" class="af-suggest-item" data-role="Frontend Engineer">Frontend Engineer</button>
+                    <button type="button" class="af-suggest-item" data-role="Software Engineer">Software Engineer</button>
+                    <button type="button" class="af-suggest-item" data-role="DevOps Engineer">DevOps Engineer</button>
+                    <button type="button" class="af-suggest-item" data-role="Data Engineer">Data Engineer</button>
+                    <button type="button" class="af-suggest-item" data-role="Machine Learning Engineer">Machine Learning Engineer</button>
+                    <button type="button" class="af-suggest-item" data-role="Mobile Developer">Mobile Developer</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Excluded Title (Accordion) -->
+            <div class="af-accordion-group" id="afAccordionExcludedTitle">
+              <button type="button" class="af-accordion-header" id="afToggleExcludedTitle" aria-expanded="false">
+                <span class="af-accordion-title">Excluded Title</span>
+                <svg class="af-accordion-chevron" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="af-accordion-body" id="afBodyExcludedTitle" hidden>
+                <div class="af-tags-list" id="afExcludedTitleChips"></div>
+                <div class="af-inline-add-row">
+                  <input type="text" class="af-text-input af-input-sm" id="afExcludedTitleInput" placeholder="e.g. Intern, Manager, Director...">
+                  <button type="button" class="af-btn-add-inline" id="afAddExcludedTitleBtn">+ Add</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Job Type -->
+            <div class="af-card-group">
+              <label class="af-field-label">
+                <span class="af-req-star">*</span> Job Type
+              </label>
+              <div class="af-tiles-grid af-grid-2">
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afJobType" value="Full-time" checked>
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Full-time</span>
+                  </span>
+                </label>
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afJobType" value="Contract">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Contract</span>
+                  </span>
+                </label>
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afJobType" value="Part-time">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Part-time</span>
+                  </span>
+                </label>
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afJobType" value="Internship">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Internship</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Work Model -->
+            <div class="af-card-group">
+              <label class="af-field-label">
+                <span class="af-req-star">*</span> Work Model
+              </label>
+              <div class="af-tiles-grid af-grid-2">
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afWorkModel" value="Onsite">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Onsite</span>
+                  </span>
+                </label>
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afWorkModel" value="Hybrid">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Hybrid</span>
+                  </span>
+                </label>
+              </div>
+              <div class="af-tiles-full" style="margin-top: 8px;">
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afWorkModel" value="Remote" checked>
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Remote anywhere in the US</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Location -->
+            <div class="af-card-group">
+              <div class="af-label-row">
+                <label class="af-field-label">
+                  <span class="af-req-star">*</span> Location
+                </label>
+                <div class="af-country-select-wrap">
+                  <select class="af-country-select" id="afCountrySelect">
+                    <option value="United States" selected>🇺🇸 United States</option>
+                    <option value="Worldwide">🌐 Worldwide</option>
+                    <option value="United Kingdom">🇬🇧 United Kingdom</option>
+                    <option value="Germany">🇩🇪 Germany</option>
+                    <option value="Canada">🇨🇦 Canada</option>
+                    <option value="all">🌍 All Locations</option>
+                  </select>
+                </div>
+              </div>
+              <div class="af-location-row">
+                <input type="text" class="af-text-input af-loc-input" id="afLocationInput" value="Anywhere in the US" placeholder="City or region...">
+                <select class="af-radius-select" id="afRadiusSelect">
+                  <option value="10">10mi</option>
+                  <option value="25" selected>25mi</option>
+                  <option value="50">50mi</option>
+                  <option value="100">100mi</option>
+                  <option value="0">Any</option>
+                </select>
+              </div>
+              <div class="af-tags-list" id="afLocationChips"></div>
+              <div class="af-add-location-wrap" style="margin-top: 8px;">
+                <button type="button" class="af-btn-dashed-add" id="afAddLocationBtn">+ Add</button>
+              </div>
+            </div>
+
+            <!-- Experience Level -->
+            <div class="af-card-group">
+              <label class="af-field-label">
+                <span class="af-req-star">*</span> Experience Level
+              </label>
+              <div class="af-tiles-grid af-grid-2">
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afExpLevel" value="intern">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Intern/New Grad</span>
+                    <span class="af-info-icon" title="0-1 years / College graduates">?</span>
+                  </span>
+                </label>
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afExpLevel" value="junior">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Entry Level</span>
+                    <span class="af-info-icon" title="1-2 years experience">?</span>
+                  </span>
+                </label>
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afExpLevel" value="mid" checked>
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Mid Level</span>
+                    <span class="af-info-icon" title="2-5 years experience">?</span>
+                  </span>
+                </label>
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afExpLevel" value="senior">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Senior Level</span>
+                    <span class="af-info-icon" title="5+ years experience">?</span>
+                  </span>
+                </label>
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afExpLevel" value="lead_staff">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Lead/Staff</span>
+                    <span class="af-info-icon" title="Lead, Staff, Principal roles">?</span>
+                  </span>
+                </label>
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afExpLevel" value="director">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Director/Executive</span>
+                    <span class="af-info-icon" title="Manager, Director, VP roles">?</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Required Experience Slider -->
+            <div class="af-card-group">
+              <div class="af-slider-head-row">
+                <div class="af-slider-label-block">
+                  <span class="af-slider-title">Required Experience</span>
+                  <span class="af-slider-subval" id="afExpSubval">Any requirements</span>
+                </div>
+                <label class="af-toggle-label">
+                  <span class="af-toggle-text">Open to all</span>
+                  <input type="checkbox" id="afToggleExpOpen" checked class="af-switch-input">
+                  <span class="af-switch-slider"></span>
+                </label>
+              </div>
+              <div class="af-range-wrap" id="afExpSliderWrap">
+                <input type="range" class="af-range-input" id="afExpSlider" min="0" max="10" step="1" value="0">
+                <div class="af-slider-ticks">
+                  <span>0 yr</span>
+                  <span>2 yrs</span>
+                  <span>5 yrs</span>
+                  <span>8 yrs</span>
+                  <span>10+ yrs</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Date Posted -->
+            <div class="af-card-group">
+              <div class="af-label-row">
+                <label class="af-field-label">Date Posted</label>
+                <button type="button" class="af-btn-clear-section" id="afClearDatePosted">
+                  <svg class="af-clear-icon" viewBox="0 0 16 16"><path d="M2 13h12M11.5 2.5l2 2-7 7-3.5.5.5-3.5 8-6z" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+                  Clear All
+                </button>
+              </div>
+              <div class="af-tiles-grid af-grid-2">
+                <label class="af-tile-radio">
+                  <input type="radio" name="afDatePosted" value="1" checked>
+                  <span class="af-tile-box">
+                    <span class="af-radio-dot"></span>
+                    <span class="af-tile-label">Past 24 hours</span>
+                  </span>
+                </label>
+                <label class="af-tile-radio">
+                  <input type="radio" name="afDatePosted" value="3">
+                  <span class="af-tile-box">
+                    <span class="af-radio-dot"></span>
+                    <span class="af-tile-label">Past 3 days</span>
+                  </span>
+                </label>
+                <label class="af-tile-radio">
+                  <input type="radio" name="afDatePosted" value="7">
+                  <span class="af-tile-box">
+                    <span class="af-radio-dot"></span>
+                    <span class="af-tile-label">Past week</span>
+                  </span>
+                </label>
+                <label class="af-tile-radio">
+                  <input type="radio" name="afDatePosted" value="30">
+                  <span class="af-tile-box">
+                    <span class="af-radio-dot"></span>
+                    <span class="af-tile-label">Past month</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <!-- SECTION 2: Compensation & Sponsorship -->
+          <section class="af-section" id="afSecCompensation">
+            <h3 class="af-sec-heading">Compensation &amp; Sponsorship</h3>
+
+            <!-- Minimum Annual Salary -->
+            <div class="af-card-group">
+              <div class="af-slider-head-row">
+                <div class="af-slider-label-block">
+                  <span class="af-slider-title">Minimum Annual Salary</span>
+                  <span class="af-slider-subval" id="afSalarySubval">Any salary</span>
+                </div>
+                <label class="af-toggle-label">
+                  <span class="af-toggle-text">Open to all</span>
+                  <input type="checkbox" id="afToggleSalaryOpen" checked class="af-switch-input">
+                  <span class="af-switch-slider"></span>
+                </label>
+              </div>
+              <div class="af-range-wrap" id="afSalarySliderWrap">
+                <input type="range" class="af-range-input" id="afSalarySlider" min="0" max="250000" step="10000" value="0">
+                <div class="af-slider-ticks">
+                  <span>$0</span>
+                  <span>$60k</span>
+                  <span>$100k</span>
+                  <span>$150k</span>
+                  <span>$200k+</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Work Authorization -->
+            <div class="af-card-group">
+              <div class="af-field-label">
+                Work Authorization <span class="af-info-icon" title="H1B visa sponsorship filter">?</span>
+              </div>
+              <label class="af-tile-checkbox af-tile-full">
+                <input type="checkbox" id="afCheckH1B" value="h1b">
+                <span class="af-tile-box">
+                  <span class="af-tile-check"></span>
+                  <span class="af-tile-label">H1B sponsorship</span>
+                </span>
+              </label>
+              <div class="af-hint-card">
+                This filter helps you find jobs that either explicitly state H1B support ("H1B Sponsored") or come from companies with a recent history of sponsoring H1B visas for similar roles ("H1B Sponsor Likely").
+              </div>
+            </div>
+
+            <!-- Exclude Jobs with Limitations -->
+            <div class="af-card-group">
+              <div class="af-field-label">
+                Exclude Jobs with Limitations <span class="af-info-icon" title="Filter out jobs requiring security clearances or citizen-only roles">?</span>
+              </div>
+              <div class="af-tiles-grid af-grid-2">
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" id="afExcludeClearance" value="clearance">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Security Clearance Required</span>
+                  </span>
+                </label>
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" id="afExcludeCitizenOnly" value="citizen_only">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">US Citizen Only</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <!-- SECTION 3: Areas of Interests -->
+          <section class="af-section" id="afSecInterests">
+            <h3 class="af-sec-heading">Areas of Interests</h3>
+
+            <!-- Industry -->
+            <div class="af-card-group">
+              <div class="af-label-row">
+                <label class="af-field-label">Industry</label>
+                <button type="button" class="af-btn-clear-section" id="afClearIndustry">
+                  <svg class="af-clear-icon" viewBox="0 0 16 16"><path d="M2 13h12M11.5 2.5l2 2-7 7-3.5.5.5-3.5 8-6z" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+                  Clear All
+                </button>
+              </div>
+              <div class="af-checkbox-list" id="afIndustryList">
+                <div class="af-list-item" data-val="Artificial Intelligence (AI)">
+                  <label class="af-list-label">
+                    <input type="checkbox" name="afIndustry" value="Artificial Intelligence (AI)">
+                    <span class="af-tile-check"></span>
+                    <span>Artificial Intelligence (AI)</span>
+                  </label>
+                  <button type="button" class="af-btn-item-remove" title="Remove">&times;</button>
+                </div>
+                <div class="af-list-item" data-val="Financial Services">
+                  <label class="af-list-label">
+                    <input type="checkbox" name="afIndustry" value="Financial Services">
+                    <span class="af-tile-check"></span>
+                    <span>Financial Services</span>
+                  </label>
+                  <button type="button" class="af-btn-item-remove" title="Remove">&times;</button>
+                </div>
+                <div class="af-list-item" data-val="Consulting">
+                  <label class="af-list-label">
+                    <input type="checkbox" name="afIndustry" value="Consulting">
+                    <span class="af-tile-check"></span>
+                    <span>Consulting</span>
+                  </label>
+                  <button type="button" class="af-btn-item-remove" title="Remove">&times;</button>
+                </div>
+                <div class="af-list-item" data-val="Software">
+                  <label class="af-list-label">
+                    <input type="checkbox" name="afIndustry" value="Software">
+                    <span class="af-tile-check"></span>
+                    <span>Software</span>
+                  </label>
+                  <button type="button" class="af-btn-item-remove" title="Remove">&times;</button>
+                </div>
+              </div>
+              <div class="af-add-row" style="margin-top: 8px;">
+                <button type="button" class="af-btn-dashed-add" id="afBtnAddIndustry">+ Add</button>
+              </div>
+            </div>
+
+            <!-- Excluded Industry (Accordion) -->
+            <div class="af-accordion-group" id="afAccordionExcludedIndustry">
+              <button type="button" class="af-accordion-header" id="afToggleExcludedIndustry" aria-expanded="false">
+                <span class="af-accordion-title">Excluded Industry</span>
+                <svg class="af-accordion-chevron" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="af-accordion-body" id="afBodyExcludedIndustry" hidden>
+                <div class="af-tags-list" id="afExcludedIndustryChips"></div>
+                <div class="af-inline-add-row">
+                  <input type="text" class="af-text-input af-input-sm" id="afExcludedIndustryInput" placeholder="e.g. Healthcare, Gaming...">
+                  <button type="button" class="af-btn-add-inline" id="afAddExcludedIndustryBtn">+ Add</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Skill -->
+            <div class="af-card-group">
+              <div class="af-label-row">
+                <label class="af-field-label">Skill</label>
+                <button type="button" class="af-btn-clear-section" id="afClearSkills">
+                  <svg class="af-clear-icon" viewBox="0 0 16 16"><path d="M2 13h12M11.5 2.5l2 2-7 7-3.5.5.5-3.5 8-6z" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+                  Clear All
+                </button>
+              </div>
+              <div class="af-checkbox-list" id="afSkillList">
+                <div class="af-list-item" data-val="CI/CD">
+                  <label class="af-list-label">
+                    <input type="checkbox" name="afSkill" value="CI/CD">
+                    <span class="af-tile-check"></span>
+                    <span>CI/CD</span>
+                  </label>
+                  <button type="button" class="af-btn-item-remove" title="Remove">&times;</button>
+                </div>
+                <div class="af-list-item" data-val="HTML5">
+                  <label class="af-list-label">
+                    <input type="checkbox" name="afSkill" value="HTML5">
+                    <span class="af-tile-check"></span>
+                    <span>HTML5</span>
+                  </label>
+                  <button type="button" class="af-btn-item-remove" title="Remove">&times;</button>
+                </div>
+                <div class="af-list-item" data-val="JavaScript">
+                  <label class="af-list-label">
+                    <input type="checkbox" name="afSkill" value="JavaScript">
+                    <span class="af-tile-check"></span>
+                    <span>JavaScript</span>
+                  </label>
+                  <button type="button" class="af-btn-item-remove" title="Remove">&times;</button>
+                </div>
+                <div class="af-list-item" data-val="C#">
+                  <label class="af-list-label">
+                    <input type="checkbox" name="afSkill" value="C#">
+                    <span class="af-tile-check"></span>
+                    <span>C#</span>
+                  </label>
+                  <button type="button" class="af-btn-item-remove" title="Remove">&times;</button>
+                </div>
+                <div class="af-list-item" data-val="MongoDB">
+                  <label class="af-list-label">
+                    <input type="checkbox" name="afSkill" value="MongoDB">
+                    <span class="af-tile-check"></span>
+                    <span>MongoDB</span>
+                  </label>
+                  <button type="button" class="af-btn-item-remove" title="Remove">&times;</button>
+                </div>
+              </div>
+              <div class="af-add-row" style="margin-top: 8px;">
+                <button type="button" class="af-btn-dashed-add" id="afBtnAddSkill">+ Add</button>
+              </div>
+            </div>
+
+            <!-- Excluded Skill (Accordion) -->
+            <div class="af-accordion-group" id="afAccordionExcludedSkill">
+              <button type="button" class="af-accordion-header" id="afToggleExcludedSkill" aria-expanded="false">
+                <span class="af-accordion-title">Excluded Skill</span>
+                <svg class="af-accordion-chevron" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="af-accordion-body" id="afBodyExcludedSkill" hidden>
+                <div class="af-tags-list" id="afExcludedSkillChips"></div>
+                <div class="af-inline-add-row">
+                  <input type="text" class="af-text-input af-input-sm" id="afExcludedSkillInput" placeholder="e.g. PHP, Ruby...">
+                  <button type="button" class="af-btn-add-inline" id="afAddExcludedSkillBtn">+ Add</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Role Type -->
+            <div class="af-card-group">
+              <div class="af-label-row">
+                <label class="af-field-label">Role Type</label>
+                <button type="button" class="af-btn-clear-section" id="afClearRoleType">
+                  <svg class="af-clear-icon" viewBox="0 0 16 16"><path d="M2 13h12M11.5 2.5l2 2-7 7-3.5.5.5-3.5 8-6z" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+                  Clear All
+                </button>
+              </div>
+              <div class="af-tiles-grid af-grid-2">
+                <label class="af-tile-radio">
+                  <input type="radio" name="afRoleType" value="ic">
+                  <span class="af-tile-box">
+                    <span class="af-radio-dot"></span>
+                    <span class="af-tile-label">IC</span>
+                  </span>
+                </label>
+                <label class="af-tile-radio">
+                  <input type="radio" name="afRoleType" value="manager">
+                  <span class="af-tile-box">
+                    <span class="af-radio-dot"></span>
+                    <span class="af-tile-label">Manager</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <!-- SECTION 4: Company Insights -->
+          <section class="af-section" id="afSecCompany">
+            <h3 class="af-sec-heading">Company Insights</h3>
+
+            <!-- Company -->
+            <div class="af-card-group">
+              <div class="af-label-row">
+                <label class="af-field-label">
+                  Company <span class="af-info-icon" title="Search or filter target companies">?</span>
+                </label>
+                <button type="button" class="af-btn-clear-section" id="afClearCompany">
+                  <svg class="af-clear-icon" viewBox="0 0 16 16"><path d="M2 13h12M11.5 2.5l2 2-7 7-3.5.5.5-3.5 8-6z" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+                  Clear All
+                </button>
+              </div>
+              <div class="af-tags-list" id="afCompanyChips"></div>
+              <div class="af-inline-add-row" id="afCompanyAddRow" hidden style="margin-bottom: 8px;">
+                <input type="text" class="af-text-input af-input-sm" id="afCompanyInput" placeholder="Enter company name...">
+                <button type="button" class="af-btn-add-inline" id="afAddCompanyConfirmBtn">Add</button>
+              </div>
+              <button type="button" class="af-btn-dashed-add" id="afBtnAddCompany">+ Add</button>
+            </div>
+
+            <!-- Company Stage -->
+            <div class="af-card-group">
+              <div class="af-label-row">
+                <label class="af-field-label">
+                  Company Stage <span class="af-info-icon" title="Filter by company stage">?</span>
+                </label>
+                <button type="button" class="af-btn-clear-section" id="afClearCompanyStage">
+                  <svg class="af-clear-icon" viewBox="0 0 16 16"><path d="M2 13h12M11.5 2.5l2 2-7 7-3.5.5.5-3.5 8-6z" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+                  Clear All
+                </button>
+              </div>
+              <div class="af-tiles-grid af-grid-2">
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afCompanyStage" value="early">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Early Stage</span>
+                  </span>
+                </label>
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afCompanyStage" value="growth">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Growth Stage</span>
+                  </span>
+                </label>
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afCompanyStage" value="late">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Late Stage</span>
+                  </span>
+                </label>
+                <label class="af-tile-checkbox">
+                  <input type="checkbox" name="afCompanyStage" value="public">
+                  <span class="af-tile-box">
+                    <span class="af-tile-check"></span>
+                    <span class="af-tile-label">Public Company</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Job Source -->
+            <div class="af-card-group">
+              <div class="af-field-label">
+                Job Source <span class="af-info-icon" title="Filter staffing and recruitment agencies">?</span>
+              </div>
+              <label class="af-tile-checkbox af-tile-full">
+                <input type="checkbox" id="afCheckExcludeStaffing" value="exclude_staffing">
+                <span class="af-tile-box">
+                  <span class="af-tile-check"></span>
+                  <span class="af-tile-label">Exclude Staffing Agency</span>
+                </span>
+              </label>
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </aside>
+  </div>
+
   <div class="toasts" id="toastContainer" role="status" aria-live="polite"></div>
 
-  <script src="app.js?v=2.2"></script>
+  <script src="app.js?v=2.3"></script>
 </body>
 </html>

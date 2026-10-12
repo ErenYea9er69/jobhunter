@@ -67,21 +67,44 @@
     famousFilter: (function() { try { return localStorage.getItem('jh-famous-filter') || 'all'; } catch (e) { return 'all'; } })(),
     filters: {
       keyword: '',
-      workMode: 'Any',
+      workMode: 'Remote',
       minScore: 0,
       famousMode: (function() { try { return localStorage.getItem('jh-famous-filter') || 'all'; } catch (e) { return 'all'; } })(),
-      country: 'all',
+      country: 'United States',
       excludedCountries: new Set(),
-      seniority: 'all',
+      seniority: 'mid',
       salaryTier: '0',
-      freshnessDays: 0,
+      freshnessDays: 1,
       directAtsOnly: false,
       hideApplied: false,
       savedOnly: false,
       selectedSkills: new Set(),
-      jobType: 'all',
+      jobType: 'Full-time',
       industry: 'all',
-      yoe: 'all'
+      yoe: 'all',
+      jobFunctions: ['Full Stack Engineer'],
+      excludedTitles: new Set(),
+      jobTypes: new Set(['Full-time']),
+      workModels: new Set(['Remote']),
+      locationQuery: 'Anywhere in the US',
+      locationRadius: '25',
+      customLocations: [],
+      expLevels: new Set(['mid']),
+      expOpenToAll: true,
+      expYears: 0,
+      salaryOpenToAll: true,
+      minSalary: 0,
+      h1b: false,
+      excludeClearance: false,
+      excludeCitizenOnly: false,
+      industries: new Set(),
+      excludedIndustries: new Set(),
+      skills: new Set(),
+      excludedSkills: new Set(),
+      roleType: 'all',
+      companies: new Set(),
+      companyStages: new Set(),
+      excludeStaffing: false
     },
     hiddenJobs: (function() { try { return new Set(JSON.parse(localStorage.getItem('jh_hidden_jobs') || '[]')); } catch (e) { return new Set(); } })(),
     showHidden: false,
@@ -163,6 +186,7 @@
     if (v === null || v === undefined) return '';
     return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
+  const escapeHtml = esc;
 
   function cleanTitle(t) {
     if (!t) return '';
@@ -1403,27 +1427,91 @@
         if (!hay.includes(kw)) return false;
       }
 
-      // 2. Work Mode
-      const reqMode = (f.workMode || 'Any').toLowerCase();
-      if (reqMode && reqMode !== 'any') {
-        const jm = jobWorkMode(j);
-        if (reqMode === 'remote' && jm !== 'remote') return false;
-        if (reqMode === 'hybrid' && jm !== 'hybrid') return false;
-        if (reqMode === 'onsite' && jm !== 'onsite') return false;
+      // 2. Job Functions (from All-Filters drawer)
+      if (f.jobFunctions && f.jobFunctions.length > 0) {
+        const titleLower = (j.title || '').toLowerCase();
+        const descLower = ((j.description || '').slice(0, 600)).toLowerCase();
+        const tagsLower = (j.tags || []).map(t => String(t).toLowerCase());
+        const matchesAnyFn = f.jobFunctions.some(fn => {
+          const fnClean = fn.toLowerCase().trim();
+          if (!fnClean) return true;
+          if (titleLower.includes(fnClean) || descLower.includes(fnClean) || tagsLower.some(t => t.includes(fnClean))) return true;
+          // Match core role keywords
+          const words = fnClean.split(/\s+/).filter(w => !['engineer', 'developer', 'specialist', 'lead', 'senior', 'junior', 'level'].includes(w));
+          if (words.length > 0 && words.every(w => titleLower.includes(w) || descLower.includes(w))) return true;
+          return false;
+        });
+        if (!matchesAnyFn) return false;
       }
 
-      // 3. Match Score
+      // 3. Excluded Titles
+      if (f.excludedTitles && f.excludedTitles.size > 0) {
+        const titleLower = (j.title || '').toLowerCase();
+        for (const ex of f.excludedTitles) {
+          if (ex && titleLower.includes(ex.toLowerCase().trim())) return false;
+        }
+      }
+
+      // 4. Job Types (Full-time, Contract, Part-time, Internship)
+      if (f.jobTypes && f.jobTypes.size > 0 && f.jobTypes.size < 4) {
+        const jt = (j.job_type || '').toLowerCase();
+        const titleLower = (j.title || '').toLowerCase();
+        const descLower = ((j.description || '').slice(0, 300)).toLowerCase();
+        const matchesType = Array.from(f.jobTypes).some(type => {
+          const tLow = type.toLowerCase();
+          if (tLow === 'full-time') return jt.includes('full') || descLower.includes('full-time') || descLower.includes('full time') || (!jt && !descLower.includes('contract') && !descLower.includes('intern'));
+          if (tLow === 'contract') return jt.includes('contract') || titleLower.includes('contract') || descLower.includes('contract');
+          if (tLow === 'part-time') return jt.includes('part') || descLower.includes('part-time') || descLower.includes('part time');
+          if (tLow === 'internship') return jt.includes('intern') || titleLower.includes('intern') || descLower.includes('intern');
+          return false;
+        });
+        if (!matchesType) return false;
+      } else if (f.jobType && f.jobType !== 'all') {
+        const jt = (j.job_type || '').toLowerCase();
+        if (!jt.includes(f.jobType.toLowerCase())) return false;
+      }
+
+      // 5. Work Models (Onsite, Hybrid, Remote)
+      if (f.workModels && f.workModels.size > 0 && f.workModels.size < 3) {
+        const jm = jobWorkMode(j).toLowerCase(); // 'remote', 'hybrid', 'onsite'
+        const allowed = Array.from(f.workModels).map(m => m.toLowerCase());
+        if (!allowed.includes(jm)) return false;
+      } else {
+        const reqMode = (f.workMode || 'Any').toLowerCase();
+        if (reqMode && reqMode !== 'any') {
+          const jm = jobWorkMode(j);
+          if (reqMode === 'remote' && jm !== 'remote') return false;
+          if (reqMode === 'hybrid' && jm !== 'hybrid') return false;
+          if (reqMode === 'onsite' && jm !== 'onsite') return false;
+        }
+      }
+
+      // 6. Match Score
       if (f.minScore > 0 && (j.score || 0) < f.minScore) {
         return false;
       }
 
-      // 4. Company Type (Big Tech vs Startups)
+      // 7. Company Type (Big Tech vs Startups)
       if (f.famousMode === 'hide' && isFamousJob(j)) return false;
       if (f.famousMode === 'only' && !isFamousJob(j)) return false;
       if (f.famousMode === 'startups' && !jobIsStartup(j)) return false;
 
-      // 5. Seniority
-      if (f.seniority && f.seniority !== 'all') {
+      // 8. Experience Level
+      if (f.expLevels && f.expLevels.size > 0 && f.expLevels.size < 6) {
+        const sen = jobSeniority(j);
+        const title = (j.title || '').toLowerCase();
+        const isDirector = /\b(director|vp|head of|chief|executive)\b/i.test(title);
+        const matchesSen = Array.from(f.expLevels).some(lvl => {
+          if (lvl === 'intern') return sen === 'intern';
+          if (lvl === 'junior') return sen === 'junior';
+          if (lvl === 'mid') return sen === 'mid';
+          if (lvl === 'senior') return sen === 'senior';
+          if (lvl === 'lead_staff') return sen === 'lead_staff';
+          if (lvl === 'director') return isDirector || sen === 'lead_staff';
+          return false;
+        });
+        if (!matchesSen) return false;
+      } else if (f.seniority && f.seniority !== 'all') {
         const sen = jobSeniority(j);
         if (f.seniority === 'junior' && sen !== 'junior' && sen !== 'intern') return false;
         if (f.seniority === 'mid' && sen !== 'mid') return false;
@@ -1431,8 +1519,21 @@
         if (f.seniority === 'lead_staff' && sen !== 'lead_staff') return false;
       }
 
-      // 6. Salary Tier
-      if (f.salaryTier && f.salaryTier !== '0') {
+      // 9. Required Experience Years (when not Open to all)
+      if (!f.expOpenToAll && f.expYears > 0) {
+        const desc = (j.description || '').toLowerCase();
+        const ym = desc.match(/(\d+)\+?\s*(?:-\s*(\d+))?\s*(?:years?|yrs?)(?:\s+of)?\s+(?:experience|exp)/i);
+        if (ym) {
+          const minRequired = parseInt(ym[1], 10);
+          if (!isNaN(minRequired) && minRequired > f.expYears) return false;
+        }
+      }
+
+      // 10. Salary Tier / Minimum Salary
+      if (!f.salaryOpenToAll && f.minSalary > 0) {
+        const salMax = jobAnnualSalaryMax(j);
+        if (salMax > 0 && salMax < f.minSalary) return false;
+      } else if (f.salaryTier && f.salaryTier !== '0') {
         const salMax = jobAnnualSalaryMax(j);
         if (f.salaryTier === 'disclosed' && !salMax && !j.salary) return false;
         if (f.salaryTier === '100k' && salMax < 100000) return false;
@@ -1440,33 +1541,50 @@
         if (f.salaryTier === '180k' && salMax < 180000) return false;
       }
 
-      // 7. Freshness
+      // 11. Freshness
       if (f.freshnessDays > 0) {
         const days = jobDaysAgo(j);
         if (days === null || days > f.freshnessDays) return false;
       }
 
-      // 8. Direct ATS Only
+      // 12. Direct ATS Only
       if (f.directAtsOnly) {
         const isDirect = j.source_kind === 'Direct employer ATS' || String(j.source_tier || '').startsWith('Direct');
         if (!isDirect) return false;
       }
 
-      // 9. Hide Applied
+      // 13. Hide Applied
       if (f.hideApplied && jobIsApplied(j)) return false;
 
-      // 10. Saved Only
+      // 14. Saved Only
       if (f.savedOnly && !jobIsSaved(j)) return false;
 
-      // 11. Selected Skill Facets
-      if (f.selectedSkills && f.selectedSkills.size > 0) {
+      // 15. Selected Skills
+      if (f.skills && f.skills.size > 0) {
+        const jSkills = new Set(jobSkillsList(j).map(s => s.toLowerCase()));
+        const desc = (j.description || '').toLowerCase();
+        for (const reqSkill of f.skills) {
+          const sLow = reqSkill.toLowerCase().trim();
+          if (!jSkills.has(sLow) && !desc.includes(sLow)) return false;
+        }
+      } else if (f.selectedSkills && f.selectedSkills.size > 0) {
         const jSkills = new Set(jobSkillsList(j).map(s => s.toLowerCase()));
         for (const reqSkill of f.selectedSkills) {
           if (!jSkills.has(reqSkill.toLowerCase())) return false;
         }
       }
 
-      // 12. Target Country (Include)
+      // 16. Excluded Skills
+      if (f.excludedSkills && f.excludedSkills.size > 0) {
+        const jSkills = new Set(jobSkillsList(j).map(s => s.toLowerCase()));
+        const desc = (j.description || '').toLowerCase();
+        for (const ex of f.excludedSkills) {
+          const sLow = ex.toLowerCase().trim();
+          if (jSkills.has(sLow) || desc.includes(sLow)) return false;
+        }
+      }
+
+      // 17. Target Country
       if (f.country && f.country !== 'all') {
         const jc = jobCountry(j);
         if (f.country === 'Worldwide') {
@@ -1478,7 +1596,14 @@
         }
       }
 
-      // 13. Excluded Countries (Hide unwanted)
+      // 18. Location Query
+      if (f.locationQuery && f.locationQuery.trim() && f.locationQuery.toLowerCase() !== 'anywhere in the us') {
+        const locQ = f.locationQuery.toLowerCase().trim();
+        const jLoc = (j.location || '').toLowerCase();
+        if (!jLoc.includes(locQ) && jobWorkMode(j) !== 'remote') return false;
+      }
+
+      // 19. Excluded Countries
       if (f.excludedCountries && f.excludedCountries.size > 0) {
         const jc = jobCountry(j).toLowerCase();
         for (const ex of f.excludedCountries) {
@@ -1486,7 +1611,82 @@
         }
       }
 
-      // 14. Hidden Jobs filtering
+      // 20. Work Authorization (H1B sponsorship)
+      if (f.h1b) {
+        const text = `${j.title || ''} ${j.description || ''} ${(j.tags || []).join(' ')}`.toLowerCase();
+        const mentionsNoSponsor = /\b(no visa|cannot sponsor|will not sponsor|no sponsorship|not eligible for sponsorship)\b/i.test(text);
+        if (mentionsNoSponsor) return false;
+        if (j.h1b === false) return false;
+      }
+
+      // 21. Limitations (Clearance & Citizen Only)
+      if (f.excludeClearance) {
+        const text = `${j.title || ''} ${j.description || ''}`.toLowerCase();
+        if (/\b(security clearance|top secret|ts\/sci|secret clearance|clearance required|polygraph)\b/i.test(text)) return false;
+      }
+      if (f.excludeCitizenOnly) {
+        const text = `${j.title || ''} ${j.description || ''}`.toLowerCase();
+        if (/\b(us citizens? only|u\.s\. citizens? only|citizenship required|must be a us citizen|must be a u\.s\. citizen)\b/i.test(text)) return false;
+      }
+
+      // 22. Industry
+      if (f.industries && f.industries.size > 0) {
+        const hay = `${(j.tags || []).join(' ')} ${j.company || ''} ${j.title || ''} ${(j.description || '').slice(0, 400)}`.toLowerCase();
+        const matchesInd = Array.from(f.industries).some(ind => {
+          const indClean = ind.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim();
+          return hay.includes(indClean) || (ind.toLowerCase().includes('ai') && /\b(ai|artificial intelligence|machine learning|ml)\b/i.test(hay));
+        });
+        if (!matchesInd) return false;
+      } else if (f.industry && f.industry !== 'all') {
+        const hay = `${j.tags ? j.tags.join(' ') : ''} ${j.company || ''} ${j.title || ''} ${j.description ? j.description.slice(0, 300) : ''}`.toLowerCase();
+        if (!hay.includes(f.industry.toLowerCase())) return false;
+      }
+
+      // 23. Excluded Industry
+      if (f.excludedIndustries && f.excludedIndustries.size > 0) {
+        const hay = `${(j.tags || []).join(' ')} ${j.company || ''} ${j.title || ''} ${(j.description || '').slice(0, 400)}`.toLowerCase();
+        for (const ex of f.excludedIndustries) {
+          if (hay.includes(ex.toLowerCase().trim())) return false;
+        }
+      }
+
+      // 24. Role Type (IC vs Manager)
+      if (f.roleType === 'ic') {
+        const title = (j.title || '').toLowerCase();
+        if (/\b(engineering manager|product manager|lead|director|head of|vp|architect)\b/i.test(title)) return false;
+      } else if (f.roleType === 'manager') {
+        const title = (j.title || '').toLowerCase();
+        if (!/\b(manager|lead|director|head of|vp|lead\/staff)\b/i.test(title)) return false;
+      }
+
+      // 25. Target Companies
+      if (f.companies && f.companies.size > 0) {
+        const co = (j.company || '').toLowerCase();
+        const matchCo = Array.from(f.companies).some(c => co.includes(c.toLowerCase().trim()));
+        if (!matchCo) return false;
+      }
+
+      // 26. Company Stage
+      if (f.companyStages && f.companyStages.size > 0) {
+        const matchStage = Array.from(f.companyStages).some(st => {
+          if (st === 'early') return jobIsStartup(j);
+          if (st === 'public') return isFamousJob(j);
+          if (st === 'growth' || st === 'late') return !isFamousJob(j) && (j.company_stage === 'mid_tech' || !jobIsStartup(j));
+          return false;
+        });
+        if (!matchStage) return false;
+      }
+
+      // 27. Exclude Staffing Agency
+      if (f.excludeStaffing) {
+        const co = (j.company || '').toLowerCase();
+        const isAgency = (j.source_kind === 'Staffing agency') ||
+          /\b(cybercoders|robert half|teksystems|aerotek|apex systems|kforce|kelly services|insight global|hays|randstad)\b/i.test(co) ||
+          /\b(staffing|recruiting agency|staffing agency)\b/i.test(co);
+        if (isAgency) return false;
+      }
+
+      // 28. Hidden Jobs
       const k = jobKey(j);
       const isHidden = S.hiddenJobs && S.hiddenJobs.has(k);
       if (S.showHidden) {
@@ -1495,19 +1695,7 @@
         if (isHidden) return false;
       }
 
-      // 15. Job Type filter
-      if (f.jobType && f.jobType !== 'all') {
-        const jt = (j.job_type || '').toLowerCase();
-        if (!jt.includes(f.jobType.toLowerCase())) return false;
-      }
-
-      // 16. Industry filter
-      if (f.industry && f.industry !== 'all') {
-        const hay = `${j.tags ? j.tags.join(' ') : ''} ${j.company || ''} ${j.title || ''} ${j.description ? j.description.slice(0, 300) : ''}`.toLowerCase();
-        if (!hay.includes(f.industry.toLowerCase())) return false;
-      }
-
-      // 17. Years of Experience
+      // 29. Years of Experience (yoe)
       if (f.yoe && f.yoe !== 'all') {
         const sen = jobSeniority(j);
         if (f.yoe === '0-2' && sen !== 'junior' && sen !== 'intern') return false;
@@ -1737,26 +1925,54 @@
   function resetAllFilters() {
     S.filters = {
       keyword: '',
-      workMode: 'Any',
+      workMode: 'Remote',
       minScore: 0,
       famousMode: 'all',
-      country: 'all',
+      country: 'United States',
       excludedCountries: new Set(),
-      seniority: 'all',
+      seniority: 'mid',
       salaryTier: '0',
-      freshnessDays: 0,
+      freshnessDays: 1,
       directAtsOnly: false,
       hideApplied: false,
       savedOnly: false,
-      selectedSkills: new Set()
+      selectedSkills: new Set(),
+      jobType: 'Full-time',
+      industry: 'all',
+      yoe: 'all',
+      jobFunctions: ['Full Stack Engineer'],
+      excludedTitles: new Set(),
+      jobTypes: new Set(['Full-time']),
+      workModels: new Set(['Remote']),
+      locationQuery: 'Anywhere in the US',
+      locationRadius: '25',
+      customLocations: [],
+      expLevels: new Set(['mid']),
+      expOpenToAll: true,
+      expYears: 0,
+      salaryOpenToAll: true,
+      minSalary: 0,
+      h1b: false,
+      excludeClearance: false,
+      excludeCitizenOnly: false,
+      industries: new Set(),
+      excludedIndustries: new Set(),
+      skills: new Set(),
+      excludedSkills: new Set(),
+      roleType: 'all',
+      companies: new Set(),
+      companyStages: new Set(),
+      excludeStaffing: false
     };
-    S.workMode = 'Any';
+    S.workMode = 'Remote';
     S.famousFilter = 'all';
     try { localStorage.setItem('jh-famous-filter', 'all'); } catch (e) {}
     const s = $('#searchMinScore'); if (s) s.value = '0';
     const fam = $('#searchFamousSelect'); if (fam) fam.value = 'all';
-    const cSel = $('#countrySelect'); if (cSel) cSel.value = 'all';
+    const cSel = $('#countrySelect'); if (cSel) cSel.value = 'United States';
     const exSel = $('#excludeCountrySelect'); if (exSel) exSel.value = '';
+    syncDrawerUiFromState();
+    renderDrawerActivePills();
   }
 
   function syncFiltersUi() {
@@ -1823,6 +2039,8 @@
 
     renderExcludedTags();
     syncFamousUi();
+    syncDrawerUiFromState();
+    renderDrawerActivePills();
   }
 
   function applySort() {
@@ -4111,16 +4329,1148 @@
     const btnAllFilters = $('#p4BtnAllFilters');
     if (btnAllFilters) {
       btnAllFilters.addEventListener('click', () => {
-        const adv = $('#legacySearchSection');
-        if (adv) {
-          const isOpen = !adv.hidden;
-          adv.hidden = isOpen;
-          btnAllFilters.classList.toggle('is-active', !isOpen);
-        }
+        openAllFiltersDrawer();
       });
     }
 
     updateHiddenJobsBadge();
+  }
+
+  // ----------------------------------------------------------------- All Filters Drawer
+  function openAllFiltersDrawer() {
+    const overlay = $('#afDrawerOverlay');
+    if (!overlay) return;
+    const panel = $('#afDrawerPanel');
+    if (panel) panel.scrollTop = 0;
+    syncDrawerUiFromState();
+    renderDrawerActivePills();
+    overlay.hidden = false;
+    overlay.setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(() => {
+      overlay.classList.add('is-open');
+    });
+    const btn = $('#p4BtnAllFilters');
+    if (btn) btn.classList.add('is-active');
+  }
+
+  function closeAllFiltersDrawer() {
+    const overlay = $('#afDrawerOverlay');
+    if (!overlay) return;
+    overlay.classList.remove('is-open');
+    overlay.setAttribute('aria-hidden', 'true');
+    const panel = $('#afDrawerPanel');
+    if (panel) panel.scrollTop = 0;
+    setTimeout(() => {
+      overlay.hidden = true;
+    }, 280);
+    const btn = $('#p4BtnAllFilters');
+    if (btn) btn.classList.remove('is-active');
+  }
+
+  function renderJobFunctionChips() {
+    const container = $('#afJobFunctionChips');
+    if (!container) return;
+    const fns = S.filters.jobFunctions || [];
+    container.innerHTML = fns.map(fn => `
+      <span class="af-tag-chip" data-fn="${esc(fn)}">
+        <span>${esc(fn)}</span>
+        <button type="button" class="af-tag-remove" aria-label="Remove ${esc(fn)}">&times;</button>
+      </span>
+    `).join('');
+  }
+
+  function renderExcludedTitleChips() {
+    const container = $('#afExcludedTitleChips');
+    if (!container) return;
+    const titles = Array.from(S.filters.excludedTitles || []);
+    container.innerHTML = titles.map(t => `
+      <span class="af-tag-chip" data-title="${esc(t)}">
+        <span>${esc(t)}</span>
+        <button type="button" class="af-tag-remove" aria-label="Remove ${esc(t)}">&times;</button>
+      </span>
+    `).join('');
+  }
+
+  function renderExcludedIndustryChips() {
+    const container = $('#afExcludedIndustryChips');
+    if (!container) return;
+    const inds = Array.from(S.filters.excludedIndustries || []);
+    container.innerHTML = inds.map(ind => `
+      <span class="af-tag-chip" data-ind="${esc(ind)}">
+        <span>${esc(ind)}</span>
+        <button type="button" class="af-tag-remove" aria-label="Remove ${esc(ind)}">&times;</button>
+      </span>
+    `).join('');
+  }
+
+  function renderExcludedSkillChips() {
+    const container = $('#afExcludedSkillChips');
+    if (!container) return;
+    const sks = Array.from(S.filters.excludedSkills || []);
+    container.innerHTML = sks.map(sk => `
+      <span class="af-tag-chip" data-sk="${esc(sk)}">
+        <span>${esc(sk)}</span>
+        <button type="button" class="af-tag-remove" aria-label="Remove ${esc(sk)}">&times;</button>
+      </span>
+    `).join('');
+  }
+
+  function renderCompanyChips() {
+    const container = $('#afCompanyChips');
+    if (!container) return;
+    const cos = Array.from(S.filters.companies || []);
+    container.innerHTML = cos.map(co => `
+      <span class="af-tag-chip" data-co="${esc(co)}">
+        <span>${esc(co)}</span>
+        <button type="button" class="af-tag-remove" aria-label="Remove ${esc(co)}">&times;</button>
+      </span>
+    `).join('');
+  }
+
+  function syncDrawerUiFromState() {
+    const f = S.filters || {};
+
+    // 1. Job Functions & Excluded Titles
+    renderJobFunctionChips();
+    renderExcludedTitleChips();
+
+    // 2. Job Types
+    $$('input[name="afJobType"]').forEach(cb => {
+      cb.checked = f.jobTypes ? f.jobTypes.has(cb.value) : false;
+    });
+
+    // 3. Work Models
+    $$('input[name="afWorkModel"]').forEach(cb => {
+      cb.checked = f.workModels ? f.workModels.has(cb.value) : false;
+    });
+
+    // 4. Location
+    const cSel = $('#afCountrySelect');
+    if (cSel && f.country) cSel.value = f.country;
+    const locInp = $('#afLocationInput');
+    if (locInp && f.locationQuery) locInp.value = f.locationQuery;
+    const radSel = $('#afRadiusSelect');
+    if (radSel && f.locationRadius) radSel.value = f.locationRadius;
+
+    // 5. Experience Level
+    $$('input[name="afExpLevel"]').forEach(cb => {
+      cb.checked = f.expLevels ? f.expLevels.has(cb.value) : false;
+    });
+
+    // 6. Experience Slider & Toggle
+    const expToggle = $('#afToggleExpOpen');
+    if (expToggle) expToggle.checked = !!f.expOpenToAll;
+    const expSlider = $('#afExpSlider');
+    if (expSlider) expSlider.value = String(f.expYears || 0);
+    const expSubval = $('#afExpSubval');
+    if (expSubval) expSubval.textContent = f.expOpenToAll ? 'Any requirements' : `${f.expYears || 0}+ yrs`;
+    const expWrap = $('#afExpSliderWrap');
+    if (expWrap) expWrap.classList.toggle('is-disabled', !!f.expOpenToAll);
+
+    // 7. Date Posted
+    $$('input[name="afDatePosted"]').forEach(r => {
+      r.checked = (f.freshnessDays && parseInt(r.value, 10) === f.freshnessDays);
+    });
+
+    // 8. Minimum Salary Slider & Toggle
+    const salToggle = $('#afToggleSalaryOpen');
+    if (salToggle) salToggle.checked = !!f.salaryOpenToAll;
+    const salSlider = $('#afSalarySlider');
+    if (salSlider) salSlider.value = String(f.minSalary || 0);
+    const salSubval = $('#afSalarySubval');
+    if (salSubval) salSubval.textContent = f.salaryOpenToAll ? 'Any salary' : `$${Math.round((f.minSalary || 0) / 1000)}k+`;
+    const salWrap = $('#afSalarySliderWrap');
+    if (salWrap) salWrap.classList.toggle('is-disabled', !!f.salaryOpenToAll);
+
+    // 9. Work Authorization & Limitations
+    const h1b = $('#afCheckH1B');
+    if (h1b) h1b.checked = !!f.h1b;
+    const clr = $('#afExcludeClearance');
+    if (clr) clr.checked = !!f.excludeClearance;
+    const ctz = $('#afExcludeCitizenOnly');
+    if (ctz) ctz.checked = !!f.excludeCitizenOnly;
+
+    // 10. Industry
+    $$('input[name="afIndustry"]').forEach(cb => {
+      cb.checked = f.industries ? f.industries.has(cb.value) : false;
+    });
+    renderExcludedIndustryChips();
+
+    // 11. Skill
+    $$('input[name="afSkill"]').forEach(cb => {
+      cb.checked = f.skills ? f.skills.has(cb.value) : false;
+    });
+    renderExcludedSkillChips();
+
+    // 12. Role Type
+    $$('input[name="afRoleType"]').forEach(r => {
+      r.checked = (f.roleType === r.value);
+    });
+
+    // 13. Company & Stages
+    renderCompanyChips();
+    $$('input[name="afCompanyStage"]').forEach(cb => {
+      cb.checked = f.companyStages ? f.companyStages.has(cb.value) : false;
+    });
+
+    // 14. Exclude Staffing
+    const stf = $('#afCheckExcludeStaffing');
+    if (stf) stf.checked = !!f.excludeStaffing;
+  }
+
+  function renderDrawerActivePills() {
+    const bar = $('#afActivePillsBar');
+    if (!bar) return;
+    const f = S.filters || {};
+    const pills = [];
+
+    // Job Functions
+    (f.jobFunctions || []).forEach(fn => {
+      pills.push({ type: 'jobFunction', val: fn, label: fn });
+    });
+
+    // Job Types
+    if (f.jobTypes) {
+      f.jobTypes.forEach(jt => {
+        pills.push({ type: 'jobType', val: jt, label: jt });
+      });
+    }
+
+    // Work Models
+    if (f.workModels) {
+      f.workModels.forEach(wm => {
+        pills.push({ type: 'workModel', val: wm, label: wm });
+      });
+    }
+
+    // Experience Levels
+    const expLabels = { intern: 'Intern/New Grad', junior: 'Entry Level', mid: 'Mid Level', senior: 'Senior Level', lead_staff: 'Lead/Staff', director: 'Director/Executive' };
+    if (f.expLevels) {
+      f.expLevels.forEach(lvl => {
+        pills.push({ type: 'expLevel', val: lvl, label: expLabels[lvl] || lvl });
+      });
+    }
+
+    // Experience Years (if specified)
+    if (!f.expOpenToAll && f.expYears > 0) {
+      pills.push({ type: 'expYears', val: f.expYears, label: `${f.expYears}+ yrs exp` });
+    }
+
+    // Date Posted
+    if (f.freshnessDays && f.freshnessDays > 0) {
+      const freshLabels = { 1: 'Past 24 hours', 3: 'Past 3 days', 7: 'Past week', 30: 'Past month' };
+      pills.push({ type: 'datePosted', val: f.freshnessDays, label: freshLabels[f.freshnessDays] || `< ${f.freshnessDays}d` });
+    }
+
+    // Location / Country
+    if (f.country && f.country !== 'all') {
+      pills.push({ type: 'country', val: f.country, label: f.country });
+    }
+
+    // Salary (if specified)
+    if (!f.salaryOpenToAll && f.minSalary > 0) {
+      pills.push({ type: 'minSalary', val: f.minSalary, label: `$${Math.round(f.minSalary / 1000)}k+` });
+    }
+
+    // H1B
+    if (f.h1b) {
+      pills.push({ type: 'h1b', val: 'h1b', label: 'H1B sponsorship' });
+    }
+
+    // Clearance & Citizen Only
+    if (f.excludeClearance) {
+      pills.push({ type: 'clearance', val: 'clearance', label: 'No clearance' });
+    }
+    if (f.excludeCitizenOnly) {
+      pills.push({ type: 'citizenOnly', val: 'citizenOnly', label: 'US Citizen Only' });
+    }
+
+    // Industries
+    if (f.industries) {
+      f.industries.forEach(ind => {
+        pills.push({ type: 'industry', val: ind, label: ind });
+      });
+    }
+
+    // Skills
+    if (f.skills) {
+      f.skills.forEach(sk => {
+        pills.push({ type: 'skill', val: sk, label: sk });
+      });
+    }
+
+    // Role Type
+    if (f.roleType && f.roleType !== 'all') {
+      pills.push({ type: 'roleType', val: f.roleType, label: f.roleType === 'ic' ? 'IC' : 'Manager' });
+    }
+
+    // Companies
+    if (f.companies) {
+      f.companies.forEach(co => {
+        pills.push({ type: 'company', val: co, label: co });
+      });
+    }
+
+    // Company Stages
+    const stageLabels = { early: 'Early Stage', growth: 'Growth Stage', late: 'Late Stage', public: 'Public Company' };
+    if (f.companyStages) {
+      f.companyStages.forEach(st => {
+        pills.push({ type: 'companyStage', val: st, label: stageLabels[st] || st });
+      });
+    }
+
+    // Exclude Staffing
+    if (f.excludeStaffing) {
+      pills.push({ type: 'excludeStaffing', val: 'excludeStaffing', label: 'Exclude Staffing' });
+    }
+
+    // Render Pills
+    bar.innerHTML = pills.map(p => `
+      <span class="af-pill-badge" data-pill-type="${p.type}" data-pill-val="${esc(String(p.val))}">
+        <span>${esc(p.label)}</span>
+        <button type="button" class="af-pill-del" aria-label="Remove ${esc(p.label)}">&times;</button>
+      </span>
+    `).join('');
+
+    // Dynamic Header Title: "Full Stack Engineer, US"
+    const titleEl = $('#afHeaderTitle');
+    if (titleEl) {
+      const mainRole = (f.jobFunctions && f.jobFunctions[0]) || 'All Engineering Roles';
+      let locPart = '';
+      if (f.country === 'United States') locPart = ', US';
+      else if (f.country && f.country !== 'all') locPart = `, ${f.country}`;
+      titleEl.textContent = `${mainRole}${locPart}`;
+    }
+
+    // Sync Top Pill Bar
+    const badge = $('#p4AllFiltersBadge');
+    if (badge) {
+      const activeCount = pills.length;
+      badge.textContent = String(activeCount);
+      badge.hidden = activeCount === 0;
+    }
+
+    const tRole = $('#p4TextRole');
+    if (tRole && f.jobFunctions && f.jobFunctions.length > 0) {
+      tRole.textContent = f.jobFunctions[0] + (f.jobFunctions.length > 1 ? ` (+${f.jobFunctions.length - 1})` : '');
+    }
+    const tWm = $('#p4TextWorkMode');
+    if (tWm && f.workModels) {
+      if (f.workModels.has('Remote') && f.workModels.size === 1) tWm.textContent = 'Remote';
+      else if (f.workModels.size > 1) tWm.textContent = `${Array.from(f.workModels)[0]} (+${f.workModels.size - 1})`;
+      else if (f.workModels.size === 1) tWm.textContent = Array.from(f.workModels)[0];
+      else tWm.textContent = 'Work Mode';
+    }
+    const tSen = $('#p4TextSeniority');
+    if (tSen && f.expLevels) {
+      if (f.expLevels.size === 1) {
+        tSen.textContent = expLabels[Array.from(f.expLevels)[0]] || 'Seniority';
+      } else if (f.expLevels.size > 1) {
+        tSen.textContent = `${expLabels[Array.from(f.expLevels)[0]] || 'Level'} (+${f.expLevels.size - 1})`;
+      } else {
+        tSen.textContent = 'Seniority';
+      }
+    }
+    const tJt = $('#p4TextJobType');
+    if (tJt && f.jobTypes) {
+      if (f.jobTypes.size === 1) tJt.textContent = Array.from(f.jobTypes)[0];
+      else if (f.jobTypes.size > 1) tJt.textContent = `${Array.from(f.jobTypes)[0]} (+${f.jobTypes.size - 1})`;
+      else tJt.textContent = 'Job Type';
+    }
+    const tLoc = $('#p4TextLocation');
+    if (tLoc) {
+      tLoc.textContent = (f.country && f.country !== 'all') ? f.country : 'Location';
+    }
+    const tDate = $('#p4TextDatePosted');
+    if (tDate) {
+      const freshLabels = { 1: 'Past 24 hours', 3: 'Past 3 days', 7: 'Past week', 30: 'Past month' };
+      tDate.textContent = f.freshnessDays ? (freshLabels[f.freshnessDays] || 'Date Posted') : 'Date Posted';
+    }
+  }
+
+  function removeDrawerPill(type, val) {
+    const f = S.filters || {};
+    if (type === 'jobFunction') {
+      f.jobFunctions = (f.jobFunctions || []).filter(item => item !== val);
+    } else if (type === 'jobType') {
+      if (f.jobTypes) f.jobTypes.delete(val);
+      const cb = $(`input[name="afJobType"][value="${CSS.escape(val)}"]`);
+      if (cb) cb.checked = false;
+    } else if (type === 'workModel') {
+      if (f.workModels) f.workModels.delete(val);
+      const cb = $(`input[name="afWorkModel"][value="${CSS.escape(val)}"]`);
+      if (cb) cb.checked = false;
+    } else if (type === 'country') {
+      f.country = 'all';
+      const sel = $('#afCountrySelect');
+      if (sel) sel.value = 'all';
+    } else if (type === 'expLevel') {
+      if (f.expLevels) f.expLevels.delete(val);
+      const cb = $(`input[name="afExpLevel"][value="${CSS.escape(val)}"]`);
+      if (cb) cb.checked = false;
+    } else if (type === 'expYears') {
+      f.expOpenToAll = true;
+      f.expYears = 0;
+      const tog = $('#afToggleExpOpen');
+      if (tog) tog.checked = true;
+    } else if (type === 'datePosted') {
+      f.freshnessDays = 0;
+      $$('input[name="afDatePosted"]').forEach(r => { r.checked = false; });
+    } else if (type === 'minSalary') {
+      f.salaryOpenToAll = true;
+      f.minSalary = 0;
+      f.salaryTier = '0';
+      const tog = $('#afToggleSalaryOpen');
+      if (tog) tog.checked = true;
+    } else if (type === 'h1b') {
+      f.h1b = false;
+      const cb = $('#afCheckH1B');
+      if (cb) cb.checked = false;
+    } else if (type === 'clearance') {
+      f.excludeClearance = false;
+      const cb = $('#afExcludeClearance');
+      if (cb) cb.checked = false;
+    } else if (type === 'citizenOnly') {
+      f.excludeCitizenOnly = false;
+      const cb = $('#afExcludeCitizenOnly');
+      if (cb) cb.checked = false;
+    } else if (type === 'industry') {
+      if (f.industries) f.industries.delete(val);
+      const cb = $(`input[name="afIndustry"][value="${CSS.escape(val)}"]`);
+      if (cb) cb.checked = false;
+    } else if (type === 'skill') {
+      if (f.skills) f.skills.delete(val);
+      const cb = $(`input[name="afSkill"][value="${CSS.escape(val)}"]`);
+      if (cb) cb.checked = false;
+    } else if (type === 'roleType') {
+      f.roleType = 'all';
+      $$('input[name="afRoleType"]').forEach(r => { r.checked = false; });
+    } else if (type === 'company') {
+      if (f.companies) f.companies.delete(val);
+      renderCompanyChips();
+    } else if (type === 'companyStage') {
+      if (f.companyStages) f.companyStages.delete(val);
+      const cb = $(`input[name="afCompanyStage"][value="${CSS.escape(val)}"]`);
+      if (cb) cb.checked = false;
+    } else if (type === 'excludeStaffing') {
+      f.excludeStaffing = false;
+      const cb = $('#afCheckExcludeStaffing');
+      if (cb) cb.checked = false;
+    }
+
+    syncDrawerUiFromState();
+    renderDrawerActivePills();
+    filterAndRender();
+  }
+
+  function setupAllFiltersDrawer() {
+    const overlay = $('#afDrawerOverlay');
+    if (!overlay) return;
+
+    // Header Close & Confirm
+    const btnClose = $('#afBtnClose');
+    if (btnClose) btnClose.addEventListener('click', closeAllFiltersDrawer);
+    const backdrop = $('#afDrawerBackdrop');
+    if (backdrop) backdrop.addEventListener('click', closeAllFiltersDrawer);
+    const btnConfirm = $('#afBtnConfirm');
+    if (btnConfirm) {
+      btnConfirm.addEventListener('click', () => {
+        closeAllFiltersDrawer();
+        toast('Filters applied successfully');
+      });
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && overlay.classList.contains('is-open')) {
+        closeAllFiltersDrawer();
+      }
+    });
+
+    const panel = $('#afDrawerPanel');
+    if (panel) {
+      panel.addEventListener('scroll', () => {
+        if (panel.scrollTop !== 0) panel.scrollTop = 0;
+      });
+    }
+
+    function scrollToDrawerSection(targetId) {
+      const pane = $('#afContentPane');
+      const sec = $('#' + targetId);
+      if (!pane || !sec) return;
+      const paneRect = pane.getBoundingClientRect();
+      const secRect = sec.getBoundingClientRect();
+      const offset = secRect.top - paneRect.top;
+      pane.scrollTo({
+        top: pane.scrollTop + offset - 8,
+        behavior: 'smooth'
+      });
+    }
+
+    // Left Navigation Tabs
+    $$('.af-nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        $$('.af-nav-item').forEach(b => b.classList.remove('is-active'));
+        item.classList.add('is-active');
+        const targetId = item.dataset.afTarget;
+        scrollToDrawerSection(targetId);
+      });
+    });
+
+    // Promo Link
+    const promoLink = $('#afPromoCompanyLink');
+    if (promoLink) {
+      promoLink.addEventListener('click', () => {
+        $$('.af-nav-item').forEach(b => b.classList.toggle('is-active', b.dataset.afTarget === 'afSecCompany'));
+        scrollToDrawerSection('afSecCompany');
+      });
+    }
+
+    // Scrollspy on Right Content Pane
+    const contentPane = $('#afContentPane');
+    if (contentPane) {
+      contentPane.addEventListener('scroll', () => {
+        const sections = ['afSecBasic', 'afSecCompensation', 'afSecInterests', 'afSecCompany'];
+        // If scrolled near bottom of content pane, automatically highlight the last section
+        if (contentPane.scrollTop + contentPane.clientHeight >= contentPane.scrollHeight - 60) {
+          $$('.af-nav-item').forEach(b => b.classList.toggle('is-active', b.dataset.afTarget === 'afSecCompany'));
+          return;
+        }
+        const paneTop = contentPane.getBoundingClientRect().top;
+        let current = sections[0];
+        for (const id of sections) {
+          const el = $('#' + id);
+          if (el && el.getBoundingClientRect().top - paneTop <= 90) {
+            current = id;
+          }
+        }
+        $$('.af-nav-item').forEach(b => b.classList.toggle('is-active', b.dataset.afTarget === current));
+      }, { passive: true });
+    }
+
+    // Active Pills Bar delegation
+    const pillsBar = $('#afActivePillsBar');
+    if (pillsBar) {
+      pillsBar.addEventListener('click', e => {
+        const badge = e.target.closest('.af-pill-badge');
+        if (!badge) return;
+        const type = badge.dataset.pillType;
+        const val = badge.dataset.pillVal;
+        removeDrawerPill(type, val);
+      });
+    }
+
+    // 1. Job Functions
+    const jfChips = $('#afJobFunctionChips');
+    if (jfChips) {
+      jfChips.addEventListener('click', e => {
+        const removeBtn = e.target.closest('.af-tag-remove');
+        if (!removeBtn) return;
+        const chip = removeBtn.closest('.af-tag-chip');
+        if (!chip) return;
+        const fn = chip.dataset.fn;
+        S.filters.jobFunctions = (S.filters.jobFunctions || []).filter(item => item !== fn);
+        renderJobFunctionChips();
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    const jfInput = $('#afJobFunctionInput');
+    const jfSuggest = $('#afJobFunctionSuggest');
+    if (jfInput) {
+      jfInput.addEventListener('focus', () => {
+        if (jfSuggest) jfSuggest.hidden = false;
+      });
+      jfInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const val = jfInput.value.trim();
+          if (val) {
+            if (!S.filters.jobFunctions) S.filters.jobFunctions = [];
+            if (!S.filters.jobFunctions.includes(val)) {
+              S.filters.jobFunctions.push(val);
+            }
+            jfInput.value = '';
+            if (jfSuggest) jfSuggest.hidden = true;
+            renderJobFunctionChips();
+            renderDrawerActivePills();
+            filterAndRender();
+          }
+        }
+      });
+    }
+
+    if (jfSuggest) {
+      jfSuggest.addEventListener('click', e => {
+        const item = e.target.closest('.af-suggest-item');
+        if (!item) return;
+        const role = item.dataset.role;
+        if (role) {
+          if (!S.filters.jobFunctions) S.filters.jobFunctions = [];
+          if (!S.filters.jobFunctions.includes(role)) {
+            S.filters.jobFunctions.push(role);
+          }
+          if (jfInput) jfInput.value = '';
+          jfSuggest.hidden = true;
+          renderJobFunctionChips();
+          renderDrawerActivePills();
+          filterAndRender();
+        }
+      });
+    }
+
+    document.addEventListener('click', e => {
+      const wrap = $('#afJobFunctionWrap');
+      if (wrap && !wrap.contains(e.target) && jfSuggest) {
+        jfSuggest.hidden = true;
+      }
+    });
+
+    // Excluded Title Accordion
+    const toggleExcludedTitle = $('#afToggleExcludedTitle');
+    const bodyExcludedTitle = $('#afBodyExcludedTitle');
+    if (toggleExcludedTitle && bodyExcludedTitle) {
+      toggleExcludedTitle.addEventListener('click', () => {
+        const isOpen = !bodyExcludedTitle.hidden;
+        bodyExcludedTitle.hidden = isOpen;
+        toggleExcludedTitle.setAttribute('aria-expanded', String(!isOpen));
+        toggleExcludedTitle.classList.toggle('is-expanded', !isOpen);
+      });
+    }
+
+    const btnAddExcludedTitle = $('#afAddExcludedTitleBtn');
+    const inpExcludedTitle = $('#afExcludedTitleInput');
+    function addExcludedTitle() {
+      if (!inpExcludedTitle) return;
+      const val = inpExcludedTitle.value.trim();
+      if (val) {
+        if (!S.filters.excludedTitles) S.filters.excludedTitles = new Set();
+        S.filters.excludedTitles.add(val);
+        inpExcludedTitle.value = '';
+        renderExcludedTitleChips();
+        filterAndRender();
+      }
+    }
+    if (btnAddExcludedTitle) btnAddExcludedTitle.addEventListener('click', addExcludedTitle);
+    if (inpExcludedTitle) inpExcludedTitle.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addExcludedTitle(); } });
+
+    const chipsExcludedTitle = $('#afExcludedTitleChips');
+    if (chipsExcludedTitle) {
+      chipsExcludedTitle.addEventListener('click', e => {
+        const removeBtn = e.target.closest('.af-tag-remove');
+        if (!removeBtn) return;
+        const chip = removeBtn.closest('.af-tag-chip');
+        if (!chip) return;
+        const title = chip.dataset.title;
+        if (S.filters.excludedTitles) S.filters.excludedTitles.delete(title);
+        renderExcludedTitleChips();
+        filterAndRender();
+      });
+    }
+
+    // 2. Job Type Checkboxes
+    $$('input[name="afJobType"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        S.filters.jobTypes = new Set(Array.from($$('input[name="afJobType"]:checked')).map(el => el.value));
+        S.filters.jobType = S.filters.jobTypes.size === 1 ? Array.from(S.filters.jobTypes)[0] : 'all';
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    });
+
+    // 3. Work Model Checkboxes
+    $$('input[name="afWorkModel"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        S.filters.workModels = new Set(Array.from($$('input[name="afWorkModel"]:checked')).map(el => el.value));
+        S.filters.workMode = S.filters.workModels.size === 1 ? Array.from(S.filters.workModels)[0] : (S.filters.workModels.size > 1 ? 'Any' : 'all');
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    });
+
+    // 4. Location
+    const cSel = $('#afCountrySelect');
+    if (cSel) {
+      cSel.addEventListener('change', () => {
+        S.filters.country = cSel.value;
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    const locInp = $('#afLocationInput');
+    if (locInp) {
+      locInp.addEventListener('input', () => {
+        S.filters.locationQuery = locInp.value;
+        filterAndRender();
+      });
+    }
+
+    const radSel = $('#afRadiusSelect');
+    if (radSel) {
+      radSel.addEventListener('change', () => {
+        S.filters.locationRadius = radSel.value;
+      });
+    }
+
+    const btnAddLoc = $('#afAddLocationBtn');
+    if (btnAddLoc && locInp) {
+      btnAddLoc.addEventListener('click', () => {
+        const val = locInp.value.trim();
+        if (val) {
+          toast(`Location target active: ${val}`);
+          filterAndRender();
+        }
+      });
+    }
+
+    // 5. Experience Level Checkboxes
+    $$('input[name="afExpLevel"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        S.filters.expLevels = new Set(Array.from($$('input[name="afExpLevel"]:checked')).map(el => el.value));
+        S.filters.seniority = S.filters.expLevels.size === 1 ? Array.from(S.filters.expLevels)[0] : 'all';
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    });
+
+    // 6. Experience Slider & Toggle
+    const expToggle = $('#afToggleExpOpen');
+    const expSlider = $('#afExpSlider');
+    const expSubval = $('#afExpSubval');
+    const expWrap = $('#afExpSliderWrap');
+
+    if (expToggle) {
+      expToggle.addEventListener('change', () => {
+        S.filters.expOpenToAll = expToggle.checked;
+        if (expToggle.checked) {
+          if (expSubval) expSubval.textContent = 'Any requirements';
+          if (expWrap) expWrap.classList.add('is-disabled');
+          S.filters.expYears = 0;
+        } else {
+          const val = expSlider ? parseInt(expSlider.value, 10) : 0;
+          S.filters.expYears = val;
+          if (expSubval) expSubval.textContent = `${val}+ yrs`;
+          if (expWrap) expWrap.classList.remove('is-disabled');
+        }
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    if (expSlider) {
+      expSlider.addEventListener('input', () => {
+        const val = parseInt(expSlider.value, 10);
+        S.filters.expYears = val;
+        if (expToggle && expToggle.checked) {
+          expToggle.checked = false;
+          S.filters.expOpenToAll = false;
+          if (expWrap) expWrap.classList.remove('is-disabled');
+        }
+        if (expSubval) expSubval.textContent = `${val}+ yrs`;
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    // 7. Date Posted Radios & Clear
+    $$('input[name="afDatePosted"]').forEach(r => {
+      r.addEventListener('change', () => {
+        const checked = $('input[name="afDatePosted"]:checked');
+        S.filters.freshnessDays = checked ? parseInt(checked.value, 10) : 0;
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    });
+
+    const btnClearDate = $('#afClearDatePosted');
+    if (btnClearDate) {
+      btnClearDate.addEventListener('click', () => {
+        $$('input[name="afDatePosted"]').forEach(r => { r.checked = false; });
+        S.filters.freshnessDays = 0;
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    // 8. Minimum Salary Slider & Toggle
+    const salToggle = $('#afToggleSalaryOpen');
+    const salSlider = $('#afSalarySlider');
+    const salSubval = $('#afSalarySubval');
+    const salWrap = $('#afSalarySliderWrap');
+
+    if (salToggle) {
+      salToggle.addEventListener('change', () => {
+        S.filters.salaryOpenToAll = salToggle.checked;
+        if (salToggle.checked) {
+          if (salSubval) salSubval.textContent = 'Any salary';
+          if (salWrap) salWrap.classList.add('is-disabled');
+          S.filters.minSalary = 0;
+          S.filters.salaryTier = '0';
+        } else {
+          const val = salSlider ? parseInt(salSlider.value, 10) : 0;
+          S.filters.minSalary = val;
+          S.filters.salaryTier = String(val);
+          if (salSubval) salSubval.textContent = `$${Math.round(val / 1000)}k+`;
+          if (salWrap) salWrap.classList.remove('is-disabled');
+        }
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    if (salSlider) {
+      salSlider.addEventListener('input', () => {
+        const val = parseInt(salSlider.value, 10);
+        S.filters.minSalary = val;
+        S.filters.salaryTier = String(val);
+        if (salToggle && salToggle.checked) {
+          salToggle.checked = false;
+          S.filters.salaryOpenToAll = false;
+          if (salWrap) salWrap.classList.remove('is-disabled');
+        }
+        if (salSubval) salSubval.textContent = `$${Math.round(val / 1000)}k+`;
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    // 9. Work Authorization & Limitations
+    const checkH1B = $('#afCheckH1B');
+    if (checkH1B) {
+      checkH1B.addEventListener('change', () => {
+        S.filters.h1b = checkH1B.checked;
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    const checkClearance = $('#afExcludeClearance');
+    if (checkClearance) {
+      checkClearance.addEventListener('change', () => {
+        S.filters.excludeClearance = checkClearance.checked;
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    const checkCitizenOnly = $('#afExcludeCitizenOnly');
+    if (checkCitizenOnly) {
+      checkCitizenOnly.addEventListener('change', () => {
+        S.filters.excludeCitizenOnly = checkCitizenOnly.checked;
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    // 10. Industry
+    const industryList = $('#afIndustryList');
+    if (industryList) {
+      industryList.addEventListener('change', e => {
+        if (e.target.name === 'afIndustry') {
+          S.filters.industries = new Set(Array.from($$('input[name="afIndustry"]:checked')).map(el => el.value));
+          renderDrawerActivePills();
+          filterAndRender();
+        }
+      });
+      industryList.addEventListener('click', e => {
+        const removeBtn = e.target.closest('.af-btn-item-remove');
+        if (!removeBtn) return;
+        const row = removeBtn.closest('.af-list-item');
+        if (!row) return;
+        const val = row.dataset.val;
+        if (S.filters.industries) S.filters.industries.delete(val);
+        row.remove();
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    const btnClearIndustry = $('#afClearIndustry');
+    if (btnClearIndustry) {
+      btnClearIndustry.addEventListener('click', () => {
+        $$('input[name="afIndustry"]').forEach(cb => { cb.checked = false; });
+        if (S.filters.industries) S.filters.industries.clear();
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    const btnAddIndustry = $('#afBtnAddIndustry');
+    if (btnAddIndustry) {
+      btnAddIndustry.addEventListener('click', () => {
+        const name = prompt('Enter industry name to add:');
+        if (name && name.trim()) {
+          const clean = name.trim();
+          if (!S.filters.industries) S.filters.industries = new Set();
+          S.filters.industries.add(clean);
+          if (industryList) {
+            const item = document.createElement('div');
+            item.className = 'af-list-item';
+            item.dataset.val = clean;
+            item.innerHTML = `
+              <label class="af-list-label">
+                <input type="checkbox" name="afIndustry" value="${esc(clean)}" checked>
+                <span class="af-tile-check"></span>
+                <span>${esc(clean)}</span>
+              </label>
+              <button type="button" class="af-btn-item-remove" title="Remove">&times;</button>
+            `;
+            industryList.appendChild(item);
+          }
+          renderDrawerActivePills();
+          filterAndRender();
+        }
+      });
+    }
+
+    // Excluded Industry Accordion
+    const toggleExcludedIndustry = $('#afToggleExcludedIndustry');
+    const bodyExcludedIndustry = $('#afBodyExcludedIndustry');
+    if (toggleExcludedIndustry && bodyExcludedIndustry) {
+      toggleExcludedIndustry.addEventListener('click', () => {
+        const isOpen = !bodyExcludedIndustry.hidden;
+        bodyExcludedIndustry.hidden = isOpen;
+        toggleExcludedIndustry.setAttribute('aria-expanded', String(!isOpen));
+        toggleExcludedIndustry.classList.toggle('is-expanded', !isOpen);
+      });
+    }
+
+    const btnAddExcludedIndustry = $('#afAddExcludedIndustryBtn');
+    const inpExcludedIndustry = $('#afExcludedIndustryInput');
+    function addExcludedIndustry() {
+      if (!inpExcludedIndustry) return;
+      const val = inpExcludedIndustry.value.trim();
+      if (val) {
+        if (!S.filters.excludedIndustries) S.filters.excludedIndustries = new Set();
+        S.filters.excludedIndustries.add(val);
+        inpExcludedIndustry.value = '';
+        renderExcludedIndustryChips();
+        filterAndRender();
+      }
+    }
+    if (btnAddExcludedIndustry) btnAddExcludedIndustry.addEventListener('click', addExcludedIndustry);
+    if (inpExcludedIndustry) inpExcludedIndustry.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addExcludedIndustry(); } });
+
+    const chipsExcludedIndustry = $('#afExcludedIndustryChips');
+    if (chipsExcludedIndustry) {
+      chipsExcludedIndustry.addEventListener('click', e => {
+        const removeBtn = e.target.closest('.af-tag-remove');
+        if (!removeBtn) return;
+        const chip = removeBtn.closest('.af-tag-chip');
+        if (!chip) return;
+        const ind = chip.dataset.ind;
+        if (S.filters.excludedIndustries) S.filters.excludedIndustries.delete(ind);
+        renderExcludedIndustryChips();
+        filterAndRender();
+      });
+    }
+
+    // 11. Skill
+    const skillList = $('#afSkillList');
+    if (skillList) {
+      skillList.addEventListener('change', e => {
+        if (e.target.name === 'afSkill') {
+          S.filters.skills = new Set(Array.from($$('input[name="afSkill"]:checked')).map(el => el.value));
+          renderDrawerActivePills();
+          filterAndRender();
+        }
+      });
+      skillList.addEventListener('click', e => {
+        const removeBtn = e.target.closest('.af-btn-item-remove');
+        if (!removeBtn) return;
+        const row = removeBtn.closest('.af-list-item');
+        if (!row) return;
+        const val = row.dataset.val;
+        if (S.filters.skills) S.filters.skills.delete(val);
+        row.remove();
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    const btnClearSkills = $('#afClearSkills');
+    if (btnClearSkills) {
+      btnClearSkills.addEventListener('click', () => {
+        $$('input[name="afSkill"]').forEach(cb => { cb.checked = false; });
+        if (S.filters.skills) S.filters.skills.clear();
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    const btnAddSkill = $('#afBtnAddSkill');
+    if (btnAddSkill) {
+      btnAddSkill.addEventListener('click', () => {
+        const name = prompt('Enter skill name to add:');
+        if (name && name.trim()) {
+          const clean = name.trim();
+          if (!S.filters.skills) S.filters.skills = new Set();
+          S.filters.skills.add(clean);
+          if (skillList) {
+            const item = document.createElement('div');
+            item.className = 'af-list-item';
+            item.dataset.val = clean;
+            item.innerHTML = `
+              <label class="af-list-label">
+                <input type="checkbox" name="afSkill" value="${esc(clean)}" checked>
+                <span class="af-tile-check"></span>
+                <span>${esc(clean)}</span>
+              </label>
+              <button type="button" class="af-btn-item-remove" title="Remove">&times;</button>
+            `;
+            skillList.appendChild(item);
+          }
+          renderDrawerActivePills();
+          filterAndRender();
+        }
+      });
+    }
+
+    // Excluded Skill Accordion
+    const toggleExcludedSkill = $('#afToggleExcludedSkill');
+    const bodyExcludedSkill = $('#afBodyExcludedSkill');
+    if (toggleExcludedSkill && bodyExcludedSkill) {
+      toggleExcludedSkill.addEventListener('click', () => {
+        const isOpen = !bodyExcludedSkill.hidden;
+        bodyExcludedSkill.hidden = isOpen;
+        toggleExcludedSkill.setAttribute('aria-expanded', String(!isOpen));
+        toggleExcludedSkill.classList.toggle('is-expanded', !isOpen);
+      });
+    }
+
+    const btnAddExcludedSkill = $('#afAddExcludedSkillBtn');
+    const inpExcludedSkill = $('#afExcludedSkillInput');
+    function addExcludedSkill() {
+      if (!inpExcludedSkill) return;
+      const val = inpExcludedSkill.value.trim();
+      if (val) {
+        if (!S.filters.excludedSkills) S.filters.excludedSkills = new Set();
+        S.filters.excludedSkills.add(val);
+        inpExcludedSkill.value = '';
+        renderExcludedSkillChips();
+        filterAndRender();
+      }
+    }
+    if (btnAddExcludedSkill) btnAddExcludedSkill.addEventListener('click', addExcludedSkill);
+    if (inpExcludedSkill) inpExcludedSkill.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addExcludedSkill(); } });
+
+    const chipsExcludedSkill = $('#afExcludedSkillChips');
+    if (chipsExcludedSkill) {
+      chipsExcludedSkill.addEventListener('click', e => {
+        const removeBtn = e.target.closest('.af-tag-remove');
+        if (!removeBtn) return;
+        const chip = removeBtn.closest('.af-tag-chip');
+        if (!chip) return;
+        const sk = chip.dataset.sk;
+        if (S.filters.excludedSkills) S.filters.excludedSkills.delete(sk);
+        renderExcludedSkillChips();
+        filterAndRender();
+      });
+    }
+
+    // 12. Role Type Radios & Clear
+    $$('input[name="afRoleType"]').forEach(r => {
+      r.addEventListener('change', () => {
+        const checked = $('input[name="afRoleType"]:checked');
+        S.filters.roleType = checked ? checked.value : 'all';
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    });
+
+    const btnClearRoleType = $('#afClearRoleType');
+    if (btnClearRoleType) {
+      btnClearRoleType.addEventListener('click', () => {
+        $$('input[name="afRoleType"]').forEach(r => { r.checked = false; });
+        S.filters.roleType = 'all';
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    // 13. Company Search & Chips
+    const btnAddCo = $('#afBtnAddCompany');
+    const coAddRow = $('#afCompanyAddRow');
+    const inpCompany = $('#afCompanyInput');
+    const btnConfirmCo = $('#afAddCompanyConfirmBtn');
+
+    if (btnAddCo && coAddRow) {
+      btnAddCo.addEventListener('click', () => {
+        coAddRow.hidden = false;
+        if (inpCompany) inpCompany.focus();
+      });
+    }
+
+    function addCompanyFilter() {
+      if (!inpCompany) return;
+      const val = inpCompany.value.trim();
+      if (val) {
+        if (!S.filters.companies) S.filters.companies = new Set();
+        S.filters.companies.add(val);
+        inpCompany.value = '';
+        if (coAddRow) coAddRow.hidden = true;
+        renderCompanyChips();
+        renderDrawerActivePills();
+        filterAndRender();
+      }
+    }
+    if (btnConfirmCo) btnConfirmCo.addEventListener('click', addCompanyFilter);
+    if (inpCompany) inpCompany.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addCompanyFilter(); } });
+
+    const chipsCompany = $('#afCompanyChips');
+    if (chipsCompany) {
+      chipsCompany.addEventListener('click', e => {
+        const removeBtn = e.target.closest('.af-tag-remove');
+        if (!removeBtn) return;
+        const chip = removeBtn.closest('.af-tag-chip');
+        if (!chip) return;
+        const co = chip.dataset.co;
+        if (S.filters.companies) S.filters.companies.delete(co);
+        renderCompanyChips();
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    const btnClearCo = $('#afClearCompany');
+    if (btnClearCo) {
+      btnClearCo.addEventListener('click', () => {
+        if (S.filters.companies) S.filters.companies.clear();
+        renderCompanyChips();
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    // 14. Company Stage Checkboxes & Clear
+    $$('input[name="afCompanyStage"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        S.filters.companyStages = new Set(Array.from($$('input[name="afCompanyStage"]:checked')).map(el => el.value));
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    });
+
+    const btnClearStage = $('#afClearCompanyStage');
+    if (btnClearStage) {
+      btnClearStage.addEventListener('click', () => {
+        $$('input[name="afCompanyStage"]').forEach(cb => { cb.checked = false; });
+        if (S.filters.companyStages) S.filters.companyStages.clear();
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
+
+    // 15. Job Source (Exclude Staffing Agency)
+    const checkStaffing = $('#afCheckExcludeStaffing');
+    if (checkStaffing) {
+      checkStaffing.addEventListener('change', () => {
+        S.filters.excludeStaffing = checkStaffing.checked;
+        renderDrawerActivePills();
+        filterAndRender();
+      });
+    }
   }
 
   // ----------------------------------------------------------------- onboarding flow
@@ -4370,6 +5720,7 @@
     initTheme();
     syncFamousUi();
     setupP4FilterBar();
+    setupAllFiltersDrawer();
     setupOnboardingFlow();
     bindEvents();
     await Promise.all([loadProfile(), loadApplications()]);
