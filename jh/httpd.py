@@ -94,6 +94,18 @@ def r_saved_search(q, body):
     return {"jobs": saved, "all_jobs": saved, "count": len(saved), "meta": meta}
 
 
+@route("GET", "/api/recommendations")
+def r_recommendations(q, body):
+    g = lambda k, d="": q.get(k, [d])[0]
+    force_refresh = g("refresh") == "1"
+    try:
+        limit = int(g("limit", "0") or 0) or None
+    except ValueError:
+        limit = None
+    profile = db.get_profile()
+    return pipeline.get_recommendations(profile=profile, force_refresh=force_refresh, limit=limit)
+
+
 @route("GET", "/api/sources")
 def r_sources(q, body):
     return {"sources": pipeline.health_report()}
@@ -110,6 +122,7 @@ def r_job_details(q, body):
         scored = score_job(enriched, profile)
         enriched.update(scored)
         pipeline._rank_opportunity(enriched)
+        pipeline.enrich_recommendation_insights(enriched, profile)
     db.update_search_job(enriched)
     return {"success": True, "job": enriched}
 

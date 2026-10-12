@@ -213,6 +213,65 @@ def _rank_opportunity(job):
     }
 
 
+def generate_insider_links(company, title=""):
+    import urllib.parse
+    co = (company or "").strip()
+    tit = (title or "").strip()
+    q_co = urllib.parse.quote(co)
+    q_peers = urllib.parse.quote(f"{co} {tit}".strip())
+    return {
+        "recruiters_url": f"https://www.linkedin.com/search/results/people/?keywords={q_co}%20recruiter" if co else "",
+        "peers_url": f"https://www.linkedin.com/search/results/people/?keywords={q_peers}" if co else "",
+        "company_url": f"https://www.linkedin.com/search/results/companies/?keywords={q_co}" if co else "",
+    }
+
+
+def enrich_recommendation_insights(job, profile):
+    """Generate scannable JobRight-style recommendation hooks and ghost job / verified signals."""
+    score = job.get("score", 0)
+    matched = job.get("matched_skills") or []
+    req_matched = job.get("matched_required_skills") or []
+    source_kind = job.get("source_kind") or ""
+    is_direct_ats = source_kind == "Direct employer ATS" or str(job.get("source_tier", "")).startswith("Direct")
+
+    from .util import parse_date
+    posted_raw = job.get("posted_at")
+    days_old = None
+    if posted_raw:
+        dt = parse_date(posted_raw)
+        if dt:
+            days_old = max(0.0, (time.time() - dt.timestamp()) / 86400.0)
+
+    is_fresh = days_old is not None and days_old <= 3.0
+    is_ghost_risk = days_old is not None and days_old >= 30.0 and not is_direct_ats
+
+    tgt_title = (profile.get("target_title") or "target").strip()
+    if score >= 85:
+        if req_matched:
+            hook = f"Top {score}% match • Covers must-haves: {', '.join(req_matched[:3])}"
+        else:
+            hook = f"Top {score}% match for your {tgt_title} profile"
+    elif score >= 70:
+        if matched:
+            hook = f"Strong alignment ({score}%) on {', '.join(matched[:3])}"
+        else:
+            hook = f"Solid fit ({score}%) matching your experience level"
+    elif score >= 50:
+        hook = f"Partial fit ({score}%) • Consider tailoring resume for missing stack"
+    else:
+        hook = f"Exploratory role ({score}%) • New territory for your skills"
+
+    insider = generate_insider_links(job.get("company", ""), job.get("title", ""))
+
+    job["recommendation_hook"] = hook
+    job["is_verified_ats"] = is_direct_ats
+    job["is_fresh"] = is_fresh
+    job["is_ghost_risk"] = is_ghost_risk
+    job["days_old"] = round(days_old, 1) if days_old is not None else None
+    job["insider_links"] = insider
+    return job
+
+
 # ---------------------------------------------------------------- famous companies & big tech
 
 FAMOUS_COMPANY_TOKENS = {
@@ -429,6 +488,7 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
     for idx, j in enumerate(merged, start=1):
         j.update(score_job(j, profile))
         _rank_opportunity(j)
+        enrich_recommendation_insights(j, profile)
         if on_progress and (idx % 25 == 0 or idx == total_unique):
             is_final = (idx == total_unique)
             elapsed = time.time() - t_score_start
@@ -462,6 +522,7 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
                 futs[f].update(res_job)
                 futs[f].update(score_job(futs[f], profile))
                 _rank_opportunity(futs[f])
+                enrich_recommendation_insights(futs[f], profile)
             except Exception:
                 pass
         merged.sort(key=lambda j: (j["opportunity_score"], j["score"], j.get("posted_at") or ""), reverse=True)
@@ -538,3 +599,74 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
     if on_progress:
         on_progress("complete", result)
     return result
+
+
+def get_recommendations(profile=None, force_refresh=False, limit=None):
+    """Curated zero-query recommendation pipeline modeled on JobRight's recommendation engine."""
+    if profile is None:
+        profile = db.get_profile()
+
+    is_empty = bool(profile.get("_is_empty"))
+    tgt_title = (profile.get("target_title") or "").strip()
+    work_mode = profile.get("work_mode") or "Any"
+    location = (profile.get("location") or "").strip()
+
+    # 1. Try evaluating against existing saved search jobs first if not force_refresh
+    existing = db.get_saved_search_jobs() if not force_refresh else []
+
+    if len(existing) >= 8 and not is_empty:
+        scored_jobs = []
+        for j in existing:
+            j_copy = dict(j)
+            scored = score_job(j_copy, profile)
+            j_copy.update(scored)
+            _rank_opportunity(j_copy)
+            enrich_recommendation_insights(j_copy, profile)
+            scored_jobs.append(j_copy)
+
+        scored_jobs.sort(key=lambda x: (x.get("score", 0) >= 65, x.get("opportunity_score", 0), x.get("score", 0)), reverse=True)
+        recs = scored_jobs[:(limit or config.MAX_RESULTS)]
+        return {
+            "success": True,
+            "count": len(recs),
+            "recommendations": recs,
+            "jobs": recs,
+            "all_jobs": scored_jobs,
+            "profile_target": {
+                "title": tgt_title or "Software Professional",
+                "work_mode": work_mode,
+                "location": location,
+                "skills_count": len(profile.get("skills", [])),
+                "is_empty": is_empty
+            },
+            "source": "cache",
+            "generated_at": now_iso()
+        }
+
+    # 2. If not enough cached jobs or force_refresh, execute multi-board search query
+    query = tgt_title or (profile.get("skills", ["Software Engineer"])[0] if profile.get("skills") else "Software Engineer")
+    search_res = search(query=query, location=location, work_mode=work_mode, force_refresh=force_refresh, limit=limit)
+
+    jobs = search_res.get("jobs", [])
+    for j in jobs:
+        enrich_recommendation_insights(j, profile)
+
+    jobs.sort(key=lambda x: (x.get("score", 0) >= 65, x.get("opportunity_score", 0), x.get("score", 0)), reverse=True)
+
+    return {
+        "success": True,
+        "count": len(jobs),
+        "recommendations": jobs,
+        "jobs": jobs,
+        "all_jobs": search_res.get("all_jobs", jobs),
+        "profile_target": {
+            "title": tgt_title or query,
+            "work_mode": work_mode,
+            "location": location,
+            "skills_count": len(profile.get("skills", [])),
+            "is_empty": is_empty
+        },
+        "search_meta": search_res.get("ranking"),
+        "source": "live",
+        "generated_at": now_iso()
+    }

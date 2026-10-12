@@ -2801,3 +2801,208 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   border-color: #12B76A;
 }
 
+/* ==========================================================================
+   JobRight-Inspired Recommendation Feed, Insider Connections & Signals
+   ========================================================================== */
+
+/* Nav Recommended AI Pill */
+.nav-recommend {
+  position: relative;
+}
+.count-rec {
+  background: var(--green-soft);
+  color: var(--green-deep);
+  border: 1px solid rgba(18, 183, 106, 0.35);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+/* Recommended Hero Banner */
+.recommend-banner {
+  background: linear-gradient(135deg, rgba(220, 245, 232, 0.6) 0%, rgba(240, 244, 247, 0.9) 100%);
+  border: 1px solid rgba(18, 183, 106, 0.3);
+  border-radius: var(--r-md);
+  padding: 18px 22px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+[data-theme="dark"] .recommend-banner {
+  background: linear-gradient(135deg, rgba(6, 78, 50, 0.35) 0%, rgba(20, 35, 55, 0.7) 100%);
+  border-color: rgba(18, 183, 106, 0.4);
+}
+.recommend-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid rgba(18, 183, 106, 0.3);
+  color: var(--green-deep);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+[data-theme="dark"] .recommend-badge-pill {
+  background: rgba(14, 27, 44, 0.8);
+  color: var(--green);
+}
+.recommend-banner-heading {
+  font-family: var(--font-title);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+.recommend-banner-sub {
+  font-size: 13.5px;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* Card AI Match Insight Hook */
+.job-item-hook {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(220, 245, 232, 0.45);
+  border: 1px solid rgba(18, 183, 106, 0.22);
+  border-radius: 6px;
+  padding: 5px 9px;
+  margin: 7px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--green-ink);
+  line-height: 1.35;
+}
+[data-theme="dark"] .job-item-hook {
+  background: rgba(6, 78, 50, 0.3);
+  border-color: rgba(18, 183, 106, 0.35);
+  color: #7ce5b0;
+}
+
+/* Verified & Ghost Badges */
+.chip-verified {
+  background: var(--green-soft);
+  color: var(--green-deep);
+  border: 1px solid rgba(18, 183, 106, 0.35);
+  font-weight: 700;
+}
+.chip-fresh {
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+  border: 1px solid rgba(247, 144, 9, 0.3);
+  font-weight: 700;
+}
+.chip-stale {
+  background: var(--surface-2);
+  color: var(--text-3);
+  border: 1px dashed var(--line);
+  opacity: 0.85;
+}
+
+/* Job Card Quick Action Buttons */
+.job-item {
+  position: relative;
+}
+.job-item-quick-actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease-in-out;
+}
+.job-item:hover .job-item-quick-actions,
+.job-item:focus-within .job-item-quick-actions {
+  opacity: 1;
+}
+.job-quick-action-btn {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  transition: all 0.15s ease;
+}
+.job-quick-action-btn:hover {
+  background: var(--surface-2);
+  color: var(--brand-accent);
+  border-color: var(--brand-accent);
+}
+
+/* Detail Panel Insider & Referrals Card */
+.detail-card-referrals {
+  background: linear-gradient(135deg, rgba(240, 248, 255, 0.7) 0%, rgba(255, 255, 255, 0.9) 100%);
+  border: 1px solid #bfdbfe;
+  border-radius: var(--r-md);
+  padding: 16px 18px;
+  margin: 14px 0;
+}
+[data-theme="dark"] .detail-card-referrals {
+  background: linear-gradient(135deg, rgba(15, 30, 50, 0.7) 0%, rgba(10, 20, 35, 0.9) 100%);
+  border-color: #1e3a8a;
+}
+.referrals-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.referrals-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.referrals-title-row h4 {
+  font-family: var(--font-title);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+.referrals-sub {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0 0 12px;
+}
+.referrals-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.referrals-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+.btn-outline-success {
+  background: transparent;
+  color: var(--green-deep);
+  border: 1.5px solid var(--green);
+}
+.btn-outline-success:hover {
+  background: var(--green-soft);
+  color: var(--green-ink);
+}
+[data-theme="dark"] .btn-outline-success {
+  color: var(--green);
+}
+
+

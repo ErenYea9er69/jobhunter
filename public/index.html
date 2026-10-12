@@ -68,6 +68,7 @@
       </a>
 
       <nav class="nav" id="mainNav" aria-label="Main">
+        <a href="#/recommend" data-nav="recommend" class="nav-recommend"><svg class="i" aria-hidden="true"><use href="#i-sparkles"/></svg><span>Recommended</span><b class="count count-rec" id="navRecDot" hidden>AI</b></a>
         <a href="#/jobs" data-nav="jobs"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><span>Jobs</span></a>
         <a href="#/applications" data-nav="applications"><svg class="i" aria-hidden="true"><use href="#i-board"/></svg><span>Applications</span><b class="count" id="navAppCount" hidden>0</b></a>
         <a href="#/resume" data-nav="resume"><svg class="i" aria-hidden="true"><use href="#i-file"/></svg><span>Resume</span></a>
@@ -371,6 +372,24 @@
     <section class="view" id="view-jobs" aria-labelledby="jobsTitle">
       <div class="container">
         <h1 class="sr-only" id="jobsTitle">Find jobs</h1>
+
+        <!-- Recommended For You Hero Banner (Mode: #/recommend) -->
+        <div class="recommend-banner" id="recommendBanner" hidden>
+          <div class="recommend-banner-inner">
+            <div class="recommend-badge-pill">
+              <svg class="i" aria-hidden="true" style="width:14px;height:14px;"><use href="#i-sparkles"/></svg>
+              <span>Daily AI Recommendations</span>
+            </div>
+            <h2 class="recommend-banner-heading">Curated Opportunities for You</h2>
+            <p class="recommend-banner-sub" id="recommendBannerSubtitle">Matched to your resume skills, experience level, and preferred work mode.</p>
+          </div>
+          <div class="recommend-banner-actions">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshRecs">
+              <svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>
+              <span>Refresh Feed</span>
+            </button>
+          </div>
+        </div>
 
         <div class="notice" id="onboardNotice" hidden>
           <svg class="i" aria-hidden="true"><use href="#i-file"/></svg>

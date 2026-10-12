@@ -21,9 +21,9 @@
     { key: 'conversational', label: 'Conversational' },
     { key: 'systems', label: 'Systems' }
   ];
-  const VIEWS = ['jobs', 'job', 'applications', 'resume', 'companies', 'digest', 'privacy'];
+  const VIEWS = ['jobs', 'job', 'recommend', 'applications', 'resume', 'companies', 'digest', 'privacy'];
   const TITLES = {
-    jobs: 'Jobs', job: 'Job workspace', applications: 'Applications', resume: 'Resume',
+    jobs: 'Jobs', job: 'Job workspace', recommend: 'Recommended For You', applications: 'Applications', resume: 'Resume',
     companies: 'Companies', digest: 'Morning digest', privacy: 'Sources and privacy'
   };
   const DEFAULT_IDEAS = ['Full Stack', 'Backend Python', 'TypeScript React', 'DevOps Cloud'];
@@ -98,6 +98,9 @@
     lastSearchTime: null,
     workMode: 'Any',
     selectedKey: null,
+    recJobs: [],
+    recMeta: null,
+    recLoading: false,
     applications: [],
     watchlist: [],
     watchResults: {},
@@ -331,7 +334,13 @@
 
   function showView(view, sub) {
     S.view = view;
-    $$('.view').forEach(v => { v.hidden = v.id !== `view-${view}`; });
+    $$('.view').forEach(v => {
+      if (view === 'recommend') {
+        v.hidden = v.id !== 'view-jobs';
+      } else {
+        v.hidden = v.id !== `view-${view}`;
+      }
+    });
     const navKey = view === 'job' ? (S.ws.from === 'applications' ? 'applications' : 'jobs') : view;
     $$('[data-nav]').forEach(a => {
       if (a.dataset.nav === navKey) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
@@ -341,7 +350,12 @@
     closeDetailSheet();
     window.scrollTo(0, 0);
 
-    if (view === 'jobs') {
+    const recBanner = $('#recommendBanner');
+    if (recBanner) recBanner.hidden = (view !== 'recommend');
+
+    if (view === 'recommend') {
+      loadRecommendations();
+    } else if (view === 'jobs') {
       if (S.searchHasRun && S.searchMeta) renderResults();
       else renderWelcomeState();
     }
@@ -1841,6 +1855,75 @@
     return { total: active.length, ok, srcs };
   }
 
+  function getInsiderLinks(job) {
+    if (job && job.insider_links && (job.insider_links.recruiter_url || job.insider_links.recruiters_url)) {
+      const il = job.insider_links;
+      return {
+        recruiter_url: il.recruiter_url || il.recruiters_url,
+        peer_url: il.peer_url || il.peers_url,
+        alumni_url: il.alumni_url || il.company_url
+      };
+    }
+    const c = encodeURIComponent(String((job && job.company) || '').trim());
+    const t = encodeURIComponent(String((job && job.title) || '').replace(/\b(Senior|Staff|Principal|Lead|Junior|Associate|Engineer|Developer)\b/gi, '').trim());
+    return {
+      recruiter_url: `https://www.linkedin.com/search/results/people/?keywords=${c}%20Technical%20Recruiter`,
+      peer_url: `https://www.linkedin.com/search/results/people/?keywords=${c}%20${t}%20Engineer`,
+      alumni_url: `https://www.linkedin.com/search/results/people/?keywords=${c}`
+    };
+  }
+
+  async function loadRecommendations(forceRefresh = false) {
+    if (S.recLoading) return;
+    S.recLoading = true;
+    const bannerSub = $('#recommendBannerSubtitle');
+    const refreshBtn = $('#btnRefreshRecs');
+    if (refreshBtn) refreshBtn.classList.add('is-loading');
+
+    const list = $('#jobList');
+    if (list && (!S.recJobs || !S.recJobs.length) && S.view === 'recommend') {
+      list.innerHTML = skeletons(5);
+    }
+
+    try {
+      const res = await api(`/api/recommendations?force_refresh=${forceRefresh ? '1' : '0'}&limit=40`);
+      S.recJobs = res.jobs || [];
+      S.recMeta = res.meta || {};
+
+      const countBadge = $('#navRecCount');
+      if (countBadge) {
+        countBadge.textContent = String(S.recJobs.length);
+        countBadge.hidden = S.recJobs.length === 0;
+      }
+
+      if (bannerSub && S.recMeta.query) {
+        bannerSub.textContent = `Matched to your resume target role (${S.recMeta.query}) and top skills. Zero search query needed.`;
+      }
+
+      if (S.view === 'recommend') {
+        S.jobs = S.recJobs;
+        S.allJobs = S.recJobs;
+        S.jobsRanked = S.recJobs;
+        S.searchMeta = S.recMeta;
+        S.searchHasRun = true;
+        if (S.recJobs.length && !S.selectedKey) {
+          S.selectedKey = jobKey(S.recJobs[0]);
+        }
+        filterAndRender();
+      }
+    } catch (err) {
+      console.warn('Could not load recommendations:', err);
+      if (S.view === 'recommend' && (!S.recJobs || !S.recJobs.length)) {
+        if (list) {
+          list.innerHTML = `<div class="empty">${ico('alert')}<h3>Could not load recommendations</h3><p>${esc(err.message)}</p><div class="empty-actions"><button type="button" class="btn btn-primary" data-action="refresh-recommendations">Try again</button></div></div>`;
+        }
+      }
+    } finally {
+      S.recLoading = false;
+      if (refreshBtn) refreshBtn.classList.remove('is-loading');
+    }
+  }
+
   function renderResults() {
     stopSearchProgressAnimation();
     const stage = $('#searchProgressStage');
@@ -1863,15 +1946,22 @@
     const n = filteredJobs().length;
     const totalAll = (S.allJobs && S.allJobs.length) || n;
     const typed = val('searchQuery').trim();
-    const forWhat = !typed && meta.query ? ` <small>for ${esc(meta.query)}, based on your resume</small>` : '';
+    const isRec = S.view === 'recommend';
+    const forWhat = isRec
+      ? ` <small>tailored for ${esc(meta.query || 'your resume')}</small>`
+      : (!typed && meta.query ? ` <small>for ${esc(meta.query)}, based on your resume</small>` : '');
     let filterBadge = '';
+    if (isRec) {
+      filterBadge = ` <span class="chip chip-ok chip-sm" style="font-size:11.5px;padding:1px 8px;margin-left:6px;"><svg class="i" style="width:12px;height:12px;display:inline-block;vertical-align:-1px;margin-right:3px;"><use href="#i-sparkles"/></svg>AI Curated</span>`;
+    }
     if (S.filters.famousMode === 'hide') {
-      filterBadge = ` <span class="chip chip-outline chip-sm" style="font-size:11.5px;padding:1px 8px;margin-left:6px;" title="Filtered out Big Tech & prominent AI companies">No Big Tech</span>`;
+      filterBadge += ` <span class="chip chip-outline chip-sm" style="font-size:11.5px;padding:1px 8px;margin-left:6px;" title="Filtered out Big Tech & prominent AI companies">No Big Tech</span>`;
     } else if (S.filters.famousMode === 'only') {
-      filterBadge = ` <span class="chip chip-famous chip-sm" style="font-size:11.5px;padding:1px 8px;margin-left:6px;" title="Only showing Big Tech & prominent AI companies">Big Tech Only</span>`;
+      filterBadge += ` <span class="chip chip-famous chip-sm" style="font-size:11.5px;padding:1px 8px;margin-left:6px;" title="Only showing Big Tech & prominent AI companies">Big Tech Only</span>`;
     }
     const filterSub = n !== totalAll ? ` <small class="text-muted">(${n} of ${totalAll} match current filters)</small>` : '';
-    $('#resultsSummary').innerHTML = n ? `${n} job${n === 1 ? '' : 's'}${forWhat}${filterSub}${filterBadge}` : `No jobs found${filterSub}${filterBadge}`;
+    const prefix = isRec ? 'Recommended' : '';
+    $('#resultsSummary').innerHTML = n ? `${prefix ? prefix + ': ' : ''}${n} job${n === 1 ? '' : 's'}${forWhat}${filterSub}${filterBadge}` : `No jobs found${filterSub}${filterBadge}`;
 
     // Update fallback notice banner if present
     const fallbackBanner = $('#fallbackBanner');
@@ -1949,11 +2039,13 @@
       const key = jobKey(j);
       const required = Object.keys(j.required_skills || {}).length;
       const matched = (j.matched_skills || []).length;
-      const isDirectAts = j.source_kind === 'Direct employer ATS' || String(j.source_tier || '').startsWith('Direct');
+      const isDirectAts = j.is_verified_ats || j.source_kind === 'Direct employer ATS' || String(j.source_tier || '').startsWith('Direct');
       const isFamous = isFamousJob(j);
       const rawDays = jobDaysAgo(j);
       const days = rawDays !== null ? Math.round(rawDays) : null;
       const postedText = days === 0 ? 'Today' : days === 1 ? '1d ago' : (days !== null ? `${days}d ago` : '');
+      const saved = !!savedApp(j);
+      const hook = j.recommendation_hook || (j.score >= 70 && matched ? `Strong match (${j.score}%) • Covers ${matched} core skills` : '');
 
       return `<button type="button" class="job-item${key === S.selectedKey ? ' is-selected' : ''}" data-action="job-select" data-key="${esc(key)}">
         <span class="job-item-title">${esc(cleanTitle(j.title))}</span>
@@ -1961,7 +2053,11 @@
           <span class="job-item-company">${esc(j.company)}</span>
           ${postedText ? `<span class="chip chip-sm" style="font-size:11px;padding:1px 6px;">${esc(postedText)}</span>` : ''}
           ${formatSourceBadge(j)}
+          ${isDirectAts ? `<span class="chip chip-verified" title="Direct employer ATS feed (Workday, Greenhouse, Lever, etc.)">${ico('shield')}Verified ATS</span>` : ''}
+          ${j.is_fresh ? `<span class="chip chip-fresh" title="Fresh posting within the last 48 hours">${ico('bolt')}Fresh</span>` : ''}
+          ${j.is_ghost_risk ? `<span class="chip chip-stale" title="Posting is 30+ days old — higher risk of ghosting">${ico('clock')}30d+ Old</span>` : ''}
         </div>
+        ${hook ? `<div class="job-item-hook">${ico('bolt')}<span>${esc(hook)}</span></div>` : ''}
         ${showScore ? ring(j.score) : ''}
         <span class="job-item-meta">
           <span>${ico('pin')}${esc(j.location || 'Remote')}</span>
@@ -1986,6 +2082,14 @@
           ${j.is_sample ? '<span class="chip chip-warn">Sample</span>' : ''}
           ${jobSources(j).length > 1 ? `<span>${jobSources(j).length} sites</span>` : ''}
         </span>
+        <div class="job-item-quick-actions" onclick="event.stopPropagation()">
+          <button type="button" class="btn-quick-act" data-action="quick-save" data-key="${esc(key)}" title="${saved ? 'Already in Applications' : 'Save job to tracker'}">
+            ${ico('bookmark')}<span>${saved ? 'Saved' : 'Save'}</span>
+          </button>
+          <button type="button" class="btn-quick-act" data-action="quick-dismiss" data-key="${esc(key)}" title="Dismiss this job from recommendations">
+            ${ico('x')}<span>Hide</span>
+          </button>
+        </div>
       </button>`;
     }).join('');
   }
@@ -2143,6 +2247,7 @@
           <button type="button" class="btn btn-primary" data-action="job-strategy">${ico('bolt')}AI Strategy</button>
           <button type="button" class="btn btn-secondary" data-action="job-tailor">${ico('file')}Tailor resume</button>
           <button type="button" class="btn btn-secondary" data-action="job-save" ${saved ? 'disabled' : ''}>${ico('bookmark')}${saved ? 'Saved' : 'Save'}</button>
+          <button type="button" class="btn btn-outline-success" data-action="mark-applied">${ico('check')}${saved && saved.status === 'applied' ? 'Applied' : 'Mark as Applied'}</button>
           ${apply ? `<a class="btn btn-secondary" href="${esc(apply)}" target="_blank" rel="noopener noreferrer">${ico('external')}Apply</a>` : ''}
           <button type="button" class="btn btn-ghost" data-action="job-hunt" title="Tailor your resume, write a cover letter and prep notes, then save it all to Applications">${ico('bolt')}Prepare everything</button>
           ${!j.enriched ? `<button type="button" class="btn btn-ghost btn-xs" data-action="job-enrich-now" title="Fetch complete details from original posting">${ico('refresh')}Enrich</button>` : ''}
@@ -2272,6 +2377,42 @@
             </div>
           </div>
         ` : ''}
+
+        ${j.company ? (() => {
+          const links = getInsiderLinks(j);
+          return `
+          <div class="detail-block detail-card-referrals">
+            <div class="referrals-header">
+              <div class="referrals-title-wrap">
+                <span class="referrals-icon">${ico('link')}</span>
+                <div>
+                  <h3 class="referrals-title">Insider Connections &amp; Referrals</h3>
+                  <p class="referrals-subtitle">Reach out directly to technical recruiters and peer engineers at ${esc(j.company)} to boost your interview callback rate by 4x.</p>
+                </div>
+              </div>
+            </div>
+            <div class="referrals-grid">
+              <a class="referral-link-card" href="${esc(links.recruiter_url)}" target="_blank" rel="noopener noreferrer">
+                <div class="referral-link-info">
+                  <span class="referral-role-name">${ico('search')}Technical Recruiters</span>
+                  <span class="referral-company-tag">${esc(j.company)} Talent Acquisition</span>
+                </div>
+                <span class="referral-arrow">${ico('external')}</span>
+              </a>
+              <a class="referral-link-card" href="${esc(links.peer_url)}" target="_blank" rel="noopener noreferrer">
+                <div class="referral-link-info">
+                  <span class="referral-role-name">${ico('search')}Team Peers &amp; Engineers</span>
+                  <span class="referral-company-tag">${esc(j.company)} Engineering</span>
+                </div>
+                <span class="referral-arrow">${ico('external')}</span>
+              </a>
+            </div>
+            <div class="referral-tip-box">
+              <strong>1-Click Networking Tip:</strong> Connect with 2 peers or recruiters using a 2-sentence note: <em>"Hi [Name], I noticed the ${esc(cleanTitle(j.title))} role at ${esc(j.company)} and my background in ${esc((j.matched_skills || ['software engineering'])[0] || 'engineering')} is a close match. Would love to connect!"</em>
+            </div>
+          </div>
+          `;
+        })() : ''}
 
         ${hasContact ? `
           <div class="detail-block detail-contact-block">
@@ -2424,9 +2565,48 @@
       } });
       await loadApplications();
       toast(`Saved ${job.title}`);
-      if (S.view === 'jobs') renderDetail();
+      if (S.view === 'jobs' || S.view === 'recommend') renderDetail();
       if (S.view === 'job') renderWsHeader();
     } catch (err) { toast('Could not save: ' + err.message, 'error'); }
+  }
+
+  async function markJobApplied(job) {
+    if (!job) return;
+    const existing = savedApp(job);
+    try {
+      if (existing) {
+        await api(`/api/applications/${encodeURIComponent(existing.id)}`, {
+          method: 'PATCH',
+          body: {
+            status: 'applied',
+            follow_up_date: isoDay(7),
+            notes: (existing.notes ? existing.notes + '\n' : '') + 'Marked as Applied via quick action.'
+          }
+        });
+      } else {
+        await api('/api/applications', {
+          method: 'POST',
+          body: {
+            job_id: job.id,
+            company: job.company,
+            title: job.title,
+            location: job.location,
+            salary: job.salary,
+            status: 'applied',
+            notes: 'Applied directly from recommendations feed.',
+            follow_up_date: isoDay(7),
+            sources: jobSources(job),
+            job_data: job
+          }
+        });
+      }
+      await loadApplications();
+      toast('Marked as Applied! Follow-up reminder set in 7 days.');
+      if (S.view === 'jobs' || S.view === 'recommend') renderDetail();
+      if (S.view === 'job') renderWsHeader();
+    } catch (err) {
+      toast('Could not mark as applied: ' + err.message, 'error');
+    }
   }
 
   async function prepareEverything(job) {
@@ -3326,9 +3506,23 @@
         toast('Copied to clipboard');
       });
     },
-    'job-strategy': () => openWorkspace(selectedJob(), 'strategy', 'jobs'),
-    'job-tailor': () => openWorkspace(selectedJob(), 'resume', 'jobs'),
+    'job-strategy': () => openWorkspace(selectedJob(), 'strategy', S.view === 'recommend' ? 'recommend' : 'jobs'),
+    'job-tailor': () => openWorkspace(selectedJob(), 'resume', S.view === 'recommend' ? 'recommend' : 'jobs'),
     'job-save': () => saveJob(selectedJob()),
+    'mark-applied': () => markJobApplied(selectedJob()),
+    'quick-save': el => {
+      const k = el.dataset.key;
+      const j = (S.jobs || []).find(x => jobKey(x) === k) || (S.allJobs || []).find(x => jobKey(x) === k);
+      if (j) {
+        saveJob(j);
+        renderList();
+      }
+    },
+    'quick-dismiss': el => {
+      const k = el.dataset.key;
+      toggleHideJob(k);
+    },
+    'refresh-recommendations': () => loadRecommendations(true),
     'job-hunt': () => prepareEverything(selectedJob()),
     'detail-close': () => closeDetailSheet(),
     // profile
@@ -3416,6 +3610,14 @@
         toast('Refreshing jobs from all sources and updating database cache...');
         resetAllFilters();
         runSearch({ forceRefresh: true });
+      });
+    }
+
+    const btnRefreshRecs = $('#btnRefreshRecs');
+    if (btnRefreshRecs) {
+      btnRefreshRecs.addEventListener('click', () => {
+        toast('Curating fresh recommendations tailored to your profile...');
+        loadRecommendations(true);
       });
     }
 
@@ -4163,9 +4365,8 @@
     }
 
     closeOnboarding();
-    go('jobs');
-    filterAndRender();
-    toast('Search tailored! Displaying your top matched opportunities.');
+    go('recommend');
+    toast('Welcome! Displaying curated recommendations tailored to your profile.');
   }
 
   // ------------------------------------------------------------------- init
@@ -4177,6 +4378,9 @@
     setupOnboardingFlow();
     bindEvents();
     await Promise.all([loadProfile(), loadApplications()]);
+    if (!S.profileEmpty) {
+      loadRecommendations(false).catch(() => {});
+    }
     renderWsHeader();
     renderIdeas();
 

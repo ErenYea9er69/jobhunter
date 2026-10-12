@@ -121,7 +121,7 @@ class ScoreTests(Base):
 
     def test_smart_remote_fallback_when_local_empty(self):
         # When user searches for a location that has 0 local postings, pipeline falls back to Worldwide Remote
-        res = pipeline.search(query="cobol", location="Tuvalu", work_mode="Onsite")
+        res = pipeline.search(query="cobol", location="Atlantis", work_mode="Onsite")
         self.assertGreater(res["count"], 0)
         self.assertTrue(any(j.get("is_fallback") for j in res["jobs"]))
         self.assertIn("Worldwide Remote", res.get("fallback_notice", ""))
@@ -515,6 +515,31 @@ class FamousFilterTests(Base):
             self.assertGreater(len(res["all_jobs"]), 350)
             self.assertEqual(len(res["all_jobs"]), 400)
 
+    def test_recommendations_and_insider_links(self):
+        db.save_profile(DEMO_PROFILE)
+        jobs = [
+            sources.make_job(id="rec-1", title="Senior Python Engineer", company="Stripe",
+                             location="Remote", source="Greenhouse", description="Requirements:\nPython, Docker, PostgreSQL",
+                             url="https://stripe.com/jobs/1"),
+            sources.make_job(id="rec-2", title="Frontend Engineer", company="Figma",
+                             location="Remote", source="Lever", description="Requirements:\nReact, TypeScript",
+                             url="https://figma.com/jobs/2")
+        ]
+        class RecSrc(sources.Source):
+            name, tier = "ATS", "Direct employer ATS"
+            def fetch(self, q, l): return jobs
+
+        with mock.patch.object(sources, "SEARCH_SOURCES", [RecSrc()]):
+            res = pipeline.get_recommendations(profile=DEMO_PROFILE, force_refresh=True)
+            self.assertTrue(res["success"])
+            self.assertGreaterEqual(res["count"], 1)
+            first_job = res["recommendations"][0]
+            self.assertIn("recommendation_hook", first_job)
+            self.assertIn("insider_links", first_job)
+            self.assertTrue(first_job["insider_links"]["recruiters_url"].startswith("https://www.linkedin.com/search/results/people/"))
+            self.assertIn("Stripe", first_job["insider_links"]["recruiters_url"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)
+
