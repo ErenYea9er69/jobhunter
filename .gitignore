@@ -1,8 +1,47 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.pyd
+*.dll
+*.so
+*.dylib
+
+# Local databases and SQLite files
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
 data/*.db
 data/*.db-wal
 data/*.db-shm
 data/digests/
+
+# Archives and binaries
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+*.exe
+*.msi
+
+# PyInstaller / Build artifacts
 build/
+dist/
 *.spec
+
+# Environments and Secrets
+.env
+.venv/
+env/
+venv/
+ENV/
+
+# IDE and OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
