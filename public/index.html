@@ -50,6 +50,11 @@
       <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 00-14.9-3M4 5v4h4M4 13a8 8 0 0014.9 3M20 19v-4h-4"/></symbol>
       <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></symbol>
       <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></symbol>
+      <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></symbol>
+      <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 2l2.4 5.6L20 10l-5.6 2.4L12 18l-2.4-5.6L4 10l5.6-2.4z"/></symbol>
+      <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+      <symbol id="i-linkedin" viewBox="0 0 24 24"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></symbol>
     </defs>
   </svg>
 
@@ -75,6 +80,10 @@
             <svg class="i" aria-hidden="true"><use href="#i-more"/></svg>
           </button>
           <div class="menu" id="moreMenu" hidden>
+            <button type="button" class="menu-item-btn" id="menuOnboardingBtn">
+              <svg class="i" aria-hidden="true"><use href="#i-sparkles"/></svg>
+              <span>Onboarding Wizard</span>
+            </button>
             <a href="landing.html" target="_blank"><svg class="i" aria-hidden="true"><use href="#i-external"/></svg>Product landing page</a>
             <a href="#/digest" data-nav="digest"><svg class="i" aria-hidden="true"><use href="#i-mail"/></svg>Morning digest</a>
             <a href="#/privacy" data-nav="privacy"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Sources and privacy</a>
@@ -93,6 +102,269 @@
     </div>
   </header>
 
+  <!-- ================= ONBOARDING WIZARD (PICTURES 1, 2, 3) ================= -->
+  <div class="onboard-flow-overlay" id="onboardingFlow" hidden>
+    <div class="onboard-container">
+
+      <!-- STEP 1: Picture 1 (Role & Preferences) -->
+      <div class="onboard-step" id="onboardStep1">
+        <div class="onboard-split">
+          <!-- Left Hero Column -->
+          <div class="onboard-hero-side">
+            <div class="onboard-brand-pill">
+              <svg class="onboard-copilot-icon" viewBox="0 0 32 32" fill="none">
+                <rect width="32" height="32" rx="10" fill="#12B76A"/>
+                <path d="M10 17C10 13.5 12.5 11 16 11C19.5 11 22 13.5 22 17C22 20.5 19.5 22.5 16 22.5C14.8 22.5 13.7 22.2 12.8 21.6L10 22.5L10.8 20C10.3 19.1 10 18.1 10 17Z" fill="#FFFFFF"/>
+                <circle cx="14" cy="16.5" r="1.2" fill="#12B76A"/>
+                <circle cx="18" cy="16.5" r="1.2" fill="#12B76A"/>
+              </svg>
+              <div class="onboard-copilot-text">
+                <strong>Orion <span class="onboard-dot"></span></strong>
+                <span>Your JobHunter AI Copilot</span>
+              </div>
+            </div>
+            <h1 class="onboard-hero-heading">To get started, <span class="onboard-heading-bold">what type of role</span> are you looking for?</h1>
+          </div>
+
+          <!-- Right Form Column -->
+          <div class="onboard-form-side">
+            <div class="onboard-top-nav">
+              <button type="button" class="onboard-nav-btn" id="onboardSkipStep1">Skip</button>
+            </div>
+
+            <form class="onboard-form" id="onboardFormStep1" onsubmit="return false;">
+              <!-- 1. Job Function -->
+              <div class="onboard-field-group">
+                <label class="onboard-field-label" for="onboardJobFunction"><span class="req">*</span> Job Function</label>
+                <input type="text" id="onboardJobFunction" class="onboard-text-input" placeholder="Please select/enter your expected job function" value="Full Stack Developer" required>
+                <div class="onboard-quick-chips" id="onboardRoleChips">
+                  <button type="button" class="onboard-chip" data-role="Full Stack Developer">Full Stack Developer</button>
+                  <button type="button" class="onboard-chip" data-role="Backend Engineer">Backend Engineer</button>
+                  <button type="button" class="onboard-chip" data-role="Frontend Engineer">Frontend Engineer</button>
+                  <button type="button" class="onboard-chip" data-role="DevOps Engineer">DevOps Engineer</button>
+                  <button type="button" class="onboard-chip" data-role="Data Engineer">Data Engineer</button>
+                </div>
+              </div>
+
+              <!-- 2. Job Type -->
+              <div class="onboard-field-group">
+                <label class="onboard-field-label"><span class="req">*</span> Job Type</label>
+                <div class="onboard-grid-2">
+                  <label class="onboard-card-check">
+                    <input type="checkbox" name="onboardJobType" value="Full-time" checked>
+                    <span class="onboard-box"><svg class="i"><use href="#i-check"/></svg></span>
+                    <span class="onboard-check-text">Full-time</span>
+                  </label>
+                  <label class="onboard-card-check">
+                    <input type="checkbox" name="onboardJobType" value="Contract">
+                    <span class="onboard-box"><svg class="i"><use href="#i-check"/></svg></span>
+                    <span class="onboard-check-text">Contract</span>
+                  </label>
+                  <label class="onboard-card-check">
+                    <input type="checkbox" name="onboardJobType" value="Part-time">
+                    <span class="onboard-box"><svg class="i"><use href="#i-check"/></svg></span>
+                    <span class="onboard-check-text">Part-time</span>
+                  </label>
+                  <label class="onboard-card-check">
+                    <input type="checkbox" name="onboardJobType" value="Internship">
+                    <span class="onboard-box"><svg class="i"><use href="#i-check"/></svg></span>
+                    <span class="onboard-check-text">Internship</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- 3. Location -->
+              <div class="onboard-field-group">
+                <label class="onboard-field-label" for="onboardLocation"><span class="req">*</span> Location</label>
+                <div class="onboard-loc-row">
+                  <input type="text" id="onboardLocation" class="onboard-text-input" value="Anywhere in the US" placeholder="e.g. Anywhere in the US, Worldwide, London">
+                  <label class="onboard-card-check inline-check">
+                    <input type="checkbox" id="onboardOpenRemote" checked>
+                    <span class="onboard-box"><svg class="i"><use href="#i-check"/></svg></span>
+                    <span class="onboard-check-text">Open to Remote <span class="onboard-q-icon" title="Considers remote postings globally">?</span></span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- 4. Work Authorization -->
+              <div class="onboard-field-group">
+                <label class="onboard-field-label">Work Authorization <span class="onboard-q-icon" title="Check if you need visa sponsorship">?</span></label>
+                <label class="onboard-card-check card-auth">
+                  <input type="checkbox" id="onboardH1B">
+                  <span class="onboard-box"><svg class="i"><use href="#i-check"/></svg></span>
+                  <span class="onboard-check-text">H1B sponsorship</span>
+                </label>
+              </div>
+
+              <!-- Next Button -->
+              <div class="onboard-action-row">
+                <button type="button" class="onboard-btn-black" id="onboardBtnNext1">Next</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2: Picture 2 (Resume Upload & Match Trigger) -->
+      <div class="onboard-step" id="onboardStep2" hidden>
+        <div class="onboard-split">
+          <!-- Left Hero Column -->
+          <div class="onboard-hero-side">
+            <div class="onboard-brand-pill">
+              <svg class="onboard-copilot-icon" viewBox="0 0 32 32" fill="none">
+                <rect width="32" height="32" rx="10" fill="#12B76A"/>
+                <path d="M10 17C10 13.5 12.5 11 16 11C19.5 11 22 13.5 22 17C22 20.5 19.5 22.5 16 22.5C14.8 22.5 13.7 22.2 12.8 21.6L10 22.5L10.8 20C10.3 19.1 10 18.1 10 17Z" fill="#FFFFFF"/>
+                <circle cx="14" cy="16.5" r="1.2" fill="#12B76A"/>
+                <circle cx="18" cy="16.5" r="1.2" fill="#12B76A"/>
+              </svg>
+              <div class="onboard-copilot-text">
+                <strong>Orion <span class="onboard-dot"></span></strong>
+                <span>Your JobHunter AI Copilot</span>
+              </div>
+            </div>
+            <h1 class="onboard-hero-heading">One last step, <span class="onboard-heading-bold">let's level up your search</span> by uploading your resume.</h1>
+          </div>
+
+          <!-- Right Form Column -->
+          <div class="onboard-form-side">
+            <div class="onboard-top-nav">
+              <button type="button" class="onboard-nav-btn" id="onboardBackStep1">← Back</button>
+              <button type="button" class="onboard-nav-btn" id="onboardSkipStep2">Skip</button>
+            </div>
+
+            <!-- Upload Area -->
+            <div class="onboard-resume-center">
+              <div class="onboard-dropzone" id="onboardDropzone">
+                <input type="file" id="onboardFileInput" accept=".pdf,.docx,.doc,.txt,.md" hidden>
+                <div class="onboard-doc-circle">
+                  <svg class="onboard-doc-svg" viewBox="0 0 48 48" fill="none">
+                    <rect x="12" y="6" width="22" height="32" rx="3" stroke="#0E1B2C" stroke-width="2.2" fill="#FFFFFF"/>
+                    <line x1="17" y1="14" x2="27" y2="14" stroke="#0E1B2C" stroke-width="2" stroke-linecap="round"/>
+                    <line x1="17" y1="19" x2="29" y2="19" stroke="#0E1B2C" stroke-width="2" stroke-linecap="round"/>
+                    <line x1="17" y1="24" x2="25" y2="24" stroke="#0E1B2C" stroke-width="2" stroke-linecap="round"/>
+                    <circle cx="34" cy="34" r="8" fill="#0E1B2C"/>
+                    <path d="M34 38V30M34 30L31 33M34 30L37 33" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+
+                <button type="button" class="onboard-btn-upload-pill" id="onboardUploadBtn">Upload Your Resume</button>
+                <p class="onboard-upload-format">Files should be in <strong>PDF</strong> or <strong>Word</strong> format and must not exceed <strong>10MB</strong> in size.</p>
+                <div class="onboard-upload-badge" id="onboardUploadBadge" hidden></div>
+                <button type="button" class="onboard-link-text" id="onboardPasteLink">or use demo profile / paste text</button>
+              </div>
+
+              <!-- Data Privacy Guarantee Notice -->
+              <div class="onboard-privacy-notice">
+                <p>Data privacy is the top priority at JobHunter. Your resume will only be used for job matching, is stored 100% locally on your machine, and will never be shared with third parties. For details, please see our <a href="#/privacy" target="_blank">Privacy Policy</a>.</p>
+              </div>
+
+              <!-- Start Matching Button -->
+              <div class="onboard-action-row center-action">
+                <button type="button" class="onboard-btn-start-match" id="onboardBtnStartMatch">Start Matching</button>
+              </div>
+            </div>
+
+            <!-- Matching Progress Radar (appears when matching) -->
+            <div class="onboard-matching-modal" id="onboardMatchingModal" hidden>
+              <div class="onboard-matching-box">
+                <div class="radar-pulse-ring"></div>
+                <h3 class="matching-title" id="matchingStatusTitle">Scanning live opportunities...</h3>
+                <div class="matching-bar-track">
+                  <div class="matching-bar-fill" id="matchingBarFill"></div>
+                </div>
+                <p class="matching-sub" id="matchingStatusSub">Analyzing jobs across Greenhouse, Lever, Workday, and remote feeds...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 3: Picture 3 (Celebration & Experience Levels & LinkedIn) -->
+      <div class="onboard-step onboard-step-welcome" id="onboardStep3" hidden>
+        <div class="onboard-welcome-container">
+          <!-- Mascot Emblem -->
+          <div class="onboard-mascot-badge">
+            <svg viewBox="0 0 72 72" fill="none">
+              <circle cx="36" cy="36" r="34" fill="#00E599"/>
+              <path d="M22 38C22 38 27 33 34 33C41 33 46 37 46 37C46 37 53 32 55 28C53 36 49 41 44 44C44 44 45 49 40 51C35 53 28 48 24 45C22 43 20 40 22 38Z" fill="#FFFFFF" stroke="#0E1B2C" stroke-width="2.5" stroke-linejoin="round"/>
+              <circle cx="48" cy="34" r="2.2" fill="#0E1B2C"/>
+              <path d="M51 37L56 39L51 40" stroke="#0E1B2C" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M28 39C32 43 38 43 42 41" stroke="#0E1B2C" stroke-width="2.2" stroke-linecap="round"/>
+            </svg>
+          </div>
+
+          <!-- Headline -->
+          <h2 class="onboard-welcome-title">👏 Welcome! We found <span class="bold-count" id="onboardWelcomeCount">11089 roles</span> that fit you best.</h2>
+          <p class="onboard-welcome-sub">Take a moment to review, just making sure everything looks right for you.</p>
+
+          <!-- Review Card -->
+          <div class="onboard-review-card">
+            <div class="onboard-card-section">
+              <div class="onboard-section-header">
+                <svg class="i"><use href="#i-briefcase"/></svg>
+                <span>Recommended Experience Levels</span>
+              </div>
+
+              <div class="onboard-levels-grid">
+                <label class="onboard-level-pill">
+                  <input type="checkbox" name="onboardLevel" value="intern">
+                  <span class="onboard-box"><svg class="i"><use href="#i-check"/></svg></span>
+                  <span class="level-title">Intern/New Grad</span>
+                  <span class="level-years"></span>
+                </label>
+                <label class="onboard-level-pill">
+                  <input type="checkbox" name="onboardLevel" value="junior">
+                  <span class="onboard-box"><svg class="i"><use href="#i-check"/></svg></span>
+                  <span class="level-title">Entry Level</span>
+                  <span class="level-years">1-3 years</span>
+                </label>
+                <label class="onboard-level-pill">
+                  <input type="checkbox" name="onboardLevel" value="mid" checked>
+                  <span class="onboard-box"><svg class="i"><use href="#i-check"/></svg></span>
+                  <span class="level-title">Mid Level</span>
+                  <span class="level-years">2-5 years</span>
+                </label>
+                <label class="onboard-level-pill">
+                  <input type="checkbox" name="onboardLevel" value="senior">
+                  <span class="onboard-box"><svg class="i"><use href="#i-check"/></svg></span>
+                  <span class="level-title">Senior Level</span>
+                  <span class="level-years">5+ years, project leader</span>
+                </label>
+                <label class="onboard-level-pill">
+                  <input type="checkbox" name="onboardLevel" value="lead_staff">
+                  <span class="onboard-box"><svg class="i"><use href="#i-check"/></svg></span>
+                  <span class="level-title">Lead/Staff</span>
+                  <span class="level-years">Cross-team leader/Domain expert</span>
+                </label>
+                <label class="onboard-level-pill">
+                  <input type="checkbox" name="onboardLevel" value="director">
+                  <span class="onboard-box"><svg class="i"><use href="#i-check"/></svg></span>
+                  <span class="level-title">Director/Executive</span>
+                  <span class="level-years">Director/VP/CXO</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- LinkedIn Link Section -->
+            <div class="onboard-card-section">
+              <div class="onboard-section-header">
+                <svg class="i"><use href="#i-linkedin"/></svg>
+                <span>Add your LinkedIn URL for smart job matching <small class="opt-label">(Optional)</small></span>
+              </div>
+              <input type="url" id="onboardLinkedinUrl" class="onboard-text-input linkedin-input" placeholder="Paste your LinkedIn profile link (e.g. linkedin.com/in/yourname)">
+            </div>
+          </div>
+
+          <!-- Bottom Button -->
+          <div class="onboard-welcome-actions">
+            <button type="button" class="onboard-btn-black btn-confirm-jobs" id="onboardBtnConfirm">Confirm &amp; See Jobs</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <main id="main" tabindex="-1">
 
     <!-- ================= JOBS ================= -->
@@ -109,6 +381,176 @@
           <a class="btn btn-primary btn-sm" href="#/resume">Add resume</a>
         </div>
 
+        <!-- Picture 4 Filter Bar -->
+        <div class="p4-filter-bar" id="p4FilterBar">
+          <div class="p4-filter-row-1">
+            <!-- Location Pill -->
+            <div class="p4-pill-wrap">
+              <button type="button" class="p4-pill-btn" id="p4PillLocation" data-dropdown="p4MenuLocation">
+                <span class="p4-pill-text" id="p4TextLocation">United States</span>
+                <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="p4-dropdown-menu" id="p4MenuLocation" hidden>
+                <button type="button" class="p4-menu-item is-selected" data-loc="United States">United States</button>
+                <button type="button" class="p4-menu-item" data-loc="Worldwide">Worldwide / Anywhere</button>
+                <button type="button" class="p4-menu-item" data-loc="United Kingdom">United Kingdom</button>
+                <button type="button" class="p4-menu-item" data-loc="Germany">Germany</button>
+                <button type="button" class="p4-menu-item" data-loc="Canada">Canada</button>
+                <button type="button" class="p4-menu-item" data-loc="all">All Locations</button>
+                <div class="p4-menu-sep"></div>
+                <div class="p4-menu-input-row">
+                  <input type="text" id="p4CustomLocation" placeholder="Custom city or country..." />
+                  <button type="button" class="btn btn-primary btn-sm" id="p4SetCustomLocation">Set</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Job Function / Role Pill -->
+            <div class="p4-pill-wrap">
+              <button type="button" class="p4-pill-btn" id="p4PillRole" data-dropdown="p4MenuRole">
+                <span class="p4-pill-text" id="p4TextRole">Backend Engineer (+1)</span>
+                <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="p4-dropdown-menu" id="p4MenuRole" hidden>
+                <div class="p4-menu-header">Search Target Role</div>
+                <div class="p4-menu-input-row">
+                  <input type="text" id="p4RoleInput" placeholder="Role or tech stack..." />
+                  <button type="button" class="btn btn-primary btn-sm" id="p4SetRole">Apply</button>
+                </div>
+                <div class="p4-menu-chips">
+                  <button type="button" class="p4-menu-chip" data-role="Full Stack Developer">Full Stack</button>
+                  <button type="button" class="p4-menu-chip" data-role="Backend Engineer">Backend</button>
+                  <button type="button" class="p4-menu-chip" data-role="Frontend Engineer">Frontend</button>
+                  <button type="button" class="p4-menu-chip" data-role="DevOps Engineer">DevOps</button>
+                  <button type="button" class="p4-menu-chip" data-role="Data Engineer">Data Engineer</button>
+                  <button type="button" class="p4-menu-chip" data-role="Software Engineer">Software Engineer</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Seniority Pill -->
+            <div class="p4-pill-wrap">
+              <button type="button" class="p4-pill-btn" id="p4PillSeniority" data-dropdown="p4MenuSeniority">
+                <span class="p4-pill-text" id="p4TextSeniority">Mid Level</span>
+                <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="p4-dropdown-menu" id="p4MenuSeniority" hidden>
+                <button type="button" class="p4-menu-item" data-sen="all">All Seniority</button>
+                <button type="button" class="p4-menu-item" data-sen="junior">Intern / Entry Level (0-2 yrs)</button>
+                <button type="button" class="p4-menu-item is-selected" data-sen="mid">Mid Level (2-5 yrs)</button>
+                <button type="button" class="p4-menu-item" data-sen="senior">Senior Level (5+ yrs)</button>
+                <button type="button" class="p4-menu-item" data-sen="lead_staff">Lead / Staff / Exec</button>
+              </div>
+            </div>
+
+            <!-- Job Type Pill -->
+            <div class="p4-pill-wrap">
+              <button type="button" class="p4-pill-btn" id="p4PillJobType" data-dropdown="p4MenuJobType">
+                <span class="p4-pill-text" id="p4TextJobType">Full-time</span>
+                <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="p4-dropdown-menu" id="p4MenuJobType" hidden>
+                <button type="button" class="p4-menu-item" data-type="all">All Job Types</button>
+                <button type="button" class="p4-menu-item is-selected" data-type="Full-time">Full-time</button>
+                <button type="button" class="p4-menu-item" data-type="Contract">Contract</button>
+                <button type="button" class="p4-menu-item" data-type="Part-time">Part-time</button>
+                <button type="button" class="p4-menu-item" data-type="Internship">Internship</button>
+              </div>
+            </div>
+
+            <!-- Work Mode Pill (Onsite (+2) / Remote) -->
+            <div class="p4-pill-wrap">
+              <button type="button" class="p4-pill-btn" id="p4PillWorkMode" data-dropdown="p4MenuWorkMode">
+                <span class="p4-pill-text" id="p4TextWorkMode">Onsite (+2)</span>
+                <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="p4-dropdown-menu" id="p4MenuWorkMode" hidden>
+                <button type="button" class="p4-menu-item" data-mode="Any">Any Mode</button>
+                <button type="button" class="p4-menu-item is-selected" data-mode="Remote">Remote</button>
+                <button type="button" class="p4-menu-item" data-mode="Hybrid">Hybrid</button>
+                <button type="button" class="p4-menu-item" data-mode="Onsite">On-site</button>
+              </div>
+            </div>
+
+            <!-- Date Posted Pill -->
+            <div class="p4-pill-wrap">
+              <button type="button" class="p4-pill-btn" id="p4PillDatePosted" data-dropdown="p4MenuDatePosted">
+                <span class="p4-pill-text" id="p4TextDatePosted">Date Posted</span>
+                <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="p4-dropdown-menu" id="p4MenuDatePosted" hidden>
+                <button type="button" class="p4-menu-item is-selected" data-days="0">Anytime</button>
+                <button type="button" class="p4-menu-item" data-days="1">Past 24 hours</button>
+                <button type="button" class="p4-menu-item" data-days="3">Past 3 days</button>
+                <button type="button" class="p4-menu-item" data-days="7">Past week</button>
+                <button type="button" class="p4-menu-item" data-days="30">Past month</button>
+              </div>
+            </div>
+
+            <!-- Industry Pill -->
+            <div class="p4-pill-wrap">
+              <button type="button" class="p4-pill-btn" id="p4PillIndustry" data-dropdown="p4MenuIndustry">
+                <span class="p4-pill-text" id="p4TextIndustry">Industry</span>
+                <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="p4-dropdown-menu" id="p4MenuIndustry" hidden>
+                <button type="button" class="p4-menu-item is-selected" data-ind="all">All Industries</button>
+                <button type="button" class="p4-menu-item" data-ind="tech">Tech &amp; Software</button>
+                <button type="button" class="p4-menu-item" data-ind="finance">Finance &amp; Fintech</button>
+                <button type="button" class="p4-menu-item" data-ind="consulting">Consulting &amp; Services</button>
+                <button type="button" class="p4-menu-item" data-ind="health">Healthcare &amp; Bio</button>
+              </div>
+            </div>
+
+            <!-- Sort Pill (Right Aligned) -->
+            <div class="p4-pill-wrap p4-pill-right">
+              <button type="button" class="p4-pill-btn p4-pill-sort" id="p4PillSort" data-dropdown="p4MenuSort">
+                <span class="p4-help-icon" title="Jobs ranked by AI match algorithm">?</span>
+                <span class="p4-pill-text" id="p4TextSort">Top Matched</span>
+                <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="p4-dropdown-menu p4-menu-right" id="p4MenuSort" hidden>
+                <button type="button" class="p4-menu-item is-selected" data-sort="ranked">Top Matched</button>
+                <button type="button" class="p4-menu-item" data-sort="date_desc">Newest</button>
+                <button type="button" class="p4-menu-item" data-sort="salary_desc">Highest Salary</button>
+                <button type="button" class="p4-menu-item" data-sort="company_asc">Company A to Z</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="p4-filter-row-2">
+            <!-- Years of Experience Pill -->
+            <div class="p4-pill-wrap">
+              <button type="button" class="p4-pill-btn" id="p4PillYoe" data-dropdown="p4MenuYoe">
+                <span class="p4-pill-text" id="p4TextYoe">Years of Experience</span>
+                <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="p4-dropdown-menu" id="p4MenuYoe" hidden>
+                <button type="button" class="p4-menu-item is-selected" data-yoe="all">Any Experience</button>
+                <button type="button" class="p4-menu-item" data-yoe="0-2">0 - 2 years</button>
+                <button type="button" class="p4-menu-item" data-yoe="2-5">2 - 5 years</button>
+                <button type="button" class="p4-menu-item" data-yoe="5-8">5 - 8 years</button>
+                <button type="button" class="p4-menu-item" data-yoe="8+">8+ years</button>
+              </div>
+            </div>
+
+            <!-- Hidden Jobs Toggle -->
+            <button type="button" class="p4-pill-btn p4-btn-hidden-jobs" id="p4BtnHiddenJobs" title="View jobs you hidden/dismissed">
+              <svg class="i"><use href="#i-lock"/></svg>
+              <span>Hidden Jobs</span>
+              <span class="p4-hidden-count" id="p4HiddenCount" hidden>0</span>
+            </button>
+
+            <!-- All Filters Toggle Button -->
+            <button type="button" class="p4-pill-btn p4-btn-all-filters" id="p4BtnAllFilters">
+              <span>••• All Filters</span>
+              <span class="p4-all-filters-badge" id="p4AllFiltersBadge" hidden>0</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Collapsible Advanced Search / Legacy Filter Console -->
+        <div id="legacySearchSection" class="legacy-search-section" hidden>
         <form class="searchbar" id="searchForm" role="search">
           <label class="field-icon grow-2">
             <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
@@ -305,6 +747,7 @@
           </div>
         </div>
         <div class="source-panel" id="sourcePanel" hidden></div>
+        </div><!-- /legacySearchSection -->
 
         <!-- Dedicated centered live search progress stage -->
         <div class="search-stage" id="searchProgressStage" hidden></div>

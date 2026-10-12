@@ -78,8 +78,13 @@
       directAtsOnly: false,
       hideApplied: false,
       savedOnly: false,
-      selectedSkills: new Set()
+      selectedSkills: new Set(),
+      jobType: 'all',
+      industry: 'all',
+      yoe: 'all'
     },
+    hiddenJobs: (function() { try { return new Set(JSON.parse(localStorage.getItem('jh_hidden_jobs') || '[]')); } catch (e) { return new Set(); } })(),
+    showHidden: false,
     drawerOpen: false,
     profile: null,
     profileEmpty: true,
@@ -1070,8 +1075,11 @@
     $('#sourceToggle').hidden = true;
     $('#sourcePanel').hidden = true;
 
+    const qVal = (opts && opts.overrideQuery !== undefined) ? opts.overrideQuery : val('searchQuery').trim();
+    const locVal = (opts && opts.overrideLoc !== undefined) ? opts.overrideLoc : val('searchLocation').trim();
+
     const params = new URLSearchParams({
-      q: val('searchQuery').trim(), location: val('searchLocation').trim(),
+      q: qVal, location: locVal,
       work_mode: 'Any', min_score: '0',
       famous_mode: 'all'
     });
@@ -1462,6 +1470,36 @@
         for (const ex of f.excludedCountries) {
           if (jc === ex.toLowerCase()) return false;
         }
+      }
+
+      // 14. Hidden Jobs filtering
+      const k = jobKey(j);
+      const isHidden = S.hiddenJobs && S.hiddenJobs.has(k);
+      if (S.showHidden) {
+        if (!isHidden) return false;
+      } else {
+        if (isHidden) return false;
+      }
+
+      // 15. Job Type filter
+      if (f.jobType && f.jobType !== 'all') {
+        const jt = (j.job_type || '').toLowerCase();
+        if (!jt.includes(f.jobType.toLowerCase())) return false;
+      }
+
+      // 16. Industry filter
+      if (f.industry && f.industry !== 'all') {
+        const hay = `${j.tags ? j.tags.join(' ') : ''} ${j.company || ''} ${j.title || ''} ${j.description ? j.description.slice(0, 300) : ''}`.toLowerCase();
+        if (!hay.includes(f.industry.toLowerCase())) return false;
+      }
+
+      // 17. Years of Experience
+      if (f.yoe && f.yoe !== 'all') {
+        const sen = jobSeniority(j);
+        if (f.yoe === '0-2' && sen !== 'junior' && sen !== 'intern') return false;
+        if (f.yoe === '2-5' && sen !== 'mid') return false;
+        if (f.yoe === '5-8' && sen !== 'senior') return false;
+        if (f.yoe === '8+' && sen !== 'lead_staff') return false;
       }
 
       return true;
@@ -1913,10 +1951,15 @@
       const matched = (j.matched_skills || []).length;
       const isDirectAts = j.source_kind === 'Direct employer ATS' || String(j.source_tier || '').startsWith('Direct');
       const isFamous = isFamousJob(j);
+      const rawDays = jobDaysAgo(j);
+      const days = rawDays !== null ? Math.round(rawDays) : null;
+      const postedText = days === 0 ? 'Today' : days === 1 ? '1d ago' : (days !== null ? `${days}d ago` : '');
+
       return `<button type="button" class="job-item${key === S.selectedKey ? ' is-selected' : ''}" data-action="job-select" data-key="${esc(key)}">
         <span class="job-item-title">${esc(cleanTitle(j.title))}</span>
         <div class="job-item-sub">
           <span class="job-item-company">${esc(j.company)}</span>
+          ${postedText ? `<span class="chip chip-sm" style="font-size:11px;padding:1px 6px;">${esc(postedText)}</span>` : ''}
           ${formatSourceBadge(j)}
         </div>
         ${showScore ? ring(j.score) : ''}
@@ -2026,7 +2069,15 @@
 
   function renderDetail() {
     const el = $('#jobDetail');
-    const j = selectedJob();
+    let j = selectedJob();
+    if (!j) {
+      const jList = filteredJobs();
+      if (jList.length) {
+        j = jList[0];
+        S.selectedKey = jobKey(j);
+        $$('#jobList .job-item').forEach(b => b.classList.toggle('is-selected', b.dataset.key === S.selectedKey));
+      }
+    }
     if (!j) {
       el.innerHTML = S.jobs.length ? `<div class="empty" style="border:0">${ico('briefcase')}<h3>Pick a job</h3><p>Select a job on the left to see why it fits and what to do next.</p></div>` : '';
       return;
@@ -2349,8 +2400,11 @@
     }
     if (isNarrow()) {
       const d = $('#jobDetail');
-      d.classList.add('is-open'); d.scrollTop = 0;
-      document.body.style.overflow = 'hidden';
+      if (d) {
+        d.classList.add('is-open');
+        d.scrollTop = 0;
+        document.body.style.overflow = 'hidden';
+      }
     }
   }
   function closeDetailSheet() {
@@ -3217,6 +3271,37 @@
       runSearch({ forceRefresh: false });
     },
     'job-select': el => selectJob(el.dataset.key),
+    'ask-copilot': el => {
+      const k = el.dataset.key;
+      const j = (S.jobs || []).find(x => jobKey(x) === k) || (S.allJobs || []).find(x => jobKey(x) === k);
+      if (j) {
+        selectJob(k);
+        openWorkspace(j, 'strategy', 'jobs');
+      }
+    },
+    'job-hide': el => {
+      const k = el.dataset.key;
+      toggleHideJob(k);
+    },
+    'job-fav': el => {
+      const k = el.dataset.key;
+      const j = (S.jobs || []).find(x => jobKey(x) === k) || (S.allJobs || []).find(x => jobKey(x) === k);
+      if (j) {
+        saveJob(j);
+        renderList();
+      }
+    },
+    'job-more': el => {
+      const k = el.dataset.key;
+      const j = (S.jobs || []).find(x => jobKey(x) === k) || (S.allJobs || []).find(x => jobKey(x) === k);
+      if (j) {
+        selectJob(k);
+        const url = j.direct_apply_url || j.url;
+        if (url) {
+          navigator.clipboard.writeText(url).then(() => toast('Job link copied!')).catch(() => {});
+        }
+      }
+    },
     'job-enrich-now': () => {
       const j = selectedJob();
       if (j) triggerJobEnrichment(j, true);
@@ -3310,6 +3395,8 @@
     });
     $('#moreBtn').addEventListener('click', toggleMenu);
     $('#moreMenu').addEventListener('click', e => { if (e.target.closest('a')) closeMenu(); });
+    const bd = $('#jobDetailBackdrop');
+    if (bd) bd.addEventListener('click', closeDetailSheet);
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') { closeMenu(); closeDetailSheet(); }
@@ -3586,11 +3673,508 @@
     $('#digestThresholdSelect').addEventListener('change', changeDigestCutoff);
   }
 
+  // ----------------------------------------------------------------- hidden jobs
+  function toggleHideJob(key) {
+    if (!key) return;
+    if (S.hiddenJobs.has(key)) {
+      S.hiddenJobs.delete(key);
+      toast('Job restored to search results');
+    } else {
+      S.hiddenJobs.add(key);
+      toast('Job hidden. Find it in Hidden Jobs.');
+    }
+    try {
+      localStorage.setItem('jh_hidden_jobs', JSON.stringify(Array.from(S.hiddenJobs)));
+    } catch (e) {}
+    updateHiddenJobsBadge();
+    filterAndRender();
+  }
+
+  function updateHiddenJobsBadge() {
+    const b = $('#p4HiddenCount');
+    if (b) {
+      const cnt = (S.hiddenJobs && S.hiddenJobs.size) || 0;
+      b.textContent = String(cnt);
+      b.hidden = cnt === 0;
+    }
+  }
+
+  // ----------------------------------------------------------------- picture 4 filter bar
+  function setupP4FilterBar() {
+    document.addEventListener('click', e => {
+      const btn = e.target.closest('.p4-pill-btn[data-dropdown]');
+      const allMenus = $$('.p4-dropdown-menu');
+      const allBtns = $$('.p4-pill-btn[data-dropdown]');
+
+      if (btn) {
+        e.stopPropagation();
+        const menuId = btn.dataset.dropdown;
+        const menu = $('#' + menuId);
+        const isOpen = menu && !menu.hidden;
+
+        allMenus.forEach(m => m.hidden = true);
+        allBtns.forEach(b => b.setAttribute('aria-expanded', 'false'));
+
+        if (!isOpen && menu) {
+          menu.hidden = false;
+          btn.setAttribute('aria-expanded', 'true');
+        }
+        return;
+      }
+
+      const insideMenu = e.target.closest('.p4-dropdown-menu');
+      if (insideMenu && !e.target.closest('.p4-menu-item') && !e.target.closest('.p4-menu-chip')) {
+        return;
+      }
+
+      allMenus.forEach(m => m.hidden = true);
+      allBtns.forEach(b => b.setAttribute('aria-expanded', 'false'));
+    });
+
+    const locMenu = $('#p4MenuLocation');
+    if (locMenu) {
+      locMenu.addEventListener('click', e => {
+        const item = e.target.closest('[data-loc]');
+        if (!item) return;
+        const loc = item.dataset.loc;
+        S.filters.country = loc;
+        const t = $('#p4TextLocation');
+        if (t) t.textContent = loc === 'all' ? 'All Locations' : loc;
+        $$('.p4-menu-item', locMenu).forEach(b => b.classList.toggle('is-selected', b === item));
+        locMenu.hidden = true;
+        filterAndRender();
+      });
+      const customBtn = $('#p4SetCustomLocation');
+      if (customBtn) {
+        customBtn.addEventListener('click', () => {
+          const val = ($('#p4CustomLocation').value || '').trim();
+          if (val) {
+            S.filters.country = val;
+            const t = $('#p4TextLocation');
+            if (t) t.textContent = val;
+            locMenu.hidden = true;
+            filterAndRender();
+          }
+        });
+      }
+    }
+
+    const roleMenu = $('#p4MenuRole');
+    if (roleMenu) {
+      roleMenu.addEventListener('click', e => {
+        const chip = e.target.closest('[data-role]');
+        if (!chip) return;
+        const role = chip.dataset.role;
+        const t = $('#p4TextRole');
+        if (t) t.textContent = role;
+        const q = $('#searchQuery');
+        if (q) q.value = role;
+        roleMenu.hidden = true;
+        runSearch({ forceRefresh: false, overrideQuery: role });
+      });
+      const setRoleBtn = $('#p4SetRole');
+      if (setRoleBtn) {
+        setRoleBtn.addEventListener('click', () => {
+          const role = ($('#p4RoleInput').value || '').trim();
+          if (role) {
+            const t = $('#p4TextRole');
+            if (t) t.textContent = role;
+            const q = $('#searchQuery');
+            if (q) q.value = role;
+            roleMenu.hidden = true;
+            runSearch({ forceRefresh: false, overrideQuery: role });
+          }
+        });
+      }
+    }
+
+    const senMenu = $('#p4MenuSeniority');
+    if (senMenu) {
+      senMenu.addEventListener('click', e => {
+        const item = e.target.closest('[data-sen]');
+        if (!item) return;
+        const sen = item.dataset.sen;
+        S.filters.seniority = sen;
+        const labels = { all: 'All Seniority', junior: 'Entry Level', mid: 'Mid Level', senior: 'Senior Level', lead_staff: 'Lead / Staff' };
+        const t = $('#p4TextSeniority');
+        if (t) t.textContent = labels[sen] || 'Seniority';
+        $$('.p4-menu-item', senMenu).forEach(b => b.classList.toggle('is-selected', b === item));
+        senMenu.hidden = true;
+        filterAndRender();
+      });
+    }
+
+    const jtMenu = $('#p4MenuJobType');
+    if (jtMenu) {
+      jtMenu.addEventListener('click', e => {
+        const item = e.target.closest('[data-type]');
+        if (!item) return;
+        const jt = item.dataset.type;
+        S.filters.jobType = jt;
+        const t = $('#p4TextJobType');
+        if (t) t.textContent = jt === 'all' ? 'All Types' : jt;
+        $$('.p4-menu-item', jtMenu).forEach(b => b.classList.toggle('is-selected', b === item));
+        jtMenu.hidden = true;
+        filterAndRender();
+      });
+    }
+
+    const wmMenu = $('#p4MenuWorkMode');
+    if (wmMenu) {
+      wmMenu.addEventListener('click', e => {
+        const item = e.target.closest('[data-mode]');
+        if (!item) return;
+        const mode = item.dataset.mode;
+        S.filters.workMode = mode;
+        const t = $('#p4TextWorkMode');
+        if (t) t.textContent = mode === 'Any' ? 'Any Mode' : `${mode} (+2)`;
+        $$('.p4-menu-item', wmMenu).forEach(b => b.classList.toggle('is-selected', b === item));
+        wmMenu.hidden = true;
+        filterAndRender();
+      });
+    }
+
+    const dpMenu = $('#p4MenuDatePosted');
+    if (dpMenu) {
+      dpMenu.addEventListener('click', e => {
+        const item = e.target.closest('[data-days]');
+        if (!item) return;
+        const days = parseInt(item.dataset.days, 10);
+        S.filters.freshnessDays = days;
+        const labels = { 0: 'Date Posted', 1: 'Past 24h', 3: 'Past 3 days', 7: 'Past week', 30: 'Past month' };
+        const t = $('#p4TextDatePosted');
+        if (t) t.textContent = labels[days] || 'Date Posted';
+        $$('.p4-menu-item', dpMenu).forEach(b => b.classList.toggle('is-selected', b === item));
+        dpMenu.hidden = true;
+        filterAndRender();
+      });
+    }
+
+    const indMenu = $('#p4MenuIndustry');
+    if (indMenu) {
+      indMenu.addEventListener('click', e => {
+        const item = e.target.closest('[data-ind]');
+        if (!item) return;
+        const ind = item.dataset.ind;
+        S.filters.industry = ind;
+        const labels = { all: 'Industry', tech: 'Tech & Software', finance: 'Finance', consulting: 'Consulting', health: 'Healthcare' };
+        const t = $('#p4TextIndustry');
+        if (t) t.textContent = labels[ind] || 'Industry';
+        $$('.p4-menu-item', indMenu).forEach(b => b.classList.toggle('is-selected', b === item));
+        indMenu.hidden = true;
+        filterAndRender();
+      });
+    }
+
+    const sortMenu = $('#p4MenuSort');
+    if (sortMenu) {
+      sortMenu.addEventListener('click', e => {
+        const item = e.target.closest('[data-sort]');
+        if (!item) return;
+        const s = item.dataset.sort;
+        const sel = $('#sortResultsBy');
+        if (sel) sel.value = s;
+        const labels = { ranked: 'Top Matched', date_desc: 'Newest', salary_desc: 'Highest Salary', company_asc: 'Company A-Z' };
+        const t = $('#p4TextSort');
+        if (t) t.textContent = labels[s] || 'Top Matched';
+        $$('.p4-menu-item', sortMenu).forEach(b => b.classList.toggle('is-selected', b === item));
+        sortMenu.hidden = true;
+        sortAndRankJobs();
+        renderResults();
+      });
+    }
+
+    const yoeMenu = $('#p4MenuYoe');
+    if (yoeMenu) {
+      yoeMenu.addEventListener('click', e => {
+        const item = e.target.closest('[data-yoe]');
+        if (!item) return;
+        const yoe = item.dataset.yoe;
+        S.filters.yoe = yoe;
+        const labels = { all: 'Years of Experience', '0-2': '0-2 yrs', '2-5': '2-5 yrs', '5-8': '5-8 yrs', '8+': '8+ yrs' };
+        const t = $('#p4TextYoe');
+        if (t) t.textContent = labels[yoe] || 'Years of Experience';
+        $$('.p4-menu-item', yoeMenu).forEach(b => b.classList.toggle('is-selected', b === item));
+        yoeMenu.hidden = true;
+        filterAndRender();
+      });
+    }
+
+    const btnHidden = $('#p4BtnHiddenJobs');
+    if (btnHidden) {
+      btnHidden.addEventListener('click', () => {
+        S.showHidden = !S.showHidden;
+        btnHidden.classList.toggle('is-active', S.showHidden);
+        const span = btnHidden.querySelector('span');
+        if (span) span.textContent = S.showHidden ? 'Viewing Hidden' : 'Hidden Jobs';
+        filterAndRender();
+      });
+    }
+
+    const btnAllFilters = $('#p4BtnAllFilters');
+    if (btnAllFilters) {
+      btnAllFilters.addEventListener('click', () => {
+        const adv = $('#legacySearchSection');
+        if (adv) {
+          const isOpen = !adv.hidden;
+          adv.hidden = isOpen;
+          btnAllFilters.classList.toggle('is-active', !isOpen);
+        }
+      });
+    }
+
+    updateHiddenJobsBadge();
+  }
+
+  // ----------------------------------------------------------------- onboarding flow
+  function setupOnboardingFlow() {
+    const overlay = $('#onboardingFlow');
+    if (!overlay) return;
+
+    const btnOpen = $('#btnOpenOnboarding');
+    if (btnOpen) btnOpen.addEventListener('click', () => openOnboarding(1));
+    const btnMenu = $('#menuOnboardingBtn');
+    if (btnMenu) btnMenu.addEventListener('click', () => {
+      const more = $('#moreMenu');
+      if (more) more.hidden = true;
+      openOnboarding(1);
+    });
+
+    const roleChips = $('#onboardRoleChips');
+    if (roleChips) {
+      roleChips.addEventListener('click', e => {
+        const chip = e.target.closest('[data-role]');
+        if (chip) {
+          const inp = $('#onboardJobFunction');
+          if (inp) inp.value = chip.dataset.role;
+        }
+      });
+    }
+
+    const btnNext1 = $('#onboardBtnNext1');
+    if (btnNext1) {
+      btnNext1.addEventListener('click', () => {
+        const inp = $('#onboardJobFunction');
+        const fn = (inp ? inp.value : '').trim() || 'Full Stack Developer';
+        if (inp) inp.value = fn;
+        goToStep(2);
+      });
+    }
+
+    const skip1 = $('#onboardSkipStep1');
+    if (skip1) skip1.addEventListener('click', () => closeOnboarding());
+
+    const back1 = $('#onboardBackStep1');
+    if (back1) back1.addEventListener('click', () => goToStep(1));
+    const skip2 = $('#onboardSkipStep2');
+    if (skip2) skip2.addEventListener('click', () => startMatchingFlow());
+
+    const dropzone = $('#onboardDropzone');
+    const fileInput = $('#onboardFileInput');
+    const uploadBtn = $('#onboardUploadBtn');
+
+    if (uploadBtn && fileInput) {
+      uploadBtn.addEventListener('click', () => fileInput.click());
+    }
+    if (dropzone && fileInput) {
+      ['dragenter', 'dragover'].forEach(t => dropzone.addEventListener(t, e => {
+        e.preventDefault();
+        dropzone.classList.add('is-over');
+      }));
+      ['dragleave', 'drop'].forEach(t => dropzone.addEventListener(t, e => {
+        e.preventDefault();
+        dropzone.classList.remove('is-over');
+      }));
+      dropzone.addEventListener('drop', e => {
+        const file = e.dataTransfer.files[0];
+        if (file) handleOnboardFile(file);
+      });
+      fileInput.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (file) handleOnboardFile(file);
+        e.target.value = '';
+      });
+    }
+
+    const pasteLink = $('#onboardPasteLink');
+    if (pasteLink) {
+      pasteLink.addEventListener('click', () => {
+        const badge = $('#onboardUploadBadge');
+        if (badge) {
+          badge.textContent = '✓ Using demo profile template';
+          badge.hidden = false;
+        }
+      });
+    }
+
+    const btnMatch = $('#onboardBtnStartMatch');
+    if (btnMatch) {
+      btnMatch.addEventListener('click', () => startMatchingFlow());
+    }
+
+    const btnConfirm = $('#onboardBtnConfirm');
+    if (btnConfirm) {
+      btnConfirm.addEventListener('click', () => finishOnboarding());
+    }
+
+    const completed = localStorage.getItem('jh_onboarded_completed');
+    if (!completed) {
+      openOnboarding(1);
+    }
+  }
+
+  function goToStep(num) {
+    const s1 = $('#onboardStep1');
+    const s2 = $('#onboardStep2');
+    const s3 = $('#onboardStep3');
+    if (s1) s1.hidden = num !== 1;
+    if (s2) s2.hidden = num !== 2;
+    if (s3) s3.hidden = num !== 3;
+  }
+
+  function openOnboarding(step = 1) {
+    const overlay = $('#onboardingFlow');
+    if (!overlay) return;
+    overlay.hidden = false;
+    goToStep(step);
+  }
+
+  function closeOnboarding() {
+    const overlay = $('#onboardingFlow');
+    if (overlay) overlay.hidden = true;
+    localStorage.setItem('jh_onboarded_completed', 'true');
+  }
+
+  async function handleOnboardFile(file) {
+    if (!file) return;
+    const badge = $('#onboardUploadBadge');
+    if (badge) {
+      badge.textContent = `Reading ${file.name}...`;
+      badge.hidden = false;
+    }
+    const binary = /\.(pdf|docx|doc)$/i.test(file.name);
+    const reader = new FileReader();
+    reader.onload = async e => {
+      try {
+        let body;
+        if (binary) {
+          const bytes = new Uint8Array(e.target.result);
+          let bin = '';
+          for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+          body = { filename: file.name, content_base64: btoa(bin) };
+        } else {
+          body = { text: e.target.result };
+        }
+        const res = await api('/api/parse-resume', { method: 'POST', body });
+        if (res && res.profile) {
+          S.profile = normalizeProfile(Object.assign({}, S.profile || {}, res.profile));
+          if (badge) {
+            const count = (res.profile.skills || []).length;
+            badge.textContent = `✓ ${file.name} parsed (${count} skills extracted)`;
+            badge.hidden = false;
+          }
+          if (res.profile.target_role && $('#onboardJobFunction')) {
+            $('#onboardJobFunction').value = res.profile.target_role;
+          }
+        }
+      } catch (err) {
+        if (badge) {
+          badge.textContent = `Warning: ${err.message}. Ready to match anyway.`;
+          badge.hidden = false;
+        }
+      }
+    };
+    if (binary) reader.readAsArrayBuffer(file); else reader.readAsText(file);
+  }
+
+  async function startMatchingFlow() {
+    const modal = $('#onboardMatchingModal');
+    const fill = $('#matchingBarFill');
+    const title = $('#matchingStatusTitle');
+    const sub = $('#matchingStatusSub');
+
+    if (modal) modal.hidden = false;
+
+    const role = ($('#onboardJobFunction') ? $('#onboardJobFunction').value : '').trim() || 'Full Stack Developer';
+    const loc = ($('#onboardLocation') ? $('#onboardLocation').value : '').trim() || 'United States';
+
+    let p = 0;
+    const timer = setInterval(() => {
+      p += 15;
+      if (fill) fill.style.width = Math.min(p, 95) + '%';
+      if (p === 30 && title) {
+        title.textContent = 'Searching 11,000+ open listings...';
+        if (sub) sub.textContent = 'Scanning Lever, Greenhouse, Workday, and Remote boards...';
+      } else if (p === 60 && title) {
+        title.textContent = 'Calculating AI Match Score...';
+        if (sub) sub.textContent = 'Comparing job requirements against your verified skills...';
+      }
+    }, 150);
+
+    try {
+      await runSearch({ forceRefresh: false, overrideQuery: role, overrideLoc: loc === 'Anywhere in the US' ? 'United States' : loc });
+    } catch (e) {
+      console.warn('Search query:', e);
+    }
+
+    setTimeout(() => {
+      clearInterval(timer);
+      if (fill) fill.style.width = '100%';
+      setTimeout(() => {
+        if (modal) modal.hidden = true;
+        const total = (S.allJobs && S.allJobs.length) ? S.allJobs.length : 11089;
+        const countEl = $('#onboardWelcomeCount');
+        if (countEl) countEl.textContent = `${total} roles`;
+        goToStep(3);
+      }, 350);
+    }, 1200);
+  }
+
+  function finishOnboarding() {
+    const checkedLevel = $('input[name="onboardLevel"]:checked');
+    const level = checkedLevel ? checkedLevel.value : 'mid';
+    S.filters.seniority = level;
+
+    const linkedinInput = $('#onboardLinkedinUrl');
+    if (linkedinInput && linkedinInput.value.trim()) {
+      if (!S.profile) S.profile = {};
+      S.profile.linkedin = linkedinInput.value.trim();
+      api('/api/profile', { method: 'POST', body: S.profile }).catch(() => {});
+    }
+
+    const role = ($('#onboardJobFunction') ? $('#onboardJobFunction').value : '').trim() || 'Full Stack Developer';
+    const loc = ($('#onboardLocation') ? $('#onboardLocation').value : '').trim() || 'United States';
+    const remote = $('#onboardOpenRemote') ? $('#onboardOpenRemote').checked : true;
+
+    const qInput = $('#searchQuery');
+    if (qInput) qInput.value = role;
+    const tRole = $('#p4TextRole');
+    if (tRole) tRole.textContent = role;
+    const tLoc = $('#p4TextLocation');
+    if (tLoc) tLoc.textContent = loc === 'Anywhere in the US' ? 'United States' : loc;
+    const senLabels = { intern: 'Intern', junior: 'Entry Level', mid: 'Mid Level', senior: 'Senior Level', lead_staff: 'Lead / Staff', director: 'Director' };
+    const tSen = $('#p4TextSeniority');
+    if (tSen) tSen.textContent = senLabels[level] || 'Mid Level';
+
+    if (remote) {
+      S.filters.workMode = 'Any';
+      const tWm = $('#p4TextWorkMode');
+      if (tWm) tWm.textContent = 'Remote (+2)';
+    }
+
+    closeOnboarding();
+    go('jobs');
+    filterAndRender();
+    toast('Search tailored! Displaying your top matched opportunities.');
+  }
+
   // ------------------------------------------------------------------- init
   async function init() {
     S.openExp = new Set([0]);
     initTheme();
     syncFamousUi();
+    setupP4FilterBar();
+    setupOnboardingFlow();
     bindEvents();
     await Promise.all([loadProfile(), loadApplications()]);
     renderWsHeader();
