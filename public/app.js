@@ -2048,6 +2048,9 @@
       const hook = j.recommendation_hook || (j.score >= 70 && matched ? `Strong match (${j.score}%) • Covers ${matched} core skills` : '');
 
       return `<button type="button" class="job-item${key === S.selectedKey ? ' is-selected' : ''}" data-action="job-select" data-key="${esc(key)}">
+        <span class="job-item-dismiss" role="button" tabindex="0" data-action="job-hide" data-key="${esc(key)}" title="Dismiss / Hide this job" onclick="event.stopPropagation()">
+          ${ico('x')}
+        </span>
         <span class="job-item-title">${esc(cleanTitle(j.title))}</span>
         <div class="job-item-sub">
           <span class="job-item-company">${esc(j.company)}</span>
@@ -2081,14 +2084,6 @@
           ${j.is_new ? '<span class="chip chip-info">New</span>' : ''}
           ${j.is_sample ? '<span class="chip chip-warn">Sample</span>' : ''}
           ${jobSources(j).length > 1 ? `<span>${jobSources(j).length} sites</span>` : ''}
-          <span class="job-actions-wrap" onclick="event.stopPropagation()">
-            <span role="button" tabindex="0" class="chip chip-action chip-quick-save ${saved ? 'is-saved' : ''}" data-action="quick-save" data-key="${esc(key)}" title="${saved ? 'Already in Applications' : 'Save job to tracker'}">
-              ${ico('bookmark')}<span>${saved ? 'Saved' : 'Save'}</span>
-            </span>
-            <span role="button" tabindex="0" class="chip chip-action chip-quick-hide" data-action="quick-dismiss" data-key="${esc(key)}" title="Dismiss this job from recommendations">
-              ${ico('x')}<span>Hide</span>
-            </span>
-          </span>
         </span>
       </button>`;
     }).join('');
