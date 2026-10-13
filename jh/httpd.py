@@ -61,7 +61,9 @@ def r_save_profile(q, body):
     if not isinstance(body, dict) or not isinstance(body.get("skills", []), list):
         raise ApiError("Profile must be an object with a skills list.")
     db.save_profile(body)
-    return {"success": True, "message": "Master profile saved."}
+    import threading
+    threading.Thread(target=db.rescore_and_classify_stored_jobs, args=(body,), daemon=True).start()
+    return {"success": True, "message": "Master profile saved and jobs updated."}
 
 
 @route("POST", "/api/parse-resume")
@@ -89,9 +91,81 @@ def r_search(q, body):
 
 @route("GET", "/api/search/saved")
 def r_saved_search(q, body):
-    saved = db.get_saved_search_jobs()
-    meta = db.get_search_meta()
-    return {"jobs": saved, "all_jobs": saved, "count": len(saved), "meta": meta}
+    g = lambda k, d="": q.get(k, [d])[0]
+    filters = {
+        "category": g("category") or g("role"),
+        "work_mode": g("work_mode"),
+        "seniority": g("seniority"),
+        "job_type": g("job_type"),
+        "country": g("country"),
+        "location": g("location"),
+        "min_salary": g("min_salary", "0"),
+        "min_score": g("min_score", "0"),
+        "famous_mode": g("famous_mode", "all"),
+        "industry": g("industry"),
+        "days": g("days", "0"),
+        "q": g("q") or g("keyword"),
+        "sort": g("sort", "ranked"),
+        "h1b": g("h1b")
+    }
+    return db.query_stored_jobs(filters)
+
+
+@route("GET", "/api/jobs/query")
+def r_jobs_query(q, body):
+    return r_saved_search(q, body)
+
+
+@route("GET", "/api/auto-search/status")
+def r_auto_search_status(q, body):
+    return {"success": True, "settings": db.get_auto_search_settings()}
+
+
+@route("POST", "/api/auto-search/settings")
+def r_auto_search_settings(q, body):
+    enabled = bool(body.get("enabled", True))
+    try:
+        interval = float(body.get("interval_hours", 5.0))
+    except (ValueError, TypeError):
+        interval = 5.0
+    saved = db.set_auto_search_settings(enabled=enabled, interval_hours=interval)
+    return {"success": True, "settings": saved}
+
+
+@route("POST", "/api/auto-search/trigger")
+def r_auto_search_trigger(q, body):
+    import threading
+    threading.Thread(target=pipeline.run_background_auto_search, daemon=True).start()
+    return {"success": True, "message": "Background auto search started in background."}
+
+
+@route("POST", "/api/jobs/refresh-sync")
+def r_refresh_sync(q, body):
+    res = db.apply_refresh_sync()
+    g = lambda k, d="": q.get(k, [d])[0]
+    filters = {
+        "category": g("category") or g("role"),
+        "work_mode": g("work_mode"),
+        "seniority": g("seniority"),
+        "job_type": g("job_type"),
+        "country": g("country"),
+        "location": g("location"),
+        "min_salary": g("min_salary", "0"),
+        "min_score": g("min_score", "0"),
+        "famous_mode": g("famous_mode", "all"),
+        "industry": g("industry"),
+        "days": g("days", "0"),
+        "q": g("q") or g("keyword"),
+        "sort": g("sort", "ranked")
+    }
+    query_res = db.query_stored_jobs(filters)
+    res["jobs"] = query_res["jobs"]
+    res["all_jobs"] = query_res["all_jobs"]
+    res["count"] = query_res["count"]
+    res["total_all"] = query_res["total_all"]
+    res["meta"] = query_res["meta"]
+    res["facets"] = query_res.get("facets", {})
+    return res
 
 
 @route("GET", "/api/recommendations")
@@ -545,6 +619,7 @@ def start_background_server(host=None, port=None):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     db.init_db()
     digest.start_scheduler()
+    pipeline.start_auto_search_worker()
     srv, actual_port = create_server(host, port)
     log.info("JobHunter %s background server started on http://%s:%d (LLM: %s, demo: %s)",
              __version__, config.HOST, actual_port,
@@ -559,6 +634,7 @@ def run(host=None, port=None):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     db.init_db()
     digest.start_scheduler()
+    pipeline.start_auto_search_worker()
     srv, actual_port = create_server(host, port)
     log.info("JobHunter %s on http://%s:%d  (LLM: %s, demo: %s)", __version__, config.HOST, actual_port,
              "on" if refit.llm_available() else "off", config.DEMO)

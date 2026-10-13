@@ -565,6 +565,13 @@
               <span>••• All Filters</span>
               <span class="p4-all-filters-badge" id="p4AllFiltersBadge" hidden>0</span>
             </button>
+
+            <!-- Refresh & Sync DB Button with New Jobs Badge -->
+            <button type="button" class="p4-pill-btn p4-btn-refresh-sync" id="btnJobsRefreshSync" title="Check for new jobs staged from background search and sync the database">
+              <svg class="i" id="jobsRefreshIcon"><use href="#i-refresh"/></svg>
+              <span>Refresh</span>
+              <span class="p4-refresh-badge" id="jobsRefreshBadge" hidden>0 new</span>
+            </button>
           </div>
         </div>
 
@@ -708,6 +715,47 @@
               <div class="form-field span-2"><label for="profLocation">Location</label><input type="text" id="profLocation"></div>
               <div class="form-field"><label for="profLinkedin">LinkedIn</label><input type="text" id="profLinkedin"></div>
               <div class="form-field"><label for="profGithub">GitHub or portfolio</label><input type="text" id="profGithub"></div>
+            </div>
+          </section>
+
+          <section class="card" id="autoSearchCard" aria-labelledby="autoSearchTitle">
+            <div class="card-head">
+              <div>
+                <h2 class="card-title" id="autoSearchTitle"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>Background Auto Search Session</h2>
+                <p class="muted">Schedule automatic background job scans based on your profile. New jobs are staged until you click Refresh.</p>
+              </div>
+              <span class="chip chip-ok" id="autoSearchStatusBadge">Auto Active</span>
+            </div>
+            <div class="form-grid">
+              <div class="form-field span-2">
+                <label for="autoSearchIntervalSelect">Scan Frequency</label>
+                <select id="autoSearchIntervalSelect">
+                  <option value="5" selected>Every 5 hours (Recommended)</option>
+                  <option value="24">Every 24 hours (Daily)</option>
+                  <option value="168">Every 1 week</option>
+                  <option value="1">Every 1 hour (Fast check)</option>
+                  <option value="custom">Custom interval...</option>
+                  <option value="0">Never (Manual only)</option>
+                </select>
+                <small class="muted">Runs silently in background and stages newly found jobs.</small>
+              </div>
+              <div class="form-field span-2" id="autoSearchCustomField" hidden>
+                <label for="autoSearchCustomHours">Custom Interval (Hours)</label>
+                <input type="number" id="autoSearchCustomHours" min="0.5" max="720" step="0.5" placeholder="Enter hours, e.g. 12">
+              </div>
+              <div class="form-field span-2">
+                <div class="auto-search-status-bar">
+                  <div class="auto-search-meta">
+                    <div><span>Last session: </span><strong id="autoSearchLastRunText">Never</strong></div>
+                    <div><span>Next session: </span><strong id="autoSearchNextRunText">In 5 hours</strong></div>
+                    <div><span>Pending discoveries: </span><strong id="autoSearchPendingText">0 new jobs staged</strong></div>
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btnTriggerAutoSearch">
+                    <svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>
+                    <span>Run session now</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
 

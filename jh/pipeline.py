@@ -1,13 +1,17 @@
 """Search orchestration: fan out to sources, enforce a deadline, cache per source, merge, score, remember."""
 import concurrent.futures as cf
+import datetime
 import json
+import logging
 import re
+import threading
 import time
 
 from . import config, db, dedup, sources as src
 from .scoring import score_job
 from .util import now_iso, parse_date
 
+log = logging.getLogger("jobhunter")
 _pool = cf.ThreadPoolExecutor(max_workers=config.SEARCH_WORKERS, thread_name_prefix="jh-src")
 
 
@@ -312,7 +316,7 @@ def derive_query(profile):
     return (profile.get("target_title") or "").strip()
 
 
-def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all", profile=None, force_refresh=False, limit=None, on_progress=None):
+def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all", profile=None, force_refresh=False, limit=None, on_progress=None, persist_as_pending=False):
     t0 = time.time()
     profile = profile if profile is not None else db.get_profile()
     is_profile_search = not (query and query.strip()) or query.strip().lower() == (profile.get("target_title") or "").strip().lower()
@@ -527,8 +531,11 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
                 pass
         merged.sort(key=lambda j: (j["opportunity_score"], j["score"], j.get("posted_at") or ""), reverse=True)
 
-    # Persist all fresh scored jobs into SQLite DB (clears old ones and stores new ones)
-    db.replace_search_jobs(merged, query=query, location=location, sources=statuses)
+    # Persist jobs into SQLite DB (staged if persist_as_pending, else replaces active display cache)
+    if persist_as_pending:
+        db.store_pending_jobs(merged, query=query)
+    else:
+        db.replace_search_jobs(merged, query=query, location=location, sources=statuses)
 
     # Filter according to requested params for immediate response
     bad_keys = [k.lower().strip() for k in profile.get("excluded_keywords", []) if k and k.strip()]
@@ -670,3 +677,78 @@ def get_recommendations(profile=None, force_refresh=False, limit=None):
         "source": "live",
         "generated_at": now_iso()
     }
+
+
+def run_background_auto_search():
+    """Background auto-search session:
+    Runs in background, fetches fresh jobs based on user resume/profile,
+    classifies and scores them, and stores any new ones in pending_search_jobs.
+    Does NOT wipe active search_jobs until the user presses Refresh!
+    """
+    profile = db.get_profile()
+    if profile.get("_is_empty"):
+        log.info("Background auto-search skipped: Profile is empty.")
+        return 0
+
+    tgt_title = (profile.get("target_title") or "").strip()
+    query = tgt_title or (profile.get("skills", ["Software Engineer"])[0] if profile.get("skills") else "Software Engineer")
+    location = (profile.get("location") or "").strip()
+    work_mode = profile.get("work_mode") or "Any"
+
+    db.set_setting("bg_search_status", "running")
+    t0 = time.time()
+    try:
+        search(query=query, location=location, work_mode=work_mode, force_refresh=True, persist_as_pending=True)
+        added = db.get_pending_jobs_count()
+        db.set_setting("bg_search_last_run", now_iso())
+        db.set_setting("bg_search_status", "idle")
+        log.info("Background auto-search completed in %.1fs: %d pending new jobs staged.", time.time() - t0, added)
+        return added
+    except Exception as e:
+        log.exception("Background auto-search failed: %s", e)
+        db.set_setting("bg_search_status", "error")
+        return 0
+
+
+_bg_thread = None
+_bg_stop = threading.Event()
+
+
+def _auto_search_worker():
+    """Periodic background worker daemon that triggers auto-search sessions based on user preference."""
+    while not _bg_stop.is_set():
+        for _ in range(6):
+            if _bg_stop.is_set():
+                return
+            time.sleep(5)
+
+        try:
+            settings = db.get_auto_search_settings()
+            if not settings["enabled"] or settings["interval_hours"] <= 0:
+                continue
+
+            last_run = settings["last_run"]
+            interval_sec = settings["interval_hours"] * 3600.0
+
+            should_run = False
+            if not last_run:
+                should_run = True
+            else:
+                last_dt = datetime.datetime.fromisoformat(last_run.replace("Z", "+00:00"))
+                elapsed = (datetime.datetime.now(datetime.timezone.utc) - last_dt).total_seconds()
+                if elapsed >= interval_sec:
+                    should_run = True
+
+            if should_run:
+                run_background_auto_search()
+        except Exception as e:
+            log.debug("Auto search worker error: %s", e)
+
+
+def start_auto_search_worker():
+    global _bg_thread
+    if _bg_thread and _bg_thread.is_alive():
+        return
+    _bg_stop.clear()
+    _bg_thread = threading.Thread(target=_auto_search_worker, daemon=True, name="jh-auto-search")
+    _bg_thread.start()

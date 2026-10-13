@@ -67,29 +67,29 @@
     famousFilter: (function() { try { return localStorage.getItem('jh-famous-filter') || 'all'; } catch (e) { return 'all'; } })(),
     filters: {
       keyword: '',
-      workMode: 'Remote',
+      workMode: 'Any',
       minScore: 0,
       famousMode: (function() { try { return localStorage.getItem('jh-famous-filter') || 'all'; } catch (e) { return 'all'; } })(),
-      country: 'United States',
+      country: 'all',
       excludedCountries: new Set(),
-      seniority: 'mid',
+      seniority: 'all',
       salaryTier: '0',
-      freshnessDays: 1,
+      freshnessDays: 0,
       directAtsOnly: false,
       hideApplied: false,
       savedOnly: false,
       selectedSkills: new Set(),
-      jobType: 'Full-time',
+      jobType: 'all',
       industry: 'all',
       yoe: 'all',
-      jobFunctions: ['Full Stack Engineer'],
+      jobFunctions: [],
       excludedTitles: new Set(),
-      jobTypes: new Set(['Full-time']),
-      workModels: new Set(['Remote']),
-      locationQuery: 'Anywhere in the US',
+      jobTypes: new Set(),
+      workModels: new Set(),
+      locationQuery: '',
       locationRadius: '25',
       customLocations: [],
-      expLevels: new Set(['mid']),
+      expLevels: new Set(),
       expOpenToAll: true,
       expYears: 0,
       salaryOpenToAll: true,
@@ -380,8 +380,8 @@
     if (view === 'recommend') {
       loadRecommendations();
     } else if (view === 'jobs') {
-      if (S.searchHasRun && S.searchMeta) renderResults();
-      else renderWelcomeState();
+      if (S.jobs && S.jobs.length && S.searchHasRun) renderResults();
+      else fetchJobsFromDb();
     }
     if (view === 'job') { S.ws.tab = ['strategy', 'resume', 'ats', 'gaps', 'cover', 'prep'].includes(sub) ? sub : 'strategy'; renderWsHeader(); renderWsTab(); }
     if (view === 'applications') loadApplications();
@@ -1419,26 +1419,40 @@
     const pool = (S.jobsRanked && S.jobsRanked.length) ? S.jobsRanked : (S.allJobs || S.jobs || []);
     const f = S.filters || {};
 
+    const selectedRole = (f.jobFunctions && f.jobFunctions.length) ? f.jobFunctions[0].toLowerCase() : '';
     return pool.filter(j => {
-      // 1. Keyword search
-      if (f.keyword) {
+      // 1. Keyword search (only when different from the role category)
+      if (f.keyword && f.keyword.toLowerCase().trim() !== selectedRole) {
         const kw = f.keyword.toLowerCase().trim();
         const hay = `${j.title || ''} ${j.company || ''} ${j.location || ''} ${(j.description || '').slice(0, 600)} ${jobSkillsList(j).join(' ')}`.toLowerCase();
         if (!hay.includes(kw)) return false;
       }
 
-      // 2. Job Functions (from All-Filters drawer)
+      // 2. Job Functions (from All-Filters drawer and role pill)
       if (f.jobFunctions && f.jobFunctions.length > 0) {
         const titleLower = (j.title || '').toLowerCase();
+        const catLower = (j.category || '').toLowerCase();
         const descLower = ((j.description || '').slice(0, 600)).toLowerCase();
         const tagsLower = (j.tags || []).map(t => String(t).toLowerCase());
         const matchesAnyFn = f.jobFunctions.some(fn => {
           const fnClean = fn.toLowerCase().trim();
           if (!fnClean) return true;
-          if (titleLower.includes(fnClean) || descLower.includes(fnClean) || tagsLower.some(t => t.includes(fnClean))) return true;
+          if (catLower.includes(fnClean) || titleLower.includes(fnClean) || descLower.includes(fnClean) || tagsLower.some(t => t.includes(fnClean))) return true;
+          if (fnClean.includes('full stack') || fnClean.includes('fullstack')) {
+            return catLower.includes('full stack') || titleLower.includes('full stack') || titleLower.includes('fullstack') || titleLower.includes('full-stack');
+          }
+          if (fnClean.includes('backend') || fnClean.includes('back end')) {
+            return catLower.includes('backend') || titleLower.includes('backend') || titleLower.includes('back end');
+          }
+          if (fnClean.includes('frontend') || fnClean.includes('front end')) {
+            return catLower.includes('frontend') || titleLower.includes('frontend') || titleLower.includes('front end');
+          }
+          if (fnClean.includes('devops') || fnClean.includes('sre') || fnClean.includes('cloud')) {
+            return catLower.includes('devops') || titleLower.includes('devops') || titleLower.includes('sre') || titleLower.includes('cloud') || titleLower.includes('platform');
+          }
           // Match core role keywords
           const words = fnClean.split(/\s+/).filter(w => !['engineer', 'developer', 'specialist', 'lead', 'senior', 'junior', 'level'].includes(w));
-          if (words.length > 0 && words.every(w => titleLower.includes(w) || descLower.includes(w))) return true;
+          if (words.length > 0 && words.every(w => titleLower.includes(w) || catLower.includes(w) || descLower.includes(w))) return true;
           return false;
         });
         if (!matchesAnyFn) return false;
@@ -2055,7 +2069,105 @@
     S.jobs = filteredJobs();
   }
 
-  function filterAndRender() {
+  let _fetchDebounce = null;
+  async function fetchJobsFromDb() {
+    clearTimeout(_fetchDebounce);
+    return new Promise(resolve => {
+      _fetchDebounce = setTimeout(async () => {
+        try {
+          const f = S.filters || {};
+          const params = new URLSearchParams();
+
+          // Role / Category
+          const cat = (f.jobFunctions && f.jobFunctions.length) ? f.jobFunctions[0] : '';
+          if (cat) params.set('category', cat);
+          if (f.keyword && f.keyword.toLowerCase() !== cat.toLowerCase()) params.set('q', f.keyword);
+
+          // Work mode
+          if (f.workMode && f.workMode !== 'Any' && f.workMode !== 'all') {
+            params.set('work_mode', f.workMode);
+          } else if (f.workModels && f.workModels.size === 1) {
+            params.set('work_mode', Array.from(f.workModels)[0]);
+          }
+
+          // Seniority
+          if (f.seniority && f.seniority !== 'all') {
+            params.set('seniority', f.seniority);
+          } else if (f.expLevels && f.expLevels.size === 1) {
+            params.set('seniority', Array.from(f.expLevels)[0]);
+          }
+
+          // Job type
+          if (f.jobType && f.jobType !== 'all') {
+            params.set('job_type', f.jobType);
+          } else if (f.jobTypes && f.jobTypes.size === 1) {
+            params.set('job_type', Array.from(f.jobTypes)[0]);
+          }
+
+          // Country / Location
+          if (f.country && f.country !== 'all') {
+            params.set('country', f.country);
+          }
+          if (f.locationQuery && f.locationQuery !== 'Anywhere in the US' && f.locationQuery !== 'Worldwide' && f.locationQuery.trim()) {
+            params.set('location', f.locationQuery.trim());
+          }
+
+          // Min score
+          if (f.minScore > 0) params.set('min_score', String(f.minScore));
+
+          // Min salary
+          if (!f.salaryOpenToAll && f.minSalary > 0) {
+            params.set('min_salary', String(f.minSalary));
+          } else if (f.salaryTier && f.salaryTier !== '0' && f.salaryTier !== 'disclosed') {
+            const num = f.salaryTier.replace('k', '000');
+            params.set('min_salary', num);
+          }
+
+          // Freshness
+          if (f.freshnessDays > 0) params.set('days', String(f.freshnessDays));
+
+          // Industry
+          if (f.industry && f.industry !== 'all') {
+            params.set('industry', f.industry);
+          } else if (f.industries && f.industries.size > 0) {
+            params.set('industry', Array.from(f.industries)[0]);
+          }
+
+          // Famous mode
+          if (f.famousMode && f.famousMode !== 'all') params.set('famous_mode', f.famousMode);
+
+          // H1B
+          if (f.h1b) params.set('h1b', '1');
+
+          // Sort
+          const how = val('sortResultsBy') || 'ranked';
+          params.set('sort', how);
+
+          const res = await api(`/api/search/saved?${params.toString()}`);
+          if (res) {
+            const pool = res.jobs || [];
+            S.allJobs = pool;
+            S.jobsRanked = pool;
+            S.jobs = pool;
+            S.searchMeta = res.meta || S.searchMeta || {};
+            S.searchHasRun = true;
+            if (pool.length && (!S.selectedKey || !pool.some(j => jobKey(j) === S.selectedKey))) {
+              S.selectedKey = jobKey(pool[0]);
+            }
+            filterAndRender(false);
+            syncFiltersUi();
+            updateFacetCounts();
+          }
+          resolve(res);
+        } catch (e) {
+          console.warn('Error fetching filtered jobs from DB:', e);
+          resolve(null);
+        }
+      }, 50);
+    });
+  }
+
+  function filterAndRender(syncWithDb = true) {
     applySort();
     syncFiltersUi();
     updateFacetCounts();
@@ -2064,6 +2176,9 @@
     const keep = currentList.find(j => jobKey(j) === S.selectedKey);
     S.selectedKey = keep ? jobKey(keep) : (!isNarrow() && currentList[0] ? jobKey(currentList[0]) : null);
     renderResults();
+    if (syncWithDb) {
+      fetchJobsFromDb();
+    }
   }
 
   function sourceCounts() {
@@ -2127,7 +2242,7 @@
         if (S.recJobs.length && !S.selectedKey) {
           S.selectedKey = jobKey(S.recJobs[0]);
         }
-        filterAndRender();
+        filterAndRender(false);
       }
     } catch (err) {
       console.warn('Could not load recommendations:', err);
@@ -4184,8 +4299,10 @@
         if (t) t.textContent = role;
         const q = $('#searchQuery');
         if (q) q.value = role;
+        S.filters.jobFunctions = [role];
+        S.filters.keyword = '';
         roleMenu.hidden = true;
-        runSearch({ forceRefresh: false, overrideQuery: role });
+        filterAndRender();
       });
       const setRoleBtn = $('#p4SetRole');
       if (setRoleBtn) {
@@ -4196,8 +4313,10 @@
             if (t) t.textContent = role;
             const q = $('#searchQuery');
             if (q) q.value = role;
+            S.filters.jobFunctions = [role];
+            S.filters.keyword = '';
             roleMenu.hidden = true;
-            runSearch({ forceRefresh: false, overrideQuery: role });
+            filterAndRender();
           }
         });
       }
@@ -4210,6 +4329,7 @@
         if (!item) return;
         const sen = item.dataset.sen;
         S.filters.seniority = sen;
+        S.filters.expLevels = (sen === 'all' ? new Set() : new Set([sen]));
         const labels = { all: 'All Seniority', junior: 'Entry Level', mid: 'Mid Level', senior: 'Senior Level', lead_staff: 'Lead / Staff' };
         const t = $('#p4TextSeniority');
         if (t) t.textContent = labels[sen] || 'Seniority';
@@ -4226,6 +4346,7 @@
         if (!item) return;
         const jt = item.dataset.type;
         S.filters.jobType = jt;
+        S.filters.jobTypes = (jt === 'all' ? new Set() : new Set([jt]));
         const t = $('#p4TextJobType');
         if (t) t.textContent = jt === 'all' ? 'All Types' : jt;
         $$('.p4-menu-item', jtMenu).forEach(b => b.classList.toggle('is-selected', b === item));
@@ -4241,6 +4362,7 @@
         if (!item) return;
         const mode = item.dataset.mode;
         S.filters.workMode = mode;
+        S.filters.workModels = (mode === 'Any' || mode === 'all' ? new Set() : new Set([mode]));
         const t = $('#p4TextWorkMode');
         if (t) t.textContent = mode === 'Any' ? 'Any Mode' : `${mode} (+2)`;
         $$('.p4-menu-item', wmMenu).forEach(b => b.classList.toggle('is-selected', b === item));
@@ -4330,6 +4452,42 @@
     if (btnAllFilters) {
       btnAllFilters.addEventListener('click', () => {
         openAllFiltersDrawer();
+      });
+    }
+
+    // Refresh & Sync DB button handler
+    const btnRefreshSync = $('#btnJobsRefreshSync');
+    if (btnRefreshSync) {
+      btnRefreshSync.addEventListener('click', async () => {
+        btnRefreshSync.classList.add('is-refreshing');
+        try {
+          const res = await api('/api/jobs/refresh-sync', { method: 'POST' });
+          if (res) {
+            const pool = res.jobs || [];
+            S.allJobs = pool;
+            S.jobsRanked = pool;
+            S.jobs = pool;
+            S.searchMeta = res.meta || S.searchMeta || {};
+            S.searchHasRun = true;
+            if (pool.length && (!S.selectedKey || !pool.some(j => jobKey(j) === S.selectedKey))) {
+              S.selectedKey = jobKey(pool[0]);
+            }
+            renderResults();
+            updateFacetCounts();
+            const badge = $('#jobsRefreshBadge');
+            if (badge) {
+              badge.textContent = '0 new';
+              badge.hidden = true;
+            }
+            toast(res.message || 'Database refreshed: New jobs synced and expired jobs removed!');
+          }
+        } catch (err) {
+          console.warn('Refresh sync error:', err);
+          toast('Database is up to date.');
+        } finally {
+          btnRefreshSync.classList.remove('is-refreshing');
+          checkAutoSearchStatus();
+        }
       });
     }
 
@@ -4776,6 +4934,7 @@
     if (btnConfirm) {
       btnConfirm.addEventListener('click', () => {
         closeAllFiltersDrawer();
+        filterAndRender();
         toast('Filters applied successfully');
       });
     }
@@ -5710,8 +5869,146 @@
     }
 
     closeOnboarding();
-    go('recommend');
-    toast('Welcome! Displaying curated recommendations tailored to your profile.');
+    go('jobs');
+    fetchJobsFromDb();
+    toast('Welcome! Displaying jobs matching your profile and preferences.');
+  }
+
+  // ------------------------------------------------------------------- auto-search helpers
+  async function checkAutoSearchStatus() {
+    try {
+      const res = await api('/api/auto-search/status');
+      if (res && res.settings) {
+        const s = res.settings;
+        const badge = $('#jobsRefreshBadge');
+        if (badge) {
+          if (s.pending_count > 0) {
+            badge.textContent = `${s.pending_count} new`;
+            badge.hidden = false;
+          } else {
+            badge.textContent = '0 new';
+            badge.hidden = true;
+          }
+        }
+        const lastEl = $('#autoSearchLastRunText');
+        if (lastEl) lastEl.textContent = s.last_run ? formatTimeSince(new Date(s.last_run).getTime()) : 'Never';
+        const nextEl = $('#autoSearchNextRunText');
+        if (nextEl) {
+          if (!s.enabled || s.interval_hours <= 0) nextEl.textContent = 'Disabled';
+          else if (s.next_run === 'Immediate') nextEl.textContent = 'Ready to run';
+          else if (s.next_run) nextEl.textContent = formatTimeUntil(new Date(s.next_run).getTime());
+          else nextEl.textContent = `In ${s.interval_hours}h`;
+        }
+        const pendingEl = $('#autoSearchPendingText');
+        if (pendingEl) pendingEl.textContent = `${s.pending_count} new job${s.pending_count === 1 ? '' : 's'} staged`;
+        const statusBadge = $('#autoSearchStatusBadge');
+        if (statusBadge) {
+          if (!s.enabled || s.interval_hours <= 0) {
+            statusBadge.textContent = 'Manual Only';
+            statusBadge.className = 'chip chip-muted';
+          } else if (s.status === 'running') {
+            statusBadge.textContent = 'Scanning Live...';
+            statusBadge.className = 'chip chip-warning';
+          } else {
+            statusBadge.textContent = 'Auto Active';
+            statusBadge.className = 'chip chip-ok';
+          }
+        }
+      }
+    } catch (e) {
+      console.debug('auto search status check:', e);
+    }
+  }
+
+  function formatTimeUntil(timestamp) {
+    if (!timestamp || isNaN(timestamp)) return 'Soon';
+    const diff = timestamp - Date.now();
+    if (diff <= 0) return 'Any moment';
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `In ${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `In ${hrs}h ${mins % 60}m`;
+    const days = Math.floor(hrs / 24);
+    return `In ${days}d ${hrs % 24}h`;
+  }
+
+  function setupAutoSearchUi() {
+    const sel = $('#autoSearchIntervalSelect');
+    const customField = $('#autoSearchCustomField');
+    const customInp = $('#autoSearchCustomHours');
+    const triggerBtn = $('#btnTriggerAutoSearch');
+
+    api('/api/auto-search/status').then(res => {
+      if (res && res.settings) {
+        const s = res.settings;
+        if (sel) {
+          if (!s.enabled || s.interval_hours <= 0) {
+            sel.value = '0';
+          } else if (['1', '5', '24', '168'].includes(String(s.interval_hours))) {
+            sel.value = String(s.interval_hours);
+          } else {
+            sel.value = 'custom';
+            if (customField) customField.hidden = false;
+            if (customInp) customInp.value = String(s.interval_hours);
+          }
+        }
+        checkAutoSearchStatus();
+      }
+    }).catch(() => {});
+
+    if (sel) {
+      sel.addEventListener('change', () => {
+        const val = sel.value;
+        if (val === 'custom') {
+          if (customField) customField.hidden = false;
+          const h = parseFloat((customInp && customInp.value) || 12);
+          api('/api/auto-search/settings', { method: 'POST', body: { enabled: true, interval_hours: h } }).then(() => {
+            toast(`Auto search interval set to every ${h} hours`);
+            checkAutoSearchStatus();
+          });
+        } else if (val === '0') {
+          if (customField) customField.hidden = true;
+          api('/api/auto-search/settings', { method: 'POST', body: { enabled: false, interval_hours: 0 } }).then(() => {
+            toast('Background auto search set to manual only');
+            checkAutoSearchStatus();
+          });
+        } else {
+          if (customField) customField.hidden = true;
+          const h = parseFloat(val);
+          api('/api/auto-search/settings', { method: 'POST', body: { enabled: true, interval_hours: h } }).then(() => {
+            toast(`Auto search frequency updated: Every ${h} hours`);
+            checkAutoSearchStatus();
+          });
+        }
+      });
+    }
+
+    if (customInp) {
+      customInp.addEventListener('change', () => {
+        const h = parseFloat(customInp.value);
+        if (h && h > 0) {
+          api('/api/auto-search/settings', { method: 'POST', body: { enabled: true, interval_hours: h } }).then(() => {
+            toast(`Auto search custom interval saved: ${h} hours`);
+            checkAutoSearchStatus();
+          });
+        }
+      });
+    }
+
+    if (triggerBtn) {
+      triggerBtn.addEventListener('click', async () => {
+        triggerBtn.disabled = true;
+        try {
+          await api('/api/auto-search/trigger', { method: 'POST' });
+          toast('Background search session started! It will run in background and stage new jobs.');
+          checkAutoSearchStatus();
+        } catch (e) {
+          toast('Could not trigger background search: ' + e.message, 'error');
+        } finally {
+          setTimeout(() => { triggerBtn.disabled = false; }, 2000);
+        }
+      });
+    }
   }
 
   // ------------------------------------------------------------------- init
@@ -5722,6 +6019,7 @@
     setupP4FilterBar();
     setupAllFiltersDrawer();
     setupOnboardingFlow();
+    setupAutoSearchUi();
     bindEvents();
     await Promise.all([loadProfile(), loadApplications()]);
     if (!S.profileEmpty) {
@@ -5730,57 +6028,23 @@
     renderWsHeader();
     renderIdeas();
 
+    // Auto-search status polling
+    setInterval(checkAutoSearchStatus, 15000);
+    checkAutoSearchStatus();
+
     // Restore auto-reload schedule (defaults to 5 hours)
     const savedMins = getAutoReloadMinutes();
     const reloadSelect = $('#autoReloadSelect');
     if (reloadSelect) reloadSelect.value = String(savedMins);
     scheduleAutoReload(savedMins);
 
-    // Check for cached search results from this session or database
-    let restoredCached = false;
-    try {
-      const cached = sessionStorage.getItem('jh-last-search-meta');
-      const cachedTime = sessionStorage.getItem('jh-last-search-time');
-      if (cached) {
-        const meta = JSON.parse(cached);
-        const pool = meta.all_jobs || meta.jobs || [];
-        if (meta && pool.length > 0) {
-          S.searchMeta = meta;
-          S.allJobs = pool;
-          S.jobsRanked = pool;
-          S.searchHasRun = true;
-          S.lastSearchTime = parseInt(cachedTime, 10) || Date.now();
-          filterAndRender();
-          restoredCached = true;
-        }
-      }
-    } catch (e) {}
-
-    if (!restoredCached) {
-      try {
-        const savedRes = await api('/api/search/saved');
-        const pool = savedRes ? (savedRes.all_jobs || savedRes.jobs || []) : [];
-        if (pool.length > 0) {
-          S.searchMeta = { jobs: savedRes.jobs, all_jobs: pool, ...(savedRes.meta || {}) };
-          S.allJobs = pool;
-          S.jobsRanked = pool;
-          S.searchHasRun = true;
-          if (savedRes.meta && savedRes.meta.updated_at) {
-            S.lastSearchTime = new Date(savedRes.meta.updated_at).getTime() || Date.now();
-          }
-          if (savedRes.meta && savedRes.meta.query && !$('#searchQuery').value) {
-            $('#searchQuery').value = savedRes.meta.query;
-          }
-          filterAndRender();
-          restoredCached = true;
-        }
-      } catch (e) {}
-    }
+    // Fetch jobs from database on startup
+    await fetchJobsFromDb();
 
     route();
 
     if (S.view === 'jobs') {
-      if (restoredCached) renderResults();
+      if ((S.jobs && S.jobs.length) || (S.allJobs && S.allJobs.length)) renderResults();
       else renderWelcomeState();
     }
   }
