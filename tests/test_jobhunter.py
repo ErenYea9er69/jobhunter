@@ -9,7 +9,7 @@ os.environ["JH_DATA_DIR"] = tempfile.mkdtemp()
 os.environ["JH_SEARCH_DEADLINE"] = "5"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from jh import ats, db, dedup, exporters, pipeline, resume_parser as rp, scoring, skills, sources, refit, tracker, util  # noqa: E402
+from jh import ats, config, db, dedup, exporters, pipeline, resume_parser as rp, scoring, skills, sources, refit, tracker, util  # noqa: E402
 from jh.demo import DEMO_PROFILE  # noqa: E402
 
 JOB = {"id": "j", "title": "Senior Backend Engineer", "company": "Acme",
@@ -118,6 +118,34 @@ class ScoreTests(Base):
         self.assertTrue(pipeline._passes(tunisia_job, "any", "Tunisia"))
         self.assertTrue(pipeline._passes(remote_global, "any", "Tunisia"))
         self.assertFalse(pipeline._passes(us_only_job, "any", "Tunisia"))
+
+        # Remote role with HQ in San Francisco but without residency blockers passes for Tunisia
+        remote_sf = {"location": "San Francisco, CA", "work_mode": "Remote", "description": "Global distributed engineering team"}
+        self.assertTrue(pipeline._passes(remote_sf, "any", "Tunisia"))
+
+        # EMEA remote passes for Tunisia (which is in EMEA)
+        emea_job = {"location": "Remote (EMEA)", "work_mode": "Remote", "description": "EMEA remote position"}
+        self.assertTrue(pipeline._passes(emea_job, "any", "Tunisia"))
+
+        # APAC remote passes for China
+        apac_job = {"location": "Remote (APAC)", "work_mode": "Remote", "description": "APAC timezone remote"}
+        self.assertTrue(pipeline._passes(apac_job, "any", "China"))
+        self.assertFalse(pipeline._passes(apac_job, "any", "Tunisia"))
+
+    def test_configurable_capacity_and_depth(self):
+        # Verify dynamic capacity getters read from DB settings
+        db.set_setting("max_scored_jobs", "5000")
+        self.assertEqual(config.get_max_scored_jobs(), 5000)
+
+        db.set_setting("max_results", "2500")
+        self.assertEqual(config.get_max_results(), 2500)
+
+        db.set_setting("linkedin_scrape_depth", "deep")
+        self.assertEqual(config.get_linkedin_scrape_depth(), "deep")
+
+        # Fallback clamped values (max 20000)
+        db.set_setting("max_scored_jobs", "99999999")
+        self.assertEqual(config.get_max_scored_jobs(), 20000)
 
     def test_smart_remote_fallback_when_local_empty(self):
         # When user searches for a location that has 0 local postings, pipeline falls back to Worldwide Remote

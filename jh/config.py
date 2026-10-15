@@ -47,8 +47,38 @@ SOURCE_TIMEOUT_SECONDS = float(os.environ.get("JH_SOURCE_TIMEOUT", "10"))
 CACHE_TTL_SECONDS = int(os.environ.get("JH_CACHE_TTL", "900"))
 STALE_CACHE_MAX_SECONDS = int(os.environ.get("JH_STALE_MAX", str(24 * 3600)))
 MAX_RESULTS = int(os.environ.get("JH_MAX_RESULTS", "1000"))
-MAX_SCORED_JOBS = int(os.environ.get("JH_MAX_SCORED_JOBS", "1500"))
+MAX_SCORED_JOBS = int(os.environ.get("JH_MAX_SCORED_JOBS", "2500"))
 ENRICH_TOP_N = int(os.environ.get("JH_ENRICH_TOP_N", "12"))
+
+def get_max_scored_jobs():
+    try:
+        from . import db
+        val = db.get_setting("max_scored_jobs")
+        if val:
+            return max(500, min(20000, int(val)))
+    except Exception:
+        pass
+    return int(os.environ.get("JH_MAX_SCORED_JOBS", str(MAX_SCORED_JOBS)))
+
+def get_max_results():
+    try:
+        from . import db
+        val = db.get_setting("max_results")
+        if val:
+            return max(200, min(10000, int(val)))
+    except Exception:
+        pass
+    return int(os.environ.get("JH_MAX_RESULTS", str(MAX_RESULTS)))
+
+def get_linkedin_scrape_depth():
+    try:
+        from . import db
+        val = db.get_setting("linkedin_scrape_depth")
+        if val:
+            return val.lower().strip()
+    except Exception:
+        pass
+    return os.environ.get("JH_LINKEDIN_DEPTH", "standard")
 
 # Major job boards (LinkedIn, Indeed, ZipRecruiter, etc.) are built-in native scrapers
 # that run as part of every search without external library wrappers.

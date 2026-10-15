@@ -4368,6 +4368,47 @@
         badge.textContent = `${prov.toUpperCase()} (${cfg.llm_available ? 'Connected' : 'Active'})`;
         badge.className = `chip ${prov === 'deterministic' ? 'chip-ok' : cfg.llm_available ? 'chip-ok' : 'chip-warn'}`;
       }
+
+      // Populate Search Capacity & Global Targeting
+      const scoredJobsSel = $('#cfgMaxScoredJobs');
+      if (scoredJobsSel && cfg.max_scored_jobs) scoredJobsSel.value = String(cfg.max_scored_jobs);
+
+      const maxResultsSel = $('#cfgMaxResults');
+      if (maxResultsSel && cfg.max_results) maxResultsSel.value = String(cfg.max_results);
+
+      const depthSel = $('#cfgLinkedInDepth');
+      if (depthSel && cfg.linkedin_scrape_depth) depthSel.value = cfg.linkedin_scrape_depth;
+
+      const userCountrySel = $('#cfgUserCountry');
+      const customCountryField = $('#cfgCustomCountryField');
+      const customCountryInput = $('#cfgCustomCountryInput');
+      if (userCountrySel) {
+        const uCountry = (cfg.user_country || '').trim();
+        const matchingOpt = Array.from(userCountrySel.options).find(o => o.value.toLowerCase() === uCountry.toLowerCase());
+        if (matchingOpt) {
+          userCountrySel.value = matchingOpt.value;
+          if (customCountryField) customCountryField.hidden = true;
+        } else if (uCountry) {
+          userCountrySel.value = 'custom';
+          if (customCountryField) customCountryField.hidden = false;
+          if (customCountryInput) customCountryInput.value = uCountry;
+        } else {
+          userCountrySel.value = 'Worldwide';
+          if (customCountryField) customCountryField.hidden = true;
+        }
+      }
+
+      const incWorldwideRemoteCb = $('#cfgIncludeWorldwideRemote');
+      if (incWorldwideRemoteCb) {
+        incWorldwideRemoteCb.checked = (String(cfg.include_worldwide_remote).toLowerCase() !== 'false');
+      }
+
+      const capBadge = $('#activeCapacityBadge');
+      if (capBadge) {
+        const d = cfg.linkedin_scrape_depth || 'standard';
+        const depthLabels = { fast: 'Fast (~100)', standard: 'Standard (~250)', deep: 'Deep (~500)', max: 'Ultra (~1,000)' };
+        capBadge.textContent = `${depthLabels[d] || 'Standard'} / Pool: ${cfg.max_scored_jobs || 1500}`;
+      }
     } catch (err) {
       /* ignore */
     }
@@ -4424,6 +4465,33 @@
     try {
       await api('/api/settings', { method: 'POST', body: payload });
       toast('AI configuration saved');
+      await loadAiSettings();
+    } catch (err) {
+      toast('Failed to save settings: ' + err.message, 'error');
+    }
+  }
+
+  async function saveSearchCapacitySettings() {
+    const scoredJobs = parseInt(val('cfgMaxScoredJobs'), 10) || 1500;
+    const maxResults = parseInt(val('cfgMaxResults'), 10) || 1000;
+    const linkedInDepth = val('cfgLinkedInDepth') || 'standard';
+    let userCountry = val('cfgUserCountry');
+    if (userCountry === 'custom') {
+      userCountry = (val('cfgCustomCountryInput') || '').trim();
+    }
+    const incWorldwide = $('#cfgIncludeWorldwideRemote') ? $('#cfgIncludeWorldwideRemote').checked : true;
+
+    const payload = {
+      max_scored_jobs: scoredJobs,
+      max_results: maxResults,
+      linkedin_scrape_depth: linkedInDepth,
+      user_country: userCountry,
+      include_worldwide_remote: incWorldwide
+    };
+
+    try {
+      await api('/api/settings', { method: 'POST', body: payload });
+      toast('Search engine capacity & global targeting saved!');
       await loadAiSettings();
     } catch (err) {
       toast('Failed to save settings: ' + err.message, 'error');
@@ -4861,6 +4929,17 @@
     if (testAiBtn) testAiBtn.addEventListener('click', testAiConnection);
     const saveAiBtn = $('#btnSaveAi');
     if (saveAiBtn) saveAiBtn.addEventListener('click', saveAiSettings);
+
+    // Search capacity & global targeting settings
+    const saveCapacityBtn = $('#btnSaveCapacity');
+    if (saveCapacityBtn) saveCapacityBtn.addEventListener('click', saveSearchCapacitySettings);
+    const userCountrySel = $('#cfgUserCountry');
+    if (userCountrySel) {
+      userCountrySel.addEventListener('change', () => {
+        const customField = $('#cfgCustomCountryField');
+        if (customField) customField.hidden = (userCountrySel.value !== 'custom');
+      });
+    }
 
     // workspace tabs
     $('#wsTabs').addEventListener('click', e => {

@@ -1208,6 +1208,98 @@
           </div>
         </section>
 
+        <section class="card" id="searchCapacityCard">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg>Search Engine Capacity &amp; Global Targeting</h2>
+              <p class="muted">Tune how deeply scrapers dig into LinkedIn, how many candidate jobs are scored per pass, and target your home country or worldwide remote roles.</p>
+            </div>
+            <span class="chip chip-info" id="activeCapacityBadge">Standard Capacity</span>
+          </div>
+
+          <div class="form-grid">
+            <!-- Scoring Pool Capacity (MAX_SCORED_JOBS) -->
+            <div class="form-field">
+              <label for="cfgMaxScoredJobs">Scoring Pool Limit (Candidate Pool)</label>
+              <select id="cfgMaxScoredJobs">
+                <option value="1500">1,500 candidates (Default - Balanced)</option>
+                <option value="3000">3,000 candidates (Deep search)</option>
+                <option value="5000">5,000 candidates (High volume)</option>
+                <option value="10000">10,000 candidates (Maximum thoroughness)</option>
+              </select>
+              <small class="muted">Maximum unique jobs deduplicated and scored against your resume per pass.</small>
+            </div>
+
+            <!-- Active Display Limit (MAX_RESULTS) -->
+            <div class="form-field">
+              <label for="cfgMaxResults">Display Limit (Top Results)</label>
+              <select id="cfgMaxResults">
+                <option value="500">500 opportunities (Fast render)</option>
+                <option value="1000" selected>1,000 opportunities (Default)</option>
+                <option value="2500">2,500 opportunities (Large feed)</option>
+                <option value="5000">5,000 opportunities (Comprehensive)</option>
+              </select>
+              <small class="muted">Top scored opportunities loaded into your active results table.</small>
+            </div>
+
+            <!-- LinkedIn Scrape Depth -->
+            <div class="form-field">
+              <label for="cfgLinkedInDepth">LinkedIn Scraping Depth</label>
+              <select id="cfgLinkedInDepth">
+                <option value="fast">Fast (~100 jobs, 1st page per query)</option>
+                <option value="standard" selected>Standard (~250 jobs, multi-page + fresh)</option>
+                <option value="deep">Deep (~500 jobs, 4 pages + synonyms + fresh)</option>
+                <option value="max">Ultra / Max (~1,000 jobs, full pagination sweep)</option>
+              </select>
+              <small class="muted">How many pages and keyword variations LinkedInGuest queries per search.</small>
+            </div>
+
+            <!-- Home Country / Preferred Region -->
+            <div class="form-field">
+              <label for="cfgUserCountry">Target Country / Region</label>
+              <select id="cfgUserCountry">
+                <option value="Worldwide">🌍 Worldwide Remote (Anywhere)</option>
+                <option value="Tunisia">🇹🇳 Tunisia (Tunisie)</option>
+                <option value="Morocco">🇲🇦 Morocco (Maroc)</option>
+                <option value="Algeria">🇩🇿 Algeria (Algérie)</option>
+                <option value="Egypt">🇪🇬 Egypt</option>
+                <option value="United States">🇺🇸 United States</option>
+                <option value="United Kingdom">🇬🇧 United Kingdom</option>
+                <option value="France">🇫🇷 France</option>
+                <option value="Germany">🇩🇪 Germany (Deutschland)</option>
+                <option value="Canada">🇨🇦 Canada</option>
+                <option value="China">🇨🇳 China</option>
+                <option value="India">🇮🇳 India</option>
+                <option value="Japan">🇯🇵 Japan</option>
+                <option value="Singapore">🇸🇬 Singapore</option>
+                <option value="United Arab Emirates">🇦🇪 UAE (Dubai)</option>
+                <option value="Saudi Arabia">🇸🇦 Saudi Arabia</option>
+                <option value="custom">Other / Custom Location...</option>
+              </select>
+              <small class="muted">Eliminates US bias: routes scrapers (LinkedIn, Bayt, Adzuna) to your region.</small>
+            </div>
+
+            <div class="form-field span-2" id="cfgCustomCountryField" hidden>
+              <label for="cfgCustomCountryInput">Custom Country / Location Name</label>
+              <input type="text" id="cfgCustomCountryInput" placeholder="e.g. Netherlands, Australia, Brazil, South Africa">
+            </div>
+
+            <div class="form-field span-2">
+              <label class="checkbox-label" style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+                <input type="checkbox" id="cfgIncludeWorldwideRemote" checked style="margin-top:3px;">
+                <div>
+                  <strong>Include Worldwide &amp; International Remote Roles</strong>
+                  <p class="muted small" style="margin:2px 0 0 0;">When enabled, global remote roles from US, European, and international tech companies that hire candidates living in your country will be included (rather than rejected due to HQ location).</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="head-actions" style="margin-top:14px;">
+            <button type="button" class="btn btn-primary btn-sm" id="btnSaveCapacity">Save search capacity &amp; global targeting</button>
+          </div>
+        </section>
+
         <section class="card">
           <div class="card-head">
             <h2 class="card-title">Where jobs come from</h2>

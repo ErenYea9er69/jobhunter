@@ -420,9 +420,36 @@ class Adzuna(Source):
         q = {"app_id": i, "app_key": k, "results_per_page": 40, "content-type": "application/json"}
         if query:
             q["what"] = query
-        if location and location.lower() not in ("remote", "worldwide"):
-            q["where"] = location
-        data = http_get_json(f"https://api.adzuna.com/v1/api/jobs/{config.ADZUNA_COUNTRY}/search/1?" + urllib.parse.urlencode(q))
+        loc_str = (location or "").strip()
+        if loc_str and loc_str.lower() not in ("remote", "worldwide"):
+            q["where"] = loc_str
+
+        ADZUNA_COUNTRIES = {
+            "united states": "us", "usa": "us", "us": "us",
+            "united kingdom": "gb", "uk": "gb", "great britain": "gb",
+            "france": "fr", "germany": "de", "deutschland": "de",
+            "canada": "ca", "india": "in", "poland": "pl",
+            "australia": "au", "austria": "at", "belgium": "be",
+            "brazil": "br", "switzerland": "ch", "italy": "it",
+            "netherlands": "nl", "new zealand": "nz", "russia": "ru",
+            "singapore": "sg", "south africa": "za"
+        }
+        target_country = config.ADZUNA_COUNTRY or "us"
+        check_loc = loc_str.lower()
+        if not check_loc or check_loc in ("remote", "worldwide", "any"):
+            try:
+                from . import db
+                check_loc = (db.get_setting("user_country") or "").lower().strip()
+                if not check_loc:
+                    check_loc = (db.get_profile().get("location") or "").lower().strip()
+            except Exception:
+                pass
+        for k_name, c_code in ADZUNA_COUNTRIES.items():
+            if k_name in check_loc:
+                target_country = c_code
+                break
+
+        data = http_get_json(f"https://api.adzuna.com/v1/api/jobs/{target_country}/search/1?" + urllib.parse.urlencode(q))
         out = []
         for j in data.get("results", []):
             sal = f"{int(j['salary_min'])} - {int(j['salary_max'])}" if j.get("salary_min") and j.get("salary_max") and not j.get("salary_is_predicted") in ("1", 1) else ""
@@ -615,31 +642,82 @@ class LinkedInGuest(Source):
         seen_ids = set()
         kw = (query or "software engineer").strip()
         loc = (location or "").strip()
+
+        user_c = ""
+        try:
+            from . import db
+            user_c = (db.get_setting("user_country") or "").strip()
+            if not user_c:
+                user_c = (db.get_profile().get("location") or "").strip()
+        except Exception:
+            pass
+
+        if not loc and user_c and user_c.lower() not in ("remote", "anywhere", "worldwide"):
+            loc = user_c
+
         is_remote = "remote" in f"{kw} {loc}".lower()
         remote_flag = "&f_WT=2" if is_remote else ""
         search_loc = loc if loc and loc.lower() not in ("remote", "anywhere") else "Worldwide"
 
-        # Multi-query slice strategy with proper step=10 offsets, fresh filters, and role synonyms:
-        queries = [
-            (kw, search_loc, 0, "", False),
-            (kw, search_loc, 10, "", False),
-            (kw, search_loc, 20, "", False),
-            (kw, search_loc, 0, "&f_TPR=r604800", False),  # Past week fresh
-            (f"{kw} startup", search_loc, 0, "", True),
-            (f"{kw} startup", search_loc, 10, "", True),
-        ]
-        q_lower = kw.lower()
-        if "developer" in q_lower:
-            queries.append((re.sub(r"\bdeveloper\b", "engineer", kw, flags=re.I), search_loc, 0, "", False))
-        elif "engineer" in q_lower:
-            queries.append((re.sub(r"\bengineer\b", "developer", kw, flags=re.I), search_loc, 0, "", False))
+        depth = config.get_linkedin_scrape_depth()
+        if depth == "max":
+            primary_offsets = [0, 25, 50, 75, 100, 125]
+            fresh_offsets = [0, 25, 50]
+            startup_offsets = [0, 25, 50]
+            max_out = 1000
+        elif depth == "deep":
+            primary_offsets = [0, 25, 50, 75]
+            fresh_offsets = [0, 25]
+            startup_offsets = [0, 25]
+            max_out = 500
+        elif depth == "fast":
+            primary_offsets = [0]
+            fresh_offsets = []
+            startup_offsets = [0]
+            max_out = 100
         else:
-            queries.append((f"{kw} developer", search_loc, 0, "", False))
+            primary_offsets = [0, 25]
+            fresh_offsets = [0]
+            startup_offsets = [0, 25]
+            max_out = 250
 
-        if search_loc == "Worldwide":
-            queries.append((f"{kw} startup", "United States", 0, "", True))
+        target_places = [search_loc]
+        if user_c and user_c.lower() not in ("remote", "anywhere", "worldwide") and user_c.lower() != search_loc.lower():
+            target_places.append(user_c)
+
+        queries = []
+        for pl in target_places:
+            for off in primary_offsets:
+                queries.append((kw, pl, off, "", False))
+            for off in fresh_offsets:
+                queries.append((kw, pl, off, "&f_TPR=r604800", False))
+            for off in startup_offsets:
+                queries.append((f"{kw} startup", pl, off, "", True))
+
+        q_lower = kw.lower()
+        syn = ""
+        if "developer" in q_lower:
+            syn = re.sub(r"\bdeveloper\b", "engineer", kw, flags=re.I)
+        elif "engineer" in q_lower:
+            syn = re.sub(r"\bengineer\b", "developer", kw, flags=re.I)
+        elif "programmer" in q_lower:
+            syn = re.sub(r"\bprogrammer\b", "engineer", kw, flags=re.I)
+        else:
+            syn = f"{kw} developer"
+
+        if syn and syn != kw:
+            queries.append((syn, search_loc, 0, "", False))
+            if depth in ("deep", "max"):
+                queries.append((syn, search_loc, 25, "", False))
+
+        if search_loc == "Worldwide" and not remote_flag:
+            queries.append((kw, "Worldwide", 0, "&f_WT=2", False))
+            if depth in ("deep", "max"):
+                queries.append((kw, "Worldwide", 25, "&f_WT=2", False))
 
         for term, place, start_idx, extra_params, is_startup_term in queries:
+            if len(out) >= max_out:
+                break
             url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
                    f"keywords={urllib.parse.quote(term)}&location={urllib.parse.quote(place)}"
                    f"{remote_flag}{extra_params}&start={start_idx}")
@@ -647,7 +725,7 @@ class LinkedInGuest(Source):
                 with self._opener.open(url, timeout=5) as resp:
                     page = resp.read().decode("utf-8", errors="replace")
             except Exception:
-                time.sleep(0.3)
+                time.sleep(0.2)
                 continue
 
             cards = re.findall(r"<li>(.*?)</li>", page, re.S)
@@ -695,9 +773,11 @@ class LinkedInGuest(Source):
                     source_credit="LinkedIn public listing",
                     source_tier=self.tier
                 ))
-            time.sleep(0.15)
+                if len(out) >= max_out:
+                    break
+            time.sleep(0.12)
 
-        return out[:100]
+        return out[:max_out]
 
     def enrich(self, job):
         m = re.search(r"(\d{6,})", job.get("id", ""))
@@ -1006,6 +1086,17 @@ class Bayt(Source):
         slug = urllib.parse.quote("-".join((query or "software engineer").lower().split()))
         loc_lower = (location or "").lower().strip()
 
+        if not loc_lower or loc_lower in ("remote", "anywhere", "worldwide"):
+            try:
+                from . import db
+                uc = (db.get_setting("user_country") or "").lower().strip()
+                if not uc:
+                    uc = (db.get_profile().get("location") or "").lower().strip()
+                if uc:
+                    loc_lower = uc
+            except Exception:
+                pass
+
         BAYT_COUNTRIES = {
             "tunisia": "tunisia", "tunis": "tunisia", "tunisie": "tunisia",
             "morocco": "morocco", "maroc": "morocco", "casablanca": "morocco",
@@ -1027,9 +1118,15 @@ class Bayt(Source):
                 country_slug = v
                 break
 
-        urls = [f"https://www.bayt.com/en/{country_slug}/jobs/{slug}-jobs/"]
+        urls = [
+            f"https://www.bayt.com/en/{country_slug}/jobs/{slug}-jobs/",
+            f"https://www.bayt.com/en/{country_slug}/jobs/{slug}-jobs/?page=2",
+        ]
         if country_slug != "international":
-            urls.append(f"https://www.bayt.com/en/international/jobs/{slug}-jobs/")
+            urls.extend([
+                f"https://www.bayt.com/en/international/jobs/{slug}-jobs/",
+                f"https://www.bayt.com/en/international/jobs/{slug}-jobs/?page=2",
+            ])
 
         jobs = []
         seen = set()

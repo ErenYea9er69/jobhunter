@@ -294,7 +294,8 @@ def r_digest_send(q, body):
 @route("GET", "/api/settings")
 def r_get_settings(q, body):
     allowed = {"digest_min_score", "digest_email", "adzuna_app_id", "adzuna_app_key",
-               "ai_provider", "gemini_api_key", "openai_api_key", "anthropic_api_key", "ai_model", "ollama_endpoint"}
+               "ai_provider", "gemini_api_key", "openai_api_key", "anthropic_api_key", "ai_model", "ollama_endpoint",
+               "max_scored_jobs", "max_results", "linkedin_scrape_depth", "user_country", "include_worldwide_remote"}
     out = {}
     with db.session() as c:
         for row in c.execute("SELECT key, value FROM settings"):
@@ -304,17 +305,23 @@ def r_get_settings(q, body):
     out["active_provider"] = cfg["provider"]
     out["active_model"] = cfg["model"]
     out["llm_available"] = refit.llm_available()
+    out.setdefault("max_scored_jobs", str(config.get_max_scored_jobs()))
+    out.setdefault("max_results", str(config.get_max_results()))
+    out.setdefault("linkedin_scrape_depth", config.get_linkedin_scrape_depth())
+    out.setdefault("user_country", db.get_setting("user_country", "Worldwide"))
+    out.setdefault("include_worldwide_remote", db.get_setting("include_worldwide_remote", "1"))
     return out
 
 
 @route("POST", "/api/settings")
 def r_settings(q, body):
     allowed = {"digest_min_score", "digest_email", "adzuna_app_id", "adzuna_app_key",
-               "ai_provider", "gemini_api_key", "openai_api_key", "anthropic_api_key", "ai_model", "ollama_endpoint"}
+               "ai_provider", "gemini_api_key", "openai_api_key", "anthropic_api_key", "ai_model", "ollama_endpoint",
+               "max_scored_jobs", "max_results", "linkedin_scrape_depth", "user_country", "include_worldwide_remote"}
     for k, v in body.items():
         if k in allowed:
             db.set_setting(k, str(v).strip())
-    return {"success": True, "active_ai": refit.get_active_ai_config()}
+    return {"success": True, "active_ai": refit.get_active_ai_config(), "settings": r_get_settings(q, body)}
 
 
 @route("POST", "/api/test-ai")

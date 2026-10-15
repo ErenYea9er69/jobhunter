@@ -524,10 +524,14 @@ def query_stored_jobs(filters=None):
     country = (filters.get("country") or "").strip()
     if country and country.lower() not in ("all", "any"):
         c_low = country.lower()
+        inc_remote = str(get_setting("include_worldwide_remote", "true")).lower() in ("true", "1", "yes")
         if c_low in ("united states", "usa", "us"):
             clauses.append("(LOWER(country) = 'united states' OR LOWER(country) = 'worldwide' OR LOWER(work_mode) LIKE '%remote%')")
         elif c_low == "worldwide":
             clauses.append("(LOWER(country) = 'worldwide' OR LOWER(work_mode) LIKE '%remote%')")
+        elif inc_remote:
+            clauses.append("(LOWER(country) = ? OR LOWER(location) LIKE ? OR (LOWER(work_mode) LIKE '%remote%' AND LOWER(country) = 'worldwide'))")
+            params.extend([c_low, f"%{c_low}%"])
         else:
             clauses.append("(LOWER(country) = ? OR LOWER(location) LIKE ?)")
             params.extend([c_low, f"%{c_low}%"])

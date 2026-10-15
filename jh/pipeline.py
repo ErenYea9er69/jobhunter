@@ -143,27 +143,63 @@ def _passes(job, work_mode, location):
 
             is_us_only = bool(re.search(r"\b(us only|u\.s\. only|united states only|must reside in (the )?us|must be located in (the )?united states)\b", text_hay))
             is_uk_only = bool(re.search(r"\b(uk only|united kingdom only|must reside in (the )?uk)\b", text_hay))
-            is_eu_only = bool(re.search(r"\b(eu only|europe only|emea only|schengen)\b", text_hay))
             is_can_only = bool(re.search(r"\b(canada only|must reside in canada)\b", text_hay))
             is_ind_only = bool(re.search(r"\b(india only|must reside in india)\b", text_hay))
+            is_emea_only = bool(re.search(r"\b(emea only|emea remote|remote[ -_\(]+emea|europe[/ ]africa)\b", text_hay))
+            is_eu_only = bool(re.search(r"\b(eu only|europe only|remote[ -_\(]+eu|schengen)\b", text_hay))
+            is_apac_only = bool(re.search(r"\b(apac only|apac remote|remote[ -_\(]+apac|asia pacific)\b", text_hay))
+            is_latam_only = bool(re.search(r"\b(latam only|latin america only|remote[ -_\(]+latam)\b", text_hay))
+
+            EMEA_COUNTRIES = {
+                "United Kingdom", "Ireland", "Germany", "France", "Netherlands", "Spain", "Italy",
+                "Poland", "Sweden", "Norway", "Denmark", "Finland", "Portugal", "Austria", "Belgium",
+                "Switzerland", "Czech Republic", "Romania", "Greece", "Hungary", "Tunisia", "Morocco",
+                "Algeria", "Egypt", "South Africa", "Turkey", "UAE", "Saudi Arabia", "Jordan", "Lebanon"
+            }
+            APAC_COUNTRIES = {
+                "China", "Japan", "South Korea", "Singapore", "Taiwan", "Hong Kong", "Malaysia",
+                "Indonesia", "Vietnam", "Philippines", "Thailand", "India", "Australia", "New Zealand"
+            }
+            LATAM_COUNTRIES = {
+                "Brazil", "Argentina", "Colombia", "Chile", "Peru", "Mexico", "Uruguay", "Costa Rica"
+            }
 
             if req_country == "United States" and is_us_only:
                 return True
             if req_country == "United Kingdom" and is_uk_only:
                 return True
-            if req_country in ("Germany", "France", "Spain", "Italy", "Netherlands", "Poland") and is_eu_only:
-                return True
             if req_country == "Canada" and is_can_only:
                 return True
             if req_country == "India" and is_ind_only:
                 return True
+            if req_country in EMEA_COUNTRIES and is_emea_only:
+                return True
+            if req_country in ("Germany", "France", "Spain", "Italy", "Netherlands", "Poland", "Sweden", "Ireland", "Austria", "Belgium") and is_eu_only:
+                return True
+            if req_country in APAC_COUNTRIES and is_apac_only:
+                return True
+            if req_country in LATAM_COUNTRIES and is_latam_only:
+                return True
 
-            # If it has regional restrictions for another country, reject
-            if is_us_only or is_uk_only or is_can_only or is_ind_only:
+            # If it has regional restrictions for another country/region, reject
+            if is_us_only or is_uk_only or is_can_only or is_ind_only or is_latam_only:
+                return False
+            if is_eu_only and req_country not in ("Germany", "France", "Spain", "Italy", "Netherlands", "Poland", "Sweden", "Ireland", "Austria", "Belgium"):
+                return False
+            if is_emea_only and req_country not in EMEA_COUNTRIES:
+                return False
+            if is_apac_only and req_country not in APAC_COUNTRIES:
                 return False
 
-            # If job is pinned to a different specific country, reject
-            if job_country != "Worldwide" and req_country != "Worldwide" and job_country != req_country:
+            # For remote jobs without exclusive single-country residency restrictions:
+            # Check user preference: default is True (include worldwide remote)
+            inc_remote = True
+            try:
+                inc_remote = str(db.get_setting("include_worldwide_remote", "true")).lower() in ("true", "1", "yes")
+            except Exception:
+                pass
+
+            if not inc_remote and job_country != "Worldwide" and req_country != "Worldwide" and job_country != req_country:
                 return False
 
     return True
@@ -470,7 +506,7 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
         j["is_famous"] = is_famous_company(j.get("company"))
 
     # Score all candidate opportunities for this query/location so DB and client have the full pool
-    max_score_pool = getattr(config, "MAX_SCORED_JOBS", 1500)
+    max_score_pool = config.get_max_scored_jobs()
     if max_score_pool and len(merged) > max_score_pool:
         if query:
             merged.sort(key=lambda j: (any(w in (j.get("title") or "").lower() for w in syns), j.get("source_rank", 0)), reverse=True)
@@ -590,7 +626,7 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
             filtered = fallback_candidates
             fallback_notice = f"No on-site postings found in '{location}'. Showing {len(filtered)} Worldwide Remote opportunities you can work from {location}."
 
-    filtered = filtered[: (limit or config.MAX_RESULTS)]
+    filtered = filtered[: (limit or config.get_max_results())]
     _remember(filtered)
 
     failed = [s for s in statuses if s["state"] in ("failed", "timeout", "paused", "stale")]
@@ -632,7 +668,7 @@ def get_recommendations(profile=None, force_refresh=False, limit=None):
             scored_jobs.append(j_copy)
 
         scored_jobs.sort(key=lambda x: (x.get("score", 0) >= 65, x.get("opportunity_score", 0), x.get("score", 0)), reverse=True)
-        recs = scored_jobs[:(limit or config.MAX_RESULTS)]
+        recs = scored_jobs[:(limit or config.get_max_results())]
         return {
             "success": True,
             "count": len(recs),
