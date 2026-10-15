@@ -417,7 +417,7 @@
       root.removeAttribute('data-theme');
     }
     const icon = $('#themeIcon use');
-    if (icon) icon.setAttribute('href', isDark ? '#i-sun' : '#i-moon');
+    if (icon) icon.setAttribute('href', isDark ? '#i-moon-stars' : '#i-sun');
     const label = $('#themeLabel');
     if (label) label.textContent = isDark ? 'Light theme' : 'Dark theme';
     if (persist) {
@@ -431,7 +431,11 @@
     const m = $('#moreMenu');
     if (m && !m.hidden) { m.hidden = true; $('#moreBtn').setAttribute('aria-expanded', 'false'); }
   }
-  function toggleMenu() {
+  function toggleMenu(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     const m = $('#moreMenu');
     m.hidden = !m.hidden;
     $('#moreBtn').setAttribute('aria-expanded', String(!m.hidden));
@@ -3913,10 +3917,10 @@
     document.addEventListener('click', e => {
       const el = e.target.closest('[data-action]');
       if (el && ACTIONS[el.dataset.action] && el.tagName !== 'SELECT') ACTIONS[el.dataset.action](el, e);
-      if (!e.target.closest('.menu-wrap')) closeMenu();
+      if (!e.target.closest('.menu-wrap, .dock-menu-wrap')) closeMenu();
     });
     $('#moreBtn').addEventListener('click', toggleMenu);
-    $('#moreMenu').addEventListener('click', e => { if (e.target.closest('a')) closeMenu(); });
+    $('#moreMenu').addEventListener('click', e => { if (e.target.closest('a, button')) closeMenu(); });
     const bd = $('#jobDetailBackdrop');
     if (bd) bd.addEventListener('click', closeDetailSheet);
 
