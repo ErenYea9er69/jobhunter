@@ -125,6 +125,11 @@
     recMeta: null,
     recLoading: false,
     applications: [],
+    appFilter: 'all',
+    appSearchQuery: '',
+    appViewMode: (function() { try { return localStorage.getItem('jh_app_view_mode') || 'kanban'; } catch(e) { return 'kanban'; } })(),
+    activeDrawerApp: null,
+    activeDrawerTab: 'overview',
     watchlist: [],
     watchResults: {},
     enrichingKeys: new Set(),
@@ -3446,58 +3451,350 @@
   }
 
   // ----------------------------------------------------------- applications
+  function getCompanyMonogram(company) {
+    if (!company) return 'CO';
+    const words = String(company).trim().split(/\s+/).filter(Boolean);
+    if (words.length >= 2) {
+      return (words[0][0] + words[1][0]).toUpperCase();
+    }
+    return String(company).trim().slice(0, 2).toUpperCase();
+  }
+
+  function getCompanyColorStyle(company) {
+    let hash = 0;
+    const s = String(company || 'Company');
+    for (let i = 0; i < s.length; i++) hash = s.charCodeAt(i) + ((hash << 5) - hash);
+    const hue = Math.abs(hash) % 360;
+    return `background: hsl(${hue}, 48%, 93%); color: hsl(${hue}, 60%, 25%); border: 1px solid hsl(${hue}, 35%, 82%);`;
+  }
+
+  function getNextStage(currentStage) {
+    switch (currentStage) {
+      case 'saved': return { next: 'applied', label: 'Mark applied' };
+      case 'applied': return { next: 'interview', label: 'Interviewing' };
+      case 'interview': return { next: 'offer', label: 'Mark offer' };
+      case 'offer': return { next: 'rejected', label: 'Archive' };
+      default: return null;
+    }
+  }
+
+  function getFilteredApplications() {
+    let apps = [...(S.applications || [])];
+
+    // Text search filter
+    const q = (S.appSearchQuery || '').trim().toLowerCase();
+    if (q) {
+      apps = apps.filter(a => {
+        const matchCo = (a.company || '').toLowerCase().includes(q);
+        const matchTitle = (a.title || '').toLowerCase().includes(q);
+        const matchLoc = (a.location || '').toLowerCase().includes(q);
+        const matchNotes = (a.notes || '').toLowerCase().includes(q);
+        const matchRound = (a.interview_round || '').toLowerCase().includes(q);
+        const matchContact = (a.contacts || []).some(c => (c.name || '').toLowerCase().includes(q) || (c.role || '').toLowerCase().includes(q));
+        return matchCo || matchTitle || matchLoc || matchNotes || matchRound || matchContact;
+      });
+    }
+
+    // Filter pills
+    if (S.appFilter === 'attention') {
+      apps = apps.filter(a => {
+        if (a.status === 'rejected') return false;
+        const d = a.follow_up_date ? daysUntil(a.follow_up_date) : null;
+        const isFollowAlert = (d !== null && d <= 0);
+        const hasPendingTasks = (a.tasks || []).some(t => !t.completed);
+        return a.overdue || isFollowAlert || hasPendingTasks;
+      });
+    } else if (S.appFilter === 'high_priority') {
+      apps = apps.filter(a => a.priority === 'high');
+    } else if (S.appFilter === 'interviewing') {
+      apps = apps.filter(a => a.status === 'interview');
+    } else if (S.appFilter === 'has_tailored') {
+      apps = apps.filter(a => Boolean(a.job_data && (a.job_data.tailored_resume || a.job_data.cover_letter || a.job_data.has_tailored)));
+    }
+
+    return apps;
+  }
+
   async function loadApplications() {
     try {
-      const data = await api('/api/applications');
-      S.applications = data.applications || [];
-    } catch (err) { console.error('Applications failed:', err); }
-    const n = S.applications.filter(a => a.status !== 'rejected').length;
-    const badge = $('#navAppCount'); badge.hidden = !n; badge.textContent = n;
-    if (S.view === 'applications') renderBoard();
+      const [appRes, statsRes] = await Promise.all([
+        api('/api/applications'),
+        api('/api/stats').catch(() => ({}))
+      ]);
+      S.applications = appRes.applications || [];
+
+      // Update KPI ribbon
+      const apps = S.applications;
+      const live = apps.filter(a => a.status !== 'rejected').length;
+      const funnel = (statsRes && statsRes.funnel) || {};
+
+      const kpiActive = $('#kpiActiveCount');
+      if (kpiActive) kpiActive.textContent = funnel.live !== undefined ? funnel.live : live;
+
+      const kpiIntRate = $('#kpiInterviewRate');
+      if (kpiIntRate) kpiIntRate.textContent = `${funnel.interview_rate !== undefined ? funnel.interview_rate : 0}%`;
+
+      const kpiOfferRate = $('#kpiOfferRate');
+      if (kpiOfferRate) kpiOfferRate.textContent = `${funnel.offer_rate !== undefined ? funnel.offer_rate : 0}%`;
+
+      const attentionApps = apps.filter(a => {
+        if (a.status === 'rejected') return false;
+        const d = a.follow_up_date ? daysUntil(a.follow_up_date) : null;
+        return a.overdue || (d !== null && d <= 0);
+      });
+      const attentionCount = attentionApps.length;
+
+      const kpiFollowup = $('#kpiFollowupCount');
+      if (kpiFollowup) kpiFollowup.textContent = attentionCount;
+
+      const alertCard = $('#kpiAlertCard');
+      if (alertCard) alertCard.classList.toggle('has-alert', attentionCount > 0);
+
+      const attentionSub = $('#kpiFollowupSub');
+      if (attentionSub) {
+        attentionSub.textContent = attentionCount ? `${attentionCount} need action today` : 'All caught up';
+      }
+
+      const pillAttention = $('#pillAttentionCount');
+      if (pillAttention) {
+        pillAttention.textContent = attentionCount;
+        pillAttention.hidden = !attentionCount;
+      }
+    } catch (err) {
+      console.error('Applications failed:', err);
+    }
+
+    const liveCount = S.applications.filter(a => a.status !== 'rejected').length;
+    const navBadge = $('#navAppCount');
+    if (navBadge) {
+      navBadge.hidden = !liveCount;
+      navBadge.textContent = liveCount;
+    }
+
+    if (S.view === 'applications') {
+      renderApplicationView();
+    }
   }
 
   function followHtml(a) {
     if (!a.follow_up_date || a.status === 'rejected' || a.status === 'saved') return '';
     const d = daysUntil(a.follow_up_date);
     if (d === null) return '';
-    const late = d < 0, text = late ? `Follow up ${-d}d overdue` : d === 0 ? 'Follow up today' : `Follow up in ${d}d`;
-    return `<span class="follow${late || d === 0 ? ' late' : ''}">${ico('clock')}${text}</span>`;
+    if (d < 0) {
+      return `<span class="kcard-badge badge-follow is-overdue">${ico('clock')}${Math.abs(d)}d overdue</span>`;
+    }
+    if (d === 0) {
+      return `<span class="kcard-badge badge-follow is-today">${ico('clock')}Follow up today</span>`;
+    }
+    return `<span class="kcard-badge badge-follow">${ico('clock')}In ${d}d</span>`;
+  }
+
+  function renderCard(a) {
+    const monogram = getCompanyMonogram(a.company);
+    const colorStyle = getCompanyColorStyle(a.company);
+    const next = getNextStage(a.status);
+
+    const score = a.score !== undefined ? a.score : (a.job_data && a.job_data.score !== undefined ? a.job_data.score : null);
+    const scoreBadge = (score !== null && score > 0)
+      ? `<span class="kcard-badge badge-score ${score >= 75 ? 'score-high' : 'score-med'}">${score}% fit</span>`
+      : '';
+
+    const priorityBadge = a.priority === 'high'
+      ? `<span class="kcard-badge badge-priority-high">${ico('flame')}High</span>`
+      : (a.priority === 'low' ? `<span class="kcard-badge badge-priority-low">Low</span>` : '');
+
+    const tailoredBadge = (a.job_data && (a.job_data.tailored_resume || a.job_data.cover_letter || a.job_data.has_tailored))
+      ? `<span class="kcard-badge badge-tailored" title="Tailored documents ready">${ico('check')}Tailored</span>`
+      : '';
+
+    const daysInStage = a.days_in_stage || 0;
+    const velocityBadge = daysInStage > 0
+      ? `<span class="kcard-badge badge-velocity" title="Days in current stage">${daysInStage}d here</span>`
+      : '';
+
+    const followHtmlBadge = followHtml(a);
+
+    let taskSnippet = '';
+    if (a.tasks && a.tasks.length) {
+      const done = a.tasks.filter(t => t.completed).length;
+      taskSnippet = `<div class="kcard-tasks-snippet">${ico('list')}<span>${done}/${a.tasks.length} tasks</span></div>`;
+    }
+
+    const roundTag = (a.status === 'interview' && a.interview_round)
+      ? `<div class="kcard-round-tag"><span class="round-dot"></span>${esc(a.interview_round)}</div>`
+      : '';
+
+    return `<article class="kcard" draggable="true" data-id="${esc(a.id)}" tabindex="0" role="button" aria-label="${esc(cleanTitle(a.title))} at ${esc(a.company)}">
+      <div class="kcard-top">
+        <div class="kcard-brand">
+          <div class="kcard-avatar" style="${colorStyle}">${esc(monogram)}</div>
+          <div class="kcard-co-wrap">
+            <div class="kcard-company" title="${esc(a.company)}">${esc(a.company)}</div>
+            <div class="kcard-title" title="${esc(cleanTitle(a.title))}">${esc(cleanTitle(a.title))}</div>
+          </div>
+        </div>
+        <div class="kcard-pills-top">
+          ${scoreBadge}
+          ${priorityBadge}
+        </div>
+      </div>
+
+      ${roundTag}
+
+      <div class="kcard-meta">
+        ${a.location ? `<span>${ico('pin')}${esc(a.location)}</span>` : ''}
+        ${a.salary ? `<span>${ico('dollar')}${esc(a.salary)}</span>` : ''}
+      </div>
+
+      ${(followHtmlBadge || velocityBadge || tailoredBadge) ? `
+        <div class="kcard-status-row">
+          ${followHtmlBadge}
+          ${velocityBadge}
+          ${tailoredBadge}
+        </div>` : ''}
+
+      ${taskSnippet}
+
+      ${a.notes ? `<div class="kcard-notes">${esc(a.notes)}</div>` : ''}
+
+      <div class="kcard-foot">
+        <div class="kcard-stage-advance">
+          ${next ? `<button type="button" class="kcard-advance-btn" data-action="app-advance" data-id="${esc(a.id)}" data-next="${next.next}" title="Advance to ${next.next}">${ico('arrow-right')}${next.label}</button>` : `<span class="kcard-archived-tag">Archived</span>`}
+        </div>
+        <div class="kcard-actions">
+          <select class="kcard-stage-select" aria-label="Move stage" data-action="app-stage" data-id="${esc(a.id)}">
+            ${STAGES.map(s => `<option value="${s.key}" ${s.key === a.status ? 'selected' : ''}>${s.label}</option>`).join('')}
+          </select>
+          ${a.job_data && (a.job_data.title || a.job_data.description) ? `<button type="button" class="icon-btn" data-action="app-open" data-id="${esc(a.id)}" title="Open tailored resume workspace" aria-label="Open tailored resume workspace">${ico('file')}</button>` : ''}
+          <button type="button" class="icon-btn" data-action="app-edit" data-id="${esc(a.id)}" title="Edit application" aria-label="Edit application">${ico('edit')}</button>
+          <button type="button" class="icon-btn" data-action="app-delete" data-id="${esc(a.id)}" title="Delete application" aria-label="Delete application">${ico('trash')}</button>
+        </div>
+      </div>
+    </article>`;
+  }
+
+  function renderApplicationView() {
+    const isKanban = S.appViewMode === 'kanban';
+
+    const boardWrap = $('#appBoardWrap');
+    const tableWrap = $('#appTableWrap');
+    if (boardWrap) boardWrap.hidden = !isKanban;
+    if (tableWrap) tableWrap.hidden = isKanban;
+
+    const btnKanban = $('#btnViewKanban');
+    const btnTable = $('#btnViewTable');
+    if (btnKanban) {
+      btnKanban.classList.toggle('is-active', isKanban);
+      btnKanban.setAttribute('aria-pressed', String(isKanban));
+    }
+    if (btnTable) {
+      btnTable.classList.toggle('is-active', !isKanban);
+      btnTable.setAttribute('aria-pressed', String(!isKanban));
+    }
+
+    const clearBtn = $('#appSearchClear');
+    if (clearBtn) clearBtn.hidden = !(S.appSearchQuery && S.appSearchQuery.length > 0);
+
+    if (isKanban) {
+      renderBoard();
+    } else {
+      renderTable();
+    }
   }
 
   function renderBoard() {
     const apps = S.applications;
-    const live = apps.filter(a => a.status !== 'rejected').length;
-    const overdue = apps.filter(a => a.overdue).length;
-    $('#appStats').textContent = apps.length
-      ? `${live} in progress${overdue ? `, ${overdue} follow-up${overdue === 1 ? '' : 's'} overdue` : ''}. Drag a card or use its stage menu.`
-      : 'Track every role from saved to offer.';
+    const filtered = getFilteredApplications();
     const board = $('#kanbanBoard');
+    if (!board) return;
+
     if (!apps.length) {
       board.style.display = 'block';
-      board.innerHTML = `<div class="empty">${ico('board')}<h3>No applications yet</h3><p>Save a job from search, or add one you found elsewhere.</p>
+      board.innerHTML = `<div class="empty">${ico('board')}<h3>No applications yet</h3><p>Save a job from search or add one you found elsewhere to start tracking your pipeline.</p>
         <div class="empty-actions"><a class="btn btn-primary" href="#/jobs">Find jobs</a><button type="button" class="btn btn-secondary" data-action="app-add">Add application</button></div></div>`;
       return;
     }
+
+    if (!filtered.length && S.appSearchQuery) {
+      board.style.display = 'block';
+      board.innerHTML = `<div class="empty">${ico('search')}<h3>No applications match "${esc(S.appSearchQuery)}"</h3><p>Try searching for a different company or job title, or clear the search query.</p>
+        <div class="empty-actions"><button type="button" class="btn btn-secondary" id="emptyResetSearchBtn">Clear search</button></div></div>`;
+      const rBtn = $('#emptyResetSearchBtn');
+      if (rBtn) rBtn.addEventListener('click', () => {
+        S.appSearchQuery = '';
+        const inp = $('#appSearchInput');
+        if (inp) inp.value = '';
+        renderApplicationView();
+      });
+      return;
+    }
+
     board.style.display = '';
     board.innerHTML = STAGES.map(st => {
-      const items = apps.filter(a => (a.status || 'saved') === st.key);
+      const items = filtered.filter(a => (a.status || 'saved') === st.key);
       return `<section class="col" data-stage="${st.key}" aria-label="${st.label}">
-        <div class="col-head"><span>${st.label}</span><span class="count">${items.length}</span></div>
-        <div class="col-body">${items.length ? items.map(a => `
-          <article class="kcard" draggable="true" data-id="${esc(a.id)}">
-            <div class="kcard-title">${esc(cleanTitle(a.title))}</div>
-            <div class="kcard-company">${esc(a.company)}</div>
-            <div class="kcard-meta">${a.location ? `<span>${esc(a.location)}</span>` : ''}${a.salary ? `<span>${esc(a.salary)}</span>` : ''}</div>
-            ${followHtml(a)}
-            ${a.notes ? `<div class="kcard-notes">${esc(a.notes)}</div>` : ''}
-            <div class="kcard-foot">
-              <select aria-label="Stage for ${esc(cleanTitle(a.title))}" data-action="app-stage" data-id="${esc(a.id)}">${STAGES.map(s => `<option value="${s.key}" ${s.key === a.status ? 'selected' : ''}>${s.label}</option>`).join('')}</select>
-              ${a.job_data && (a.job_data.title || a.job_data.description) ? `<button type="button" class="icon-btn" data-action="app-open" data-id="${esc(a.id)}" title="Open tailoring tools" aria-label="Open tailoring tools">${ico('file')}</button>` : ''}
-              <button type="button" class="icon-btn" data-action="app-edit" data-id="${esc(a.id)}" title="Edit" aria-label="Edit ${esc(cleanTitle(a.title))}">${ico('edit')}</button>
-              <button type="button" class="icon-btn" data-action="app-delete" data-id="${esc(a.id)}" title="Remove" aria-label="Remove ${esc(cleanTitle(a.title))}">${ico('trash')}</button>
-            </div>
-          </article>`).join('') : '<div class="col-empty">Nothing here</div>'}</div>
+        <div class="col-head">
+          <span class="col-title">${st.label}</span>
+          <span class="count">${items.length}</span>
+        </div>
+        <div class="col-body">${items.length ? items.map(renderCard).join('') : `<div class="col-empty">No ${st.label.toLowerCase()} roles</div>`}</div>
       </section>`;
+    }).join('');
+  }
+
+  function renderTable() {
+    const filtered = getFilteredApplications();
+    const tbody = $('#appTableBody');
+    if (!tbody) return;
+
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="table-empty">No applications match your filter criteria.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(a => {
+      const monogram = getCompanyMonogram(a.company);
+      const colorStyle = getCompanyColorStyle(a.company);
+      const score = a.score !== undefined ? a.score : (a.job_data && a.job_data.score !== undefined ? a.job_data.score : null);
+      const scoreHtml = (score !== null && score > 0)
+        ? `<span class="score-chip ${score >= 75 ? 'high' : 'med'}">${score}% fit</span>`
+        : '<span class="muted">-</span>';
+      const followHtmlBadge = followHtml(a) || '<span class="muted">None scheduled</span>';
+      const priorityPill = a.priority === 'high'
+        ? `<span class="priority-pill high">${ico('flame')}High</span>`
+        : (a.priority === 'low' ? `<span class="priority-pill low">Low</span>` : `<span class="priority-pill med">Standard</span>`);
+
+      return `<tr data-id="${esc(a.id)}" class="app-table-row">
+        <td class="td-company">
+          <div class="table-role-cell">
+            <div class="table-avatar" style="${colorStyle}">${esc(monogram)}</div>
+            <div>
+              <div class="table-title">${esc(cleanTitle(a.title))}</div>
+              <div class="table-company">${esc(a.company)}</div>
+            </div>
+          </div>
+        </td>
+        <td class="td-stage">
+          <select class="table-stage-select" data-action="app-stage" data-id="${esc(a.id)}">
+            ${STAGES.map(s => `<option value="${s.key}" ${s.key === a.status ? 'selected' : ''}>${s.label}</option>`).join('')}
+          </select>
+        </td>
+        <td class="td-score">${scoreHtml}</td>
+        <td class="td-follow">${followHtmlBadge}</td>
+        <td class="td-priority">${priorityPill}</td>
+        <td class="td-details">
+          <div class="table-details-cell">
+            <span>${esc(a.salary || 'Unspecified')}</span>
+            <span class="muted">${esc(a.location || 'Remote')}</span>
+          </div>
+        </td>
+        <td class="td-actions">
+          <div class="table-actions-cell">
+            <button type="button" class="btn btn-ghost btn-sm" data-action="app-dossier" data-id="${esc(a.id)}">Open</button>
+            <button type="button" class="icon-btn" data-action="app-delete" data-id="${esc(a.id)}" title="Delete" aria-label="Delete">${ico('trash')}</button>
+          </div>
+        </td>
+      </tr>`;
     }).join('');
   }
 
@@ -3506,14 +3803,23 @@
     if (!app || app.status === status) return;
     const previous = app.status;
     app.status = status;
-    renderBoard();
+    renderApplicationView();
     try {
       await api('/api/applications', { method: 'POST', body: app });
-      toast(`Moved to ${STAGES.find(s => s.key === status).label}`);
+      const stageLabel = (STAGES.find(s => s.key === status) || {}).label || status;
+      toast(`Moved to ${stageLabel}`);
+      if (S.activeDrawerApp && S.activeDrawerApp.id === id) {
+        S.activeDrawerApp.status = status;
+        const stagePills = $('#drawerStagePills');
+        if (stagePills) {
+          $$('.drawer-stage-pill', stagePills).forEach(p => p.classList.toggle('is-active', p.dataset.stage === status));
+        }
+      }
       loadApplications();
     } catch (err) {
-      app.status = previous; renderBoard();
-      toast('Could not move it: ' + err.message, 'error');
+      app.status = previous;
+      renderApplicationView();
+      toast('Could not move application: ' + err.message, 'error');
     }
   }
 
@@ -3524,9 +3830,386 @@
     try {
       await api(`/api/applications/${encodeURIComponent(id)}`, { method: 'DELETE' });
       S.applications = S.applications.filter(a => a.id !== id);
-      renderBoard(); loadApplications();
+      if (S.activeDrawerApp && S.activeDrawerApp.id === id) {
+        closeAppDrawer();
+      }
+      renderApplicationView();
+      loadApplications();
       toast('Application removed');
-    } catch (err) { toast('Could not remove it: ' + err.message, 'error'); }
+    } catch (err) {
+      toast('Could not remove it: ' + err.message, 'error');
+    }
+  }
+
+  // --- Slide-out Application Dossier Drawer ---
+  function openAppDrawer(app) {
+    if (!app) return;
+    S.activeDrawerApp = app;
+
+    // Header & Monogram
+    const monogram = getCompanyMonogram(app.company);
+    const colorStyle = getCompanyColorStyle(app.company);
+    const avatarEl = $('#drawerAvatar');
+    if (avatarEl) {
+      avatarEl.textContent = monogram;
+      avatarEl.setAttribute('style', colorStyle);
+    }
+
+    const titleEl = $('#drawerTitle');
+    if (titleEl) titleEl.textContent = cleanTitle(app.title);
+
+    const companyEl = $('#drawerCompany');
+    if (companyEl) companyEl.textContent = app.company;
+
+    const linkEl = $('#drawerJobLink');
+    const jobUrl = app.url || (app.job_data && app.job_data.url);
+    if (linkEl) {
+      if (jobUrl) {
+        linkEl.href = jobUrl;
+        linkEl.hidden = false;
+      } else {
+        linkEl.hidden = true;
+      }
+    }
+
+    // Stage pills
+    const stagePills = $('#drawerStagePills');
+    if (stagePills) {
+      stagePills.innerHTML = STAGES.map(s => `
+        <button type="button" class="drawer-stage-pill ${s.key === app.status ? 'is-active' : ''}" data-stage="${s.key}">
+          ${s.label}
+        </button>
+      `).join('');
+    }
+
+    // Tab 1: Overview
+    const salEl = $('#drawerSalary');
+    if (salEl) salEl.textContent = app.salary || 'Not specified';
+
+    const locEl = $('#drawerLocation');
+    if (locEl) locEl.textContent = app.location || 'Remote';
+
+    const score = app.score !== undefined ? app.score : (app.job_data && app.job_data.score !== undefined ? app.job_data.score : null);
+    const scoreEl = $('#drawerScore');
+    if (scoreEl) {
+      scoreEl.innerHTML = (score !== null && score > 0) ? `<span class="score-badge-inline">${score}% fit</span>` : '<span class="muted">Not scored</span>';
+    }
+
+    const prioButtons = $$('#drawerPriorityPicker .p-chip');
+    prioButtons.forEach(btn => {
+      btn.classList.toggle('is-active', (app.priority || 'medium') === btn.dataset.p);
+    });
+
+    const followInput = $('#drawerFollowDate');
+    if (followInput) followInput.value = app.follow_up_date || '';
+
+    const notesText = $('#drawerNotesText');
+    if (notesText) notesText.value = app.notes || '';
+
+    const savedTag = $('#drawerNotesSavedTag');
+    if (savedTag) savedTag.hidden = true;
+
+    // Tab 2: Tasks
+    renderDrawerTasks(app);
+
+    // Tab 3: Contacts & Insider
+    renderDrawerContacts(app);
+    renderDrawerInsiderLinks(app);
+
+    // Tab 4: Tailored Package
+    renderDrawerTailoredPackage(app);
+
+    // Tab 5: Timeline
+    renderDrawerTimeline(app);
+
+    // Show initial active tab
+    switchDrawerTab(S.activeDrawerTab || 'overview');
+
+    // Slide open drawer
+    const drawer = $('#appDrawer');
+    const overlay = $('#appDrawerOverlay');
+    if (drawer && overlay) {
+      drawer.hidden = false;
+      overlay.hidden = false;
+      drawer.setAttribute('aria-hidden', 'false');
+      requestAnimationFrame(() => {
+        drawer.classList.add('is-open');
+        overlay.classList.add('is-open');
+      });
+      document.body.classList.add('drawer-no-scroll');
+    }
+  }
+
+  function closeAppDrawer() {
+    const drawer = $('#appDrawer');
+    const overlay = $('#appDrawerOverlay');
+    if (drawer) {
+      drawer.classList.remove('is-open');
+      drawer.setAttribute('aria-hidden', 'true');
+      setTimeout(() => { drawer.hidden = true; }, 260);
+    }
+    if (overlay) {
+      overlay.classList.remove('is-open');
+      setTimeout(() => { overlay.hidden = true; }, 260);
+    }
+    document.body.classList.remove('drawer-no-scroll');
+    S.activeDrawerApp = null;
+  }
+
+  function switchDrawerTab(tabId) {
+    S.activeDrawerTab = tabId;
+    const tabs = $$('.drawer-tab');
+    tabs.forEach(t => {
+      const active = t.dataset.drawerTab === tabId;
+      t.classList.toggle('is-active', active);
+      t.setAttribute('aria-selected', String(active));
+    });
+
+    const panelMap = {
+      overview: $('#drawerPanelOverview'),
+      tasks: $('#drawerPanelTasks'),
+      contacts: $('#drawerPanelContacts'),
+      tailored: $('#drawerPanelTailored'),
+      history: $('#drawerPanelHistory')
+    };
+
+    Object.entries(panelMap).forEach(([k, panel]) => {
+      if (panel) panel.hidden = (k !== tabId);
+    });
+  }
+
+  function renderDrawerTasks(app) {
+    const list = $('#drawerTaskList');
+    const progressText = $('#drawerTaskProgressText');
+    const taskBadge = $('#drawerTaskBadge');
+    if (!list) return;
+
+    const tasks = app.tasks || [];
+    const doneCount = tasks.filter(t => t.completed).length;
+
+    if (progressText) {
+      progressText.textContent = `${doneCount} of ${tasks.length} completed`;
+    }
+    if (taskBadge) {
+      const pendingCount = tasks.length - doneCount;
+      taskBadge.textContent = pendingCount;
+      taskBadge.hidden = pendingCount <= 0;
+    }
+
+    if (!tasks.length) {
+      list.innerHTML = `<div class="drawer-empty-state">No checklist items yet. Add next steps like "Send follow-up email" or "Review system design concepts".</div>`;
+      return;
+    }
+
+    list.innerHTML = tasks.map((t, i) => `
+      <div class="drawer-task-item ${t.completed ? 'is-completed' : ''}" data-idx="${i}">
+        <label class="drawer-task-check-wrap">
+          <input type="checkbox" class="drawer-task-checkbox" ${t.completed ? 'checked' : ''} data-task-idx="${i}">
+          <span class="drawer-task-text">${esc(t.text)}</span>
+        </label>
+        <button type="button" class="drawer-task-del" data-del-task="${i}" title="Remove task">&times;</button>
+      </div>
+    `).join('');
+  }
+
+  function renderDrawerContacts(app) {
+    const list = $('#drawerContactsList');
+    if (!list) return;
+
+    const contacts = app.contacts || [];
+    if (!contacts.length) {
+      list.innerHTML = `<div class="drawer-empty-state">No contacts added yet. Save recruiters, hiring managers, and referral allies for this role.</div>`;
+      return;
+    }
+
+    list.innerHTML = contacts.map((c, i) => `
+      <div class="drawer-contact-item" data-idx="${i}">
+        <div class="drawer-contact-info">
+          <div class="drawer-contact-name">${esc(c.name)}</div>
+          <div class="drawer-contact-role">${esc(c.role || 'Team Member')}</div>
+          <div class="drawer-contact-links">
+            ${c.email ? `<a href="mailto:${esc(c.email)}" class="contact-link">${ico('mail')}${esc(c.email)}</a>` : ''}
+            ${c.linkedin ? `<a href="${esc(c.linkedin)}" target="_blank" rel="noopener noreferrer" class="contact-link">${ico('external')}LinkedIn</a>` : ''}
+          </div>
+        </div>
+        <button type="button" class="drawer-contact-del" data-del-contact="${i}" title="Remove contact">&times;</button>
+      </div>
+    `).join('');
+  }
+
+  function renderDrawerInsiderLinks(app) {
+    const box = $('#drawerInsiderLinks');
+    if (!box) return;
+
+    const co = encodeURIComponent(app.company || '');
+    box.innerHTML = `
+      <a href="https://www.linkedin.com/search/results/people/?keywords=${co}%20recruiter" target="_blank" rel="noopener noreferrer" class="drawer-insider-btn">
+        ${ico('search')}
+        <span>Recruiters at ${esc(app.company)}</span>
+        ${ico('external', 'link-icon')}
+      </a>
+      <a href="https://www.linkedin.com/search/results/people/?keywords=${co}%20engineering%20manager" target="_blank" rel="noopener noreferrer" class="drawer-insider-btn">
+        ${ico('search')}
+        <span>Engineering Managers at ${esc(app.company)}</span>
+        ${ico('external', 'link-icon')}
+      </a>
+      <a href="https://www.linkedin.com/search/results/people/?keywords=${co}%20software%20engineer" target="_blank" rel="noopener noreferrer" class="drawer-insider-btn">
+        ${ico('search')}
+        <span>Engineers &amp; Team Peers</span>
+        ${ico('external', 'link-icon')}
+      </a>
+    `;
+  }
+
+  function renderDrawerTailoredPackage(app) {
+    const card = $('#drawerTailoredPackageCard');
+    if (!card) return;
+
+    const jd = app.job_data || {};
+    const hasResume = Boolean(jd.tailored_resume || jd.resume_bullets);
+    const hasCover = Boolean(jd.cover_letter);
+
+    if (!hasResume && !hasCover && !jd.description && !jd.title) {
+      card.innerHTML = `
+        <div class="drawer-empty-state">
+          <p>No tailored package generated yet. Tailor your resume specifically for this job description to highlight exact keyword matches and boost interview rates.</p>
+          <button type="button" class="btn btn-primary btn-sm" id="drawerCreateTailoredBtn">${ico('bolt')}Create tailored package</button>
+        </div>
+      `;
+      const btn = $('#drawerCreateTailoredBtn');
+      if (btn) btn.addEventListener('click', () => {
+        closeAppDrawer();
+        openWorkspace(app, 'resume', 'applications');
+      });
+      return;
+    }
+
+    let summaryHtml = '';
+    if (jd.tailored_resume && jd.tailored_resume.summary) {
+      summaryHtml = `<div class="tailored-preview-sec">
+        <h4>Tailored Executive Summary</h4>
+        <p class="tailored-text-box">${esc(jd.tailored_resume.summary)}</p>
+      </div>`;
+    }
+
+    let bulletsHtml = '';
+    if (jd.resume_bullets && jd.resume_bullets.length) {
+      bulletsHtml = `<div class="tailored-preview-sec">
+        <h4>High-Impact ATS Bullets</h4>
+        <ul class="tailored-bullets-list">
+          ${jd.resume_bullets.slice(0, 4).map(b => `<li>${esc(typeof b === 'string' ? b : b.bullet || b.text)}</li>`).join('')}
+        </ul>
+      </div>`;
+    }
+
+    card.innerHTML = `
+      <div class="drawer-tailored-meta">
+        <div>
+          <h3 class="drawer-sec-title">Tailored Documents</h3>
+          <p class="drawer-sec-sub">Optimized for ${esc(cleanTitle(app.title))} at ${esc(app.company)}</p>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" id="drawerOpenStudioBtn">${ico('file')}Open in Studio</button>
+      </div>
+      ${summaryHtml}
+      ${bulletsHtml}
+      <div class="drawer-tailored-actions">
+        <button type="button" class="btn btn-secondary btn-sm" id="drawerCopyBulletsBtn">${ico('copy')}Copy tailored bullets</button>
+        ${hasCover ? `<button type="button" class="btn btn-secondary btn-sm" id="drawerCopyCoverBtn">${ico('copy')}Copy cover letter</button>` : ''}
+      </div>
+    `;
+
+    const openStudioBtn = $('#drawerOpenStudioBtn');
+    if (openStudioBtn) openStudioBtn.addEventListener('click', () => {
+      closeAppDrawer();
+      openWorkspace(jd.title ? jd : app, 'resume', 'applications');
+    });
+
+    const copyBulletsBtn = $('#drawerCopyBulletsBtn');
+    if (copyBulletsBtn) {
+      copyBulletsBtn.addEventListener('click', async () => {
+        const bullets = (jd.resume_bullets || []).map(b => '• ' + (typeof b === 'string' ? b : (b.bullet || b.text || ''))).join('\n');
+        const textToCopy = bullets || (jd.tailored_resume ? (jd.tailored_resume.summary || '') : '');
+        if (!textToCopy) { toast('No bullets available to copy', 'error'); return; }
+        try {
+          await navigator.clipboard.writeText(textToCopy);
+          toast('Tailored bullets copied to clipboard');
+        } catch (e) {
+          toast('Could not copy automatically. Select and copy.', 'error');
+        }
+      });
+    }
+
+    const copyCoverBtn = $('#drawerCopyCoverBtn');
+    if (copyCoverBtn) {
+      copyCoverBtn.addEventListener('click', async () => {
+        if (!jd.cover_letter) return;
+        try {
+          await navigator.clipboard.writeText(jd.cover_letter);
+          toast('Cover letter copied to clipboard');
+        } catch (e) {
+          toast('Could not copy automatically. Select and copy.', 'error');
+        }
+      });
+    }
+  }
+
+  function renderDrawerTimeline(app) {
+    const box = $('#drawerTimeline');
+    if (!box) return;
+
+    const history = app.history || [];
+    if (!history.length) {
+      box.innerHTML = `<div class="drawer-empty-state">Timeline tracking begins automatically as you advance this role through your pipeline stages.</div>`;
+      return;
+    }
+
+    box.innerHTML = history.slice().reverse().map(h => {
+      const stageName = (STAGES.find(s => s.key === h.stage) || {}).label || h.stage;
+      const dateStr = h.date ? new Date(h.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      return `
+        <div class="drawer-timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="timeline-content">
+            <div class="timeline-head">
+              <span class="timeline-stage">${esc(stageName)}</span>
+              <span class="timeline-date">${esc(dateStr)}</span>
+            </div>
+            ${h.note ? `<div class="timeline-note">${esc(h.note)}</div>` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function saveActiveDrawerApp(showFeedback = true) {
+    if (!S.activeDrawerApp) return;
+    const app = S.activeDrawerApp;
+
+    // Read form inputs
+    const followInput = $('#drawerFollowDate');
+    if (followInput) app.follow_up_date = followInput.value;
+
+    const notesText = $('#drawerNotesText');
+    if (notesText) app.notes = notesText.value.trim();
+
+    try {
+      await api('/api/applications', { method: 'POST', body: app });
+      const idx = S.applications.findIndex(a => a.id === app.id);
+      if (idx !== -1) S.applications[idx] = app;
+
+      renderApplicationView();
+
+      const savedTag = $('#drawerNotesSavedTag');
+      if (savedTag) {
+        savedTag.hidden = false;
+        setTimeout(() => { if (savedTag) savedTag.hidden = true; }, 2500);
+      }
+
+      if (showFeedback) toast('Application saved');
+      loadApplications();
+    } catch (err) {
+      toast('Could not save changes: ' + err.message, 'error');
+    }
   }
 
   let editingApp = null;
@@ -3536,25 +4219,37 @@
     $('#appDialogSubmit').textContent = 'Save application';
     $('#modalCompany').value = app ? app.company : '';
     $('#modalTitle').value = app ? app.title : '';
-    $('#modalLocation').value = app ? app.location : 'Remote';
-    $('#modalSalary').value = app ? app.salary : '';
-    $('#modalStatus').value = app ? app.status : 'applied';
-    $('#modalFollowUp').value = app ? app.follow_up_date : isoDay(3);
-    $('#modalNotes').value = app ? app.notes : '';
+    $('#modalLocation').value = app ? (app.location || 'Remote') : 'Remote';
+    $('#modalSalary').value = app ? (app.salary || '') : '';
+    $('#modalStatus').value = app ? (app.status || 'applied') : 'applied';
+    $('#modalFollowUp').value = app ? (app.follow_up_date || '') : isoDay(3);
+    $('#modalPriority').value = app ? (app.priority || 'medium') : 'medium';
+    $('#modalUrl').value = app ? (app.url || (app.job_data && app.job_data.url) || '') : '';
+    $('#modalNotes').value = app ? (app.notes || '') : '';
     $('#appDialog').showModal();
     $('#modalCompany').focus();
   }
+
   async function submitAppDialog() {
     const fields = {
-      company: val('modalCompany').trim(), title: val('modalTitle').trim(), location: val('modalLocation').trim(),
-      salary: val('modalSalary').trim(), status: val('modalStatus'), follow_up_date: val('modalFollowUp'), notes: val('modalNotes').trim()
+      company: val('modalCompany').trim(),
+      title: val('modalTitle').trim(),
+      location: val('modalLocation').trim(),
+      salary: val('modalSalary').trim(),
+      status: val('modalStatus'),
+      follow_up_date: val('modalFollowUp'),
+      priority: val('modalPriority'),
+      url: val('modalUrl').trim(),
+      notes: val('modalNotes').trim()
     };
     try {
       await api('/api/applications', { method: 'POST', body: editingApp ? Object.assign({}, editingApp, fields) : fields });
       $('#appDialog').close();
       toast(editingApp ? 'Application updated' : 'Application added');
       await loadApplications();
-    } catch (err) { toast('Could not save: ' + err.message, 'error'); }
+    } catch (err) {
+      toast('Could not save: ' + err.message, 'error');
+    }
   }
 
   // -------------------------------------------------------------- companies
@@ -3889,7 +4584,9 @@
     'app-add': () => openAppDialog(null),
     'app-edit': el => openAppDialog(S.applications.find(a => a.id === el.dataset.id)),
     'app-delete': el => deleteApp(el.dataset.id),
-    'app-open': el => { const a = S.applications.find(x => x.id === el.dataset.id); if (a) openWorkspace(a.job_data, 'resume', 'applications'); },
+    'app-open': el => { const a = S.applications.find(x => x.id === el.dataset.id); if (a) openWorkspace(a.job_data || a, 'resume', 'applications'); },
+    'app-dossier': el => { const a = S.applications.find(x => x.id === el.dataset.id); if (a) openAppDrawer(a); },
+    'app-advance': el => { if (el.dataset.id && el.dataset.next) moveApp(el.dataset.id, el.dataset.next); },
     // companies, digest, misc
     'watch-add': () => { $('#wlCompanyName').value = ''; $('#wlTargetRole').value = ''; $('#wlAtsType').value = ''; $('#watchDialog').showModal(); $('#wlCompanyName').focus(); },
     'watch-check': () => checkWatchlist(),
@@ -4186,9 +4883,16 @@
     ['dragleave', 'drop'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.remove('is-over'); }));
     dz.addEventListener('drop', e => handleFile(e.dataTransfer.files[0]));
 
-    // applications board: stage menu and drag and drop
+    // applications board: stage menu, drag and drop, and card click to open drawer
     const board = $('#kanbanBoard');
     board.addEventListener('change', e => { const s = e.target.closest('[data-action="app-stage"]'); if (s) moveApp(s.dataset.id, s.value); });
+    board.addEventListener('click', e => {
+      const card = e.target.closest('.kcard');
+      if (!card) return;
+      if (e.target.closest('button, select, a, input, textarea, label')) return;
+      const app = S.applications.find(a => a.id === card.dataset.id);
+      if (app) openAppDrawer(app);
+    });
     board.addEventListener('dragstart', e => { const c = e.target.closest('.kcard'); if (c) { e.dataTransfer.setData('text/plain', c.dataset.id); c.classList.add('dragging'); } });
     board.addEventListener('dragend', e => { const c = e.target.closest('.kcard'); if (c) c.classList.remove('dragging'); $$('.col', board).forEach(x => x.classList.remove('drop-over')); });
     board.addEventListener('dragover', e => { const c = e.target.closest('.col'); if (c) { e.preventDefault(); $$('.col', board).forEach(x => x.classList.toggle('drop-over', x === c)); } });
@@ -4200,6 +4904,22 @@
       const id = e.dataTransfer.getData('text/plain');
       if (id) moveApp(id, c.dataset.stage);
     });
+
+    // applications table: stage menu and row click
+    const tableBody = $('#appTableBody');
+    if (tableBody) {
+      tableBody.addEventListener('change', e => {
+        const s = e.target.closest('[data-action="app-stage"]');
+        if (s) moveApp(s.dataset.id, s.value);
+      });
+      tableBody.addEventListener('click', e => {
+        const row = e.target.closest('.app-table-row');
+        if (!row) return;
+        if (e.target.closest('button, select, a, input, textarea, label')) return;
+        const app = S.applications.find(a => a.id === row.dataset.id);
+        if (app) openAppDrawer(app);
+      });
+    }
 
     // dialogs and digest
     $('#appDialogForm').addEventListener('submit', e => { e.preventDefault(); submitAppDialog(); });
@@ -6015,6 +6735,220 @@
     }
   }
 
+  // ----------------------------------------------------------------- application tracker UI
+  function setupApplicationTrackerUi() {
+    // Search input
+    const appSearch = $('#appSearchInput');
+    if (appSearch) {
+      appSearch.addEventListener('input', () => {
+        S.appSearchQuery = appSearch.value;
+        renderApplicationView();
+      });
+    }
+    const appSearchClear = $('#appSearchClear');
+    if (appSearchClear) {
+      appSearchClear.addEventListener('click', () => {
+        S.appSearchQuery = '';
+        if (appSearch) appSearch.value = '';
+        renderApplicationView();
+      });
+    }
+
+    // Filter pills
+    const pills = $('#appFilterPills');
+    if (pills) {
+      pills.addEventListener('click', e => {
+        const btn = e.target.closest('[data-app-filter]');
+        if (!btn) return;
+        S.appFilter = btn.dataset.appFilter;
+        $$('.app-pill', pills).forEach(p => {
+          const active = (p === btn);
+          p.classList.toggle('is-active', active);
+          p.setAttribute('aria-pressed', String(active));
+        });
+        renderApplicationView();
+      });
+    }
+
+    // View toggle
+    const btnKanban = $('#btnViewKanban');
+    const btnTable = $('#btnViewTable');
+    if (btnKanban) {
+      btnKanban.addEventListener('click', () => {
+        S.appViewMode = 'kanban';
+        try { localStorage.setItem('jh_app_view_mode', 'kanban'); } catch (e) {}
+        renderApplicationView();
+      });
+    }
+    if (btnTable) {
+      btnTable.addEventListener('click', () => {
+        S.appViewMode = 'table';
+        try { localStorage.setItem('jh_app_view_mode', 'table'); } catch (e) {}
+        renderApplicationView();
+      });
+    }
+
+    // Drawer close handlers
+    const overlay = $('#appDrawerOverlay');
+    if (overlay) overlay.addEventListener('click', closeAppDrawer);
+    const closeBtn = $('#drawerCloseBtn');
+    if (closeBtn) closeBtn.addEventListener('click', closeAppDrawer);
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && S.activeDrawerApp) closeAppDrawer();
+    });
+
+    // Drawer tabs delegation
+    const tabsContainer = $('.drawer-tabs');
+    if (tabsContainer) {
+      tabsContainer.addEventListener('click', e => {
+        const tab = e.target.closest('.drawer-tab');
+        if (tab && tab.dataset.drawerTab) {
+          switchDrawerTab(tab.dataset.drawerTab);
+        }
+      });
+    }
+
+    // Drawer stage pills
+    const stagePills = $('#drawerStagePills');
+    if (stagePills) {
+      stagePills.addEventListener('click', e => {
+        const b = e.target.closest('[data-stage]');
+        if (!b || !S.activeDrawerApp) return;
+        moveApp(S.activeDrawerApp.id, b.dataset.stage);
+      });
+    }
+
+    // Drawer priority picker
+    const prioPicker = $('#drawerPriorityPicker');
+    if (prioPicker) {
+      prioPicker.addEventListener('click', e => {
+        const b = e.target.closest('[data-p]');
+        if (!b || !S.activeDrawerApp) return;
+        S.activeDrawerApp.priority = b.dataset.p;
+        $$('.p-chip', prioPicker).forEach(c => c.classList.toggle('is-active', c === b));
+        saveActiveDrawerApp(false);
+      });
+    }
+
+    // Quick follow-up date buttons
+    $$('[data-quick-date]').forEach(b => {
+      b.addEventListener('click', () => {
+        const v = b.dataset.quickDate;
+        const inp = $('#drawerFollowDate');
+        if (!inp) return;
+        if (v === 'clear') inp.value = '';
+        else inp.value = isoDay(Number(v));
+        if (S.activeDrawerApp) {
+          S.activeDrawerApp.follow_up_date = inp.value;
+          saveActiveDrawerApp(false);
+        }
+      });
+    });
+
+    // Drawer tasks
+    const taskList = $('#drawerTaskList');
+    if (taskList) {
+      taskList.addEventListener('change', e => {
+        const chk = e.target.closest('.drawer-task-checkbox');
+        if (!chk || !S.activeDrawerApp) return;
+        const idx = Number(chk.dataset.taskIdx);
+        if (S.activeDrawerApp.tasks && S.activeDrawerApp.tasks[idx]) {
+          S.activeDrawerApp.tasks[idx].completed = chk.checked;
+          renderDrawerTasks(S.activeDrawerApp);
+          saveActiveDrawerApp(false);
+        }
+      });
+      taskList.addEventListener('click', e => {
+        const delBtn = e.target.closest('[data-del-task]');
+        if (!delBtn || !S.activeDrawerApp) return;
+        const idx = Number(delBtn.dataset.delTask);
+        if (S.activeDrawerApp.tasks) {
+          S.activeDrawerApp.tasks.splice(idx, 1);
+          renderDrawerTasks(S.activeDrawerApp);
+          saveActiveDrawerApp(false);
+        }
+      });
+    }
+
+    const addTaskBtn = $('#drawerAddTaskBtn');
+    const newTaskInput = $('#drawerNewTaskInput');
+    if (addTaskBtn && newTaskInput) {
+      const doAddTask = () => {
+        const text = newTaskInput.value.trim();
+        if (!text || !S.activeDrawerApp) return;
+        S.activeDrawerApp.tasks = S.activeDrawerApp.tasks || [];
+        S.activeDrawerApp.tasks.push({ id: 't_' + Date.now(), text, completed: false });
+        newTaskInput.value = '';
+        renderDrawerTasks(S.activeDrawerApp);
+        saveActiveDrawerApp(false);
+      };
+      addTaskBtn.addEventListener('click', doAddTask);
+      newTaskInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); doAddTask(); }
+      });
+    }
+
+    // Drawer contacts
+    const contactsList = $('#drawerContactsList');
+    if (contactsList) {
+      contactsList.addEventListener('click', e => {
+        const delBtn = e.target.closest('[data-del-contact]');
+        if (!delBtn || !S.activeDrawerApp) return;
+        const idx = Number(delBtn.dataset.delContact);
+        if (S.activeDrawerApp.contacts) {
+          S.activeDrawerApp.contacts.splice(idx, 1);
+          renderDrawerContacts(S.activeDrawerApp);
+          saveActiveDrawerApp(false);
+        }
+      });
+    }
+
+    const addContactBtn = $('#drawerAddContactBtn');
+    if (addContactBtn) {
+      addContactBtn.addEventListener('click', () => {
+        if (!S.activeDrawerApp) return;
+        const name = ($('#drawerContactName').value || '').trim();
+        const role = ($('#drawerContactRole').value || '').trim();
+        const email = ($('#drawerContactEmail').value || '').trim();
+        const linkedin = ($('#drawerContactLinkedin').value || '').trim();
+        if (!name) { toast('Please provide a contact name', 'error'); return; }
+        S.activeDrawerApp.contacts = S.activeDrawerApp.contacts || [];
+        S.activeDrawerApp.contacts.push({ name, role, email, linkedin });
+        $('#drawerContactName').value = '';
+        $('#drawerContactRole').value = '';
+        $('#drawerContactEmail').value = '';
+        $('#drawerContactLinkedin').value = '';
+        renderDrawerContacts(S.activeDrawerApp);
+        saveActiveDrawerApp(false);
+        toast('Contact added');
+      });
+    }
+
+    // Drawer action buttons
+    const drawerSaveBtn = $('#drawerSaveBtn');
+    if (drawerSaveBtn) drawerSaveBtn.addEventListener('click', () => saveActiveDrawerApp(true));
+
+    const drawerDeleteBtn = $('#drawerDeleteBtn');
+    if (drawerDeleteBtn) {
+      drawerDeleteBtn.addEventListener('click', () => {
+        if (!S.activeDrawerApp) return;
+        const id = S.activeDrawerApp.id;
+        deleteApp(id);
+      });
+    }
+
+    const drawerTailorBtn = $('#drawerTailorBtn');
+    if (drawerTailorBtn) {
+      drawerTailorBtn.addEventListener('click', () => {
+        if (!S.activeDrawerApp) return;
+        const a = S.activeDrawerApp;
+        const jd = a.job_data || a;
+        closeAppDrawer();
+        openWorkspace(jd, 'resume', 'applications');
+      });
+    }
+  }
+
   // ------------------------------------------------------------------- init
   async function init() {
     S.openExp = new Set([0]);
@@ -6024,6 +6958,7 @@
     setupAllFiltersDrawer();
     setupOnboardingFlow();
     setupAutoSearchUi();
+    setupApplicationTrackerUi();
     bindEvents();
     await Promise.all([loadProfile(), loadApplications()]);
     if (!S.profileEmpty) {

@@ -59,6 +59,9 @@
       <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></symbol>
       <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
       <symbol id="i-linkedin" viewBox="0 0 24 24"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></symbol>
+      <symbol id="i-list" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></symbol>
+      <symbol id="i-flame" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0011 17c1.38 0 2.5-1.12 2.5-2.5 0-1.63-1.07-2.67-1.74-3.5A7.47 7.47 0 0110 7.5C10 5.5 11.5 3 11.5 3S8 6 8 10c0 .91.24 1.76.66 2.5-.58.42-1.16 1.05-1.16 2zM12 22a8 8 0 008-8c0-3.3-2.12-6.1-5-7.25.04.42.06.84.06 1.25 0 3-1.8 5.6-4.32 6.84A4.5 4.5 0 0112 17.5a4.5 4.5 0 01-4.5-4.5c0-.44.06-.86.18-1.26A8 8 0 004 14a8 8 0 008 8z"/></symbol>
+      <symbol id="i-arrow-right" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></symbol>
     </defs>
   </svg>
 
@@ -659,16 +662,268 @@
     <!-- ================= APPLICATIONS ================= -->
     <section class="view" id="view-applications" aria-labelledby="appsTitle" hidden>
       <div class="container container-wide">
-        <header class="page-head">
-          <div>
-            <h1 class="page-title" id="appsTitle">Applications</h1>
-            <p class="page-sub" id="appStats">Track every role from saved to offer.</p>
+        <!-- Pipeline Header -->
+        <header class="app-pipeline-head">
+          <div class="app-head-titles">
+            <h1 class="page-title" id="appsTitle">Pipeline &amp; Applications</h1>
+            <p class="page-sub" id="appStats">Your active career command center. Drag cards across stages, manage follow-up deadlines, and track conversion.</p>
           </div>
-          <button type="button" class="btn btn-primary" data-action="app-add"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Add application</button>
+          <div class="app-head-actions">
+            <button type="button" class="btn btn-primary" data-action="app-add">
+              <svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>
+              <span>Add application</span>
+            </button>
+          </div>
         </header>
-        <div class="board" id="kanbanBoard"></div>
+
+        <!-- Executive KPI Metrics Ribbon -->
+        <div class="app-kpi-ribbon" id="appKpiRibbon" aria-label="Pipeline metrics">
+          <div class="kpi-card" data-kpi="live">
+            <div class="kpi-label">Active in Pipeline</div>
+            <div class="kpi-val" id="kpiActiveCount">0</div>
+            <div class="kpi-sub" id="kpiActiveSub">In progress across 4 stages</div>
+          </div>
+          <div class="kpi-card" data-kpi="interview">
+            <div class="kpi-label">Interview Rate</div>
+            <div class="kpi-val" id="kpiInterviewRate">0%</div>
+            <div class="kpi-sub" id="kpiInterviewSub">Applied to Interview conversion</div>
+          </div>
+          <div class="kpi-card" data-kpi="offer">
+            <div class="kpi-label">Offer Conversion</div>
+            <div class="kpi-val" id="kpiOfferRate">0%</div>
+            <div class="kpi-sub" id="kpiOfferSub">Interview to Offer conversion</div>
+          </div>
+          <div class="kpi-card kpi-card-alert" id="kpiAlertCard" data-kpi="overdue">
+            <div class="kpi-label">Follow-up Attention</div>
+            <div class="kpi-val" id="kpiFollowupCount">0</div>
+            <div class="kpi-sub" id="kpiFollowupSub">Overdue or due today</div>
+          </div>
+        </div>
+
+        <!-- Pipeline Toolbar (Search, Filter Chips, View Toggle) -->
+        <div class="app-toolbar" id="appToolbar">
+          <div class="app-toolbar-search">
+            <svg class="app-search-icon" aria-hidden="true"><use href="#i-search"/></svg>
+            <input type="search" id="appSearchInput" placeholder="Filter by company, role, or note..." aria-label="Filter applications">
+            <button type="button" class="app-search-clear" id="appSearchClear" hidden title="Clear search">&times;</button>
+          </div>
+
+          <div class="app-filter-pills" id="appFilterPills" role="radiogroup" aria-label="Filter applications by status">
+            <button type="button" class="app-pill is-active" data-app-filter="all" aria-pressed="true">All</button>
+            <button type="button" class="app-pill" data-app-filter="attention">
+              <span class="app-pill-dot dot-amber"></span>Action needed
+              <span class="app-pill-count" id="pillAttentionCount" hidden>0</span>
+            </button>
+            <button type="button" class="app-pill" data-app-filter="high_priority">
+              <svg class="i pill-icon"><use href="#i-flame"/></svg>High priority
+            </button>
+            <button type="button" class="app-pill" data-app-filter="interviewing">
+              <span class="app-pill-dot dot-cyan"></span>Interviewing
+            </button>
+            <button type="button" class="app-pill" data-app-filter="has_tailored">
+              <svg class="i pill-icon"><use href="#i-file"/></svg>Tailored pack ready
+            </button>
+          </div>
+
+          <div class="app-view-toggle" role="group" aria-label="View toggle">
+            <button type="button" class="app-toggle-btn is-active" id="btnViewKanban" data-view-mode="kanban" title="Kanban Board view" aria-pressed="true">
+              <svg class="i"><use href="#i-board"/></svg>
+              <span>Board</span>
+            </button>
+            <button type="button" class="app-toggle-btn" id="btnViewTable" data-view-mode="table" title="Table Ledger view" aria-pressed="false">
+              <svg class="i"><use href="#i-list"/></svg>
+              <span>Table</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- View 1: Kanban Board -->
+        <div class="app-board-wrap" id="appBoardWrap">
+          <div class="board" id="kanbanBoard"></div>
+        </div>
+
+        <!-- View 2: Table Ledger (Hidden by default) -->
+        <div class="app-table-wrap" id="appTableWrap" hidden>
+          <div class="table-responsive">
+            <table class="app-table" id="appTable">
+              <thead>
+                <tr>
+                  <th scope="col" class="th-company">Role &amp; Company</th>
+                  <th scope="col" class="th-stage">Stage</th>
+                  <th scope="col" class="th-score">Match Fit</th>
+                  <th scope="col" class="th-follow">Follow-up</th>
+                  <th scope="col" class="th-priority">Priority</th>
+                  <th scope="col" class="th-details">Pay &amp; Location</th>
+                  <th scope="col" class="th-actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="appTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
     </section>
+
+    <!-- Slide-Out Application Dossier Drawer (Inspector) -->
+    <div class="app-drawer-overlay" id="appDrawerOverlay" hidden></div>
+    <aside class="app-drawer" id="appDrawer" aria-labelledby="drawerTitle" aria-hidden="true" hidden>
+      <div class="drawer-header">
+        <div class="drawer-header-brand">
+          <div class="drawer-avatar" id="drawerAvatar">AC</div>
+          <div class="drawer-title-group">
+            <h2 class="drawer-title" id="drawerTitle">Senior Backend Engineer</h2>
+            <div class="drawer-sub" id="drawerCompany">Acme Corp</div>
+          </div>
+        </div>
+        <div class="drawer-header-actions">
+          <a class="drawer-ext-btn" id="drawerJobLink" target="_blank" rel="noopener noreferrer" title="Open official job posting" hidden>
+            <svg class="i"><use href="#i-external"/></svg>
+            <span>Job link</span>
+          </a>
+          <button type="button" class="drawer-close-btn" id="drawerCloseBtn" aria-label="Close dossier">&times;</button>
+        </div>
+      </div>
+
+      <!-- Quick Stage Switcher Strip -->
+      <div class="drawer-stage-strip">
+        <div class="drawer-stage-label">Current Pipeline Stage:</div>
+        <div class="drawer-stage-pills" id="drawerStagePills"></div>
+      </div>
+
+      <!-- Drawer Tabs -->
+      <div class="drawer-tabs" role="tablist" aria-label="Application sections">
+        <button type="button" role="tab" class="drawer-tab is-active" data-drawer-tab="overview" aria-selected="true">Overview &amp; Notes</button>
+        <button type="button" role="tab" class="drawer-tab" data-drawer-tab="tasks" aria-selected="false">Checklist &amp; Tasks <span class="tab-badge" id="drawerTaskBadge" hidden>0</span></button>
+        <button type="button" role="tab" class="drawer-tab" data-drawer-tab="contacts" aria-selected="false">Contacts &amp; Insider</button>
+        <button type="button" role="tab" class="drawer-tab" data-drawer-tab="tailored" aria-selected="false">Tailored Package</button>
+        <button type="button" role="tab" class="drawer-tab" data-drawer-tab="history" aria-selected="false">Stage Timeline</button>
+      </div>
+
+      <!-- Drawer Body Panels -->
+      <div class="drawer-content">
+        <!-- Panel 1: Overview -->
+        <div class="drawer-panel" id="drawerPanelOverview">
+          <div class="drawer-card">
+            <h3 class="drawer-sec-title">Role Information</h3>
+            <div class="drawer-info-grid">
+              <div class="drawer-field">
+                <span class="df-label">Compensation</span>
+                <span class="df-val" id="drawerSalary">Not specified</span>
+              </div>
+              <div class="drawer-field">
+                <span class="df-label">Location / Mode</span>
+                <span class="df-val" id="drawerLocation">Remote</span>
+              </div>
+              <div class="drawer-field">
+                <span class="df-label">Resume Match Fit</span>
+                <div class="df-val" id="drawerScore">-</div>
+              </div>
+              <div class="drawer-field">
+                <span class="df-label">Priority Level</span>
+                <div class="drawer-priority-picker" id="drawerPriorityPicker">
+                  <button type="button" class="p-chip" data-p="high">🔥 High</button>
+                  <button type="button" class="p-chip is-active" data-p="medium">Standard</button>
+                  <button type="button" class="p-chip" data-p="low">Low</button>
+                </div>
+              </div>
+              <div class="drawer-field span-2">
+                <span class="df-label">Follow-up Date</span>
+                <div class="df-follow-row">
+                  <input type="date" id="drawerFollowDate" class="drawer-date-input">
+                  <button type="button" class="btn btn-secondary btn-sm" data-quick-date="3">+3 days</button>
+                  <button type="button" class="btn btn-secondary btn-sm" data-quick-date="7">+1 week</button>
+                  <button type="button" class="btn btn-ghost btn-sm" data-quick-date="clear">Clear</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="drawer-card">
+            <div class="drawer-card-head">
+              <h3 class="drawer-sec-title">Personal Application Notes</h3>
+              <span class="drawer-autosave-tag" id="drawerNotesSavedTag" hidden>Saved</span>
+            </div>
+            <textarea id="drawerNotesText" class="drawer-textarea" rows="4" placeholder="Record interview thoughts, referral contacts, hiring manager takeaways, or compensation targets..."></textarea>
+          </div>
+        </div>
+
+        <!-- Panel 2: Checklist & Tasks -->
+        <div class="drawer-panel" id="drawerPanelTasks" hidden>
+          <div class="drawer-card">
+            <div class="drawer-card-head">
+              <div>
+                <h3 class="drawer-sec-title">Action Items &amp; Next Steps</h3>
+                <p class="drawer-sec-sub">Track deliverables, take-home tests, and interview follow-ups.</p>
+              </div>
+              <span class="drawer-task-progress" id="drawerTaskProgressText">0 of 0 completed</span>
+            </div>
+
+            <div class="drawer-task-list" id="drawerTaskList"></div>
+
+            <div class="drawer-add-task-row">
+              <input type="text" id="drawerNewTaskInput" class="drawer-input" placeholder="e.g. Send thank-you note to hiring manager...">
+              <button type="button" class="btn btn-primary btn-sm" id="drawerAddTaskBtn">Add task</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel 3: Contacts & Insider -->
+        <div class="drawer-panel" id="drawerPanelContacts" hidden>
+          <div class="drawer-card">
+            <div class="drawer-card-head">
+              <div>
+                <h3 class="drawer-sec-title">Key Contacts &amp; Interviewers</h3>
+                <p class="drawer-sec-sub">Recruiters, hiring managers, and referral allies.</p>
+              </div>
+            </div>
+            <div class="drawer-contacts-list" id="drawerContactsList"></div>
+            <div class="drawer-add-contact-box">
+              <div class="drawer-contact-inputs">
+                <input type="text" id="drawerContactName" class="drawer-input" placeholder="Name (e.g. Sarah Miller)">
+                <input type="text" id="drawerContactRole" class="drawer-input" placeholder="Role (e.g. Lead Recruiter)">
+                <input type="email" id="drawerContactEmail" class="drawer-input" placeholder="Email (optional)">
+                <input type="url" id="drawerContactLinkedin" class="drawer-input" placeholder="LinkedIn URL (optional)">
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" id="drawerAddContactBtn">+ Add contact</button>
+            </div>
+          </div>
+
+          <div class="drawer-card">
+            <h3 class="drawer-sec-title">LinkedIn Insider Shortcuts</h3>
+            <p class="drawer-sec-sub">Find relevant team members and recruiters with 1-click tailored queries.</p>
+            <div class="drawer-insider-links" id="drawerInsiderLinks"></div>
+          </div>
+        </div>
+
+        <!-- Panel 4: Tailored Package -->
+        <div class="drawer-panel" id="drawerPanelTailored" hidden>
+          <div class="drawer-card" id="drawerTailoredPackageCard"></div>
+        </div>
+
+        <!-- Panel 5: Timeline -->
+        <div class="drawer-panel" id="drawerPanelHistory" hidden>
+          <div class="drawer-card">
+            <h3 class="drawer-sec-title">Application Audit Trail</h3>
+            <p class="drawer-sec-sub">Chronological stage velocity and history.</p>
+            <div class="drawer-timeline" id="drawerTimeline"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drawer Footer -->
+      <div class="drawer-footer">
+        <button type="button" class="btn btn-primary" id="drawerSaveBtn">Save changes</button>
+        <button type="button" class="btn btn-secondary" id="drawerTailorBtn">
+          <svg class="i"><use href="#i-bolt"/></svg>
+          <span>Open in workspace</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-danger" id="drawerDeleteBtn">
+          <svg class="i"><use href="#i-trash"/></svg>
+          <span>Delete</span>
+        </button>
+      </div>
+    </aside>
 
     <!-- ================= RESUME ================= -->
     <section class="view" id="view-resume" aria-labelledby="resumeTitle" hidden>
@@ -1004,6 +1259,12 @@
           </select>
         </div>
         <div class="form-field"><label for="modalFollowUp">Follow up on</label><input type="date" id="modalFollowUp"></div>
+        <div class="form-field"><label for="modalPriority">Priority</label>
+          <select id="modalPriority">
+            <option value="high">🔥 High</option><option value="medium" selected>Standard</option><option value="low">Low</option>
+          </select>
+        </div>
+        <div class="form-field span-2"><label for="modalUrl">Job Posting Link</label><input type="url" id="modalUrl" placeholder="https://..."></div>
         <div class="form-field span-2"><label for="modalNotes">Notes</label><textarea id="modalNotes" rows="3" placeholder="Contacts, interview dates, referrals"></textarea></div>
       </div>
       <div class="dialog-actions">
