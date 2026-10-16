@@ -2463,7 +2463,7 @@
         </div>
 
         <div class="job-item-meta">
-          <span class="meta-pill"><span class="meta-icon">${ico('pin')}</span><span>${esc(j.location || 'Remote')}</span></span>
+          <span class="meta-pill meta-loc" title="${esc(j.location || 'Remote')}"><span class="meta-icon">${ico('pin')}</span><span class="meta-text">${esc(j.location || 'Remote')}</span></span>
           ${j.work_mode ? `<span class="meta-pill"><span class="meta-icon">${ico('briefcase')}</span><span>${esc(j.work_mode)}</span></span>` : ''}
           ${j.job_type ? `<span class="meta-pill meta-contract">${esc(j.job_type)}</span>` : ''}
           ${j.salary ? `<span class="meta-pill meta-salary"><span class="meta-icon">${ico('dollar')}</span><span>${esc(j.salary)}</span></span>` : ''}

@@ -11,7 +11,7 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700;800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=2.7">
+  <link rel="stylesheet" href="styles.css?v=3.1">
   <link rel="icon" type="image/png" href="favicon.png">
   <meta name="jh-token" content="">
 </head>
@@ -413,7 +413,7 @@
 
         <!-- Picture 4 Filter Bar -->
         <div class="p4-filter-bar" id="p4FilterBar">
-          <div class="p4-filter-row-1">
+          <div class="p4-filter-criteria">
             <!-- Location Pill -->
             <div class="p4-pill-wrap">
               <button type="button" class="p4-pill-btn" id="p4PillLocation" data-dropdown="p4MenuLocation">
@@ -470,6 +470,21 @@
                 <button type="button" class="p4-menu-item is-selected" data-sen="mid">Mid Level (2-5 yrs)</button>
                 <button type="button" class="p4-menu-item" data-sen="senior">Senior Level (5+ yrs)</button>
                 <button type="button" class="p4-menu-item" data-sen="lead_staff">Lead / Staff / Exec</button>
+              </div>
+            </div>
+
+            <!-- Years of Experience Pill -->
+            <div class="p4-pill-wrap">
+              <button type="button" class="p4-pill-btn" id="p4PillYoe" data-dropdown="p4MenuYoe">
+                <span class="p4-pill-text" id="p4TextYoe">Years of Experience</span>
+                <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="p4-dropdown-menu" id="p4MenuYoe" hidden>
+                <button type="button" class="p4-menu-item is-selected" data-yoe="all">Any Experience</button>
+                <button type="button" class="p4-menu-item" data-yoe="0-2">0 - 2 years</button>
+                <button type="button" class="p4-menu-item" data-yoe="2-5">2 - 5 years</button>
+                <button type="button" class="p4-menu-item" data-yoe="5-8">5 - 8 years</button>
+                <button type="button" class="p4-menu-item" data-yoe="8+">8+ years</button>
               </div>
             </div>
 
@@ -531,9 +546,27 @@
                 <button type="button" class="p4-menu-item" data-ind="health">Healthcare &amp; Bio</button>
               </div>
             </div>
+          </div>
 
-            <!-- Sort Pill (Right Aligned) -->
-            <div class="p4-pill-wrap p4-pill-right">
+          <div class="p4-filter-sep" aria-hidden="true"></div>
+
+          <div class="p4-filter-actions">
+            <!-- Hidden Jobs Toggle -->
+            <button type="button" class="p4-pill-btn p4-btn-hidden-jobs" id="p4BtnHiddenJobs" title="View jobs you hidden/dismissed">
+              <svg class="i"><use href="#i-lock"/></svg>
+              <span>Hidden Jobs</span>
+              <span class="p4-hidden-count" id="p4HiddenCount" hidden>0</span>
+            </button>
+
+            <!-- Refresh & Sync DB Button with New Jobs Badge -->
+            <button type="button" class="p4-pill-btn p4-btn-refresh-sync" id="btnJobsRefreshSync" title="Check for new jobs staged from background search and sync the database">
+              <svg class="i" id="jobsRefreshIcon"><use href="#i-refresh"/></svg>
+              <span>Refresh</span>
+              <span class="p4-refresh-badge" id="jobsRefreshBadge" hidden>0 new</span>
+            </button>
+
+            <!-- Sort Pill -->
+            <div class="p4-pill-wrap">
               <button type="button" class="p4-pill-btn p4-pill-sort" id="p4PillSort" data-dropdown="p4MenuSort">
                 <span class="p4-help-icon" title="Jobs ranked by AI match algorithm">?</span>
                 <span class="p4-pill-text" id="p4TextSort">Top Matched</span>
@@ -546,42 +579,11 @@
                 <button type="button" class="p4-menu-item" data-sort="company_asc">Company A to Z</button>
               </div>
             </div>
-          </div>
-
-          <div class="p4-filter-row-2">
-            <!-- Years of Experience Pill -->
-            <div class="p4-pill-wrap">
-              <button type="button" class="p4-pill-btn" id="p4PillYoe" data-dropdown="p4MenuYoe">
-                <span class="p4-pill-text" id="p4TextYoe">Years of Experience</span>
-                <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
-              </button>
-              <div class="p4-dropdown-menu" id="p4MenuYoe" hidden>
-                <button type="button" class="p4-menu-item is-selected" data-yoe="all">Any Experience</button>
-                <button type="button" class="p4-menu-item" data-yoe="0-2">0 - 2 years</button>
-                <button type="button" class="p4-menu-item" data-yoe="2-5">2 - 5 years</button>
-                <button type="button" class="p4-menu-item" data-yoe="5-8">5 - 8 years</button>
-                <button type="button" class="p4-menu-item" data-yoe="8+">8+ years</button>
-              </div>
-            </div>
-
-            <!-- Hidden Jobs Toggle -->
-            <button type="button" class="p4-pill-btn p4-btn-hidden-jobs" id="p4BtnHiddenJobs" title="View jobs you hidden/dismissed">
-              <svg class="i"><use href="#i-lock"/></svg>
-              <span>Hidden Jobs</span>
-              <span class="p4-hidden-count" id="p4HiddenCount" hidden>0</span>
-            </button>
 
             <!-- All Filters Toggle Button -->
             <button type="button" class="p4-pill-btn p4-btn-all-filters" id="p4BtnAllFilters">
               <span>••• All Filters</span>
               <span class="p4-all-filters-badge" id="p4AllFiltersBadge" hidden>0</span>
-            </button>
-
-            <!-- Refresh & Sync DB Button with New Jobs Badge -->
-            <button type="button" class="p4-pill-btn p4-btn-refresh-sync" id="btnJobsRefreshSync" title="Check for new jobs staged from background search and sync the database">
-              <svg class="i" id="jobsRefreshIcon"><use href="#i-refresh"/></svg>
-              <span>Refresh</span>
-              <span class="p4-refresh-badge" id="jobsRefreshBadge" hidden>0 new</span>
             </button>
           </div>
         </div>
@@ -2061,6 +2063,6 @@
 
   <div class="toasts" id="toastContainer" role="status" aria-live="polite"></div>
 
-  <script src="app.js?v=2.7"></script>
+  <script src="app.js?v=3.0"></script>
 </body>
 </html>
