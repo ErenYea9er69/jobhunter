@@ -247,15 +247,54 @@
   const jobKey = j => String(j.job_key || j.id || `${j.company}|${j.title}`);
   const sameJob = (a, b) => a && b && jobKey(a) === jobKey(b);
 
+  function companyMonogram(name) {
+    if (!name) return 'JH';
+    const clean = String(name).trim().replace(/[^a-zA-Z0-9\s]/g, '');
+    const parts = clean.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return clean.slice(0, 2).toUpperCase() || 'JH';
+  }
+
+  function companyAvatarColor(name) {
+    const palettes = [
+      { bg: 'rgba(18, 183, 106, 0.12)', text: '#087443', border: 'rgba(18, 183, 106, 0.25)' }, // Emerald
+      { bg: 'rgba(14, 116, 144, 0.12)', text: '#0e7490', border: 'rgba(14, 116, 144, 0.25)' }, // Cyan
+      { bg: 'rgba(99, 102, 241, 0.12)', text: '#4f46e5', border: 'rgba(99, 102, 241, 0.25)' }, // Indigo
+      { bg: 'rgba(168, 85, 247, 0.12)', text: '#7e22ce', border: 'rgba(168, 85, 247, 0.25)' }, // Purple
+      { bg: 'rgba(234, 88, 12, 0.12)',  text: '#c2410c', border: 'rgba(234, 88, 12, 0.25)' },  // Orange
+      { bg: 'rgba(2, 132, 199, 0.12)',  text: '#0369a1', border: 'rgba(2, 132, 199, 0.25)' },  // Sky
+      { bg: 'rgba(13, 148, 136, 0.12)', text: '#0f766e', border: 'rgba(13, 148, 136, 0.25)' }, // Teal
+      { bg: 'rgba(217, 70, 239, 0.12)', text: '#a21caf', border: 'rgba(217, 70, 239, 0.25)' }, // Fuchsia
+    ];
+    let hash = 0;
+    for (let i = 0; i < (name || '').length; i++) hash = ((hash << 5) - hash) + name.charCodeAt(i);
+    return palettes[Math.abs(hash) % palettes.length];
+  }
+
   function tierOf(score) {
     if (score >= 85) return { cls: 'tier-high', label: 'Excellent fit' };
     if (score >= 70) return { cls: 'tier-good', label: 'Strong fit' };
     if (score >= 50) return { cls: 'tier-fair', label: 'Fair fit' };
     return { cls: 'tier-low', label: 'Low fit' };
   }
+
   function ring(score, large = false) {
     const n = Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
-    return `<div class="score-ring ${large ? 'score-ring-lg ' : ''}${tierOf(n).cls}" style="--pct:${n}" role="img" aria-label="Match score ${n} percent"><span>${n}</span></div>`;
+    const tier = tierOf(n);
+    const size = large ? 50 : 36;
+    const stroke = large ? 4.5 : 3;
+    const r = (size - stroke) / 2;
+    const c = 2 * Math.PI * r;
+    const offset = c - (n / 100) * c;
+    return `<div class="score-ring ${large ? 'score-ring-lg ' : ''}${tier.cls}" style="--pct:${n}" role="img" aria-label="Match score ${n} percent" title="${tier.label} (${n}%)">
+      <svg class="score-ring-svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+        <circle class="score-ring-track" cx="${size/2}" cy="${size/2}" r="${r}" stroke-width="${stroke}" />
+        <circle class="score-ring-bar" cx="${size/2}" cy="${size/2}" r="${r}" stroke-width="${stroke}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}" />
+      </svg>
+      <div class="score-ring-val"><span>${n}</span>${large ? '<small>%</small>' : ''}</div>
+    </div>`;
   }
 
   function timeAgo(iso) {
@@ -332,18 +371,18 @@
       return `<span class="chip chip-source chip-src-official" title="Official Employer Careers Portal (${esc(src)}) - 100% Free Application">${ico('shield')}Official Site (${esc(src)})${more}</span>`;
     }
     if (/linkedin/i.test(src)) {
-      return `<span class="chip chip-source chip-src-linkedin" title="Found on LinkedIn - 100% Free to apply">${ico('external')}via LinkedIn${more}</span>`;
+      return `<span class="chip chip-source chip-src-linkedin" title="Found on LinkedIn - 100% Free to apply">${ico('arrow-up-right')}via LinkedIn${more}</span>`;
     }
     if (/indeed/i.test(src)) {
-      return `<span class="chip chip-source chip-src-indeed" title="Found on Indeed - 100% Free to apply">${ico('external')}via Indeed${more}</span>`;
+      return `<span class="chip chip-source chip-src-indeed" title="Found on Indeed - 100% Free to apply">${ico('arrow-up-right')}via Indeed${more}</span>`;
     }
     if (/ziprecruiter/i.test(src)) {
-      return `<span class="chip chip-source chip-src-zip" title="Found on ZipRecruiter - 100% Free to apply">${ico('external')}via ZipRecruiter${more}</span>`;
+      return `<span class="chip chip-source chip-src-zip" title="Found on ZipRecruiter - 100% Free to apply">${ico('arrow-up-right')}via ZipRecruiter${more}</span>`;
     }
     if (!isFree) {
-      return `<span class="chip chip-source chip-src-gated" title="Only found on ${esc(src)} - Platform charges or prompts for paid membership to apply">${ico('alert')}on ${esc(src)} (Paid to apply)${more}</span>`;
+      return `<span class="chip chip-source chip-src-gated" title="Only found on ${esc(src)} - Platform charges or prompts for paid membership to apply">${ico('alert')}on ${esc(src)} (Paid)${more}</span>`;
     }
-    return `<span class="chip chip-source chip-src-free" title="Found on ${esc(src)} - 100% Free to apply">${ico('external')}via ${esc(src)}${more}</span>`;
+    return `<span class="chip chip-source chip-src-free" title="Found on ${esc(src)} - 100% Free to apply">${ico('arrow-up-right')}via ${esc(src)}${more}</span>`;
   }
 
   const val = id => ($('#' + id) || {}).value || '';
@@ -2388,45 +2427,63 @@
       const postedText = days === 0 ? 'Today' : days === 1 ? '1d ago' : (days !== null ? `${days}d ago` : '');
       const saved = !!savedApp(j);
       const hook = j.recommendation_hook || (j.score >= 70 && matched ? `Strong match (${j.score}%) • Covers ${matched} core skills` : '');
+      const monogram = companyMonogram(j.company);
+      const avatarCol = companyAvatarColor(j.company);
 
       return `<button type="button" class="job-item${key === S.selectedKey ? ' is-selected' : ''}" data-action="job-select" data-key="${esc(key)}">
-        <span class="job-item-dismiss" role="button" tabindex="0" data-action="job-hide" data-key="${esc(key)}" title="Dismiss / Hide this job" onclick="event.stopPropagation()">
-          ${ico('x')}
-        </span>
-        <span class="job-item-title">${esc(cleanTitle(j.title))}</span>
-        <div class="job-item-sub">
-          <span class="job-item-company">${esc(j.company)}</span>
-          ${postedText ? `<span class="chip chip-sm" style="font-size:11px;padding:1px 6px;">${esc(postedText)}</span>` : ''}
-          ${formatSourceBadge(j)}
-          ${isDirectAts ? `<span class="chip chip-verified" title="Direct employer ATS feed (Workday, Greenhouse, Lever, etc.)">${ico('shield')}Verified ATS</span>` : ''}
-          ${j.is_fresh ? `<span class="chip chip-fresh" title="Fresh posting within the last 48 hours">${ico('bolt')}Fresh</span>` : ''}
-          ${j.is_ghost_risk ? `<span class="chip chip-stale" title="Posting is 30+ days old — higher risk of ghosting">${ico('clock')}30d+ Old</span>` : ''}
+        <div class="job-card-header">
+          <div class="job-card-brand">
+            <div class="job-company-avatar" style="background:${avatarCol.bg};color:${avatarCol.text};border-color:${avatarCol.border}" aria-hidden="true">${esc(monogram)}</div>
+            <div class="job-brand-info">
+              <span class="job-item-company">${esc(j.company)}</span>
+              ${postedText ? `<span class="job-dot-sep">•</span><span class="job-posted-time">${esc(postedText)}</span>` : ''}
+              ${j.is_dream_company ? `<span class="chip-wishlist" title="Your Dream Wishlist Company">${ico('star')}Wishlist</span>` : ''}
+              ${j.is_fresh ? `<span class="chip-fresh-badge" title="Fresh posting within the last 48 hours">${ico('bolt')}Fresh</span>` : ''}
+            </div>
+          </div>
+          <div class="job-card-actions">
+            <span class="job-item-fav${saved ? ' is-saved' : ''}" role="button" tabindex="0" data-action="job-fav" data-key="${esc(key)}" title="${saved ? 'Saved in Applications' : 'Save job'}" aria-label="${saved ? 'Saved' : 'Save'}">
+              ${ico(saved ? 'bookmark-fill' : 'bookmark')}
+            </span>
+            <span class="job-item-dismiss" role="button" tabindex="0" data-action="job-hide" data-key="${esc(key)}" title="Dismiss / Hide this job" aria-label="Dismiss">
+              ${ico('x')}
+            </span>
+          </div>
         </div>
-        ${hook ? `<div class="job-item-hook">${ico('bolt')}<span>${esc(hook)}</span></div>` : ''}
-        ${showScore ? ring(j.score) : ''}
-        <span class="job-item-meta">
-          <span>${ico('pin')}${esc(j.location || 'Remote')}</span>
-          ${j.work_mode ? `<span>${ico('briefcase')}${esc(j.work_mode)}</span>` : ''}
-          ${j.job_type ? `<span class="chip chip-contract">${esc(j.job_type)}</span>` : ''}
-          ${j.salary ? `<span class="chip chip-salary">${ico('dollar')}${esc(j.salary)}</span>` : ''}
-          ${showScore && required ? `<span>${matched} of ${required} skills</span>` : ''}
-          ${j.is_dream_company ? `<span class="chip chip-famous" title="Your Dream Wishlist Company">${ico('star')}Wishlist</span>` : ''}
-          ${j.bonus_matches && j.bonus_matches.length ? `<span class="chip chip-bonus" title="Matches preferred qualifications">${ico('bolt')}+${j.bonus_matches.length} bonus</span>` : ''}
+
+        <div class="job-card-body">
+          <div class="job-card-body-main">
+            <span class="job-item-title">${esc(cleanTitle(j.title))}</span>
+          </div>
+          ${showScore ? `
+            <div class="job-score-wrap">
+              ${ring(j.score)}
+            </div>
+          ` : ''}
+        </div>
+
+        <div class="job-item-meta">
+          <span class="meta-pill"><span class="meta-icon">${ico('pin')}</span><span>${esc(j.location || 'Remote')}</span></span>
+          ${j.work_mode ? `<span class="meta-pill"><span class="meta-icon">${ico('briefcase')}</span><span>${esc(j.work_mode)}</span></span>` : ''}
+          ${j.job_type ? `<span class="meta-pill meta-contract">${esc(j.job_type)}</span>` : ''}
+          ${j.salary ? `<span class="meta-pill meta-salary"><span class="meta-icon">${ico('dollar')}</span><span>${esc(j.salary)}</span></span>` : ''}
+          ${showScore && required ? `<span class="meta-pill meta-skills${matched === required ? ' is-all' : ''}"><span class="meta-icon">${ico('check')}</span><span>${matched} of ${required} skills</span></span>` : ''}
+          ${j.bonus_matches && j.bonus_matches.length ? `<span class="meta-pill meta-bonus">+${j.bonus_matches.length} bonus</span>` : ''}
           ${(() => {
             const srcs = jobSources(j);
             const hasGated = srcs.some(s => !isFreeSource(s));
             const hasFree = srcs.some(isFreeSource);
             if (hasFree && hasGated) {
               const gated = srcs.find(s => !isFreeSource(s)) || {};
-              return `<span class="chip chip-ok" title="Also on ${esc(gated.source || 'paid site')} (Paid), but JobHunter prioritized the 100% Free Apply link on ${esc(j.source)}!">${ico('shield')}Free apply (bypasses ${esc(gated.source || 'paid site')})</span>`;
+              return `<span class="meta-pill meta-free-bypass" title="Also on ${esc(gated.source || 'paid site')} (Paid), but JobHunter prioritized the 100% Free Apply link on ${esc(j.source)}!">${ico('shield')}Free apply</span>`;
             }
             return '';
           })()}
-          ${j.score >= 85 ? '<span class="chip chip-ok">Top Match</span>' : ''}
-          ${j.is_new ? '<span class="chip chip-info">New</span>' : ''}
-          ${j.is_sample ? '<span class="chip chip-warn">Sample</span>' : ''}
-          ${jobSources(j).length > 1 ? `<span>${jobSources(j).length} sites</span>` : ''}
-        </span>
+          ${!hook && j.score >= 85 ? '<span class="meta-pill meta-top-match">Top Match</span>' : ''}
+          ${j.is_new ? '<span class="meta-pill meta-new">New</span>' : ''}
+          ${j.is_sample ? '<span class="meta-pill meta-sample">Sample</span>' : ''}
+          ${jobSources(j).length > 1 ? `<span class="meta-pill meta-sources">${jobSources(j).length} sites</span>` : ''}
+        </div>
       </button>`;
     }).join('');
   }
@@ -2546,48 +2603,83 @@
     const hasOverview = !!(j.salary || j.job_type || j.work_mode || j.location);
     const hasContact = !!(j.contact_email || j.contact_website || j.how_to_apply);
     const isLongDesc = desc.length > 1200;
+    const monogram = companyMonogram(j.company);
+    const avatarCol = companyAvatarColor(j.company);
 
     el.innerHTML = `
       <button type="button" class="btn btn-ghost btn-sm detail-close" data-action="detail-close">${ico('back')}Back to results</button>
       <div class="detail-body">
         <div class="detail-top">
-          <div>
-            <h2 class="detail-title">${esc(cleanTitle(j.title))}</h2>
-            <p class="detail-company">
-              ${esc(j.company)}
-              ${formatSourceBadge(j)}
-              ${isDreamCompany ? `<span class="chip chip-famous" title="Your Dream Wishlist Company">${ico('star')}Wishlist</span>` : ''}
-              ${isFamousJob(j) ? `<span class="chip chip-famous" title="Recognized Big Tech & Prominent AI company">Big Tech</span>` : ''}
-              ${(() => {
-                const srcs = jobSources(j);
-                const hasGated = srcs.some(s => !isFreeSource(s));
-                const hasFree = srcs.some(isFreeSource);
-                if (hasFree && hasGated) {
-                  const gated = srcs.find(s => !isFreeSource(s)) || {};
-                  return `<span class="chip chip-ok" title="JobHunter prioritized the 100% Free Apply link!">${ico('shield')}Free apply (bypasses ${esc(gated.source || 'paid site')})</span>`;
-                }
-                return '';
-              })()}
-            </p>
+          <div class="detail-brand-wrap">
+            <div class="detail-company-avatar" style="background:${avatarCol.bg};color:${avatarCol.text};border-color:${avatarCol.border}" aria-hidden="true">${esc(monogram)}</div>
+            <div class="detail-header-info">
+              <h2 class="detail-title">${esc(cleanTitle(j.title))}</h2>
+              <div class="detail-company-line">
+                <span class="detail-company-name">${esc(j.company)}</span>
+                ${formatSourceBadge(j)}
+                ${isDreamCompany ? `<span class="chip chip-famous" title="Your Dream Wishlist Company">${ico('star')}Wishlist</span>` : ''}
+                ${isFamousJob(j) ? `<span class="chip chip-famous" title="Recognized Big Tech & Prominent AI company">Big Tech</span>` : ''}
+                ${(() => {
+                  const srcs = jobSources(j);
+                  const hasGated = srcs.some(s => !isFreeSource(s));
+                  const hasFree = srcs.some(isFreeSource);
+                  if (hasFree && hasGated) {
+                    const gated = srcs.find(s => !isFreeSource(s)) || {};
+                    return `<span class="chip chip-ok" title="JobHunter prioritized the 100% Free Apply link!">${ico('shield')}Free apply</span>`;
+                  }
+                  return '';
+                })()}
+              </div>
+            </div>
           </div>
-          ${showScore ? ring(score, true) : ''}
+          ${showScore ? `
+            <div class="detail-score-box">
+              ${ring(score, true)}
+              <span class="detail-score-caption">${tierOf(score).label}</span>
+            </div>
+          ` : ''}
         </div>
-        <div class="detail-facts">
-          <span>${ico('pin')}${esc(j.location || 'Remote')}</span>
-          ${j.work_mode && !String(j.location || '').toLowerCase().includes(String(j.work_mode).toLowerCase()) ? `<span>${ico('briefcase')}${esc(j.work_mode)}</span>` : ''}
-          ${j.job_type ? `<span class="chip chip-contract">${ico('briefcase')}${esc(j.job_type)}</span>` : ''}
-          ${j.salary ? `<span class="chip chip-salary">${ico('dollar')}${esc(j.salary)}</span>` : ''}
-          ${j.seniority ? `<span class="chip chip-seniority">${esc(j.seniority)}</span>` : ''}
-          ${posted ? `<span>${ico('clock')}Posted ${esc(posted)}</span>` : ''}
+
+        <div class="detail-meta-pills detail-facts">
+          ${j.location ? `<span class="meta-pill"><span class="meta-pill-icon">${ico('pin')}</span><span>${esc(j.location)}</span></span>` : ''}
+          ${j.work_mode ? `<span class="meta-pill"><span class="meta-pill-icon">${ico('briefcase')}</span><span>${esc(j.work_mode)}</span></span>` : ''}
+          ${j.job_type ? `<span class="meta-pill meta-type"><span class="meta-pill-dot"></span><span>${esc(j.job_type)}</span></span>` : ''}
+          ${j.salary ? `<span class="meta-pill meta-salary"><span class="meta-pill-icon">${ico('dollar')}</span><span>${esc(j.salary)}</span></span>` : ''}
+          ${j.seniority ? `<span class="meta-pill meta-seniority"><span>${esc(j.seniority)}</span></span>` : ''}
+          ${posted ? `<span class="meta-pill meta-posted"><span class="meta-pill-icon">${ico('clock')}</span><span>Posted ${esc(posted)}</span></span>` : ''}
         </div>
-        <div class="detail-actions">
-          <button type="button" class="btn btn-primary" data-action="job-strategy">${ico('bolt')}AI Strategy</button>
-          <button type="button" class="btn btn-secondary" data-action="job-tailor">${ico('file')}Tailor resume</button>
-          <button type="button" class="btn btn-secondary" data-action="job-save" ${saved ? 'disabled' : ''}>${ico('bookmark')}${saved ? 'Saved' : 'Save'}</button>
-          <button type="button" class="btn btn-outline-success" data-action="mark-applied">${ico('check')}${saved && saved.status === 'applied' ? 'Applied' : 'Mark as Applied'}</button>
-          ${apply ? `<a class="btn btn-secondary" href="${esc(apply)}" target="_blank" rel="noopener noreferrer">${ico('external')}Apply</a>` : ''}
-          <button type="button" class="btn btn-ghost" data-action="job-hunt" title="Tailor your resume, write a cover letter and prep notes, then save it all to Applications">${ico('bolt')}Prepare everything</button>
-          ${!j.enriched ? `<button type="button" class="btn btn-ghost btn-xs" data-action="job-enrich-now" title="Fetch complete details from original posting">${ico('refresh')}Enrich</button>` : ''}
+
+        <div class="detail-actions-bar">
+          <div class="detail-actions-main">
+            ${apply ? `
+              <a class="btn btn-apply-primary" href="${esc(apply)}" target="_blank" rel="noopener noreferrer">
+                ${ico('arrow-up-right')}<span>Apply on ${esc(bestApplySource(j).source || 'Official Site')}</span>
+              </a>
+            ` : ''}
+            <button type="button" class="btn btn-primary btn-copilot" data-action="job-strategy">
+              ${ico('bolt')}<span>AI Strategy</span>
+            </button>
+            <button type="button" class="btn btn-secondary" data-action="job-tailor">
+              ${ico('file')}<span>Tailor resume</span>
+            </button>
+            <button type="button" class="btn btn-secondary ${saved ? 'is-saved' : ''}" data-action="job-save" ${saved ? 'disabled' : ''}>
+              ${ico(saved ? 'bookmark-fill' : 'bookmark')}<span>${saved ? 'Saved' : 'Save'}</span>
+            </button>
+            <button type="button" class="btn ${saved && saved.status === 'applied' ? 'btn-applied' : 'btn-outline-success'}" data-action="mark-applied">
+              ${ico('check')}<span>${saved && saved.status === 'applied' ? 'Applied' : 'Mark as Applied'}</span>
+            </button>
+          </div>
+          <div class="detail-actions-sub">
+            <button type="button" class="btn btn-ghost btn-sm" data-action="job-hunt" title="Tailor your resume, write a cover letter and prep notes, then save it all to Applications">
+              ${ico('sparkles')}<span>Prepare everything</span>
+            </button>
+            ${!j.enriched ? `
+              <span class="sub-action-sep">•</span>
+              <button type="button" class="btn btn-ghost btn-sm" data-action="job-enrich-now" title="Fetch complete details from original posting">
+                ${ico('refresh')}<span>Enrich</span>
+              </button>
+            ` : ''}
+          </div>
         </div>
 
         ${isEnriching ? `
@@ -2597,16 +2689,36 @@
           </div>
         ` : ''}
 
-        ${hasOverview ? `
-          <div class="detail-block detail-card-overview">
-            <div class="job-overview-grid">
-              ${j.salary ? `<div class="overview-item"><span class="overview-icon">${ico('dollar')}</span><div><span class="overview-label">Pay / Salary</span><span class="overview-value text-salary">${esc(j.salary)}</span></div></div>` : ''}
-              ${j.job_type ? `<div class="overview-item"><span class="overview-icon">${ico('briefcase')}</span><div><span class="overview-label">Job type</span><span class="overview-value">${esc(j.job_type)}</span></div></div>` : ''}
-              ${j.work_mode ? `<div class="overview-item"><span class="overview-icon">${ico('pin')}</span><div><span class="overview-label">Work mode</span><span class="overview-value">${esc(j.work_mode)}</span></div></div>` : ''}
-              ${j.location ? `<div class="overview-item"><span class="overview-icon">${ico('building')}</span><div><span class="overview-label">Location</span><span class="overview-value">${esc(j.location)}</span></div></div>` : ''}
+        <div class="detail-specs-ribbon">
+          <div class="spec-card">
+            <span class="spec-icon-wrap spec-salary">${ico('dollar')}</span>
+            <div class="spec-info">
+              <span class="spec-label">Compensation</span>
+              <span class="spec-value is-salary" title="${esc(j.salary || 'Competitive / Unspecified')}">${esc(j.salary || 'Competitive')}</span>
             </div>
           </div>
-        ` : ''}
+          <div class="spec-card">
+            <span class="spec-icon-wrap">${ico('briefcase')}</span>
+            <div class="spec-info">
+              <span class="spec-label">Role & Level</span>
+              <span class="spec-value" title="${esc([j.job_type, j.seniority].filter(Boolean).join(' • ') || 'Full-time')}">${esc([j.job_type, j.seniority].filter(Boolean).join(' • ') || 'Full-time')}</span>
+            </div>
+          </div>
+          <div class="spec-card">
+            <span class="spec-icon-wrap">${ico('pin')}</span>
+            <div class="spec-info">
+              <span class="spec-label">Work Mode</span>
+              <span class="spec-value" title="${esc(j.work_mode || 'Remote')}">${esc(j.work_mode || 'Remote')}</span>
+            </div>
+          </div>
+          <div class="spec-card">
+            <span class="spec-icon-wrap">${ico('building')}</span>
+            <div class="spec-info">
+              <span class="spec-label">Location & Posted</span>
+              <span class="spec-value" title="${esc(j.location || 'Worldwide')}${posted ? ` • ${esc(posted)}` : ''}">${esc(j.location || 'Worldwide')}${posted ? ` • ${esc(posted)}` : ''}</span>
+            </div>
+          </div>
+        </div>
 
         ${showScore ? `
           <div class="detail-block fit-breakdown-card">
@@ -2616,12 +2728,29 @@
                 <div class="fit-badge-group">
                   <span class="chip ${score >= 85 ? 'chip-ok' : score >= 70 ? 'chip-info' : score >= 50 ? 'chip-warn' : 'chip-outline'}">${tierOf(score).label} (${score}%)</span>
                   ${isDreamCompany ? `<span class="chip chip-famous" title="Included in your Dream Companies wishlist">${ico('star')} Wishlist Employer</span>` : ''}
-                  ${j.confidence ? `<span class="chip chip-outline" title="Grounded Match Confidence">${ico('shield')}${Math.round(j.confidence * 100)}% Data Confidence</span>` : ''}
+                  ${(() => {
+                    if (!j.confidence) return '';
+                    if (typeof j.confidence === 'string') {
+                      const val = j.confidence.trim().toLowerCase();
+                      const label = val === 'high' ? 'High Confidence' : val === 'medium' ? 'Medium Confidence' : val === 'low' ? 'Low Confidence' : `${esc(j.confidence)} Confidence`;
+                      return `<span class="chip chip-outline" title="Confidence: based on skills matched and description depth">${ico('shield')}${label}</span>`;
+                    }
+                    if (typeof j.confidence === 'number' && !isNaN(j.confidence) && j.confidence > 0) {
+                      const pct = Math.round(j.confidence <= 1 ? j.confidence * 100 : j.confidence);
+                      return `<span class="chip chip-outline" title="Confidence: based on skills matched and description depth">${ico('shield')}${pct}% Confidence</span>`;
+                    }
+                    return '';
+                  })()}
                 </div>
               </div>
             </div>
 
-            ${j.rationale ? `<p class="fit-rationale">${esc(j.rationale)}</p>` : ''}
+            ${j.rationale ? `
+              <div class="fit-ai-callout">
+                <span class="fit-ai-icon">${ico('sparkles')}</span>
+                <p class="fit-rationale">${esc(j.rationale)}</p>
+              </div>
+            ` : ''}
 
             ${sb ? `
               <div class="fit-meters-section">
@@ -3328,7 +3457,7 @@
     $('#wsPanel').innerHTML = `
       <div class="card ats-top">
         <div class="ats-score">
-          <div class="score-ring ${tierOf(score).cls}" style="--pct:${score}" role="img" aria-label="ATS score ${score} out of 100"><span>${score}</span></div>
+          ${ring(score, true)}
           <div>
             <h2>${head[0]}, grade ${esc(a.grade || '')}</h2>
             <p>${head[1]}</p>
@@ -4554,15 +4683,17 @@
         openWorkspace(j, 'strategy', 'jobs');
       }
     },
-    'job-hide': el => {
+    'job-hide': (el, e) => {
+      if (e && e.stopPropagation) e.stopPropagation();
       const k = el.dataset.key;
       toggleHideJob(k);
     },
-    'job-fav': el => {
+    'job-fav': async (el, e) => {
+      if (e && e.stopPropagation) e.stopPropagation();
       const k = el.dataset.key;
       const j = (S.jobs || []).find(x => jobKey(x) === k) || (S.allJobs || []).find(x => jobKey(x) === k);
       if (j) {
-        saveJob(j);
+        await saveJob(j);
         renderList();
       }
     },
