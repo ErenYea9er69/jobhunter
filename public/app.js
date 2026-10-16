@@ -121,6 +121,7 @@
     lastSearchTime: null,
     workMode: 'Any',
     selectedKey: null,
+    jobsLimit: 20,
     recJobs: [],
     recMeta: null,
     recLoading: false,
@@ -424,6 +425,7 @@
     if (view === 'recommend') {
       loadRecommendations();
     } else if (view === 'jobs') {
+      S.jobsLimit = 20;
       if (S.jobs && S.jobs.length && S.searchHasRun) renderResults();
       else fetchJobsFromDb();
     }
@@ -455,6 +457,7 @@
   function setTheme(choice, persist) {
     const root = document.documentElement;
     const isDark = choice === 'dark';
+    root.classList.add('theme-switching');
     if (isDark) {
       root.setAttribute('data-theme', 'dark');
     } else {
@@ -469,6 +472,11 @@
         localStorage.setItem('jh-theme', isDark ? 'dark' : 'light');
       } catch (e) { /* ignore */ }
     }
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        root.classList.remove('theme-switching');
+      });
+    });
   }
 
   function closeMenu() {
@@ -2223,6 +2231,7 @@
     const currentList = S.jobs || [];
     const keep = currentList.find(j => jobKey(j) === S.selectedKey);
     S.selectedKey = keep ? jobKey(keep) : (!isNarrow() && currentList[0] ? jobKey(currentList[0]) : null);
+    S.jobsLimit = 20;
     renderResults();
     if (syncWithDb) {
       fetchJobsFromDb();
@@ -2370,11 +2379,153 @@
     renderDetail();
   }
 
+  let jobListObserver = null;
+
+  function attachJobListObserver() {
+    if (jobListObserver) {
+      jobListObserver.disconnect();
+      jobListObserver = null;
+    }
+    const sentinel = $('#jobListSentinel');
+    if (!sentinel) return;
+
+    if (!('IntersectionObserver' in window)) return;
+
+    jobListObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          loadMoreJobs();
+          break;
+        }
+      }
+    }, {
+      root: null,
+      rootMargin: '450px 0px',
+      threshold: 0.01
+    });
+
+    jobListObserver.observe(sentinel);
+  }
+
+  function loadMoreJobs() {
+    const list = $('#jobList');
+    const sentinel = $('#jobListSentinel');
+    if (!list || !sentinel) return;
+
+    const jobs = filteredJobs();
+    const currentLimit = S.jobsLimit || 20;
+    if (currentLimit >= jobs.length) {
+      sentinel.remove();
+      if (jobListObserver) {
+        jobListObserver.disconnect();
+        jobListObserver = null;
+      }
+      return;
+    }
+
+    const nextLimit = Math.min(jobs.length, currentLimit + 20);
+    const newSlice = jobs.slice(currentLimit, nextLimit);
+    S.jobsLimit = nextLimit;
+
+    const meta = S.searchMeta || {};
+    const nextHtml = newSlice.map(j => renderJobCard(j, meta, S)).join('');
+    sentinel.insertAdjacentHTML('beforebegin', nextHtml);
+
+    if (S.jobsLimit >= jobs.length) {
+      sentinel.remove();
+      if (jobListObserver) {
+        jobListObserver.disconnect();
+        jobListObserver = null;
+      }
+    } else {
+      const text = sentinel.querySelector('.sentinel-text');
+      if (text) text.textContent = `Showing ${S.jobsLimit} of ${jobs.length} jobs • Loading more...`;
+    }
+  }
+
+  function renderJobCard(j, meta, S) {
+    const key = jobKey(j);
+    const required = Object.keys(j.required_skills || {}).length;
+    const matched = (j.matched_skills || []).length;
+    const isDirectAts = j.is_verified_ats || j.source_kind === 'Direct employer ATS' || String(j.source_tier || '').startsWith('Direct');
+    const isFamous = isFamousJob(j);
+    const rawDays = jobDaysAgo(j);
+    const days = rawDays !== null ? Math.round(rawDays) : null;
+    const postedText = days === 0 ? 'Today' : days === 1 ? '1d ago' : (days !== null ? `${days}d ago` : '');
+    const saved = !!savedApp(j);
+    const hook = j.recommendation_hook || (j.score >= 70 && matched ? `Strong match (${j.score}%) • Covers ${matched} core skills` : '');
+    const monogram = companyMonogram(j.company);
+    const avatarCol = companyAvatarColor(j.company);
+    const showScore = !meta.profile_empty;
+
+    return `<button type="button" class="job-item${key === S.selectedKey ? ' is-selected' : ''}" data-action="job-select" data-key="${esc(key)}">
+      <div class="job-card-header">
+        <div class="job-card-brand">
+          <div class="job-company-avatar" style="background:${avatarCol.bg};color:${avatarCol.text};border-color:${avatarCol.border}" aria-hidden="true">${esc(monogram)}</div>
+          <div class="job-brand-info">
+            <span class="job-item-company">${esc(j.company)}</span>
+            ${postedText ? `<span class="job-dot-sep">•</span><span class="job-posted-time">${esc(postedText)}</span>` : ''}
+            ${j.is_dream_company ? `<span class="chip-wishlist" title="Your Dream Wishlist Company">${ico('star')}Wishlist</span>` : ''}
+            ${j.is_fresh ? `<span class="chip-fresh-badge" title="Fresh posting within the last 48 hours">${ico('bolt')}Fresh</span>` : ''}
+          </div>
+        </div>
+        <div class="job-card-actions">
+          <span class="job-item-fav${saved ? ' is-saved' : ''}" role="button" tabindex="0" data-action="job-fav" data-key="${esc(key)}" title="${saved ? 'Saved in Applications' : 'Save job'}" aria-label="${saved ? 'Saved' : 'Save'}">
+            ${ico(saved ? 'bookmark-fill' : 'bookmark')}
+          </span>
+          <span class="job-item-dismiss" role="button" tabindex="0" data-action="job-hide" data-key="${esc(key)}" title="Dismiss / Hide this job" aria-label="Dismiss">
+            ${ico('x')}
+          </span>
+        </div>
+      </div>
+
+      <div class="job-card-body">
+        <div class="job-card-body-main">
+          <span class="job-item-title">${esc(cleanTitle(j.title))}</span>
+        </div>
+        ${showScore ? `
+          <div class="job-score-wrap">
+            ${ring(j.score)}
+          </div>
+        ` : ''}
+      </div>
+
+      <div class="job-item-meta">
+        <span class="meta-pill meta-loc" title="${esc(j.location || 'Remote')}"><span class="meta-icon">${ico('pin')}</span><span class="meta-text">${esc(j.location || 'Remote')}</span></span>
+        ${j.work_mode ? `<span class="meta-pill"><span class="meta-icon">${ico('briefcase')}</span><span>${esc(j.work_mode)}</span></span>` : ''}
+        ${j.job_type ? `<span class="meta-pill meta-contract">${esc(j.job_type)}</span>` : ''}
+        ${j.salary ? `<span class="meta-pill meta-salary"><span class="meta-icon">${ico('dollar')}</span><span>${esc(j.salary)}</span></span>` : ''}
+        ${showScore && required ? `<span class="meta-pill meta-skills${matched === required ? ' is-all' : ''}"><span class="meta-icon">${ico('check')}</span><span>${matched} of ${required} skills</span></span>` : ''}
+        ${j.bonus_matches && j.bonus_matches.length ? `<span class="meta-pill meta-bonus">+${j.bonus_matches.length} bonus</span>` : ''}
+        ${(() => {
+          const srcs = jobSources(j);
+          const hasGated = srcs.some(s => !isFreeSource(s));
+          const hasFree = srcs.some(isFreeSource);
+          if (hasFree && hasGated) {
+            const gated = srcs.find(s => !isFreeSource(s)) || {};
+            return `<span class="meta-pill meta-free-bypass" title="Also on ${esc(gated.source || 'paid site')} (Paid), but JobHunter prioritized the 100% Free Apply link on ${esc(j.source)}!">${ico('shield')}Free apply</span>`;
+          }
+          return '';
+        })()}
+        ${!hook && j.score >= 85 ? '<span class="meta-pill meta-top-match">Top Match</span>' : ''}
+        ${j.is_new ? '<span class="meta-pill meta-new">New</span>' : ''}
+        ${j.is_sample ? '<span class="meta-pill meta-sample">Sample</span>' : ''}
+        ${jobSources(j).length > 1 ? `<span class="meta-pill meta-sources">${jobSources(j).length} sites</span>` : ''}
+      </div>
+    </button>`;
+  }
+
   function renderList() {
     const list = $('#jobList');
+    if (!list) return;
     const meta = S.searchMeta || {};
     const jobs = filteredJobs();
     const totalAll = (S.allJobs && S.allJobs.length) || 0;
+
+    if (jobListObserver) {
+      jobListObserver.disconnect();
+      jobListObserver = null;
+    }
 
     if (!jobs.length) {
       const { total, ok } = sourceCounts();
@@ -2415,82 +2566,43 @@
       </div>`;
       return;
     }
-    const showScore = !meta.profile_empty;
-    list.innerHTML = jobs.map(j => {
-      const key = jobKey(j);
-      const required = Object.keys(j.required_skills || {}).length;
-      const matched = (j.matched_skills || []).length;
-      const isDirectAts = j.is_verified_ats || j.source_kind === 'Direct employer ATS' || String(j.source_tier || '').startsWith('Direct');
-      const isFamous = isFamousJob(j);
-      const rawDays = jobDaysAgo(j);
-      const days = rawDays !== null ? Math.round(rawDays) : null;
-      const postedText = days === 0 ? 'Today' : days === 1 ? '1d ago' : (days !== null ? `${days}d ago` : '');
-      const saved = !!savedApp(j);
-      const hook = j.recommendation_hook || (j.score >= 70 && matched ? `Strong match (${j.score}%) • Covers ${matched} core skills` : '');
-      const monogram = companyMonogram(j.company);
-      const avatarCol = companyAvatarColor(j.company);
 
-      return `<button type="button" class="job-item${key === S.selectedKey ? ' is-selected' : ''}" data-action="job-select" data-key="${esc(key)}">
-        <div class="job-card-header">
-          <div class="job-card-brand">
-            <div class="job-company-avatar" style="background:${avatarCol.bg};color:${avatarCol.text};border-color:${avatarCol.border}" aria-hidden="true">${esc(monogram)}</div>
-            <div class="job-brand-info">
-              <span class="job-item-company">${esc(j.company)}</span>
-              ${postedText ? `<span class="job-dot-sep">•</span><span class="job-posted-time">${esc(postedText)}</span>` : ''}
-              ${j.is_dream_company ? `<span class="chip-wishlist" title="Your Dream Wishlist Company">${ico('star')}Wishlist</span>` : ''}
-              ${j.is_fresh ? `<span class="chip-fresh-badge" title="Fresh posting within the last 48 hours">${ico('bolt')}Fresh</span>` : ''}
-            </div>
-          </div>
-          <div class="job-card-actions">
-            <span class="job-item-fav${saved ? ' is-saved' : ''}" role="button" tabindex="0" data-action="job-fav" data-key="${esc(key)}" title="${saved ? 'Saved in Applications' : 'Save job'}" aria-label="${saved ? 'Saved' : 'Save'}">
-              ${ico(saved ? 'bookmark-fill' : 'bookmark')}
-            </span>
-            <span class="job-item-dismiss" role="button" tabindex="0" data-action="job-hide" data-key="${esc(key)}" title="Dismiss / Hide this job" aria-label="Dismiss">
-              ${ico('x')}
-            </span>
-          </div>
-        </div>
+    if (!S.jobsLimit) S.jobsLimit = 20;
 
-        <div class="job-card-body">
-          <div class="job-card-body-main">
-            <span class="job-item-title">${esc(cleanTitle(j.title))}</span>
-          </div>
-          ${showScore ? `
-            <div class="job-score-wrap">
-              ${ring(j.score)}
-            </div>
-          ` : ''}
-        </div>
+    // If selected job is further down, expand limit to include it
+    if (S.selectedKey) {
+      const idx = jobs.findIndex(j => jobKey(j) === S.selectedKey);
+      if (idx >= S.jobsLimit) {
+        S.jobsLimit = Math.min(jobs.length, Math.ceil((idx + 1) / 20) * 20);
+      }
+    }
 
-        <div class="job-item-meta">
-          <span class="meta-pill meta-loc" title="${esc(j.location || 'Remote')}"><span class="meta-icon">${ico('pin')}</span><span class="meta-text">${esc(j.location || 'Remote')}</span></span>
-          ${j.work_mode ? `<span class="meta-pill"><span class="meta-icon">${ico('briefcase')}</span><span>${esc(j.work_mode)}</span></span>` : ''}
-          ${j.job_type ? `<span class="meta-pill meta-contract">${esc(j.job_type)}</span>` : ''}
-          ${j.salary ? `<span class="meta-pill meta-salary"><span class="meta-icon">${ico('dollar')}</span><span>${esc(j.salary)}</span></span>` : ''}
-          ${showScore && required ? `<span class="meta-pill meta-skills${matched === required ? ' is-all' : ''}"><span class="meta-icon">${ico('check')}</span><span>${matched} of ${required} skills</span></span>` : ''}
-          ${j.bonus_matches && j.bonus_matches.length ? `<span class="meta-pill meta-bonus">+${j.bonus_matches.length} bonus</span>` : ''}
-          ${(() => {
-            const srcs = jobSources(j);
-            const hasGated = srcs.some(s => !isFreeSource(s));
-            const hasFree = srcs.some(isFreeSource);
-            if (hasFree && hasGated) {
-              const gated = srcs.find(s => !isFreeSource(s)) || {};
-              return `<span class="meta-pill meta-free-bypass" title="Also on ${esc(gated.source || 'paid site')} (Paid), but JobHunter prioritized the 100% Free Apply link on ${esc(j.source)}!">${ico('shield')}Free apply</span>`;
-            }
-            return '';
-          })()}
-          ${!hook && j.score >= 85 ? '<span class="meta-pill meta-top-match">Top Match</span>' : ''}
-          ${j.is_new ? '<span class="meta-pill meta-new">New</span>' : ''}
-          ${j.is_sample ? '<span class="meta-pill meta-sample">Sample</span>' : ''}
-          ${jobSources(j).length > 1 ? `<span class="meta-pill meta-sources">${jobSources(j).length} sites</span>` : ''}
+    const visibleJobs = jobs.slice(0, S.jobsLimit);
+    const cardsHtml = visibleJobs.map(j => renderJobCard(j, meta, S)).join('');
+
+    const hasMore = S.jobsLimit < jobs.length;
+    const sentinelHtml = hasMore ? `
+      <div id="jobListSentinel" class="job-list-sentinel" aria-live="polite">
+        <div class="sentinel-inner">
+          <span class="sentinel-spinner" aria-hidden="true"></span>
+          <span class="sentinel-text">Showing ${visibleJobs.length} of ${jobs.length} jobs • Loading more...</span>
         </div>
-      </button>`;
-    }).join('');
+      </div>` : '';
+
+    list.innerHTML = cardsHtml + sentinelHtml;
+    if (hasMore) {
+      attachJobListObserver();
+    }
   }
 
-  const selectedJob = () => (S.jobs || []).find(j => jobKey(j) === S.selectedKey) || ((S.allJobs || []).find(j => jobKey(j) === S.selectedKey)) || null;
-  const savedApp = j => S.applications.find(a => (a.job_id && j.id && a.job_id === j.id) ||
-    (String(a.title).toLowerCase() === String(j.title).toLowerCase() && String(a.company).toLowerCase() === String(j.company).toLowerCase()));
+  function selectedJob() {
+    return (S.jobs || []).find(j => jobKey(j) === S.selectedKey) || ((S.allJobs || []).find(j => jobKey(j) === S.selectedKey)) || null;
+  }
+  function savedApp(j) {
+    if (!j) return null;
+    return (S.applications || []).find(a => (a.job_id && j.id && a.job_id === j.id) ||
+      (String(a.title).toLowerCase() === String(j.title).toLowerCase() && String(a.company).toLowerCase() === String(j.company).toLowerCase()));
+  }
 
   function formatJobDescription(text) {
     if (!text) return '';

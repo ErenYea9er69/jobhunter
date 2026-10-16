@@ -11,7 +11,7 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700;800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=3.1">
+  <link rel="stylesheet" href="styles.css?v=3.4">
   <link rel="icon" type="image/png" href="favicon.png">
   <meta name="jh-token" content="">
 </head>
@@ -65,6 +65,7 @@
       <symbol id="i-flame" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0011 17c1.38 0 2.5-1.12 2.5-2.5 0-1.63-1.07-2.67-1.74-3.5A7.47 7.47 0 0110 7.5C10 5.5 11.5 3 11.5 3S8 6 8 10c0 .91.24 1.76.66 2.5-.58.42-1.16 1.05-1.16 2zM12 22a8 8 0 008-8c0-3.3-2.12-6.1-5-7.25.04.42.06.84.06 1.25 0 3-1.8 5.6-4.32 6.84A4.5 4.5 0 0112 17.5a4.5 4.5 0 01-4.5-4.5c0-.44.06-.86.18-1.26A8 8 0 004 14a8 8 0 008 8z"/></symbol>
       <symbol id="i-arrow-right" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></symbol>
       <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="6.5" height="6.5" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="3.5" width="6.5" height="6.5" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="3.5" y="14" width="6.5" height="6.5" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="14" width="6.5" height="6.5" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
     </defs>
   </svg>
 
@@ -90,7 +91,7 @@
 
     <div class="dock-menu-wrap">
       <button type="button" class="dock-item dock-btn" id="moreBtn" data-tooltip="Tools &amp; Actions" aria-label="Tools and More" aria-haspopup="true" aria-expanded="false" aria-controls="moreMenu">
-        <svg class="dock-icon" aria-hidden="true"><use href="#i-terminal"/></svg>
+        <svg class="dock-icon" aria-hidden="true"><use href="#i-grid"/></svg>
       </button>
       <div class="menu dock-dropdown-menu" id="moreMenu" hidden>
         <button type="button" class="menu-item-btn" id="menuOnboardingBtn">
@@ -2063,6 +2064,6 @@
 
   <div class="toasts" id="toastContainer" role="status" aria-live="polite"></div>
 
-  <script src="app.js?v=3.0"></script>
+  <script src="app.js?v=3.4"></script>
 </body>
 </html>
