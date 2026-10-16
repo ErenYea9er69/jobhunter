@@ -1302,7 +1302,14 @@
   }
 
   function jobSeniority(j) {
-    if (j.seniority) return j.seniority;
+    let s = (j.seniority || '').toLowerCase().trim();
+    if (s) {
+      if (s.includes('intern') || s.includes('apprentice')) return 'intern';
+      if (s.includes('lead') || s.includes('staff') || s.includes('principal') || s.includes('director') || s.includes('vp') || s.includes('architect') || s.includes('founding')) return 'lead_staff';
+      if (s.includes('senior') || s.startsWith('sr')) return 'senior';
+      if (s.includes('junior') || s.includes('entry') || s.includes('associate') || s.includes('graduate') || s.includes('new grad') || s.startsWith('jr')) return 'junior';
+      if (s.includes('mid')) return 'mid';
+    }
     const t = `${j.title || ''} ${(j.description || '').slice(0, 350)}`.toLowerCase();
     if (/\b(intern|internship|co-op|apprentice)\b/.test(t)) return 'intern';
     if (/\b(lead|staff|principal|director|head of|vp|architect|founding)\b/.test(t)) return 'lead_staff';
@@ -1590,12 +1597,13 @@
       }
 
       // 9. Required Experience Years (when not Open to all)
-      if (!f.expOpenToAll && f.expYears > 0) {
+      if (!f.expOpenToAll) {
+        const maxExpAllowed = f.expYears !== undefined ? f.expYears : 0;
         const desc = (j.description || '').toLowerCase();
         const ym = desc.match(/(\d+)\+?\s*(?:-\s*(\d+))?\s*(?:years?|yrs?)(?:\s+of)?\s+(?:experience|exp)/i);
         if (ym) {
           const minRequired = parseInt(ym[1], 10);
-          if (!isNaN(minRequired) && minRequired > f.expYears) return false;
+          if (!isNaN(minRequired) && minRequired > maxExpAllowed) return false;
         }
       }
 
@@ -5962,9 +5970,12 @@
       if (cb) cb.checked = false;
     }
 
+    const pane = $('#afContentPane');
+    const prevScroll = pane ? pane.scrollTop : 0;
     syncDrawerUiFromState();
     renderDrawerActivePills();
     filterAndRender();
+    if (pane) pane.scrollTop = prevScroll;
   }
 
   function setupAllFiltersDrawer() {
@@ -5995,6 +6006,12 @@
     if (panel) {
       panel.addEventListener('scroll', () => {
         if (panel.scrollTop !== 0) panel.scrollTop = 0;
+      });
+    }
+    const drawerBody = $('.af-drawer-body');
+    if (drawerBody) {
+      drawerBody.addEventListener('scroll', () => {
+        if (drawerBody.scrollTop !== 0) drawerBody.scrollTop = 0;
       });
     }
 
@@ -6173,13 +6190,22 @@
       });
     }
 
+    const preserveDrawerScroll = (fn) => {
+      const pane = $('#afContentPane');
+      const prev = pane ? pane.scrollTop : 0;
+      fn();
+      if (pane) pane.scrollTop = prev;
+    };
+
     // 2. Job Type Checkboxes
     $$('input[name="afJobType"]').forEach(cb => {
       cb.addEventListener('change', () => {
         S.filters.jobTypes = new Set(Array.from($$('input[name="afJobType"]:checked')).map(el => el.value));
         S.filters.jobType = S.filters.jobTypes.size === 1 ? Array.from(S.filters.jobTypes)[0] : 'all';
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     });
 
@@ -6188,8 +6214,10 @@
       cb.addEventListener('change', () => {
         S.filters.workModels = new Set(Array.from($$('input[name="afWorkModel"]:checked')).map(el => el.value));
         S.filters.workMode = S.filters.workModels.size === 1 ? Array.from(S.filters.workModels)[0] : (S.filters.workModels.size > 1 ? 'Any' : 'all');
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     });
 
@@ -6198,8 +6226,10 @@
     if (cSel) {
       cSel.addEventListener('change', () => {
         S.filters.country = cSel.value;
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6234,8 +6264,10 @@
       cb.addEventListener('change', () => {
         S.filters.expLevels = new Set(Array.from($$('input[name="afExpLevel"]:checked')).map(el => el.value));
         S.filters.seniority = S.filters.expLevels.size === 1 ? Array.from(S.filters.expLevels)[0] : 'all';
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     });
 
@@ -6258,23 +6290,31 @@
           if (expSubval) expSubval.textContent = `${val}+ yrs`;
           if (expWrap) expWrap.classList.remove('is-disabled');
         }
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
     if (expSlider) {
       expSlider.addEventListener('input', () => {
         const val = parseInt(expSlider.value, 10);
-        S.filters.expYears = val;
         if (expToggle && expToggle.checked) {
           expToggle.checked = false;
           S.filters.expOpenToAll = false;
           if (expWrap) expWrap.classList.remove('is-disabled');
         }
         if (expSubval) expSubval.textContent = `${val}+ yrs`;
-        renderDrawerActivePills();
-        filterAndRender();
+      });
+
+      expSlider.addEventListener('change', () => {
+        const val = parseInt(expSlider.value, 10);
+        S.filters.expYears = val;
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6283,8 +6323,10 @@
       r.addEventListener('change', () => {
         const checked = $('input[name="afDatePosted"]:checked');
         S.filters.freshnessDays = checked ? parseInt(checked.value, 10) : 0;
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     });
 
@@ -6293,8 +6335,10 @@
       btnClearDate.addEventListener('click', () => {
         $$('input[name="afDatePosted"]').forEach(r => { r.checked = false; });
         S.filters.freshnessDays = 0;
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6319,24 +6363,32 @@
           if (salSubval) salSubval.textContent = `$${Math.round(val / 1000)}k+`;
           if (salWrap) salWrap.classList.remove('is-disabled');
         }
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
     if (salSlider) {
       salSlider.addEventListener('input', () => {
         const val = parseInt(salSlider.value, 10);
-        S.filters.minSalary = val;
-        S.filters.salaryTier = String(val);
         if (salToggle && salToggle.checked) {
           salToggle.checked = false;
           S.filters.salaryOpenToAll = false;
           if (salWrap) salWrap.classList.remove('is-disabled');
         }
         if (salSubval) salSubval.textContent = `$${Math.round(val / 1000)}k+`;
-        renderDrawerActivePills();
-        filterAndRender();
+      });
+
+      salSlider.addEventListener('change', () => {
+        const val = parseInt(salSlider.value, 10);
+        S.filters.minSalary = val;
+        S.filters.salaryTier = String(val);
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6345,8 +6397,10 @@
     if (checkH1B) {
       checkH1B.addEventListener('change', () => {
         S.filters.h1b = checkH1B.checked;
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6354,8 +6408,10 @@
     if (checkClearance) {
       checkClearance.addEventListener('change', () => {
         S.filters.excludeClearance = checkClearance.checked;
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6363,8 +6419,10 @@
     if (checkCitizenOnly) {
       checkCitizenOnly.addEventListener('change', () => {
         S.filters.excludeCitizenOnly = checkCitizenOnly.checked;
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6374,8 +6432,10 @@
       industryList.addEventListener('change', e => {
         if (e.target.name === 'afIndustry') {
           S.filters.industries = new Set(Array.from($$('input[name="afIndustry"]:checked')).map(el => el.value));
-          renderDrawerActivePills();
-          filterAndRender();
+          preserveDrawerScroll(() => {
+            renderDrawerActivePills();
+            filterAndRender();
+          });
         }
       });
       industryList.addEventListener('click', e => {
@@ -6386,8 +6446,10 @@
         const val = row.dataset.val;
         if (S.filters.industries) S.filters.industries.delete(val);
         row.remove();
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6396,8 +6458,10 @@
       btnClearIndustry.addEventListener('click', () => {
         $$('input[name="afIndustry"]').forEach(cb => { cb.checked = false; });
         if (S.filters.industries) S.filters.industries.clear();
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6423,8 +6487,10 @@
             `;
             industryList.appendChild(item);
           }
-          renderDrawerActivePills();
-          filterAndRender();
+          preserveDrawerScroll(() => {
+            renderDrawerActivePills();
+            filterAndRender();
+          });
         }
       });
     }
@@ -6450,8 +6516,10 @@
         if (!S.filters.excludedIndustries) S.filters.excludedIndustries = new Set();
         S.filters.excludedIndustries.add(val);
         inpExcludedIndustry.value = '';
-        renderExcludedIndustryChips();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderExcludedIndustryChips();
+          filterAndRender();
+        });
       }
     }
     if (btnAddExcludedIndustry) btnAddExcludedIndustry.addEventListener('click', addExcludedIndustry);
@@ -6466,8 +6534,10 @@
         if (!chip) return;
         const ind = chip.dataset.ind;
         if (S.filters.excludedIndustries) S.filters.excludedIndustries.delete(ind);
-        renderExcludedIndustryChips();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderExcludedIndustryChips();
+          filterAndRender();
+        });
       });
     }
 
@@ -6477,8 +6547,10 @@
       skillList.addEventListener('change', e => {
         if (e.target.name === 'afSkill') {
           S.filters.skills = new Set(Array.from($$('input[name="afSkill"]:checked')).map(el => el.value));
-          renderDrawerActivePills();
-          filterAndRender();
+          preserveDrawerScroll(() => {
+            renderDrawerActivePills();
+            filterAndRender();
+          });
         }
       });
       skillList.addEventListener('click', e => {
@@ -6489,8 +6561,10 @@
         const val = row.dataset.val;
         if (S.filters.skills) S.filters.skills.delete(val);
         row.remove();
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6499,8 +6573,10 @@
       btnClearSkills.addEventListener('click', () => {
         $$('input[name="afSkill"]').forEach(cb => { cb.checked = false; });
         if (S.filters.skills) S.filters.skills.clear();
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6526,8 +6602,10 @@
             `;
             skillList.appendChild(item);
           }
-          renderDrawerActivePills();
-          filterAndRender();
+          preserveDrawerScroll(() => {
+            renderDrawerActivePills();
+            filterAndRender();
+          });
         }
       });
     }
@@ -6553,8 +6631,10 @@
         if (!S.filters.excludedSkills) S.filters.excludedSkills = new Set();
         S.filters.excludedSkills.add(val);
         inpExcludedSkill.value = '';
-        renderExcludedSkillChips();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderExcludedSkillChips();
+          filterAndRender();
+        });
       }
     }
     if (btnAddExcludedSkill) btnAddExcludedSkill.addEventListener('click', addExcludedSkill);
@@ -6569,8 +6649,10 @@
         if (!chip) return;
         const sk = chip.dataset.sk;
         if (S.filters.excludedSkills) S.filters.excludedSkills.delete(sk);
-        renderExcludedSkillChips();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderExcludedSkillChips();
+          filterAndRender();
+        });
       });
     }
 
@@ -6579,8 +6661,10 @@
       r.addEventListener('change', () => {
         const checked = $('input[name="afRoleType"]:checked');
         S.filters.roleType = checked ? checked.value : 'all';
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     });
 
@@ -6589,8 +6673,10 @@
       btnClearRoleType.addEventListener('click', () => {
         $$('input[name="afRoleType"]').forEach(r => { r.checked = false; });
         S.filters.roleType = 'all';
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6615,9 +6701,11 @@
         S.filters.companies.add(val);
         inpCompany.value = '';
         if (coAddRow) coAddRow.hidden = true;
-        renderCompanyChips();
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderCompanyChips();
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       }
     }
     if (btnConfirmCo) btnConfirmCo.addEventListener('click', addCompanyFilter);
@@ -6632,9 +6720,11 @@
         if (!chip) return;
         const co = chip.dataset.co;
         if (S.filters.companies) S.filters.companies.delete(co);
-        renderCompanyChips();
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderCompanyChips();
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6642,9 +6732,11 @@
     if (btnClearCo) {
       btnClearCo.addEventListener('click', () => {
         if (S.filters.companies) S.filters.companies.clear();
-        renderCompanyChips();
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderCompanyChips();
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6652,8 +6744,10 @@
     $$('input[name="afCompanyStage"]').forEach(cb => {
       cb.addEventListener('change', () => {
         S.filters.companyStages = new Set(Array.from($$('input[name="afCompanyStage"]:checked')).map(el => el.value));
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     });
 
@@ -6662,8 +6756,10 @@
       btnClearStage.addEventListener('click', () => {
         $$('input[name="afCompanyStage"]').forEach(cb => { cb.checked = false; });
         if (S.filters.companyStages) S.filters.companyStages.clear();
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
 
@@ -6672,8 +6768,10 @@
     if (checkStaffing) {
       checkStaffing.addEventListener('change', () => {
         S.filters.excludeStaffing = checkStaffing.checked;
-        renderDrawerActivePills();
-        filterAndRender();
+        preserveDrawerScroll(() => {
+          renderDrawerActivePills();
+          filterAndRender();
+        });
       });
     }
   }

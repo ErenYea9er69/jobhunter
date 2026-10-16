@@ -5122,7 +5122,7 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   transform: translateX(100%);
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 2;
-  overflow: hidden;
+  overflow: clip;
 }
 
 .af-drawer-overlay.is-open .af-drawer-panel {
@@ -5252,10 +5252,10 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
 /* Drawer Body */
 .af-drawer-body {
   display: flex;
-  flex: 1 1 0%;
+  flex: 1 1 auto;
   min-height: 0;
-  height: 0;
-  overflow: hidden;
+  height: 100%;
+  overflow: clip;
   position: relative;
 }
 
@@ -5591,6 +5591,7 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
 
 .af-tile-checkbox,
 .af-tile-radio {
+  position: relative;
   display: block;
   cursor: pointer;
   margin: 0;
@@ -5600,8 +5601,15 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
 .af-tile-checkbox input,
 .af-tile-radio input {
   position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
   opacity: 0;
-  pointer-events: none;
+  cursor: pointer;
+  z-index: 2;
 }
 
 .af-tile-box {
@@ -6041,6 +6049,62 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
 [data-theme="dark"] .af-tile-box:hover,
 [data-theme="dark"] .af-list-item:hover {
   border-color: #363640;
+}
+
+[data-theme="dark"] .af-tile-checkbox input:checked + .af-tile-box,
+[data-theme="dark"] .af-tile-radio input:checked + .af-tile-box {
+  background: rgba(18, 183, 106, 0.16) !important;
+  border-color: #12B76A !important;
+  box-shadow: 0 0 0 1px #12B76A, 0 2px 10px rgba(0, 0, 0, 0.5) !important;
+}
+
+[data-theme="dark"] .af-tile-checkbox input:checked + .af-tile-box .af-tile-label,
+[data-theme="dark"] .af-tile-radio input:checked + .af-tile-box .af-tile-label {
+  color: #FFFFFF !important;
+  font-weight: 700;
+}
+
+[data-theme="dark"] .af-tile-checkbox input:checked + .af-tile-box .af-tile-check,
+[data-theme="dark"] .af-list-item input:checked + .af-tile-check {
+  background: #12B76A !important;
+  border-color: #12B76A !important;
+}
+
+[data-theme="dark"] .af-tile-checkbox input:checked + .af-tile-box .af-tile-check::after,
+[data-theme="dark"] .af-list-item input:checked + .af-tile-check::after {
+  border-color: #09090B !important;
+}
+
+[data-theme="dark"] .af-tile-radio input:checked + .af-tile-box .af-radio-dot {
+  border-color: #12B76A !important;
+}
+
+[data-theme="dark"] .af-tile-radio input:checked + .af-tile-box .af-radio-dot::after {
+  background: #12B76A !important;
+}
+
+[data-theme="dark"] .af-switch-slider {
+  background: #26262D;
+}
+
+[data-theme="dark"] .af-switch-input:checked + .af-switch-slider {
+  background: #12B76A;
+}
+
+[data-theme="dark"] .af-switch-slider::before {
+  background: #FFFFFF;
+}
+
+[data-theme="dark"] .af-toggle-text {
+  color: #A1A1AA;
+}
+
+[data-theme="dark"] .af-slider-subval {
+  color: #71717A;
+}
+
+[data-theme="dark"] .af-slider-ticks {
+  color: #71717A;
 }
 
 [data-theme="dark"] .af-text-input,
