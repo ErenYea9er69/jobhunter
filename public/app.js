@@ -274,6 +274,112 @@
     return palettes[Math.abs(hash) % palettes.length];
   }
 
+  function companyLogoUrl(j) {
+    if (!j) return null;
+    if (j.logo_url) return j.logo_url;
+    if (j.company_logo) return j.company_logo;
+
+    const comp = String(j.company || '').trim();
+    if (!comp) return null;
+
+    // 1. Direct dictionary for known tech / ATS brands
+    const KNOWN = {
+      'openai': 'openai.com',
+      'anthropic': 'anthropic.com',
+      'posthog': 'posthog.com',
+      'vercel': 'vercel.com',
+      'stripe': 'stripe.com',
+      'gitlab': 'gitlab.com',
+      'github': 'github.com',
+      'linear': 'linear.app',
+      'figma': 'figma.com',
+      'docker': 'docker.com',
+      'supabase': 'supabase.com',
+      'modal': 'modal.com',
+      'google': 'google.com',
+      'meta': 'meta.com',
+      'apple': 'apple.com',
+      'microsoft': 'microsoft.com',
+      'amazon': 'amazon.com',
+      'netflix': 'netflix.com',
+      'uber': 'uber.com',
+      'airbnb': 'airbnb.com',
+      'coinbase': 'coinbase.com',
+      'shopify': 'shopify.com',
+      'spotify': 'spotify.com',
+      'databricks': 'databricks.com',
+      'snowflake': 'snowflake.com',
+      'cloudflare': 'cloudflare.com',
+      'palantir': 'palantir.com',
+      'nvidia': 'nvidia.com',
+      'bytedance': 'bytedance.com',
+      'tiktok': 'tiktok.com',
+      'salesforce': 'salesforce.com',
+      'adobe': 'adobe.com',
+      'tesla': 'tesla.com',
+      'spacex': 'spacex.com',
+      'lemon.io': 'lemon.io',
+      'himalayas': 'himalayas.app',
+      'remoteok': 'remoteok.com',
+      'weworkremotely': 'weworkremotely.com',
+      'arbeitnow': 'arbeitnow.com',
+      'sutherland': 'sutherlandglobal.com',
+      'tether': 'tether.to',
+      'trackerbot': 'trackerbot.me',
+      'dxc': 'dxc.com',
+      'tracium': 'tracium.com',
+      'steuart nutrition': 'steuartnutrition.com',
+      'sowelo': 'soweloconsulting.com',
+      'devoteam': 'devoteam.com',
+      'upgrade': 'upgrade.com'
+    };
+
+    const compLow = comp.toLowerCase();
+    for (const [k, dom] of Object.entries(KNOWN)) {
+      if (compLow === k || compLow.startsWith(k + ' ') || compLow.includes(k)) {
+        return `https://www.google.com/s2/favicons?domain=${dom}&sz=128`;
+      }
+    }
+
+    // 2. Extract from Ashby / Greenhouse URLs
+    const u = String(j.url || j.apply_url || '');
+    const ashby = u.match(/jobs\.ashbyhq\.com\/([a-zA-Z0-9_-]+)/);
+    if (ashby && ashby[1]) {
+      return `https://www.google.com/s2/favicons?domain=${ashby[1]}.com&sz=128`;
+    }
+    const gh = u.match(/(?:job-boards|boards)\.greenhouse\.io\/([a-zA-Z0-9_-]+)/);
+    if (gh && gh[1]) {
+      return `https://www.google.com/s2/favicons?domain=${gh[1]}.com&sz=128`;
+    }
+
+    // 3. Fallback: sanitize company name to domain
+    const clean = compLow
+      .replace(/\b(inc|llc|corp|corporation|ltd|limited|gmbh|co|technologies|solutions|group|holdings|services|company)\b\.?/gi, '')
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
+    if (clean && clean.length >= 3) {
+      return `https://www.google.com/s2/favicons?domain=${clean}.com&sz=128`;
+    }
+    return null;
+  }
+
+  function companyAvatarHtml(j, target = 'job') {
+    const monogram = companyMonogram(j ? j.company : '');
+    const avatarCol = companyAvatarColor(j ? j.company : '');
+    const cls = target === 'detail' ? 'detail-company-avatar' : (target === 'kcard' ? 'kcard-avatar' : 'job-company-avatar');
+    const colorStyle = `background:${avatarCol.bg};color:${avatarCol.text};border-color:${avatarCol.border}`;
+    const logo = companyLogoUrl(j);
+    if (logo) {
+      return `<div class="${cls}" style="${colorStyle}" aria-hidden="true">
+        <img class="company-logo-img" src="${esc(logo)}" alt="" loading="lazy" width="100%" height="100%"
+             onload="this.classList.add('is-loaded'); if (this.nextElementSibling) this.nextElementSibling.style.display='none';"
+             onerror="this.remove();" />
+        <span class="company-monogram-fallback">${esc(monogram)}</span>
+      </div>`;
+    }
+    return `<div class="${cls}" style="${colorStyle}" aria-hidden="true"><span class="company-monogram-fallback">${esc(monogram)}</span></div>`;
+  }
+
   function tierOf(score) {
     if (score >= 85) return { cls: 'tier-high', label: 'Excellent fit' };
     if (score >= 70) return { cls: 'tier-good', label: 'Strong fit' };
@@ -2469,7 +2575,7 @@
     return `<button type="button" class="job-item${key === S.selectedKey ? ' is-selected' : ''}" data-action="job-select" data-key="${esc(key)}">
       <div class="job-card-header">
         <div class="job-card-brand">
-          <div class="job-company-avatar" style="background:${avatarCol.bg};color:${avatarCol.text};border-color:${avatarCol.border}" aria-hidden="true">${esc(monogram)}</div>
+          ${companyAvatarHtml(j, 'job')}
           <div class="job-brand-info">
             <span class="job-item-company">${esc(j.company)}</span>
             ${postedText ? `<span class="job-dot-sep">•</span><span class="job-posted-time">${esc(postedText)}</span>` : ''}
@@ -2731,7 +2837,7 @@
       <div class="detail-body">
         <div class="detail-top">
           <div class="detail-brand-wrap">
-            <div class="detail-company-avatar" style="background:${avatarCol.bg};color:${avatarCol.text};border-color:${avatarCol.border}" aria-hidden="true">${esc(monogram)}</div>
+            ${companyAvatarHtml(j, 'detail')}
             <div class="detail-header-info">
               <h2 class="detail-title">${esc(cleanTitle(j.title))}</h2>
               <div class="detail-company-line">
@@ -3876,7 +3982,7 @@
     return `<article class="kcard" draggable="true" data-id="${esc(a.id)}" tabindex="0" role="button" aria-label="${esc(cleanTitle(a.title))} at ${esc(a.company)}">
       <div class="kcard-top">
         <div class="kcard-brand">
-          <div class="kcard-avatar" style="${colorStyle}">${esc(monogram)}</div>
+          ${companyAvatarHtml(a, 'kcard')}
           <div class="kcard-co-wrap">
             <div class="kcard-company" title="${esc(a.company)}">${esc(a.company)}</div>
             <div class="kcard-title" title="${esc(cleanTitle(a.title))}">${esc(cleanTitle(a.title))}</div>
