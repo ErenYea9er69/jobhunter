@@ -5285,33 +5285,42 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   }
   .p4-group-refinements {
     flex-wrap: nowrap;
+  }
 }
-
 
 /* Floating Dropdowns */
 .p4-dropdown-menu {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 5px);
   left: 0;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.04);
   min-width: 180px;
-  padding: 4px;
-  z-index: 1000;
+  padding: 5px;
+  z-index: 1050;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  animation: menuFadeDown 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+@keyframes menuFadeDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 :root[data-theme="dark"] .p4-dropdown-menu {
-  background: #121215;
-  border-color: #26262D;
+  background: #141419;
+  border-color: #272731;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.85);
 }
+
 .p4-dropdown-menu[hidden] {
   display: none !important;
 }
+
 .p4-menu-right {
   left: auto;
   right: 0;
@@ -5322,23 +5331,39 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   text-align: left;
   background: transparent;
   border: none;
-  padding: 6px 10px;
-  font-size: 11.5px;
+  padding: 6.5px 10px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--ink);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  user-select: none;
 }
+
 .p4-menu-item:hover {
   background: var(--surface-2);
   color: var(--green-deep);
   font-weight: 600;
 }
+
+:root[data-theme="dark"] .p4-menu-item:hover {
+  background: #23232C;
+  color: #4ADE9A;
+}
+
 .p4-menu-item.is-selected {
   background: var(--green-soft);
   color: var(--green-deep);
   font-weight: 700;
+}
+
+:root[data-theme="dark"] .p4-menu-item.is-selected {
+  background: rgba(18, 183, 106, 0.2);
+  color: #4ADE9A;
 }
 
 .p4-menu-header {
@@ -6790,18 +6815,41 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   top: calc(100% + 8px);
   right: 0;
   z-index: 1060;
-  width: 350px;
-  max-width: 90vw;
-  background: var(--surface, #1e293b);
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.14));
+  width: 380px;
+  max-width: min(420px, calc(100vw - 24px));
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 14px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.38), 0 2px 8px rgba(0, 0, 0, 0.15);
-  padding: 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.05);
+  padding: 13px 15px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   backdrop-filter: blur(16px);
   animation: radarFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-height: 640px) {
+  .radar-popover {
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+}
+
+.radar-popover::-webkit-scrollbar {
+  width: 4px;
+}
+
+.radar-popover::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+}
+
+:root[data-theme="dark"] .radar-popover {
+  background: #141419;
+  border-color: #272731;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.8), 0 2px 10px rgba(0, 0, 0, 0.4);
 }
 
 .radar-popover[hidden] {
@@ -6817,8 +6865,8 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
 }
 
 .radar-head-left {
@@ -6833,13 +6881,13 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   gap: 6px;
   font-size: 13.5px;
   font-weight: 700;
-  color: var(--text, #f8fafc);
+  color: var(--ink);
 }
 
 .radar-title svg {
   width: 15px;
   height: 15px;
-  color: #0ea5e9;
+  color: #0A66C2;
 }
 
 .radar-close-btn {
@@ -6847,32 +6895,33 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   border: none;
   font-size: 20px;
   line-height: 1;
-  color: var(--text-muted, #94a3b8);
+  color: var(--muted);
   cursor: pointer;
   padding: 2px 6px;
   border-radius: 4px;
-  transition: color 0.15s;
+  transition: all 0.15s;
 }
 
 .radar-close-btn:hover {
-  color: var(--text, #ffffff);
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .radar-summary-text {
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-muted, #94a3b8);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--muted);
   margin: 0;
 }
 
 .radar-meta-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  background: var(--surface-2, rgba(255, 255, 255, 0.04));
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  gap: 6px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 10px;
+  padding: 8px 10px;
 }
 
 .radar-meta-item {
@@ -6883,27 +6932,266 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
 
 .radar-meta-item.span-2 {
   grid-column: span 2;
-  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.05));
+  border-top: 1px solid var(--line);
   padding-top: 6px;
   margin-top: 2px;
 }
 
 .radar-meta-k {
-  font-size: 10.5px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  color: var(--text-muted, #94a3b8);
+  color: var(--muted);
   font-weight: 600;
 }
 
 .radar-meta-v {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
-  color: var(--text, #e2e8f0);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .radar-meta-v.highlight {
+  color: var(--green);
+}
+
+/* Radar Jobs Discovery Section */
+.radar-jobs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+:root[data-theme="dark"] .radar-jobs-section {
+  background: #181820;
+  border-color: #272733;
+}
+
+.radar-jobs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+}
+
+.radar-jobs-head-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.radar-jobs-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.1px;
+}
+
+.radar-jobs-subtitle {
+  font-size: 9.5px;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+.radar-jobs-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1.5px 6.5px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.radar-jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 142px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.radar-jobs-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.radar-jobs-list::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+}
+
+.radar-job-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  text-decoration: none;
+  user-select: none;
+}
+
+:root[data-theme="dark"] .radar-job-card {
+  background: #131318;
+  border-color: #262630;
+}
+
+.radar-job-card:hover {
+  border-color: var(--green);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="dark"] .radar-job-card:hover {
+  border-color: var(--green);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.radar-job-card:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 1px;
+}
+
+.radar-job-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.radar-job-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.radar-job-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 210px;
+}
+
+.radar-job-score {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1.5px 5.5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: -0.2px;
+}
+
+.radar-job-score.is-high {
+  background: rgba(16, 185, 129, 0.12);
   color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+
+.radar-job-score.is-good {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.radar-job-score.is-mid {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+:root[data-theme="dark"] .radar-job-score.is-high {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.3);
+}
+
+:root[data-theme="dark"] .radar-job-score.is-good {
+  background: rgba(59, 130, 246, 0.18);
+  color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+.radar-job-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.radar-job-company {
+  font-weight: 500;
+  color: var(--ink);
+  opacity: 0.88;
+}
+
+.radar-job-mode {
+  color: var(--muted);
+}
+
+.radar-job-dot {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.radar-job-loc {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.radar-job-salary {
+  margin-left: auto;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.radar-job-action-icon {
+  font-size: 15px;
+  line-height: 1;
+  color: var(--muted);
+  opacity: 0.5;
+  transition: transform 0.15s, opacity 0.15s;
+}
+
+.radar-job-card:hover .radar-job-action-icon {
+  opacity: 1;
+  transform: translateX(2px);
+  color: var(--ink);
+}
+
+.radar-jobs-empty {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  padding: 12px 8px;
+  line-height: 1.4;
 }
 
 .radar-freq-row {
@@ -6916,23 +7204,30 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
 .radar-freq-row label {
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--text-muted, #94a3b8);
+  color: var(--muted);
 }
 
 .radar-select {
   width: 100%;
-  padding: 6px 10px;
-  font-size: 12.5px;
-  background: var(--surface-3, rgba(255, 255, 255, 0.06));
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  padding: 7px 10px;
+  font-size: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 6px;
-  color: var(--text, #f1f5f9);
+  color: var(--ink);
   cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+:root[data-theme="dark"] .radar-select {
+  background: #18181D;
+  border-color: #272731;
+  color: #F1F4F7;
 }
 
 .radar-select:focus {
   outline: none;
-  border-color: #10b981;
+  border-color: var(--green);
 }
 
 .radar-popover-foot {
@@ -6940,7 +7235,7 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  border-top: 1px solid var(--line);
   padding-top: 12px;
 }
 
@@ -6953,5 +7248,4 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
 
 .radar-popover-foot .btn-secondary svg.is-spinning {
   animation: spinRefresh 0.8s linear infinite;
-}
 }

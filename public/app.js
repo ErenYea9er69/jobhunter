@@ -7511,6 +7511,109 @@
         pendEl.textContent = `${r.pending_count} new job${r.pending_count === 1 ? '' : 's'} ready`;
       }
 
+      const roleEl = $('#radarTargetRoleText');
+      if (roleEl) {
+        const title = r.target_role || r.last_query || 'Software Engineer';
+        roleEl.textContent = title;
+        roleEl.title = r.target_location ? `${title} (${r.target_location})` : title;
+      }
+
+      // Render Live Radar Job Matches & Match Rates
+      const jobsTitleEl = $('#radarJobsTitle');
+      const jobsSubEl = $('#radarJobsSubtitle');
+      const jobsBadgeEl = $('#radarJobsBadge');
+      const applyBtnText = $('#btnRadarApplyJobsText');
+      const listEl = $('#radarJobsList');
+
+      const stagedJobs = Array.isArray(r.staged_jobs) ? r.staged_jobs : [];
+      const hasStaged = stagedJobs.length > 0;
+      
+      let displayJobs = [];
+      let isStaged = false;
+
+      if (hasStaged) {
+        displayJobs = stagedJobs;
+        isStaged = true;
+        if (jobsTitleEl) jobsTitleEl.textContent = 'Staged for Review';
+        if (jobsSubEl) jobsSubEl.textContent = 'New jobs ready to import into your feed';
+        if (jobsBadgeEl) jobsBadgeEl.textContent = `+${stagedJobs.length} new ready`;
+        if (applyBtnText) applyBtnText.textContent = `Review Staged Jobs (${stagedJobs.length})`;
+      } else {
+        const recent = Array.isArray(r.recent_matches) && r.recent_matches.length ? r.recent_matches : (S.jobs || []).slice(0, 4);
+        displayJobs = recent;
+        isStaged = false;
+        if (jobsTitleEl) jobsTitleEl.textContent = 'Recent Matched Jobs';
+        if (jobsSubEl) jobsSubEl.textContent = 'Scored in real-time against your profile';
+        if (jobsBadgeEl) jobsBadgeEl.textContent = `${displayJobs.length} top matches`;
+        if (applyBtnText) applyBtnText.textContent = 'Review Staged Jobs';
+      }
+
+      if (listEl) {
+        if (!displayJobs.length) {
+          listEl.innerHTML = '<div class="radar-jobs-empty">No active matches found. Click <strong>Scan Now</strong> to run a live LinkedIn sweep.</div>';
+        } else {
+          listEl.innerHTML = displayJobs.slice(0, 4).map(j => {
+            const score = Math.round(Number(j.score) || 0);
+            const scoreClass = score >= 85 ? 'is-high' : (score >= 70 ? 'is-good' : 'is-mid');
+            const key = j.job_key || j.id || '';
+            const salaryHtml = j.salary ? `<span class="radar-job-salary">${esc(j.salary)}</span>` : '';
+            return `
+              <div class="radar-job-card" data-key="${esc(key)}" data-staged="${isStaged ? 'true' : 'false'}" role="button" tabindex="0" title="Click to view ${esc(j.title)}">
+                <div class="radar-job-main">
+                  <div class="radar-job-title-row">
+                    <span class="radar-job-title" title="${esc(j.title)}">${esc(j.title)}</span>
+                    <span class="radar-job-score ${scoreClass}">${score}% match</span>
+                  </div>
+                  <div class="radar-job-sub-row">
+                    <span class="radar-job-company">${esc(j.company || 'Company')}</span>
+                    ${j.work_mode ? `<span class="radar-job-dot">·</span><span class="radar-job-mode">${esc(j.work_mode)}</span>` : ''}
+                    ${j.location ? `<span class="radar-job-dot">·</span><span class="radar-job-loc" title="${esc(j.location)}">${esc(j.location)}</span>` : ''}
+                    ${salaryHtml}
+                  </div>
+                </div>
+                <span class="radar-job-action-icon" aria-hidden="true">&rsaquo;</span>
+              </div>
+            `;
+          }).join('');
+
+          listEl.querySelectorAll('.radar-job-card').forEach(card => {
+            card.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const key = card.dataset.key;
+              const cardStaged = card.dataset.staged === 'true';
+              const popover = $('#radarPopover');
+              const radarBtn = $('#btnLinkedinRadar');
+              if (popover) popover.hidden = true;
+              if (radarBtn) radarBtn.setAttribute('aria-expanded', 'false');
+
+              if (cardStaged) {
+                const refreshBtn = $('#btnJobsRefreshSync');
+                if (refreshBtn) refreshBtn.click();
+              } else if (key) {
+                const inCurrent = (S.jobs || []).some(item => jobKey(item) === key);
+                if (inCurrent) {
+                  selectJob(key);
+                  const el = $(`#jobList .job-item[data-key="${key}"]`);
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                } else {
+                  const inAll = (S.allJobs || []).find(item => jobKey(item) === key);
+                  if (inAll) {
+                    S.jobs = [inAll, ...(S.jobs || []).filter(item => jobKey(item) !== key)];
+                    renderJobList();
+                    selectJob(key);
+                  } else {
+                    const matchedJob = displayJobs.find(item => (item.job_key || item.id) === key);
+                    if (matchedJob && matchedJob.url) {
+                      window.open(matchedJob.url, '_blank', 'noopener,noreferrer');
+                    }
+                  }
+                }
+              }
+            });
+          });
+        }
+      }
+
       const freqSel = $('#radarFreqSelect');
       if (freqSel && document.activeElement !== freqSel) {
         freqSel.value = r.enabled ? String(r.interval_min) : '0';

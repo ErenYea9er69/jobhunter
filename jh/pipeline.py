@@ -926,6 +926,58 @@ def get_linkedin_radar_status():
     except Exception:
         pass
 
+    target_role = ""
+    target_loc = ""
+    try:
+        prof = db.get_profile()
+        target_role = prof.get("target_title") or (prof.get("target_roles", [""])[0] if prof.get("target_roles") else "") or last_query or "Software Engineer"
+        target_loc = prof.get("location") or (prof.get("preferred_locations", [""])[0] if prof.get("preferred_locations") else "") or "Remote / Flexible"
+    except Exception:
+        target_role = last_query or "Software Engineer"
+        target_loc = "Remote / Flexible"
+
+    staged_jobs = []
+    try:
+        pending_list = db.get_pending_jobs()
+        for j in pending_list[:6]:
+            staged_jobs.append({
+                "job_key": j.get("job_key") or j.get("id"),
+                "title": j.get("title", "Unknown Role"),
+                "company": j.get("company", "Company"),
+                "location": j.get("location", ""),
+                "work_mode": j.get("work_mode", ""),
+                "score": int(j.get("score") or 0),
+                "salary": j.get("salary") or "",
+                "url": j.get("url") or j.get("apply_url") or "",
+                "posted_at": j.get("posted_at") or j.get("discovered_at") or ""
+            })
+    except Exception:
+        pass
+
+    recent_matches = []
+    try:
+        all_saved = db.get_saved_search_jobs()
+        li_matches = [x for x in all_saved if "linkedin" in (x.get("source") or "").lower()]
+        other_matches = [x for x in all_saved if "linkedin" not in (x.get("source") or "").lower()]
+        li_matches.sort(key=lambda x: int(x.get("score") or 0), reverse=True)
+        other_matches.sort(key=lambda x: int(x.get("score") or 0), reverse=True)
+        pool = (li_matches[:3] + other_matches[:2]) if li_matches else other_matches[:4]
+        for j in pool:
+            recent_matches.append({
+                "job_key": j.get("job_key") or j.get("id"),
+                "title": j.get("title", "Unknown Role"),
+                "company": j.get("company", "Company"),
+                "location": j.get("location", ""),
+                "work_mode": j.get("work_mode", ""),
+                "score": int(j.get("score") or 0),
+                "salary": j.get("salary") or "",
+                "url": j.get("url") or j.get("apply_url") or "",
+                "source": j.get("source", "LinkedIn"),
+                "posted_at": j.get("posted_at") or j.get("discovered_at") or ""
+            })
+    except Exception:
+        pass
+
     return {
         "enabled": enabled,
         "interval_min": interval_min,
@@ -937,7 +989,11 @@ def get_linkedin_radar_status():
         "last_action": last_action,
         "new_found_last": new_last,
         "total_found_lifetime": tot_life,
-        "pending_count": pending_count
+        "pending_count": pending_count,
+        "target_role": target_role,
+        "target_location": target_loc,
+        "staged_jobs": staged_jobs,
+        "recent_matches": recent_matches
     }
 
 

@@ -532,13 +532,31 @@
                         <span class="radar-meta-k">Next Scan</span>
                         <span class="radar-meta-v" id="radarNextScanText">In 10m</span>
                       </div>
+                      <div class="radar-meta-item">
+                        <span class="radar-meta-k">Target Role</span>
+                        <span class="radar-meta-v" id="radarTargetRoleText">Full Stack Developer</span>
+                      </div>
+                      <div class="radar-meta-item">
+                        <span class="radar-meta-k">Staged Waiting</span>
+                        <span class="radar-meta-v highlight" id="radarPendingText">0 new jobs ready</span>
+                      </div>
                       <div class="radar-meta-item span-2">
                         <span class="radar-meta-k">Last Activity</span>
                         <span class="radar-meta-v" id="radarLastActivityText">Checked 24h postings</span>
                       </div>
-                      <div class="radar-meta-item span-2">
-                        <span class="radar-meta-k">Staged Waiting</span>
-                        <span class="radar-meta-v highlight" id="radarPendingText">0 new jobs ready</span>
+                    </div>
+
+                    <!-- Live Radar Job Matches & Match Rates -->
+                    <div class="radar-jobs-section" id="radarJobsSection">
+                      <div class="radar-jobs-head">
+                        <div class="radar-jobs-head-info">
+                          <span class="radar-jobs-title" id="radarJobsTitle">Latest Radar Matches</span>
+                          <span class="radar-jobs-subtitle" id="radarJobsSubtitle">Scored against your profile</span>
+                        </div>
+                        <span class="radar-jobs-badge" id="radarJobsBadge">Top matches</span>
+                      </div>
+                      <div class="radar-jobs-list" id="radarJobsList" role="list">
+                        <!-- Rendered dynamically by checkLinkedinRadarStatus() -->
                       </div>
                     </div>
 
@@ -560,7 +578,7 @@
                       <span id="radarScanBtnText">Scan Now</span>
                     </button>
                     <button type="button" class="btn btn-primary btn-sm" id="btnRadarApplyJobs">
-                      <span>Review Staged Jobs</span>
+                      <span id="btnRadarApplyJobsText">Review Staged Jobs</span>
                     </button>
                   </div>
                 </div>
