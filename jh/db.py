@@ -856,7 +856,8 @@ def apply_refresh_sync():
                 r["score"], r["opportunity_score"], r["is_famous"], r["is_startup"], r["industry"], r["h1b"],
                 r["source_kind"], r["source_names"], r["posted_at"], r["job_json"], now, now, skills_txt
             ))
-            added_count += 1
+        added_keys = [r["job_key"] for r in pending_rows]
+        added_count = len(added_keys)
 
         # Clear pending queue
         c.execute("DELETE FROM pending_search_jobs")
@@ -879,6 +880,7 @@ def apply_refresh_sync():
     return {
         "success": True,
         "added_count": added_count,
+        "added_job_keys": added_keys,
         "removed_count": removed_count,
         "total_jobs": total_now,
         "message": f"Refreshed: {added_count} new job{'s' if added_count != 1 else ''} added, {removed_count} expired job{'s' if removed_count != 1 else ''} removed."

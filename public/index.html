@@ -626,7 +626,29 @@
 
         <!-- Job listings split view -->
         <div class="split" id="searchSplit">
-          <div class="job-list" id="jobList" aria-label="Job results"></div>
+          <div class="job-list-col" id="jobListCol">
+            <!-- 2026/2027 Ambient Live Sync & Streaming Stage -->
+            <div class="live-sync-banner" id="liveSyncBanner" hidden aria-live="polite">
+              <div class="live-sync-banner-inner">
+                <div class="live-sync-pill">
+                  <span class="live-sync-beacon" aria-hidden="true">
+                    <span class="live-sync-beacon-ping"></span>
+                    <span class="live-sync-beacon-dot"></span>
+                  </span>
+                  <span class="live-sync-kicker" id="liveSyncKicker">Live Sync</span>
+                </div>
+                <div class="live-sync-ticker-box">
+                  <span class="live-sync-status" id="liveSyncStatus">Connecting to live sources...</span>
+                </div>
+                <span class="live-sync-count-tag" id="liveSyncCountTag">18 sources active</span>
+              </div>
+              <div class="live-sync-progress-track" aria-hidden="true">
+                <div class="live-sync-progress-fill" id="liveSyncProgressFill"></div>
+              </div>
+            </div>
+
+            <div class="job-list" id="jobList" aria-label="Job results"></div>
+          </div>
           <aside class="job-detail" id="jobDetail" aria-label="Job details"></aside>
         </div>
       </div>
