@@ -44,6 +44,27 @@ class _TextExtractor(HTMLParser):
             self.parts.append(data)
 
 
+def clean_text(val):
+    """Sanitize text fields: decode HTML entities (including hex &#x...; and multi-encoded),
+    normalize whitespace, non-breaking spaces, and strip zero-width characters."""
+    if val is None or val != val:
+        return ""
+    s = str(val).strip()
+    if not s or s.lower() == "nan":
+        return ""
+    # Decode HTML entities (run up to 3 passes for double/triple encoded entities like &amp;#xE9;)
+    for _ in range(3):
+        if "&" not in s:
+            break
+        unescaped = html.unescape(s)
+        if unescaped == s:
+            break
+        s = unescaped
+    s = s.replace("\xa0", " ").replace("\ufeff", "").replace("\u200b", "").replace("\u200c", "").replace("\u200d", "")
+    s = re.sub(r"[ \t]+", " ", s)
+    return s.strip()
+
+
 def html_to_text(raw, limit=8000):
     """Convert HTML (possibly entity-escaped HTML) to readable plain text."""
     if not raw:
@@ -57,14 +78,13 @@ def html_to_text(raw, limit=8000):
         text = "".join(parser.parts)
     except Exception:
         text = re.sub(r"<[^>]+>", " ", raw)
-    text = html.unescape(text).replace("\xa0", " ")
-    text = re.sub(r"[ \t]+", " ", text)
+    text = clean_text(text)
     text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
     return text.strip()[:limit]
 
 
 def normalize_company(name):
-    s = (name or "").lower().strip()
+    s = clean_text(name).lower()
     s = re.sub(r"\b(inc|llc|corp|corporation|ltd|limited|gmbh|co|company|plc|pte|sa|ag)\b\.?", " ", s)
     return re.sub(r"[^a-z0-9]", "", s)
 
@@ -155,6 +175,7 @@ def annualize(sal):
 
 def clean_salary_label(text):
     """Return the salary text only when it holds real figures. Placeholders become empty."""
+    text = clean_text(text)
     return str(text).strip() if parse_salary(text) else ""
 
 
@@ -166,7 +187,7 @@ def clean_job_type(val):
         items = [clean_job_type(x) for x in val if x]
         items = [x for x in items if x]
         return items[0] if items else ""
-    s = str(val).lower().strip().replace("-", " ").replace("_", " ")
+    s = clean_text(val).lower().strip().replace("-", " ").replace("_", " ")
     if re.search(r"\b(contract|contractor|c2c|w2|freelance|freelancer|consultant|subcontract)\b", s):
         return "Contract"
     if re.search(r"\b(full\s*time|permanent|cdi|regular|direct\s*hire)\b", s):
@@ -354,11 +375,11 @@ def parse_schema_job_posting(html_or_dict):
         emp_type = clean_job_type(sections["job_type"])
 
     return {
-        "title": title,
-        "company": company,
-        "location": loc_str,
-        "salary": sal,
-        "job_type": emp_type,
+        "title": clean_text(title),
+        "company": clean_text(company),
+        "location": clean_text(loc_str),
+        "salary": clean_text(sal),
+        "job_type": clean_text(emp_type),
         "description": desc_text,
         "posted_at": date_posted,
         "responsibilities": sections.get("responsibilities", []),

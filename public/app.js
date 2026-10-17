@@ -188,15 +188,46 @@
   // ---------------------------------------------------------------- helpers
   const ico = (name, cls = '') => `<svg class="i ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
+  function decodeEntities(str) {
+    if (!str || typeof str !== 'string' || !str.includes('&')) return str || '';
+    if (!/&(?:[a-z\d]+|#\d+|#[xX][a-f\d]+);/i.test(str)) return str;
+    try {
+      const doc = new DOMParser().parseFromString(str, 'text/html');
+      let out = doc.body.textContent || str;
+      if (out.includes('&') && /&(?:[a-z\d]+|#\d+|#[xX][a-f\d]+);/i.test(out)) {
+        const doc2 = new DOMParser().parseFromString(out, 'text/html');
+        out = doc2.body.textContent || out;
+      }
+      return out;
+    } catch (_) {
+      return str.replace(/&#(?:x([0-9a-f]+)|(\d+));/gi, (_, hex, dec) =>
+        String.fromCodePoint(hex ? parseInt(hex, 16) : parseInt(dec, 10))
+      ).replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    }
+  }
+
+  function cleanText(v) {
+    if (v === null || v === undefined) return '';
+    let s = String(v);
+    if (s.includes('&')) {
+      s = decodeEntities(s);
+    }
+    return s.replace(/\u00a0/g, ' ').trim();
+  }
+
   function esc(v) {
     if (v === null || v === undefined) return '';
-    return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    let s = String(v);
+    if (s.includes('&') && /&(?:[a-z\d]+|#\d+|#[xX][a-f\d]+);/i.test(s)) {
+      s = decodeEntities(s);
+    }
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
   const escapeHtml = esc;
 
   function cleanTitle(t) {
     if (!t) return '';
-    return String(t).replace(/\s*—\s*/g, ' - ').replace(/\s*–\s*/g, ' - ');
+    return cleanText(t).replace(/\s*—\s*/g, ' - ').replace(/\s*–\s*/g, ' - ');
   }
 
   async function api(url, options = {}) {
@@ -250,7 +281,7 @@
 
   function companyMonogram(name) {
     if (!name) return 'JH';
-    const clean = String(name).trim().replace(/[^a-zA-Z0-9\s]/g, '');
+    const clean = cleanText(name).replace(/[^a-zA-Z0-9\s]/g, '');
     const parts = clean.split(/\s+/).filter(Boolean);
     if (parts.length >= 2) {
       return (parts[0][0] + parts[1][0]).toUpperCase();

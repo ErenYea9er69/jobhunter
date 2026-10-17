@@ -14,7 +14,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 from . import config
-from .util import (HttpError, clean_salary_label, clean_job_type, extract_job_sections,
+from .util import (HttpError, clean_salary_label, clean_job_type, clean_text, extract_job_sections,
                     format_schema_salary, html_to_text, http_get, http_get_json,
                     iso_or_empty, now_iso, parse_schema_job_posting)
 
@@ -78,10 +78,7 @@ def source_kind(source, tier=""):
 
 
 def _safe_text(val):
-    if val is None or val != val:
-        return ""
-    s = str(val).strip()
-    return "" if s.lower() == "nan" else s
+    return clean_text(val)
 
 
 def make_job(**kw):
@@ -143,8 +140,8 @@ def make_job(**kw):
         "salary": sal, "job_type": job_type, "seniority": seniority,
         "url": _safe_text(kw.get("url")),
         "direct_apply_url": direct_apply_url,
-        "is_free_to_apply": is_free_to_apply(kw["source"]),
-        "apply_cost_note": apply_cost_note(kw["source"]),
+        "is_free_to_apply": is_free_to_apply(kw.get("source")),
+        "apply_cost_note": apply_cost_note(kw.get("source")),
         "description": desc,
         "responsibilities": responsibilities,
         "qualifications": qualifications,
@@ -153,9 +150,9 @@ def make_job(**kw):
         "contact_email": contact_email,
         "contact_website": contact_website,
         "posted_at": iso_or_empty(kw.get("posted_at")),
-        "source": kw["source"], "source_credit": kw.get("source_credit", kw["source"]),
-        "source_tier": kw.get("source_tier", ""), "source_rank": source_rank(kw["source"], kw.get("source_tier", "")),
-        "source_kind": source_kind(kw["source"], kw.get("source_tier", "")), "tags": kw.get("tags", []),
+        "source": kw.get("source", ""), "source_credit": kw.get("source_credit", kw.get("source", "")),
+        "source_tier": kw.get("source_tier", ""), "source_rank": source_rank(kw.get("source", ""), kw.get("source_tier", "")),
+        "source_kind": source_kind(kw.get("source", ""), kw.get("source_tier", "")), "tags": kw.get("tags", []),
         "needs_enrichment": bool(kw.get("needs_enrichment")),
         "enriched": bool(kw.get("enriched")),
     }
@@ -1309,7 +1306,7 @@ class HelloWork(Source):
             jobs = []
             seen = set()
             for m in re.finditer(r'href="(/fr-fr/emplois/(\d+)\.html)"[^>]*title="([^"]+)"', page):
-                href, jid, raw_title = m.group(1), m.group(2), m.group(3)
+                href, jid, raw_title = m.group(1), m.group(2), clean_text(m.group(3))
                 if jid in seen:
                     continue
                 seen.add(jid)
@@ -1322,14 +1319,14 @@ class HelloWork(Source):
                 loc_m = re.search(r'data-cy="localisationCard"[^>]*>\s*([^<]+)', sub)
                 contract_m = re.search(r'data-cy="contractCard"[^>]*>\s*([^<]+)', sub)
 
-                loc = loc_m.group(1).strip() if loc_m else ""
-                contract = clean_job_type(contract_m.group(1).strip()) if contract_m else ""
+                loc = clean_text(loc_m.group(1)) if loc_m else ""
+                contract = clean_job_type(clean_text(contract_m.group(1))) if contract_m else ""
 
                 url_full = f"https://www.hellowork.com{href}"
                 jobs.append(make_job(
                     id=f"hellowork-{jid}",
-                    title=title.strip(),
-                    company=comp.strip(),
+                    title=clean_text(title),
+                    company=clean_text(comp),
                     location=loc,
                     job_type=contract,
                     url=url_full,

@@ -4,7 +4,7 @@ import json
 import time
 
 from . import db, sources as src, refit, ats
-from .util import days_since, now_iso, normalize_company
+from .util import days_since, now_iso, normalize_company, clean_text
 
 STATUSES = ["saved", "applied", "interview", "offer", "rejected"]  # "rejected" is the Archived column in the UI
 FOLLOW_UP_DAYS = {"applied": 7, "interview": 3, "offer": 2}
@@ -58,11 +58,15 @@ def upsert_application(data):
         follow = data.get("follow_up_date") or ""
         if not follow and status in FOLLOW_UP_DAYS and (old is None or old["status"] != status):
             follow = (datetime.date.today() + datetime.timedelta(days=FOLLOW_UP_DAYS[status])).isoformat()
+        company = clean_text(data.get("company")) or "Unknown"
+        title = clean_text(data.get("title")) or "Untitled role"
+        location = clean_text(data.get("location", ""))
+        salary = clean_text(data.get("salary", ""))
         c.execute("""INSERT OR REPLACE INTO applications (id,job_id,company,title,location,salary,status,notes,follow_up_date,
                      sources_json,job_data_json,tailored_resume_json,cover_letter,created_at,updated_at)
                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (app_id, data.get("job_id"), data.get("company") or "Unknown", data.get("title") or "Untitled role",
-                   data.get("location", ""), data.get("salary", ""), status, data.get("notes", ""), follow,
+                  (app_id, data.get("job_id"), company, title,
+                   location, salary, status, data.get("notes", ""), follow,
                    json.dumps(data.get("sources", [])), json.dumps(job_d),
                    json.dumps(data.get("tailored_resume")), data.get("cover_letter", ""),
                    old["created_at"] if old else now, now))

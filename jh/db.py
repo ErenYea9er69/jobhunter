@@ -7,7 +7,7 @@ import sqlite3
 import threading
 
 from . import config
-from .util import now_iso, parse_salary, annualize, days_since
+from .util import now_iso, parse_salary, annualize, days_since, clean_text
 
 _init_lock = threading.Lock()
 SCHEMA_VERSION = 3
@@ -48,14 +48,26 @@ def is_famous_company(name):
     return any(t in FAMOUS_COMPANY_TOKENS for t in tokens)
 
 
+def clean_job_dict(j):
+    """Sanitize all user-facing text fields in job dict."""
+    if not isinstance(j, dict):
+        return j
+    for k in ("title", "company", "location", "work_mode", "salary", "job_type", "seniority"):
+        if k in j and j[k] is not None:
+            j[k] = clean_text(j[k])
+    if "description" in j and j["description"] and "&" in str(j["description"]):
+        j["description"] = clean_text(j["description"])
+    return j
+
+
 def classify_job(j):
     """Extract category, job_type, seniority, country, salary, and flags from job dict."""
-    title = (j.get("title") or "").strip()
+    title = clean_text(j.get("title") or "")
     t_lower = title.lower()
-    desc_sample = ((j.get("description") or "")[:800]).lower()
-    loc = (j.get("location") or "").strip()
+    desc_sample = clean_text((j.get("description") or "")[:800]).lower()
+    loc = clean_text(j.get("location") or "")
     loc_lower = loc.lower()
-    comp = (j.get("company") or "").strip()
+    comp = clean_text(j.get("company") or "")
     tags = [str(t).lower() for t in (j.get("tags") or [])]
     haystack = f"{t_lower} {loc_lower} {desc_sample} {' '.join(tags)}"
 
@@ -318,6 +330,79 @@ def init_db():
             from .demo import DEMO_PROFILE
             c.execute("INSERT INTO profile (id,data,updated_at) VALUES (1,?,?)", (json.dumps(DEMO_PROFILE), now_iso()))
 
+        # Clean any HTML entities from stored legacy jobs
+        _cleanup_html_entities(c)
+
+
+def _cleanup_html_entities(c):
+    """Clean all HTML entities from existing stored database records."""
+    # 1. Clean search_jobs
+    rows = c.execute("SELECT job_key, title, company, location, job_json FROM search_jobs WHERE title LIKE '%&%' OR company LIKE '%&%' OR location LIKE '%&%' OR job_json LIKE '%&%'").fetchall()
+    for r in rows:
+        title = clean_text(r["title"])
+        comp = clean_text(r["company"])
+        loc = clean_text(r["location"])
+        try:
+            j = json.loads(r["job_json"])
+            clean_job_dict(j)
+            j_json = json.dumps(j)
+        except Exception:
+            j_json = r["job_json"]
+        c.execute("""
+            UPDATE search_jobs
+            SET title=?, company=?, location=?, job_json=?
+            WHERE job_key=?
+        """, (title, comp, loc, j_json, r["job_key"]))
+
+    # 2. Clean pending_search_jobs
+    p_rows = c.execute("SELECT job_key, title, company, location, job_json FROM pending_search_jobs WHERE title LIKE '%&%' OR company LIKE '%&%' OR location LIKE '%&%' OR job_json LIKE '%&%'").fetchall()
+    for r in p_rows:
+        title = clean_text(r["title"])
+        comp = clean_text(r["company"])
+        loc = clean_text(r["location"])
+        try:
+            j = json.loads(r["job_json"])
+            clean_job_dict(j)
+            j_json = json.dumps(j)
+        except Exception:
+            j_json = r["job_json"]
+        c.execute("""
+            UPDATE pending_search_jobs
+            SET title=?, company=?, location=?, job_json=?
+            WHERE job_key=?
+        """, (title, comp, loc, j_json, r["job_key"]))
+
+    # 3. Clean seen_jobs
+    seen_rows = c.execute("SELECT job_key, title, company FROM seen_jobs WHERE title LIKE '%&%' OR company LIKE '%&%'").fetchall()
+    for r in seen_rows:
+        title = clean_text(r["title"])
+        comp = clean_text(r["company"])
+        c.execute("UPDATE seen_jobs SET title=?, company=? WHERE job_key=?", (title, comp, r["job_key"]))
+
+    # 4. Clean applications
+    app_rows = c.execute("SELECT id, title, company, location, job_data_json FROM applications WHERE title LIKE '%&%' OR company LIKE '%&%' OR location LIKE '%&%' OR job_data_json LIKE '%&%'").fetchall()
+    for r in app_rows:
+        title = clean_text(r["title"])
+        comp = clean_text(r["company"])
+        loc = clean_text(r["location"])
+        try:
+            jd = json.loads(r["job_data_json"]) if r["job_data_json"] else {}
+            clean_job_dict(jd)
+            jd_json = json.dumps(jd)
+        except Exception:
+            jd_json = r["job_data_json"]
+        c.execute("UPDATE applications SET title=?, company=?, location=?, job_data_json=? WHERE id=?", (title, comp, loc, jd_json, r["id"]))
+
+    # 5. Clean watchlist
+    w_rows = c.execute("SELECT id, company_name, target_role FROM watchlist WHERE company_name LIKE '%&%' OR target_role LIKE '%&%'").fetchall()
+    for r in w_rows:
+        comp = clean_text(r["company_name"])
+        role = clean_text(r["target_role"])
+        c.execute("UPDATE watchlist SET company_name=?, target_role=? WHERE id=?", (comp, role, r["id"]))
+
+    # 6. Clear cached payloads containing html entities
+    c.execute("DELETE FROM source_cache WHERE payload LIKE '%#x%' OR payload LIKE '%&#%'")
+
 
 def get_profile():
     with session() as c:
@@ -405,6 +490,7 @@ def replace_search_jobs(jobs, query="", location="", sources=None, clear_existin
             key = j.get("job_key") or j.get("id")
             if not key:
                 continue
+            clean_job_dict(j)
             c_meta = classify_job(j)
             j["category"] = c_meta["category"]
             j["seniority"] = c_meta["seniority"]
@@ -420,8 +506,8 @@ def replace_search_jobs(jobs, query="", location="", sources=None, clear_existin
                  skills_text, is_startup, h1b, is_active)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
             """, (
-                key, query or j.get("query", ""), j.get("title", ""), j.get("company", ""),
-                j.get("location", ""), c_meta["work_mode"], j.get("score", 0),
+                key, query or j.get("query", ""), clean_text(j.get("title", "")), clean_text(j.get("company", "")),
+                clean_text(j.get("location", "")), c_meta["work_mode"], j.get("score", 0),
                 j.get("opportunity_score", 0), c_meta["is_famous"],
                 j.get("source_kind", ""), ",".join(j.get("source_names", [])),
                 j.get("posted_at", ""), json.dumps(j), now, now,
@@ -447,6 +533,7 @@ def update_search_job(job):
     key = job.get("job_key") or dedup.job_key(job) or job.get("id")
     if not key:
         return False
+    clean_job_dict(job)
     now = now_iso()
     c_meta = classify_job(job)
     with session() as c:
@@ -458,7 +545,7 @@ def update_search_job(job):
                     job_json=?, updated_at=?, category=?, job_type=?, seniority=?, country=?
                 WHERE job_key=?
             """, (
-                job.get("title", ""), job.get("company", ""), job.get("location", ""),
+                clean_text(job.get("title", "")), clean_text(job.get("company", "")), clean_text(job.get("location", "")),
                 c_meta["work_mode"], job.get("score", 0), job.get("opportunity_score", 0),
                 json.dumps(job), now, c_meta["category"], c_meta["job_type"], c_meta["seniority"], c_meta["country"],
                 key
@@ -717,6 +804,7 @@ def store_pending_jobs(jobs, query=""):
             # Ignore if already in active search_jobs
             if c.execute("SELECT 1 FROM search_jobs WHERE job_key=?", (key,)).fetchone():
                 continue
+            clean_job_dict(j)
             c_meta = classify_job(j)
             j["category"] = c_meta["category"]
             j["seniority"] = c_meta["seniority"]
@@ -730,7 +818,7 @@ def store_pending_jobs(jobs, query=""):
                  source_kind, source_names, posted_at, job_json, discovered_at, skills_text)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                key, query, j.get("title", ""), j.get("company", ""), j.get("location", ""),
+                key, query, clean_text(j.get("title", "")), clean_text(j.get("company", "")), clean_text(j.get("location", "")),
                 c_meta["work_mode"], c_meta["category"], c_meta["job_type"], c_meta["seniority"], c_meta["country"],
                 c_meta["min_salary"], c_meta["max_salary"], j.get("score", 0), j.get("opportunity_score", 0),
                 c_meta["is_famous"], c_meta["is_startup"], c_meta["industry"], c_meta["h1b"],

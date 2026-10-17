@@ -625,6 +625,63 @@ class FamousFilterTests(Base):
         self.assertEqual(res["jobs"][0]["job_key"], "s1")
         self.assertEqual(len(res["all_jobs"]), 2)
 
+    def test_html_entity_decoding_and_title_sanitization(self):
+        from jh.util import clean_text
+        from jh import sources
+
+        # Hex entities from real job boards
+        self.assertEqual(clean_text("D&#xE9;veloppeur Full Stack H/F"), "Développeur Full Stack H/F")
+        self.assertEqual(clean_text("Groupe Q&#xE9;rys"), "Groupe Qérys")
+        self.assertEqual(clean_text("Eiffage &#xC9;nergie Syst&#xE8;mes"), "Eiffage Énergie Systèmes")
+
+        # Decimal and named entities
+        self.assertEqual(clean_text("D&#233;veloppeur &amp; Tech Lead"), "Développeur & Tech Lead")
+        self.assertEqual(clean_text("&quot;Senior&quot; Engineer&#39;s Hub"), '"Senior" Engineer\'s Hub')
+
+        # Double-escaped entities
+        self.assertEqual(clean_text("&amp;#xE9;"), "é")
+        self.assertEqual(clean_text("&amp;amp;"), "&")
+
+        # Non-breaking spaces and zero-width spaces
+        self.assertEqual(clean_text("Software\xa0\xa0Engineer\u200b"), "Software Engineer")
+
+        # Literal ampersands preserved
+        self.assertEqual(clean_text("Motors & Actuators"), "Motors & Actuators")
+        self.assertEqual(clean_text("AT&T"), "AT&T")
+        self.assertEqual(clean_text("IT Systems Engineer, M&A"), "IT Systems Engineer, M&A")
+
+        # make_job cleans titles, company, location
+        j = sources.make_job(
+            id="test-1",
+            title="D&#xE9;veloppeur Full-Stack H/F",
+            company="Eiffage &#xC9;nergie Syst&#xE8;mes",
+            location="Paris, France\xa0",
+            salary="&#x20AC;50,000 - &#x20AC;60,000"
+        )
+        self.assertEqual(j["title"], "Développeur Full-Stack H/F")
+        self.assertEqual(j["company"], "Eiffage Énergie Systèmes")
+        self.assertEqual(j["location"], "Paris, France")
+        self.assertIn("€50,000", j["salary"])
+
+    def test_db_clean_job_dict_and_migration(self):
+        from jh import db
+        raw_job = {
+            "id": "html-job-1",
+            "title": "D&#xE9;veloppeur Full Stack H/F",
+            "company": "Groupe Q&#xE9;rys",
+            "location": "Bordeaux\xa0",
+            "salary": "45k - 55k",
+            "description": "Poste de D&#xE9;veloppeur Full Stack"
+        }
+        db.replace_search_jobs([raw_job], query="test", clear_existing=True)
+        jobs = db.get_saved_search_jobs()
+        self.assertTrue(len(jobs) >= 1)
+        stored = next(x for x in jobs if x.get("id") == "html-job-1" or x.get("job_key") == "html-job-1")
+        self.assertEqual(stored["title"], "Développeur Full Stack H/F")
+        self.assertEqual(stored["company"], "Groupe Qérys")
+        self.assertEqual(stored["location"], "Bordeaux")
+        self.assertIn("Développeur", stored["description"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)
