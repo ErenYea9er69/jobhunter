@@ -547,6 +547,20 @@
                 <button type="button" class="p4-menu-item" data-ind="health">Healthcare &amp; Bio</button>
               </div>
             </div>
+
+            <!-- Company Type Pill -->
+            <div class="p4-pill-wrap">
+              <button type="button" class="p4-pill-btn" id="p4PillFamous" data-dropdown="p4MenuFamous">
+                <span class="p4-pill-text" id="p4TextFamous">Company Type</span>
+                <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+              </button>
+              <div class="p4-dropdown-menu" id="p4MenuFamous" hidden>
+                <button type="button" class="p4-menu-item is-selected" data-famous="all">All Companies</button>
+                <button type="button" class="p4-menu-item" data-famous="hide">No Big Tech</button>
+                <button type="button" class="p4-menu-item" data-famous="only">Big Tech Only</button>
+                <button type="button" class="p4-menu-item" data-famous="startups">Startups Only</button>
+              </div>
+            </div>
           </div>
 
           <div class="p4-filter-sep" aria-hidden="true"></div>
@@ -565,21 +579,6 @@
               <span>Refresh</span>
               <span class="p4-refresh-badge" id="jobsRefreshBadge" hidden>0 new</span>
             </button>
-
-            <!-- Sort Pill -->
-            <div class="p4-pill-wrap">
-              <button type="button" class="p4-pill-btn p4-pill-sort" id="p4PillSort" data-dropdown="p4MenuSort">
-                <span class="p4-help-icon" title="Jobs ranked by AI match algorithm">?</span>
-                <span class="p4-pill-text" id="p4TextSort">Top Matched</span>
-                <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
-              </button>
-              <div class="p4-dropdown-menu p4-menu-right" id="p4MenuSort" hidden>
-                <button type="button" class="p4-menu-item is-selected" data-sort="ranked">Top Matched</button>
-                <button type="button" class="p4-menu-item" data-sort="date_desc">Newest</button>
-                <button type="button" class="p4-menu-item" data-sort="salary_desc">Highest Salary</button>
-                <button type="button" class="p4-menu-item" data-sort="company_asc">Company A to Z</button>
-              </div>
-            </div>
 
             <!-- All Filters Toggle Button -->
             <button type="button" class="p4-pill-btn p4-btn-all-filters" id="p4BtnAllFilters">

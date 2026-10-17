@@ -139,12 +139,29 @@
   };
 
   function syncFamousUi() {
+    const mode = (S.filters && S.filters.famousMode) || S.famousFilter || 'all';
     const sel = $('#searchFamousSelect');
-    if (sel && sel.value !== S.famousFilter) sel.value = S.famousFilter;
+    if (sel && sel.value !== mode) sel.value = mode;
     const famSeg = $('#famousSeg');
     if (famSeg) {
       $$('button[data-famous]', famSeg).forEach(b => {
-        b.setAttribute('aria-pressed', String(b.dataset.famous === S.famousFilter));
+        b.setAttribute('aria-pressed', String(b.dataset.famous === mode));
+      });
+    }
+    const t = $('#p4TextFamous');
+    const pill = $('#p4PillFamous');
+    const menu = $('#p4MenuFamous');
+    const labels = {
+      all: 'Company Type',
+      hide: 'No Big Tech',
+      only: 'Big Tech Only',
+      startups: 'Startups Only'
+    };
+    if (t) t.textContent = labels[mode] || 'Company Type';
+    if (pill) pill.classList.toggle('is-active', Boolean(mode && mode !== 'all'));
+    if (menu) {
+      $$('.p4-menu-item', menu).forEach(b => {
+        b.classList.toggle('is-selected', b.dataset.famous === mode);
       });
     }
   }
@@ -2140,29 +2157,29 @@
   function resetAllFilters() {
     S.filters = {
       keyword: '',
-      workMode: 'Remote',
+      workMode: 'Any',
       minScore: 0,
       famousMode: 'all',
-      country: 'United States',
+      country: 'all',
       excludedCountries: new Set(),
-      seniority: 'mid',
+      seniority: 'all',
       salaryTier: '0',
-      freshnessDays: 1,
+      freshnessDays: 0,
       directAtsOnly: false,
       hideApplied: false,
       savedOnly: false,
       selectedSkills: new Set(),
-      jobType: 'Full-time',
+      jobType: 'all',
       industry: 'all',
       yoe: 'all',
-      jobFunctions: ['Full Stack Engineer'],
+      jobFunctions: [],
       excludedTitles: new Set(),
-      jobTypes: new Set(['Full-time']),
-      workModels: new Set(['Remote']),
-      locationQuery: 'Anywhere in the US',
+      jobTypes: new Set(),
+      workModels: new Set(),
+      locationQuery: '',
       locationRadius: '25',
       customLocations: [],
-      expLevels: new Set(['mid']),
+      expLevels: new Set(),
       expOpenToAll: true,
       expYears: 0,
       salaryOpenToAll: true,
@@ -2179,13 +2196,19 @@
       companyStages: new Set(),
       excludeStaffing: false
     };
-    S.workMode = 'Remote';
+    S.workMode = 'Any';
     S.famousFilter = 'all';
     try { localStorage.setItem('jh-famous-filter', 'all'); } catch (e) {}
     const s = $('#searchMinScore'); if (s) s.value = '0';
     const fam = $('#searchFamousSelect'); if (fam) fam.value = 'all';
-    const cSel = $('#countrySelect'); if (cSel) cSel.value = 'United States';
+    const cSel = $('#countrySelect'); if (cSel) cSel.value = 'all';
     const exSel = $('#excludeCountrySelect'); if (exSel) exSel.value = '';
+    const qRole = $('#p4TextRole'); if (qRole) qRole.textContent = 'All Roles';
+    const qSen = $('#p4TextSeniority'); if (qSen) qSen.textContent = 'All Seniority';
+    const qLoc = $('#p4TextLocation'); if (qLoc) qLoc.textContent = 'Worldwide';
+    const qTime = $('#p4TextTime'); if (qTime) qTime.textContent = 'All Time';
+    const qFam = $('#p4TextFamous'); if (qFam) qFam.textContent = 'Company Type';
+    const pFam = $('#p4PillFamous'); if (pFam) pFam.classList.remove('is-active');
     syncDrawerUiFromState();
     renderDrawerActivePills();
   }
@@ -2494,7 +2517,7 @@
     } else if (S.filters.famousMode === 'only') {
       filterBadge += ` <span class="chip chip-famous chip-sm" style="font-size:11.5px;padding:1px 8px;margin-left:6px;" title="Only showing Big Tech & prominent AI companies">Big Tech Only</span>`;
     }
-    const filterSub = n !== totalAll ? ` <small class="text-muted">(${n} of ${totalAll} match current filters)</small>` : '';
+    const filterSub = n !== totalAll ? ` <small class="text-muted">(${n} of ${totalAll} match current filters &middot; <button type="button" class="btn-link" data-action="clear-all-filters" style="cursor:pointer;color:var(--brand-primary,#2563eb);text-decoration:underline;background:none;border:none;padding:0;font:inherit;">Show all ${totalAll}</button>)</small>` : '';
     const prefix = isRec ? 'Recommended' : '';
     $('#resultsSummary').innerHTML = n ? `${prefix ? prefix + ': ' : ''}${n} job${n === 1 ? '' : 's'}${forWhat}${filterSub}${filterBadge}` : `No jobs found${filterSub}${filterBadge}`;
 
@@ -4913,6 +4936,11 @@
       resetAllFilters();
       filterAndRender();
     },
+    'clear-all-filters': () => {
+      resetAllFilters();
+      filterAndRender();
+      toast('All filters cleared: showing all available jobs');
+    },
     'search-worldwide-remote': () => {
       const loc = $('#searchLocation');
       if (loc) loc.value = 'Worldwide';
@@ -5594,21 +5622,18 @@
       });
     }
 
-    const sortMenu = $('#p4MenuSort');
-    if (sortMenu) {
-      sortMenu.addEventListener('click', e => {
-        const item = e.target.closest('[data-sort]');
+    const famMenu = $('#p4MenuFamous');
+    if (famMenu) {
+      famMenu.addEventListener('click', e => {
+        const item = e.target.closest('[data-famous]');
         if (!item) return;
-        const s = item.dataset.sort;
-        const sel = $('#sortResultsBy');
-        if (sel) sel.value = s;
-        const labels = { ranked: 'Top Matched', date_desc: 'Newest', salary_desc: 'Highest Salary', company_asc: 'Company A-Z' };
-        const t = $('#p4TextSort');
-        if (t) t.textContent = labels[s] || 'Top Matched';
-        $$('.p4-menu-item', sortMenu).forEach(b => b.classList.toggle('is-selected', b === item));
-        sortMenu.hidden = true;
-        applySort();
-        renderResults();
+        const mode = item.dataset.famous || 'all';
+        S.famousFilter = mode;
+        S.filters.famousMode = mode;
+        try { localStorage.setItem('jh-famous-filter', mode); } catch (err) {}
+        syncFamousUi();
+        famMenu.hidden = true;
+        filterAndRender();
       });
     }
 
