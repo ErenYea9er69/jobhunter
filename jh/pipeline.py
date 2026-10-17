@@ -788,3 +788,86 @@ def start_auto_search_worker():
     _bg_stop.clear()
     _bg_thread = threading.Thread(target=_auto_search_worker, daemon=True, name="jh-auto-search")
     _bg_thread.start()
+    start_linkedin_incremental_worker()
+
+
+# ---------------------------------------------------------------- LinkedIn incremental scraper
+
+_li_scraper = None  # singleton LinkedInGuest instance for incremental scraping
+_li_bg_thread = None
+_li_bg_stop = threading.Event()
+
+
+def run_linkedin_incremental():
+    """Lightweight LinkedIn-only scrape: only fetch fresh stream, score, and store new jobs as pending.
+
+    Designed to run every 5-10 minutes for near-real-time job discovery without
+    hitting rate limits (only 5 pages per run).
+    """
+    global _li_scraper
+    profile = db.get_profile()
+    if profile.get("_is_empty"):
+        return 0
+
+    tgt_title = (profile.get("target_title") or "").strip()
+    query = tgt_title or (profile.get("skills", ["Software Engineer"])[0] if profile.get("skills") else "Software Engineer")
+    location = (profile.get("location") or "").strip()
+
+    if _li_scraper is None:
+        _li_scraper = src.LinkedInGuest()
+
+    try:
+        new_jobs = _li_scraper.fetch_incremental(query, location)
+        if not new_jobs:
+            return 0
+
+        # Score and store as pending
+        for j in new_jobs:
+            j.update(score_job(j, profile))
+            _rank_opportunity(j)
+
+        db.store_pending_jobs(new_jobs, query=f"linkedin_incremental:{query}")
+        log.info("LinkedIn incremental: %d new jobs found and staged.", len(new_jobs))
+        return len(new_jobs)
+    except Exception as e:
+        log.debug("LinkedIn incremental scrape failed: %s", e)
+        return 0
+
+
+def _linkedin_incremental_worker():
+    """Background daemon: runs lightweight LinkedIn scrape every N minutes."""
+    # Initial delay to let the app settle
+    for _ in range(4):
+        if _li_bg_stop.is_set():
+            return
+        time.sleep(5)
+
+    while not _li_bg_stop.is_set():
+        try:
+            interval_min = config.get_linkedin_incremental_minutes()
+            if interval_min <= 0:
+                # Disabled — check again in 30s
+                time.sleep(30)
+                continue
+
+            run_linkedin_incremental()
+        except Exception as e:
+            log.debug("LinkedIn incremental worker error: %s", e)
+
+        # Sleep for the configured interval (minimum 2 minutes)
+        interval_min = config.get_linkedin_incremental_minutes()
+        sleep_seconds = max(120, interval_min * 60)
+        for _ in range(int(sleep_seconds / 5)):
+            if _li_bg_stop.is_set():
+                return
+            time.sleep(5)
+
+
+def start_linkedin_incremental_worker():
+    global _li_bg_thread
+    if _li_bg_thread and _li_bg_thread.is_alive():
+        return
+    _li_bg_stop.clear()
+    _li_bg_thread = threading.Thread(target=_linkedin_incremental_worker, daemon=True, name="jh-li-incremental")
+    _li_bg_thread.start()
+

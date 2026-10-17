@@ -850,6 +850,59 @@ class LinkedInGuest(Source):
             except Exception:
                 pass
 
+    def _build_query_slices(self, kw):
+        """Generate narrower query variants from profile skills to multiply LinkedIn's result window.
+
+        Instead of scraping 15 pages of one query, we scrape 2-3 pages each of many queries.
+        Each query gets its own 1000-result cap from LinkedIn's API.
+        """
+        variants = []
+        q_lower = kw.lower().strip()
+
+        # Get profile skills for skill-based slicing
+        profile_skills = []
+        try:
+            from . import db
+            profile = db.get_profile()
+            if not profile.get("_is_empty"):
+                profile_skills = [s for s in (profile.get("skills") or []) if s and len(s) > 1][:8]
+        except Exception:
+            pass
+
+        # Strip seniority prefixes to get the role base
+        role_base = re.sub(r'\b(senior|junior|lead|staff|principal|sr\.?|jr\.?|head\s+of|chief)\b\s*',
+                           '', q_lower, flags=re.I).strip()
+        if not role_base:
+            role_base = q_lower
+
+        # 1. Skill + role variants (e.g. "Python developer", "React engineer")
+        for skill in profile_skills[:4]:
+            variant = f"{skill} {role_base}"
+            if variant.lower() not in (q_lower, kw.lower()):
+                variants.append(variant)
+
+        # 2. Role family expansion
+        if "full stack" in q_lower or "fullstack" in q_lower:
+            suffix = re.sub(r'full[-\s]?stack\s*', '', role_base, flags=re.I).strip() or "developer"
+            variants.extend([f"backend {suffix}", f"frontend {suffix}", f"software {suffix}"])
+        elif "backend" in q_lower or "back-end" in q_lower:
+            suffix = re.sub(r'back[-\s]?end\s*', '', role_base, flags=re.I).strip() or "developer"
+            variants.extend([f"software {suffix}", f"API {suffix}"])
+        elif "frontend" in q_lower or "front-end" in q_lower:
+            suffix = re.sub(r'front[-\s]?end\s*', '', role_base, flags=re.I).strip() or "developer"
+            variants.extend([f"web {suffix}", f"UI {suffix}"])
+
+        # Deduplicate while preserving order
+        seen = {q_lower}
+        result = []
+        for v in variants:
+            v_clean = v.strip()
+            if v_clean.lower() not in seen and len(v_clean) >= 3:
+                seen.add(v_clean.lower())
+                result.append(v_clean)
+
+        return result[:6]
+
     def _get_page(self, url, timeout=6):
         """Fetch URL using persistent curl_cffi Chrome TLS session with automatic fallback to urllib."""
         try:
@@ -935,25 +988,33 @@ class LinkedInGuest(Source):
 
         depth = config.get_linkedin_scrape_depth()
         if depth == "max":
-            primary_offsets = [base_cursor + (i * 10) for i in range(15)]
-            fresh_offsets = [0, 10, 20, 30]
-            startup_offsets = [0, 10, 20, 30]
-            max_out = 1000
-        elif depth == "deep":
             primary_offsets = [base_cursor + (i * 10) for i in range(8)]
-            fresh_offsets = [0, 10, 20]
+            fresh_offsets = [0, 10, 20, 30, 40, 50]
             startup_offsets = [0, 10, 20]
-            max_out = 500
+            slice_offsets = [0, 10, 20]
+            filter_offsets = [0, 10]
+            max_out = 1500
+        elif depth == "deep":
+            primary_offsets = [base_cursor + (i * 10) for i in range(5)]
+            fresh_offsets = [0, 10, 20, 30, 40]
+            startup_offsets = [0, 10, 20]
+            slice_offsets = [0, 10]
+            filter_offsets = [0, 10]
+            max_out = 800
         elif depth == "fast":
             primary_offsets = [0, 10]
-            fresh_offsets = [0]
+            fresh_offsets = [0, 10]
             startup_offsets = [0]
-            max_out = 100
+            slice_offsets = [0]
+            filter_offsets = []
+            max_out = 150
         else:
             primary_offsets = [0, 10, 20, 30]
-            fresh_offsets = [0, 10]
+            fresh_offsets = [0, 10, 20, 30]
             startup_offsets = [0, 10]
-            max_out = 250
+            slice_offsets = [0, 10]
+            filter_offsets = [0]
+            max_out = 400
 
         target_places = [search_loc]
         if user_c and user_c.lower() not in ("remote", "anywhere", "worldwide") and user_c.lower() != search_loc.lower():
@@ -993,25 +1054,62 @@ class LinkedInGuest(Source):
             if depth in ("deep", "max"):
                 queries.append((kw, "Worldwide", 10, "&f_WT=2", False, False))
 
-        t_start = time.time()
-        for term, place, start_idx, extra_params, is_startup_term, is_fresh_stream in queries:
-            if len(out) >= max_out or (time.time() - t_start > 12.0 and len(out) >= 20):
-                break
+        # Stream 4: Query slices — skill-based variants to multiply the result window
+        query_slices = self._build_query_slices(kw)
+        for sl in query_slices:
+            for pl in target_places[:1]:
+                for off in slice_offsets:
+                    queries.append((sl, pl, off, "", False, False))
+
+        # Stream 5: Experience level filter variants (Mid-Senior, Associate)
+        if filter_offsets:
+            for ef in ("&f_E=4", "&f_E=3"):
+                for off in filter_offsets:
+                    queries.append((kw, search_loc, off, ef, False, False))
+
+        # Stream 6: Ultra-fresh 24h stream (catches today's postings)
+        if depth != "fast":
+            for off in [0, 10]:
+                queries.append((kw, search_loc, off, "&sortBy=DD&f_TPR=r86400", False, True))
+
+        # Parallel page fetching with rate limiting and 429 retry
+        _last_req = [0.0]
+        _rlock = threading.Lock()
+
+        def _throttled_fetch(query_tuple):
+            """Fetch one LinkedIn page with rate limiting and 429 retry."""
+            term, place, start_idx, extra_params, is_startup_term, is_fresh_stream = query_tuple
+
             url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
                    f"keywords={urllib.parse.quote(term)}&location={urllib.parse.quote(place)}"
                    f"{remote_flag}{extra_params}&start={start_idx}")
 
+            # Rate limiting: minimum gap between request starts across all workers
+            with _rlock:
+                gap = random.uniform(0.14, 0.30)
+                wait = max(0, _last_req[0] + gap - time.time())
+                if wait > 0:
+                    time.sleep(wait)
+                _last_req[0] = time.time()
+
             page = self._get_page(url, timeout=5)
+
+            # 429 retry: recover the page instead of discarding it
             if page == "429":
-                time.sleep(0.8)
-                continue
+                time.sleep(random.uniform(1.5, 3.0))
+                page = self._get_page(url, timeout=5)
+                if page == "429":
+                    time.sleep(random.uniform(2.0, 5.0))
+                    page = self._get_page(url, timeout=5)
+                    if page == "429" or not page:
+                        return []
+
             if not page:
-                time.sleep(0.1)
-                continue
+                return []
 
             cards = re.findall(r"<li>(.*?)</li>", page, re.S)
             if not cards:
-                continue
+                return []
 
             # Promoted-safe early stopping on chronological fresh stream:
             # If deeper than start=0 and >= 80% of cards are already known, skip older pages
@@ -1020,8 +1118,9 @@ class LinkedInGuest(Source):
                 if card_jids:
                     known_hits = sum(1 for cid in card_jids if cid in known_db_ids)
                     if known_hits / len(card_jids) >= 0.8:
-                        continue
+                        return []
 
+            results = []
             for card in cards:
                 t = re.search(r'base-search-card__title[^>]*>\s*([^<]+)', card)
                 c = re.search(r'base-search-card__subtitle[^>]*>\s*(?:<a[^>]*>\s*)?([^<]+)', card)
@@ -1035,9 +1134,6 @@ class LinkedInGuest(Source):
 
                 jid_match = re.search(r"(\d{6,})", u.group(1))
                 jid = jid_match.group(1) if jid_match else str(abs(hash(u.group(1))))
-                if jid in seen_ids:
-                    continue
-                seen_ids.add(jid)
 
                 title = html.unescape(t.group(1).strip())
                 comp = html.unescape(c.group(1).strip())
@@ -1048,7 +1144,7 @@ class LinkedInGuest(Source):
                 if is_startup_term or "startup" in card.lower() or "early-stage" in card.lower():
                     tags.append("startup")
 
-                out.append(make_job(
+                results.append((jid, make_job(
                     id=f"linkedin-{jid}",
                     title=title,
                     company=comp,
@@ -1062,11 +1158,34 @@ class LinkedInGuest(Source):
                     source=self.name,
                     source_credit="LinkedIn public listing",
                     source_tier=self.tier
-                ))
-                if len(out) >= max_out:
+                )))
+            return results
+
+        t_start = time.time()
+        n_workers = 3 if depth in ("deep", "max") else 2
+        batch_size = n_workers * 3
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as pool:
+            qi = 0
+            while qi < len(queries) and len(out) < max_out:
+                if time.time() - t_start > 20.0 and len(out) >= 20:
                     break
 
-            time.sleep(random.uniform(0.10, 0.22))
+                batch = queries[qi:qi + batch_size]
+                qi += batch_size
+
+                futs = [pool.submit(_throttled_fetch, q) for q in batch]
+                try:
+                    for f in concurrent.futures.as_completed(futs, timeout=8.0):
+                        try:
+                            for jid, job in f.result():
+                                if jid not in seen_ids and len(out) < max_out:
+                                    seen_ids.add(jid)
+                                    out.append(job)
+                        except Exception:
+                            continue
+                except concurrent.futures.TimeoutError:
+                    pass
 
         # Advance cursor for deep searches
         if depth in ("deep", "max") and primary_offsets:
@@ -1132,6 +1251,109 @@ class LinkedInGuest(Source):
         except Exception:
             pass
         return job
+
+    def fetch_incremental(self, query, location):
+        """Lightweight fresh-only scrape for periodic background updates.
+
+        Only fetches sortBy=DD fresh pages to catch newly posted jobs.
+        Returns only jobs not already in the database. Designed to run every 5-10 min.
+        """
+        self._warmup()
+        kw = (query or "software engineer").strip()
+        loc = (location or "").strip()
+
+        user_c = ""
+        try:
+            from . import db
+            user_c = (db.get_setting("user_country") or "").strip()
+            if not user_c:
+                user_c = (db.get_profile().get("location") or "").strip()
+        except Exception:
+            pass
+
+        if not loc and user_c and user_c.lower() not in ("remote", "anywhere", "worldwide"):
+            loc = user_c
+
+        is_remote = "remote" in f"{kw} {loc}".lower()
+        remote_flag = "&f_WT=2" if is_remote else ""
+        search_loc = loc if loc and loc.lower() not in ("remote", "anywhere") else "Worldwide"
+
+        # Load known IDs to skip already-seen jobs
+        known_ids = set()
+        try:
+            from . import db
+            with db.session() as c:
+                rows = c.execute("SELECT job_key FROM search_jobs WHERE job_key LIKE 'linkedin-%' LIMIT 5000").fetchall()
+                known_ids = {r["job_key"].replace("linkedin-", "") for r in rows}
+                rows2 = c.execute("SELECT job_key FROM seen_jobs WHERE job_key LIKE 'linkedin-%' LIMIT 5000").fetchall()
+                known_ids.update(r["job_key"].replace("linkedin-", "") for r in rows2)
+        except Exception:
+            pass
+
+        # Only fresh streams: last 24h and last 7 days, sortBy=DD (newest first)
+        fresh_queries = [
+            (kw, search_loc, 0, "&sortBy=DD&f_TPR=r86400"),
+            (kw, search_loc, 10, "&sortBy=DD&f_TPR=r86400"),
+            (kw, search_loc, 0, "&sortBy=DD&f_TPR=r604800"),
+            (kw, search_loc, 10, "&sortBy=DD&f_TPR=r604800"),
+            (kw, search_loc, 20, "&sortBy=DD&f_TPR=r604800"),
+        ]
+
+        out = []
+        seen_ids = set()
+        for term, place, start_idx, extra in fresh_queries:
+            if len(out) >= 100:
+                break
+            url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
+                   f"keywords={urllib.parse.quote(term)}&location={urllib.parse.quote(place)}"
+                   f"{remote_flag}{extra}&start={start_idx}")
+
+            page = self._get_page(url, timeout=5)
+            if page == "429":
+                time.sleep(random.uniform(1.5, 3.0))
+                page = self._get_page(url, timeout=5)
+                if page == "429" or not page:
+                    continue
+            if not page:
+                continue
+
+            cards = re.findall(r"<li>(.*?)</li>", page, re.S)
+            for card in cards:
+                t = re.search(r'base-search-card__title[^>]*>\s*([^<]+)', card)
+                c = re.search(r'base-search-card__subtitle[^>]*>\s*(?:<a[^>]*>\s*)?([^<]+)', card)
+                u = re.search(r'base-card__full-link[^>]*href="([^"?]+)', card)
+                d = re.search(r'datetime="([^"]+)"', card)
+                l = re.search(r'job-search-card__location[^>]*>\s*([^<]+)', card)
+                sal_m = re.search(r'job-search-card__salary-info[^>]*>\s*([^<]+)', card)
+
+                if not (t and c and u):
+                    continue
+
+                jid_match = re.search(r"(\d{6,})", u.group(1))
+                jid = jid_match.group(1) if jid_match else str(abs(hash(u.group(1))))
+
+                if jid in seen_ids or jid in known_ids:
+                    continue
+                seen_ids.add(jid)
+
+                out.append(make_job(
+                    id=f"linkedin-{jid}",
+                    title=html.unescape(t.group(1).strip()),
+                    company=html.unescape(c.group(1).strip()),
+                    location=html.unescape(l.group(1).strip()) if l else "",
+                    salary=html.unescape(sal_m.group(1).strip()) if sal_m else "",
+                    url=u.group(1),
+                    posted_at=d.group(1) if d else "",
+                    description="",
+                    needs_enrichment=True,
+                    source=self.name,
+                    source_credit="LinkedIn public listing",
+                    source_tier=self.tier
+                ))
+
+            time.sleep(random.uniform(0.3, 0.6))
+
+        return out
 
 
 def _fetch_html_tls(url, headers=None, impersonate="chrome", timeout=8):

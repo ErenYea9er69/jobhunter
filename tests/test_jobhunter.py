@@ -349,6 +349,79 @@ class SourceParserTests(Base):
             cur = db.get_setting("li_cursor_python_newyork")
             self.assertTrue(cur.isdigit() and int(cur) > 0)
 
+    def test_linkedin_429_retry_recovers_page(self):
+        """429s are retried up to 2 times instead of silently discarding the page."""
+        lg = sources.LinkedInGuest()
+        sample_card = """<li>
+          <div class="base-card base-search-card base-search-card--link job-search-card">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/retry-eng-at-test-9988776655">
+              <h3 class="base-search-card__title">Retry Engineer</h3>
+            </a>
+            <h4 class="base-search-card__subtitle">TestCo</h4>
+            <span class="job-search-card__location">Remote</span>
+            <time datetime="2026-10-16"></time>
+          </div>
+        </li>"""
+        call_count = [0]
+        def mock_get_page(url, timeout=6):
+            call_count[0] += 1
+            if call_count[0] <= 2:
+                return "429"
+            return sample_card
+        db.set_setting("linkedin_scrape_depth", "fast")
+        with mock.patch.object(lg, "_get_page", side_effect=mock_get_page):
+            with mock.patch("time.sleep"):  # skip sleeps in test
+                jobs = lg.fetch("Retry", "Remote")
+        self.assertTrue(len(jobs) >= 1, f"Expected jobs from 429 retry, got {len(jobs)}")
+        self.assertEqual(jobs[0]["title"], "Retry Engineer")
+        self.assertGreater(call_count[0], 2, "Should have retried after 429")
+
+    def test_linkedin_query_slicing_generates_variants(self):
+        """_build_query_slices returns skill-based and role-family variants."""
+        lg = sources.LinkedInGuest()
+        db.save_profile({"skills": ["Python", "React", "PostgreSQL", "Docker"],
+                         "target_title": "Full Stack Developer"})
+        slices = lg._build_query_slices("Full Stack Developer")
+        self.assertTrue(len(slices) >= 2, f"Expected >=2 slices, got {slices}")
+        lower_slices = [s.lower() for s in slices]
+        self.assertTrue(any("backend" in s for s in lower_slices),
+                        f"Expected 'backend' variant in {slices}")
+        # Ensure no slice is an exact copy of the original query
+        self.assertNotIn("full stack developer", lower_slices)
+
+    def test_linkedin_incremental_skips_known_jobs(self):
+        """fetch_incremental returns only jobs not already in the database."""
+        lg = sources.LinkedInGuest()
+        new_card = """<li>
+          <div class="base-card base-search-card base-search-card--link job-search-card">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/new-role-at-co-1111111111">
+              <h3 class="base-search-card__title">New Role</h3>
+            </a>
+            <h4 class="base-search-card__subtitle">NewCo</h4>
+            <span class="job-search-card__location">Remote</span>
+            <time datetime="2026-10-17"></time>
+          </div>
+        </li><li>
+          <div class="base-card base-search-card base-search-card--link job-search-card">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/old-role-at-co-2222222222">
+              <h3 class="base-search-card__title">Old Role</h3>
+            </a>
+            <h4 class="base-search-card__subtitle">OldCo</h4>
+            <span class="job-search-card__location">NYC</span>
+            <time datetime="2026-10-10"></time>
+          </div>
+        </li>"""
+        # Simulate 2222222222 already known
+        with db.session() as c:
+            c.execute("INSERT OR IGNORE INTO seen_jobs (job_key,title,company,url,source_names,first_seen,last_seen,best_score) VALUES (?,?,?,?,?,?,?,?)",
+                      ("linkedin-2222222222", "Old", "OldCo", "x", "LinkedIn", "2026-10-10", "2026-10-10", 0))
+        with mock.patch.object(lg, "_get_page", return_value=new_card):
+            with mock.patch("time.sleep"):
+                jobs = lg.fetch_incremental("Python", "Remote")
+        job_ids = [j["id"] for j in jobs]
+        self.assertIn("linkedin-1111111111", job_ids, "New job should be included")
+        self.assertNotIn("linkedin-2222222222", job_ids, "Known job should be filtered out")
+
     def test_source_hierarchy_prefers_direct_employer_application(self):
         jobs = [
             sources.make_job(id="li-1", title="Senior Backend Engineer", company="Acme", location="Remote",

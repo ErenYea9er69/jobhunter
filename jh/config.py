@@ -80,6 +80,17 @@ def get_linkedin_scrape_depth():
         pass
     return os.environ.get("JH_LINKEDIN_DEPTH", "standard")
 
+def get_linkedin_incremental_minutes():
+    """Interval in minutes for the lightweight LinkedIn-only background scraper. 0 = disabled."""
+    try:
+        from . import db
+        val = db.get_setting("linkedin_incremental_minutes")
+        if val:
+            return max(0, min(60, int(val)))
+    except Exception:
+        pass
+    return int(os.environ.get("JH_LINKEDIN_INCREMENTAL_MIN", "10"))
+
 # Major job boards (LinkedIn, Indeed, ZipRecruiter, etc.) are built-in native scrapers
 # that run as part of every search without external library wrappers.
 ENABLE_LINKEDIN = True
