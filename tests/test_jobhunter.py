@@ -613,6 +613,18 @@ class FamousFilterTests(Base):
         self.assertEqual(res["jobs"][0]["job_key"], "f1")
         self.assertEqual(len(res["all_jobs"]), 2)
 
+    def test_saved_search_endpoint_returns_all_jobs_and_filtered_subset(self):
+        from jh.httpd import r_saved_search
+        job1 = {"job_key": "s1", "title": "Full Stack Dev", "company": "A", "location": "Remote", "work_mode": "Remote", "score": 85, "opportunity_score": 90}
+        job2 = {"job_key": "s2", "title": "Accountant", "company": "B", "location": "NYC", "work_mode": "Onsite", "score": 40, "opportunity_score": 30}
+        db.replace_search_jobs([job1, job2], query="test", clear_existing=True)
+
+        res = r_saved_search({"category": ["Full Stack Developer"]}, {})
+        self.assertEqual(res["total_all"], 2)
+        self.assertEqual(res["count"], 1)
+        self.assertEqual(res["jobs"][0]["job_key"], "s1")
+        self.assertEqual(len(res["all_jobs"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

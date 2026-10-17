@@ -108,7 +108,7 @@ def r_saved_search(q, body):
         "sort": g("sort", "ranked"),
         "h1b": g("h1b")
     }
-    return db.query_stored_jobs(filters)
+    return db.query_stored_jobs(filters, include_all=True)
 
 
 @route("GET", "/api/jobs/query")

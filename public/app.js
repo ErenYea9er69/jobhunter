@@ -2209,14 +2209,14 @@
 
           const res = await api(`/api/search/saved?${params.toString()}`);
           if (res) {
-            const pool = res.jobs || [];
-            S.allJobs = pool;
-            S.jobsRanked = pool;
-            S.jobs = pool;
+            const allPool = (res.all_jobs && res.all_jobs.length) ? res.all_jobs : (S.allJobs && S.allJobs.length ? S.allJobs : (res.jobs || []));
+            S.allJobs = allPool;
+            S.jobsRanked = allPool;
+            S.jobs = (res.jobs && res.jobs.length) ? res.jobs : allPool;
             S.searchMeta = res.meta || S.searchMeta || {};
             S.searchHasRun = true;
-            if (pool.length && (!S.selectedKey || !pool.some(j => jobKey(j) === S.selectedKey))) {
-              S.selectedKey = jobKey(pool[0]);
+            if (S.jobs.length && (!S.selectedKey || !S.jobs.some(j => jobKey(j) === S.selectedKey))) {
+              S.selectedKey = jobKey(S.jobs[0]);
             }
             filterAndRender(false);
             syncFiltersUi();
@@ -5165,7 +5165,7 @@
       const label = e.target.options[e.target.selectedIndex].text;
       toast(label === 'Off' ? 'Auto-refresh disabled' : `Auto-refresh set to ${label.toLowerCase()}`);
     });
-    $('#sortResultsBy').addEventListener('change', () => { filterAndRender(); });
+    $('#sortResultsBy').addEventListener('change', () => { filterAndRender(false); });
     $('#sourceToggle').addEventListener('click', () => {
       const p = $('#sourcePanel'); p.hidden = !p.hidden;
       $('#sourceToggle').setAttribute('aria-expanded', String(!p.hidden));
@@ -5470,7 +5470,7 @@
         if (t) t.textContent = labels[s] || 'Top Matched';
         $$('.p4-menu-item', sortMenu).forEach(b => b.classList.toggle('is-selected', b === item));
         sortMenu.hidden = true;
-        sortAndRankJobs();
+        applySort();
         renderResults();
       });
     }

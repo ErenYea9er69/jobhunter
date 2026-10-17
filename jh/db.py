@@ -467,7 +467,7 @@ def update_search_job(job):
     return False
 
 
-def query_stored_jobs(filters=None):
+def query_stored_jobs(filters=None, include_all=False):
     """Fast SQLite-level filtering across all stored jobs based on user criteria.
     Never launches a new external scraping search session.
     """
@@ -648,12 +648,18 @@ def query_stored_jobs(filters=None):
         wm_rows = c.execute("SELECT work_mode, count(*) as cnt FROM search_jobs WHERE is_active=1 GROUP BY work_mode").fetchall()
         sen_rows = c.execute("SELECT seniority, count(*) as cnt FROM search_jobs WHERE is_active=1 GROUP BY seniority").fetchall()
 
+        if include_all and len(clauses) > 1:
+            all_rows = c.execute(f"SELECT job_json FROM search_jobs WHERE is_active=1 {order_clause}").fetchall()
+        else:
+            all_rows = None
+
     jobs = [json.loads(r["job_json"]) for r in rows]
+    all_jobs = [json.loads(r["job_json"]) for r in all_rows] if all_rows is not None else jobs
     meta = get_search_meta() or {}
 
     return {
         "jobs": jobs,
-        "all_jobs": jobs,
+        "all_jobs": all_jobs,
         "count": len(jobs),
         "total_all": total_all,
         "meta": meta,
