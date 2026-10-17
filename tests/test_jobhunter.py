@@ -281,6 +281,51 @@ class SourceParserTests(Base):
         self.assertTrue(sources.Naukri().available())
         self.assertTrue(sources.HelloWork().available())
 
+    def test_startup_sources_integrated(self):
+        self.assertTrue(sources.YCombinatorStartups().available())
+        self.assertTrue(sources.StartupATS().available())
+        self.assertIn("Y Combinator", sources.SOURCE_RANKS)
+        self.assertIn("Startup ATS", sources.SOURCE_RANKS)
+        self.assertTrue(any(s.name == "Y Combinator" for s in sources.SEARCH_SOURCES))
+        self.assertTrue(any(s.name == "Startup ATS" for s in sources.SEARCH_SOURCES))
+
+    def test_ycombinator_source_fetch_and_enrich(self):
+        yc = sources.YCombinatorStartups()
+        sample_page = """<!DOCTYPE html><html><body>
+        <div id="app" data-page='{"component":"jobs/public/pages/JobsV2Page","version":"abc123","props":{"totalJobsCount":1,"jobs":[{"id":999,"title":"Senior Full Stack Engineer","companyName":"AcmeAI","companySlug":"acmeai","companyBatch":"W24","companyOneLiner":"Next-gen robotics platform","location":"San Francisco, CA / Remote (US)","jobType":"Full-time","roleType":"Full stack","salary":"$140K - $190K","applyUrl":"https://www.workatastartup.com/jobs/999"}]}}'></div>
+        </body></html>"""
+        with mock.patch("jh.sources._fetch_html_tls", return_value=sample_page):
+            jobs = yc.fetch("Full Stack", "Remote")
+            self.assertEqual(len(jobs), 1)
+            j = jobs[0]
+            self.assertEqual(j["title"], "Senior Full Stack Engineer")
+            self.assertEqual(j["company"], "AcmeAI")
+            self.assertTrue(j.get("is_startup"))
+            self.assertEqual(j["url"], "https://www.workatastartup.com/jobs/999")
+
+        detail_html = """<!DOCTYPE html><html><body>
+        <div id="app" data-page='{"component":"JobPage","props":{"job":{"id":999,"skills":["Python","React","PostgreSQL"],"descriptionHtml":"<p>Comprehensive description of full stack engineering role with Postgres and React.</p>","sponsorsVisa":true}}}'></div>
+        </body></html>"""
+        with mock.patch("jh.sources._fetch_html_tls", return_value=detail_html):
+            enriched = yc.enrich(jobs[0])
+            self.assertTrue(enriched.get("enriched"))
+            self.assertIn("Comprehensive description", enriched.get("description", ""))
+            self.assertEqual(enriched.get("skills"), ["Python", "React", "PostgreSQL"])
+            self.assertTrue(enriched.get("h1b"))
+
+    def test_startup_ats_filtering(self):
+        ats_src = sources.StartupATS()
+        sample_jobs = [
+            sources.make_job(id="1", title="Full Stack Engineer", company="Ramp", location="New York, NY", source="Startup ATS", is_startup=True),
+            sources.make_job(id="2", title="Account Executive", company="Ramp", location="New York, NY", source="Startup ATS", is_startup=True)
+        ]
+        mock_board = mock.MagicMock()
+        mock_board.fetch_company.return_value = sample_jobs
+        jobs = ats_src._search_company(mock_board, "ramp", "Ramp", "Full Stack", "")
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["title"], "Full Stack Engineer")
+        self.assertTrue(jobs[0]["is_startup"])
+
     def test_source_hierarchy_prefers_direct_employer_application(self):
         jobs = [
             sources.make_job(id="li-1", title="Senior Backend Engineer", company="Acme", location="Remote",
@@ -512,6 +557,8 @@ class FamousFilterTests(Base):
         self.assertTrue(sources.is_free_to_apply("Bayt"))
         self.assertTrue(sources.is_free_to_apply("Naukri"))
         self.assertTrue(sources.is_free_to_apply("HelloWork"))
+        self.assertTrue(sources.is_free_to_apply("Y Combinator"))
+        self.assertTrue(sources.is_free_to_apply("Startup ATS"))
 
     def test_dedup_prefers_free_source_over_paid_remoteok(self):
         paid_job = sources.make_job(id="rok-1", title="Staff Engineer", company="Vercel",

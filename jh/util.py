@@ -61,6 +61,7 @@ def clean_text(val):
             break
         s = unescaped
     s = s.replace("\xa0", " ").replace("\ufeff", "").replace("\u200b", "").replace("\u200c", "").replace("\u200d", "")
+    s = s.replace("\u2013", "-").replace("\u2014", "-").replace("\u2022", "•").replace("\u00b7", "•")
     s = re.sub(r"[ \t]+", " ", s)
     return s.strip()
 

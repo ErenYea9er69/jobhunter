@@ -168,7 +168,7 @@ def classify_job(j):
 
     # 8. Startups & Famous
     is_fam = 1 if is_famous_company(comp) or j.get("is_famous") else 0
-    is_start = 1 if not is_fam and any(k in haystack for k in ["series a", "series b", "seed", "startup", "yc", "y combinator"]) else 0
+    is_start = 1 if not is_fam and (bool(j.get("is_startup")) or any(k in haystack for k in ["series a", "series b", "seed", "startup", "yc", "y combinator"])) else 0
 
     # 9. H1B Sponsorship
     h1b = 1 if re.search(r"\bh1-?b\b|visa sponsorship|sponsor(?:ship)? available", haystack) else 0

@@ -1,5 +1,6 @@
 """Job sources. Each source returns normalized jobs or raises; the pipeline records health and falls back to cache."""
 import base64
+import concurrent.futures
 import datetime
 import functools
 import html
@@ -33,6 +34,7 @@ PAID_OR_GATED_SOURCES = {
 # Direct employer ATS (100) > Free Major Job Boards (88-96) > Free Feeds (70-85) > Paid/Gated Feeds (30-35)
 SOURCE_RANKS = {
     "Greenhouse": 100, "Lever": 100, "Ashby": 100, "SmartRecruiters": 100, "Workable": 100,
+    "Startup ATS": 100, "Y Combinator": 98,
     "LinkedIn": 96, "Indeed": 95, "ZipRecruiter": 94, "Hacker News": 92,
     "Bayt": 88, "Naukri": 88, "HelloWork": 88,
     "Himalayas": 85, "Jobicy": 82, "Arbeitnow": 80, "Adzuna": 75,
@@ -52,8 +54,10 @@ def apply_cost_note(source):
         return PAID_OR_GATED_SOURCES[s]
     if s.replace(" ", "") in PAID_OR_GATED_SOURCES:
         return PAID_OR_GATED_SOURCES[s.replace(" ", "")]
-    if s in {"Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workable"}:
+    if s in {"Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workable", "Startup ATS"}:
         return "100% Free Official Employer ATS"
+    if s == "Y Combinator":
+        return "100% Free Direct Founder Application"
     return "100% Free to apply"
 
 
@@ -65,8 +69,10 @@ def source_rank(source, tier=""):
 
 
 def source_kind(source, tier=""):
-    if str(tier).startswith("Direct company ATS") or source in {"Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workable"}:
+    if str(tier).startswith("Direct company ATS") or source in {"Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workable", "Startup ATS"}:
         return "Direct employer ATS"
+    if source == "Y Combinator":
+        return "Startup ecosystem"
     if source in {"LinkedIn", "Indeed", "ZipRecruiter", "Bayt", "Naukri", "HelloWork"}:
         return "Major job board"
     if source == "Adzuna":
@@ -395,6 +401,214 @@ class HackerNewsHiring(Source):
                                 url=f"https://news.ycombinator.com/item?id={h['objectID']}", description=text,
                                 posted_at=h.get("created_at"), source=self.name,
                                 source_credit="Hacker News: Who is hiring", source_tier=self.tier))
+        return out
+
+
+class YCombinatorStartups(Source):
+    name, tier = "Y Combinator", "Startup Ecosystem"
+
+    def available(self):
+        return True
+
+    def unavailable_reason(self):
+        return ""
+
+    def fetch(self, query, location):
+        q = (query or "").strip().lower()
+        role_path = "software-engineer"
+        if any(w in q for w in ("designer", "ui/ux", "product design", "design")):
+            role_path = "designer"
+        elif any(w in q for w in ("product manager", "product owner", "product lead")):
+            role_path = "product-manager"
+        elif any(w in q for w in ("data scientist", "data science", "machine learning", "ml engineer", "ai researcher")):
+            role_path = "science"
+
+        url = f"https://www.workatastartup.com/jobs/l/{role_path}"
+        try:
+            page = _fetch_html_tls(url, timeout=6)
+        except Exception as e:
+            raise HttpError(f"Failed to fetch YC startup page: {e}")
+
+        m = re.search(r'data-page="([^"]+)"', page) or re.search(r"data-page='([^']+)'", page)
+        if not m:
+            return []
+
+        try:
+            d = json.loads(html.unescape(m.group(1)))
+        except Exception:
+            return []
+
+        props = d.get("props", {})
+        raw_jobs = props.get("jobs", [])
+        version = d.get("version")
+
+        # Attempt to fetch page 2 via Inertia if version is available
+        if version and len(raw_jobs) >= 20:
+            try:
+                page2_url = f"{url}?page=2"
+                headers = [
+                    ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+                    ("X-Inertia", "true"),
+                    ("X-Inertia-Version", str(version)),
+                    ("X-Requested-With", "XMLHttpRequest"),
+                    ("Accept", "text/html, application/xhtml+xml")
+                ]
+                page2_raw = _fetch_html_tls(page2_url, headers=headers, timeout=5)
+                d2 = json.loads(page2_raw)
+                p2_jobs = d2.get("props", {}).get("jobs", [])
+                if p2_jobs:
+                    raw_jobs.extend(p2_jobs)
+            except Exception:
+                pass
+
+        out = []
+        seen_ids = set()
+        for j in raw_jobs:
+            jid = str(j.get("id") or "")
+            if not jid or jid in seen_ids:
+                continue
+            seen_ids.add(jid)
+
+            title = clean_text(j.get("title") or "")
+            comp = clean_text(j.get("companyName") or "")
+            if not title or not comp:
+                continue
+
+            if query and not _matches(query, title, comp):
+                continue
+
+            loc = clean_text(j.get("location") or "")
+            sal = clean_salary_label(j.get("salary") or "")
+            jt = clean_job_type(j.get("jobType") or "")
+            role_type = j.get("roleType") or ""
+            batch = j.get("companyBatch") or ""
+            one_liner = clean_text(j.get("companyOneLiner") or "")
+
+            desc = f"{one_liner}\n\nRole: {title}\nRole Track: {role_type}\nYC Batch: {batch}".strip() if one_liner else f"Role: {title}\nRole Track: {role_type}\nYC Batch: {batch}".strip()
+            u = f"https://www.workatastartup.com/jobs/{jid}"
+
+            job_dict = make_job(
+                id=f"yc-{jid}",
+                title=title,
+                company=comp,
+                location=loc,
+                salary=sal,
+                job_type=jt,
+                url=u,
+                description=desc,
+                source=self.name,
+                source_credit="Y Combinator (workatastartup.com)",
+                source_tier=self.tier,
+                tags=[t for t in [role_type, batch, "Y Combinator", "Startup"] if t]
+            )
+            job_dict["is_startup"] = True
+            out.append(job_dict)
+
+        return out
+
+    def enrich(self, job):
+        u = job.get("url") or ""
+        m = re.search(r"/jobs/(\d+)", u)
+        if not m:
+            return job
+        jid = m.group(1)
+        detail_url = f"https://www.workatastartup.com/jobs/{jid}"
+        try:
+            page = _fetch_html_tls(detail_url, timeout=5)
+            dm = re.search(r'data-page="([^"]+)"', page) or re.search(r"data-page='([^']+)'", page)
+            if dm:
+                d = json.loads(html.unescape(dm.group(1)))
+                j_det = d.get("props", {}).get("job", {})
+                desc_html = j_det.get("descriptionHtml") or ""
+                if desc_html:
+                    text_desc = html_to_text(desc_html, 12000)
+                    if text_desc and (len(text_desc) > len(job.get("description") or "") or "Role Track:" in str(job.get("description", ""))):
+                        job["description"] = text_desc
+                skills_list = j_det.get("skills") or []
+                if skills_list:
+                    job["skills"] = list(dict.fromkeys((job.get("skills") or []) + skills_list))
+                if j_det.get("sponsorsVisa"):
+                    job["h1b"] = True
+                job["enriched"] = True
+                job["needs_enrichment"] = False
+        except Exception:
+            pass
+        return job
+
+
+class StartupATS(Source):
+    name, tier = "Startup ATS", "Direct company ATS"
+
+    # Pre-verified high-growth startups and unicorns hosted on Ashby and Greenhouse
+    STARTUP_DIRECTORY = (
+        ("Ashby", "ramp", "Ramp"),
+        ("Ashby", "notion", "Notion"),
+        ("Ashby", "plaid", "Plaid"),
+        ("Ashby", "cursor", "Cursor"),
+        ("Ashby", "zapier", "Zapier"),
+        ("Ashby", "perplexity", "Perplexity AI"),
+        ("Ashby", "vanta", "Vanta"),
+        ("Ashby", "resend", "Resend"),
+        ("Ashby", "elevenlabs", "ElevenLabs"),
+        ("Ashby", "cognition", "Cognition"),
+        ("Ashby", "harvey", "Harvey"),
+        ("Ashby", "langchain", "LangChain"),
+        ("Ashby", "railway", "Railway"),
+        ("Ashby", "neon", "Neon"),
+        ("Ashby", "replit", "Replit"),
+        ("Ashby", "linear", "Linear"),
+        ("Ashby", "modal", "Modal"),
+        ("Ashby", "posthog", "PostHog"),
+        ("Ashby", "benchling", "Benchling"),
+        ("Greenhouse", "brex", "Brex"),
+        ("Greenhouse", "scaleai", "Scale AI"),
+        ("Greenhouse", "fivetran", "Fivetran"),
+        ("Greenhouse", "gusto", "Gusto"),
+    )
+
+    def available(self):
+        return True
+
+    def unavailable_reason(self):
+        return ""
+
+    def _search_company(self, board, slug, company_name, query, location):
+        try:
+            jobs = board.fetch_company(slug, company_name)
+            out = []
+            for j in jobs:
+                j["is_startup"] = True
+                j["source"] = self.name
+                j["source_tier"] = self.tier
+                if query and not _matches(query, j.get("title", ""), j.get("company", "")):
+                    continue
+                out.append(j)
+            return out
+        except Exception:
+            return []
+
+    def fetch(self, query, location):
+        out = []
+        boards = {
+            "Ashby": Ashby(),
+            "Greenhouse": Greenhouse(),
+            "Lever": Lever()
+        }
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            futures = [
+                pool.submit(self._search_company, boards[b_type], slug, comp_name, query, location)
+                for b_type, slug, comp_name in self.STARTUP_DIRECTORY
+                if b_type in boards
+            ]
+            for f in concurrent.futures.as_completed(futures):
+                try:
+                    res = f.result()
+                    if res:
+                        out.extend(res)
+                except Exception:
+                    continue
+
         return out
 
 
@@ -1465,6 +1679,7 @@ def enrich_job(job):
 
 
 SEARCH_SOURCES = [
+    StartupATS(), YCombinatorStartups(),
     Himalayas(), Remotive(), Jobicy(), Arbeitnow(), RemoteOK(), WeWorkRemotely(),
     HackerNewsHiring(), Adzuna(), LinkedInGuest(), Indeed(),
     ZipRecruiter(), Bayt(), Naukri(), HelloWork()
