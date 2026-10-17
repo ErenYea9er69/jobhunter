@@ -326,6 +326,29 @@ class SourceParserTests(Base):
         self.assertEqual(jobs[0]["title"], "Full Stack Engineer")
         self.assertTrue(jobs[0]["is_startup"])
 
+    def test_linkedin_guest_fetch_and_cursor_loop(self):
+        lg = sources.LinkedInGuest()
+        sample_card = """<li>
+          <div class="base-card base-search-card base-search-card--link job-search-card">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/python-engineer-at-acme-4411223344">
+              <h3 class="base-search-card__title">Senior Python Engineer</h3>
+            </a>
+            <h4 class="base-search-card__subtitle">Acme Corp</h4>
+            <span class="job-search-card__location">New York, NY</span>
+            <time datetime="2026-10-15"></time>
+          </div>
+        </li>"""
+        db.set_setting("linkedin_scrape_depth", "deep")
+        with mock.patch.object(lg, "_get_page", return_value=sample_card):
+            jobs = lg.fetch("Python", "New York")
+            self.assertTrue(len(jobs) >= 1)
+            self.assertEqual(jobs[0]["id"], "linkedin-4411223344")
+            self.assertEqual(jobs[0]["title"], "Senior Python Engineer")
+            self.assertEqual(jobs[0]["company"], "Acme Corp")
+            # Verify cursor was recorded in SQLite
+            cur = db.get_setting("li_cursor_python_newyork")
+            self.assertTrue(cur.isdigit() and int(cur) > 0)
+
     def test_source_hierarchy_prefers_direct_employer_application(self):
         jobs = [
             sources.make_job(id="li-1", title="Senior Backend Engineer", company="Acme", location="Remote",

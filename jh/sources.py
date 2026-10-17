@@ -6,6 +6,7 @@ import functools
 import html
 import http.cookiejar
 import json
+import random
 import re
 import secrets
 import threading
@@ -830,6 +831,8 @@ class LinkedInGuest(Source):
             ("Sec-Ch-Ua-Mobile", "?0"),
             ("Sec-Ch-Ua-Platform", '"Windows"'),
         ]
+        self._tls_session = None
+        self._session_lock = threading.Lock()
         self._warmed = False
 
     def available(self):
@@ -846,6 +849,41 @@ class LinkedInGuest(Source):
                 self._warmed = True
             except Exception:
                 pass
+
+    def _get_page(self, url, timeout=6):
+        """Fetch URL using persistent curl_cffi Chrome TLS session with automatic fallback to urllib."""
+        try:
+            from curl_cffi import requests as curl_requests
+            with self._session_lock:
+                if self._tls_session is None:
+                    self._tls_session = curl_requests.Session(impersonate="chrome")
+                    try:
+                        self._tls_session.get("https://www.linkedin.com/jobs", timeout=4)
+                    except Exception:
+                        pass
+                session = self._tls_session
+
+            headers = {
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+            r = session.get(url, headers=headers, timeout=timeout)
+            if r.status_code == 200:
+                return r.text
+            elif r.status_code == 429:
+                with self._session_lock:
+                    self._tls_session = None
+                return "429"
+        except Exception:
+            pass
+
+        try:
+            with self._opener.open(url, timeout=timeout) as resp:
+                return resp.read().decode("utf-8", errors="replace")
+        except Exception as e:
+            if "429" in str(e):
+                return "429"
+            return ""
 
     def fetch(self, query, location):
         self._warmup()
@@ -870,40 +908,69 @@ class LinkedInGuest(Source):
         remote_flag = "&f_WT=2" if is_remote else ""
         search_loc = loc if loc and loc.lower() not in ("remote", "anywhere") else "Worldwide"
 
+        # Load known IDs from SQLite for promoted-safe early stopping
+        known_db_ids = set()
+        try:
+            from . import db
+            with db.session() as c:
+                rows = c.execute("SELECT job_key FROM search_jobs WHERE job_key LIKE 'linkedin-%' LIMIT 3000").fetchall()
+                known_db_ids = {r["job_key"].replace("linkedin-", "") for r in rows}
+        except Exception:
+            pass
+
+        # Persistent offset cursor for deep continuation
+        clean_kw_key = re.sub(r"[^a-z0-9]", "", kw.lower())
+        clean_loc_key = re.sub(r"[^a-z0-9]", "", search_loc.lower())
+        cursor_key = f"li_cursor_{clean_kw_key}_{clean_loc_key}"[:60]
+        base_cursor = 0
+        try:
+            from . import db
+            c_val = db.get_setting(cursor_key)
+            if c_val and c_val.isdigit():
+                base_cursor = int(c_val)
+                if base_cursor >= 900:
+                    base_cursor = 0
+        except Exception:
+            pass
+
         depth = config.get_linkedin_scrape_depth()
         if depth == "max":
-            primary_offsets = [0, 25, 50, 75, 100, 125]
-            fresh_offsets = [0, 25, 50]
-            startup_offsets = [0, 25, 50]
+            primary_offsets = [base_cursor + (i * 10) for i in range(15)]
+            fresh_offsets = [0, 10, 20, 30]
+            startup_offsets = [0, 10, 20, 30]
             max_out = 1000
         elif depth == "deep":
-            primary_offsets = [0, 25, 50, 75]
-            fresh_offsets = [0, 25]
-            startup_offsets = [0, 25]
+            primary_offsets = [base_cursor + (i * 10) for i in range(8)]
+            fresh_offsets = [0, 10, 20]
+            startup_offsets = [0, 10, 20]
             max_out = 500
         elif depth == "fast":
-            primary_offsets = [0]
-            fresh_offsets = []
+            primary_offsets = [0, 10]
+            fresh_offsets = [0]
             startup_offsets = [0]
             max_out = 100
         else:
-            primary_offsets = [0, 25]
-            fresh_offsets = [0]
-            startup_offsets = [0, 25]
+            primary_offsets = [0, 10, 20, 30]
+            fresh_offsets = [0, 10]
+            startup_offsets = [0, 10]
             max_out = 250
 
         target_places = [search_loc]
         if user_c and user_c.lower() not in ("remote", "anywhere", "worldwide") and user_c.lower() != search_loc.lower():
             target_places.append(user_c)
 
+        # Dual-stream query matrix:
+        # Stream 1: Core relevance (best matched roles)
+        # Stream 2: Chronological fresh (sortBy=DD & f_TPR=r604800, newest first)
+        # Stream 3: High-growth startup roles
         queries = []
         for pl in target_places:
             for off in primary_offsets:
-                queries.append((kw, pl, off, "", False))
+                queries.append((kw, pl, off, "", False, False))
             for off in fresh_offsets:
-                queries.append((kw, pl, off, "&f_TPR=r604800", False))
+                queries.append((kw, pl, off, "&sortBy=DD&f_TPR=r604800", False, True))
             for off in startup_offsets:
-                queries.append((f"{kw} startup", pl, off, "", True))
+                queries.append((f"{kw} startup", pl, off, "", True, False))
 
         q_lower = kw.lower()
         syn = ""
@@ -917,31 +984,43 @@ class LinkedInGuest(Source):
             syn = f"{kw} developer"
 
         if syn and syn != kw:
-            queries.append((syn, search_loc, 0, "", False))
+            queries.append((syn, search_loc, 0, "", False, False))
             if depth in ("deep", "max"):
-                queries.append((syn, search_loc, 25, "", False))
+                queries.append((syn, search_loc, 10, "", False, False))
 
         if search_loc == "Worldwide" and not remote_flag:
-            queries.append((kw, "Worldwide", 0, "&f_WT=2", False))
+            queries.append((kw, "Worldwide", 0, "&f_WT=2", False, False))
             if depth in ("deep", "max"):
-                queries.append((kw, "Worldwide", 25, "&f_WT=2", False))
+                queries.append((kw, "Worldwide", 10, "&f_WT=2", False, False))
 
-        for term, place, start_idx, extra_params, is_startup_term in queries:
-            if len(out) >= max_out:
+        t_start = time.time()
+        for term, place, start_idx, extra_params, is_startup_term, is_fresh_stream in queries:
+            if len(out) >= max_out or (time.time() - t_start > 12.0 and len(out) >= 20):
                 break
             url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
                    f"keywords={urllib.parse.quote(term)}&location={urllib.parse.quote(place)}"
                    f"{remote_flag}{extra_params}&start={start_idx}")
-            try:
-                with self._opener.open(url, timeout=5) as resp:
-                    page = resp.read().decode("utf-8", errors="replace")
-            except Exception:
-                time.sleep(0.2)
+
+            page = self._get_page(url, timeout=5)
+            if page == "429":
+                time.sleep(0.8)
+                continue
+            if not page:
+                time.sleep(0.1)
                 continue
 
             cards = re.findall(r"<li>(.*?)</li>", page, re.S)
             if not cards:
                 continue
+
+            # Promoted-safe early stopping on chronological fresh stream:
+            # If deeper than start=0 and >= 80% of cards are already known, skip older pages
+            if is_fresh_stream and start_idx > 0 and known_db_ids and len(cards) >= 5:
+                card_jids = [m.group(1) for m in re.finditer(r'base-card__full-link[^>]*href="[^"]*?(\d{6,})', page)]
+                if card_jids:
+                    known_hits = sum(1 for cid in card_jids if cid in known_db_ids)
+                    if known_hits / len(card_jids) >= 0.8:
+                        continue
 
             for card in cards:
                 t = re.search(r'base-search-card__title[^>]*>\s*([^<]+)', card)
@@ -986,7 +1065,19 @@ class LinkedInGuest(Source):
                 ))
                 if len(out) >= max_out:
                     break
-            time.sleep(0.12)
+
+            time.sleep(random.uniform(0.10, 0.22))
+
+        # Advance cursor for deep searches
+        if depth in ("deep", "max") and primary_offsets:
+            try:
+                from . import db
+                next_cur = primary_offsets[-1] + 10
+                if next_cur >= 900:
+                    next_cur = 0
+                db.set_setting(cursor_key, str(next_cur))
+            except Exception:
+                pass
 
         return out[:max_out]
 
@@ -999,8 +1090,11 @@ class LinkedInGuest(Source):
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
         }
+        detail_url = f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{m.group(1)}"
         try:
-            page = http_get(f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{m.group(1)}", headers=headers, retries=0)
+            page = self._get_page(detail_url, timeout=6)
+            if not page or page == "429":
+                page = http_get(detail_url, headers=headers, retries=0)
             d = re.search(r'show-more-less-html__markup[^>]*>(.*?)</div>', page, re.S)
             if d:
                 full_desc = html_to_text(d.group(1))
