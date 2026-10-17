@@ -796,42 +796,158 @@ def start_auto_search_worker():
 _li_scraper = None  # singleton LinkedInGuest instance for incremental scraping
 _li_bg_thread = None
 _li_bg_stop = threading.Event()
+_radar_lock = threading.Lock()
+_radar_telemetry = {
+    "last_run": None,
+    "last_status": "idle",
+    "last_query": "",
+    "last_action": "Ready",
+    "new_found_last": 0,
+    "total_found_lifetime": 0,
+    "is_running": False
+}
 
 
 def run_linkedin_incremental():
-    """Lightweight LinkedIn-only scrape: only fetch fresh stream, score, and store new jobs as pending.
-
-    Designed to run every 5-10 minutes for near-real-time job discovery without
-    hitting rate limits (only 5 pages per run).
-    """
+    """Lightweight adaptive LinkedIn scrape: fetch fresh/rotated/backfill stream, score, and stage new jobs."""
     global _li_scraper
-    profile = db.get_profile()
-    if profile.get("_is_empty"):
-        return 0
+    with _radar_lock:
+        if _radar_telemetry.get("is_running"):
+            return 0
+        _radar_telemetry["is_running"] = True
+        _radar_telemetry["last_status"] = "scanning"
 
-    tgt_title = (profile.get("target_title") or "").strip()
-    query = tgt_title or (profile.get("skills", ["Software Engineer"])[0] if profile.get("skills") else "Software Engineer")
-    location = (profile.get("location") or "").strip()
-
-    if _li_scraper is None:
-        _li_scraper = src.LinkedInGuest()
-
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     try:
-        new_jobs = _li_scraper.fetch_incremental(query, location)
-        if not new_jobs:
+        profile = db.get_profile()
+        if profile.get("_is_empty"):
+            with _radar_lock:
+                _radar_telemetry["is_running"] = False
+                _radar_telemetry["last_status"] = "idle"
+                _radar_telemetry["last_action"] = "No profile uploaded yet"
             return 0
 
-        # Score and store as pending
-        for j in new_jobs:
-            j.update(score_job(j, profile))
-            _rank_opportunity(j)
+        tgt_title = (profile.get("target_title") or "").strip()
+        query = tgt_title or (profile.get("skills", ["Software Engineer"])[0] if profile.get("skills") else "Software Engineer")
+        location = (profile.get("location") or "").strip()
 
-        db.store_pending_jobs(new_jobs, query=f"linkedin_incremental:{query}")
-        log.info("LinkedIn incremental: %d new jobs found and staged.", len(new_jobs))
-        return len(new_jobs)
+        if _li_scraper is None:
+            _li_scraper = src.LinkedInGuest()
+
+        _radar_telemetry["last_query"] = query
+        new_jobs = _li_scraper.fetch_incremental(query, location)
+        act_msg = getattr(_li_scraper, "_last_incremental_activity", "") or f"Scanned LinkedIn for '{query}'"
+
+        added_count = 0
+        if new_jobs:
+            for j in new_jobs:
+                j.update(score_job(j, profile))
+                _rank_opportunity(j)
+
+            added_count = db.store_pending_jobs(new_jobs, query=f"linkedin_incremental:{query}")
+            log.info("LinkedIn incremental: %d new jobs found and staged.", added_count)
+
+        with _radar_lock:
+            _radar_telemetry["last_run"] = now_iso
+            _radar_telemetry["new_found_last"] = added_count
+            _radar_telemetry["total_found_lifetime"] = _radar_telemetry.get("total_found_lifetime", 0) + added_count
+            _radar_telemetry["last_action"] = act_msg
+            _radar_telemetry["last_status"] = "idle"
+            _radar_telemetry["is_running"] = False
+
+        try:
+            db.set_setting("li_radar_last_run", now_iso)
+            db.set_setting("li_radar_last_query", query)
+            db.set_setting("li_radar_last_action", act_msg)
+            db.set_setting("li_radar_new_last", str(added_count))
+            cur_tot = int(db.get_setting("li_radar_total_lifetime") or 0) + added_count
+            db.set_setting("li_radar_total_lifetime", str(cur_tot))
+        except Exception:
+            pass
+
+        return added_count
     except Exception as e:
         log.debug("LinkedIn incremental scrape failed: %s", e)
+        with _radar_lock:
+            _radar_telemetry["is_running"] = False
+            _radar_telemetry["last_status"] = "idle"
+            _radar_telemetry["last_action"] = f"Scan error: {str(e)[:80]}"
         return 0
+
+
+def get_linkedin_radar_status():
+    """Return live status, intervals, and metrics for the LinkedIn Radar UI."""
+    interval_min = config.get_linkedin_incremental_minutes()
+    enabled = interval_min > 0
+    pending_count = db.get_pending_jobs_count()
+
+    last_run = _radar_telemetry.get("last_run")
+    if not last_run:
+        try:
+            last_run = db.get_setting("li_radar_last_run")
+        except Exception:
+            pass
+
+    next_run = None
+    if enabled and interval_min > 0:
+        if last_run:
+            try:
+                lr_dt = datetime.datetime.fromisoformat(last_run.replace("Z", "+00:00"))
+                next_dt = lr_dt + datetime.timedelta(minutes=interval_min)
+                next_run = next_dt.isoformat()
+            except Exception:
+                pass
+        else:
+            next_run = "Immediate"
+
+    last_query = _radar_telemetry.get("last_query")
+    if not last_query:
+        try:
+            last_query = db.get_setting("li_radar_last_query") or ""
+        except Exception:
+            pass
+
+    last_action = _radar_telemetry.get("last_action")
+    if not last_action or last_action == "Ready":
+        try:
+            last_action = db.get_setting("li_radar_last_action") or "Waiting for next scan"
+        except Exception:
+            pass
+
+    new_last = _radar_telemetry.get("new_found_last", 0)
+    try:
+        new_last = int(db.get_setting("li_radar_new_last") or new_last)
+    except Exception:
+        pass
+
+    tot_life = _radar_telemetry.get("total_found_lifetime", 0)
+    try:
+        tot_life = int(db.get_setting("li_radar_total_lifetime") or tot_life)
+    except Exception:
+        pass
+
+    return {
+        "enabled": enabled,
+        "interval_min": interval_min,
+        "status": _radar_telemetry.get("last_status", "idle"),
+        "is_running": _radar_telemetry.get("is_running", False),
+        "last_run": last_run,
+        "next_run": next_run,
+        "last_query": last_query,
+        "last_action": last_action,
+        "new_found_last": new_last,
+        "total_found_lifetime": tot_life,
+        "pending_count": pending_count
+    }
+
+
+def trigger_linkedin_radar_now():
+    """Trigger an immediate LinkedIn Radar pass on-demand from the UI."""
+    if _radar_telemetry.get("is_running"):
+        return False, "Scan already in progress."
+    th = threading.Thread(target=run_linkedin_incremental, daemon=True, name="jh-li-radar-manual")
+    th.start()
+    return True, "Scan started in background."
 
 
 def _linkedin_incremental_worker():

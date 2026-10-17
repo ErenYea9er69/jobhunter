@@ -422,6 +422,55 @@ class SourceParserTests(Base):
         self.assertIn("linkedin-1111111111", job_ids, "New job should be included")
         self.assertNotIn("linkedin-2222222222", job_ids, "Known job should be filtered out")
 
+    def test_linkedin_incremental_adaptive_stagnant_page1_rotates_or_backfills(self):
+        """When Page 1 top ID is identical to last run, it pivots to skill rotation or backfill."""
+        lg = sources.LinkedInGuest()
+        card_stagnant = """<li>
+          <div class="base-card base-search-card base-search-card--link job-search-card">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/stale-role-9999999999">
+              <h3 class="base-search-card__title">Stale Role</h3>
+            </a>
+            <h4 class="base-search-card__subtitle">StaleCo</h4>
+          </div>
+        </li>"""
+        card_backfill = """<li>
+          <div class="base-card base-search-card base-search-card--link job-search-card">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/unseen-role-8888888888">
+              <h3 class="base-search-card__title">Unseen Backfill Role</h3>
+            </a>
+            <h4 class="base-search-card__subtitle">BackfillCo</h4>
+          </div>
+        </li>"""
+
+        # Mark 9999999999 as known and set as last_top_id
+        db.set_setting("li_radar_last_top_id", "9999999999")
+        with db.session() as c:
+            c.execute("INSERT OR IGNORE INTO seen_jobs (job_key,title,company,url,source_names,first_seen,last_seen,best_score) VALUES (?,?,?,?,?,?,?,?)",
+                      ("linkedin-9999999999", "Stale", "StaleCo", "x", "LinkedIn", "2026-10-10", "2026-10-10", 0))
+
+        # First page call returns card_stagnant, subsequent backfill returns card_backfill
+        with mock.patch.object(lg, "_get_page", side_effect=[card_stagnant, card_backfill]):
+            with mock.patch("time.sleep"):
+                jobs = lg.fetch_incremental("Python", "Remote")
+
+        job_ids = [j["id"] for j in jobs]
+        self.assertIn("linkedin-8888888888", job_ids, "Unseen backfill job should be captured on stagnant page 1")
+        self.assertNotIn("linkedin-9999999999", job_ids, "Known top job should not be included")
+
+    def test_linkedin_radar_status_and_settings(self):
+        """Pipeline returns valid radar status and handles interval updates."""
+        from jh import pipeline
+        st = pipeline.get_linkedin_radar_status()
+        self.assertIn("enabled", st)
+        self.assertIn("interval_min", st)
+        self.assertIn("pending_count", st)
+        self.assertIn("last_action", st)
+
+        # Trigger radar should return success or in-progress
+        ok, msg = pipeline.trigger_linkedin_radar_now()
+        self.assertTrue(ok)
+        self.assertIn("Scan", msg)
+
     def test_source_hierarchy_prefers_direct_employer_application(self):
         jobs = [
             sources.make_job(id="li-1", title="Senior Backend Engineer", company="Acme", location="Remote",

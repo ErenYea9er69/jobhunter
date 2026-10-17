@@ -580,6 +580,74 @@
               <span class="p4-refresh-badge" id="jobsRefreshBadge" hidden>0 new</span>
             </button>
 
+            <!-- LinkedIn Live Radar Widget -->
+            <div class="radar-widget-wrap" id="radarWidgetWrap">
+              <button type="button" class="p4-pill-btn p4-btn-radar" id="btnLinkedinRadar" aria-haspopup="true" aria-expanded="false" title="LinkedIn Live Radar: Automatic job poller">
+                <span class="radar-live-dot" id="radarLiveDot" aria-hidden="true">
+                  <span class="radar-live-ring"></span>
+                  <span class="radar-live-core"></span>
+                </span>
+                <svg class="i"><use href="#i-linkedin"/></svg>
+                <span class="p4-radar-label" id="p4RadarLabel">Radar Active</span>
+                <span class="p4-radar-badge" id="p4RadarBadge" hidden>0 new</span>
+              </button>
+              
+              <!-- Radar Popover Dropdown -->
+              <div class="radar-popover" id="radarPopover" hidden>
+                <div class="radar-popover-head">
+                  <div class="radar-head-left">
+                    <span class="radar-title"><svg class="i"><use href="#i-linkedin"/></svg>LinkedIn Live Radar</span>
+                    <span class="chip chip-ok chip-sm" id="radarStatusChip">Active</span>
+                  </div>
+                  <button type="button" class="radar-close-btn" id="radarPopoverClose" aria-label="Close">&times;</button>
+                </div>
+                
+                <div class="radar-popover-body">
+                  <p class="radar-summary-text" id="radarSummaryText">Checks LinkedIn automatically in the background for new jobs matching your profile.</p>
+                  
+                  <div class="radar-meta-grid">
+                    <div class="radar-meta-item">
+                      <span class="radar-meta-k">Last Scan</span>
+                      <span class="radar-meta-v" id="radarLastScanText">Just now</span>
+                    </div>
+                    <div class="radar-meta-item">
+                      <span class="radar-meta-k">Next Scan</span>
+                      <span class="radar-meta-v" id="radarNextScanText">In 10m</span>
+                    </div>
+                    <div class="radar-meta-item span-2">
+                      <span class="radar-meta-k">Last Activity</span>
+                      <span class="radar-meta-v" id="radarLastActivityText">Checked 24h postings</span>
+                    </div>
+                    <div class="radar-meta-item span-2">
+                      <span class="radar-meta-k">Staged Waiting</span>
+                      <span class="radar-meta-v highlight" id="radarPendingText">0 new jobs ready</span>
+                    </div>
+                  </div>
+
+                  <div class="radar-freq-row">
+                    <label for="radarFreqSelect">Scan Frequency</label>
+                    <select id="radarFreqSelect" class="radar-select">
+                      <option value="5">Every 5 minutes (Aggressive)</option>
+                      <option value="10" selected>Every 10 minutes (Recommended)</option>
+                      <option value="15">Every 15 minutes</option>
+                      <option value="30">Every 30 minutes</option>
+                      <option value="0">Disabled (Manual only)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="radar-popover-foot">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btnRadarScanNow">
+                    <svg class="i" id="radarScanIcon"><use href="#i-refresh"/></svg>
+                    <span id="radarScanBtnText">Scan Now</span>
+                  </button>
+                  <button type="button" class="btn btn-primary btn-sm" id="btnRadarApplyJobs">
+                    <span>Review Staged Jobs</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <!-- All Filters Toggle Button -->
             <button type="button" class="p4-pill-btn p4-btn-all-filters" id="p4BtnAllFilters">
               <span>••• All Filters</span>
@@ -1324,6 +1392,57 @@
 
           <div class="head-actions" style="margin-top:14px;">
             <button type="button" class="btn btn-primary btn-sm" id="btnSaveCapacity">Save search capacity &amp; global targeting</button>
+          </div>
+        </section>
+
+        <!-- LinkedIn Live Radar Settings Card -->
+        <section class="card" id="linkedinRadarSettingsCard">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title"><svg class="i" aria-hidden="true"><use href="#i-linkedin"/></svg>LinkedIn Live Radar (Background Poller)</h2>
+              <p class="muted">Runs lightweight background sweeps without opening a browser. Uses adaptive fingerprinting to skip identical pages, auto-rotates profile skill variants, and deep-indexes unseen jobs.</p>
+            </div>
+            <span class="chip chip-ok" id="activeRadarSettingsBadge">Active (10m)</span>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="cfgRadarIntervalSelect">Radar Polling Frequency</label>
+              <select id="cfgRadarIntervalSelect">
+                <option value="5">Every 5 minutes (Aggressive / Real-time)</option>
+                <option value="10" selected>Every 10 minutes (Recommended)</option>
+                <option value="15">Every 15 minutes</option>
+                <option value="30">Every 30 minutes</option>
+                <option value="0">Disabled (Manual only)</option>
+              </select>
+              <small class="muted">Interval between background sweeps. Set to Disabled if you prefer manual scans.</small>
+            </div>
+
+            <div class="form-field">
+              <label>Current Status &amp; Strategy</label>
+              <div class="radar-info-box" style="padding:10px 14px; background:var(--bg-subtle, rgba(255,255,255,0.04)); border:1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius:8px; font-size:13px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                  <span class="muted">Last Sweep:</span>
+                  <strong id="cfgRadarLastSweepText">Never</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                  <span class="muted">Next Sweep:</span>
+                  <span id="cfgRadarNextSweepText">In 10m</span>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                  <span class="muted">Adaptive Mode:</span>
+                  <span style="color:var(--brand-primary, #00E599);">Fingerprint check + Skill rotation</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="head-actions" style="margin-top:14px; gap:8px;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnCfgRadarScanNow">
+              <svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>
+              <span>Trigger Scan Now</span>
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnSaveRadarSettings">Save radar frequency</button>
           </div>
         </section>
 

@@ -139,6 +139,31 @@ def r_auto_search_trigger(q, body):
     return {"success": True, "message": "Background auto search started in background."}
 
 
+@route("GET", "/api/linkedin-radar/status")
+def r_linkedin_radar_status(q, body):
+    return {"success": True, "radar": pipeline.get_linkedin_radar_status()}
+
+
+@route("POST", "/api/linkedin-radar/settings")
+def r_linkedin_radar_settings(q, body):
+    enabled = bool(body.get("enabled", True))
+    try:
+        interval_min = int(body.get("interval_min", 10))
+    except (ValueError, TypeError):
+        interval_min = 10
+    if not enabled or interval_min <= 0:
+        db.set_setting("linkedin_incremental_minutes", "0")
+    else:
+        db.set_setting("linkedin_incremental_minutes", str(max(1, min(120, interval_min))))
+    return {"success": True, "radar": pipeline.get_linkedin_radar_status()}
+
+
+@route("POST", "/api/linkedin-radar/trigger")
+def r_linkedin_radar_trigger(q, body):
+    ok, msg = pipeline.trigger_linkedin_radar_now()
+    return {"success": ok, "message": msg, "radar": pipeline.get_linkedin_radar_status()}
+
+
 @route("POST", "/api/jobs/refresh-sync")
 def r_refresh_sync(q, body):
     res = db.apply_refresh_sync()

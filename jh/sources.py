@@ -1253,10 +1253,14 @@ class LinkedInGuest(Source):
         return job
 
     def fetch_incremental(self, query, location):
-        """Lightweight fresh-only scrape for periodic background updates.
+        """Lightweight adaptive scrape for periodic background updates.
 
-        Only fetches sortBy=DD fresh pages to catch newly posted jobs.
-        Returns only jobs not already in the database. Designed to run every 5-10 min.
+        1. Checks Page 1 of the real-time fresh stream (sortBy=DD&f_TPR=r86400).
+        2. Detects if Page 1 is identical to last time (all cards known / top ID unchanged).
+        3. If NEW jobs exist: collects them, advances to page 2 if heavily populated.
+        4. If Page 1 is UNCHANGED (stagnant): avoids redundant calls on the same query
+           and pivots to rotated profile skill slices or an advancing backfill cursor
+           so every run discovers new unseen opportunities for the user.
         """
         self._warmup()
         kw = (query or "software engineer").strip()
@@ -1290,34 +1294,14 @@ class LinkedInGuest(Source):
         except Exception:
             pass
 
-        # Only fresh streams: last 24h and last 7 days, sortBy=DD (newest first)
-        fresh_queries = [
-            (kw, search_loc, 0, "&sortBy=DD&f_TPR=r86400"),
-            (kw, search_loc, 10, "&sortBy=DD&f_TPR=r86400"),
-            (kw, search_loc, 0, "&sortBy=DD&f_TPR=r604800"),
-            (kw, search_loc, 10, "&sortBy=DD&f_TPR=r604800"),
-            (kw, search_loc, 20, "&sortBy=DD&f_TPR=r604800"),
-        ]
-
         out = []
         seen_ids = set()
-        for term, place, start_idx, extra in fresh_queries:
-            if len(out) >= 100:
-                break
-            url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
-                   f"keywords={urllib.parse.quote(term)}&location={urllib.parse.quote(place)}"
-                   f"{remote_flag}{extra}&start={start_idx}")
 
-            page = self._get_page(url, timeout=5)
-            if page == "429":
-                time.sleep(random.uniform(1.5, 3.0))
-                page = self._get_page(url, timeout=5)
-                if page == "429" or not page:
-                    continue
-            if not page:
-                continue
-
-            cards = re.findall(r"<li>(.*?)</li>", page, re.S)
+        def _parse_cards(page_text):
+            parsed = []
+            if not page_text or page_text == "429":
+                return parsed
+            cards = re.findall(r"<li>(.*?)</li>", page_text, re.S)
             for card in cards:
                 t = re.search(r'base-search-card__title[^>]*>\s*([^<]+)', card)
                 c = re.search(r'base-search-card__subtitle[^>]*>\s*(?:<a[^>]*>\s*)?([^<]+)', card)
@@ -1332,18 +1316,65 @@ class LinkedInGuest(Source):
                 jid_match = re.search(r"(\d{6,})", u.group(1))
                 jid = jid_match.group(1) if jid_match else str(abs(hash(u.group(1))))
 
-                if jid in seen_ids or jid in known_ids:
-                    continue
-                seen_ids.add(jid)
+                parsed.append({
+                    "jid": jid,
+                    "title": html.unescape(t.group(1).strip()),
+                    "company": html.unescape(c.group(1).strip()),
+                    "location": html.unescape(l.group(1).strip()) if l else "",
+                    "salary": html.unescape(sal_m.group(1).strip()) if sal_m else "",
+                    "url": u.group(1),
+                    "posted_at": d.group(1) if d else "",
+                })
+            return parsed
 
+        def _fetch_url(term, place, start_idx, extra):
+            url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
+                   f"keywords={urllib.parse.quote(term)}&location={urllib.parse.quote(place)}"
+                   f"{remote_flag}{extra}&start={start_idx}")
+            page = self._get_page(url, timeout=5)
+            if page == "429":
+                time.sleep(random.uniform(1.5, 3.0))
+                page = self._get_page(url, timeout=5)
+                if page == "429" or not page:
+                    return ""
+            return page or ""
+
+        # Step 1: Probe Page 1 of 24h ultra-fresh stream
+        p1_page = _fetch_url(kw, search_loc, 0, "&sortBy=DD&f_TPR=r86400")
+        p1_items = _parse_cards(p1_page)
+
+        # Check fingerprint against stored top job ID
+        last_top_id = ""
+        try:
+            from . import db
+            last_top_id = db.get_setting("li_radar_last_top_id") or ""
+        except Exception:
+            pass
+
+        top_id = p1_items[0]["jid"] if p1_items else ""
+        new_in_p1 = [it for it in p1_items if it["jid"] not in known_ids and it["jid"] not in seen_ids]
+        is_stagnant = len(p1_items) > 0 and (top_id == last_top_id or len(new_in_p1) == 0)
+
+        activity_msg = ""
+        if not is_stagnant and new_in_p1:
+            # Page 1 has genuine new postings! Collect them immediately
+            if top_id:
+                try:
+                    from . import db
+                    db.set_setting("li_radar_last_top_id", top_id)
+                except Exception:
+                    pass
+
+            for it in new_in_p1:
+                seen_ids.add(it["jid"])
                 out.append(make_job(
-                    id=f"linkedin-{jid}",
-                    title=html.unescape(t.group(1).strip()),
-                    company=html.unescape(c.group(1).strip()),
-                    location=html.unescape(l.group(1).strip()) if l else "",
-                    salary=html.unescape(sal_m.group(1).strip()) if sal_m else "",
-                    url=u.group(1),
-                    posted_at=d.group(1) if d else "",
+                    id=f"linkedin-{it['jid']}",
+                    title=it["title"],
+                    company=it["company"],
+                    location=it["location"],
+                    salary=it["salary"],
+                    url=it["url"],
+                    posted_at=it["posted_at"],
                     description="",
                     needs_enrichment=True,
                     source=self.name,
@@ -1351,8 +1382,115 @@ class LinkedInGuest(Source):
                     source_tier=self.tier
                 ))
 
-            time.sleep(random.uniform(0.3, 0.6))
+            activity_msg = f"Found {len(new_in_p1)} fresh 24h posting{'s' if len(new_in_p1) != 1 else ''} for '{kw}'"
 
+            # If page 1 was full of new jobs, check page 2 for overflow
+            if len(new_in_p1) >= 8 and len(out) < 60:
+                time.sleep(random.uniform(0.3, 0.6))
+                p2_page = _fetch_url(kw, search_loc, 25, "&sortBy=DD&f_TPR=r86400")
+                for it in _parse_cards(p2_page):
+                    if it["jid"] not in known_ids and it["jid"] not in seen_ids and len(out) < 80:
+                        seen_ids.add(it["jid"])
+                        out.append(make_job(
+                            id=f"linkedin-{it['jid']}",
+                            title=it["title"],
+                            company=it["company"],
+                            location=it["location"],
+                            salary=it["salary"],
+                            url=it["url"],
+                            posted_at=it["posted_at"],
+                            description="",
+                            needs_enrichment=True,
+                            source=self.name,
+                            source_credit="LinkedIn public listing",
+                            source_tier=self.tier
+                        ))
+        else:
+            # Page 1 is UNCHANGED or empty: Avoid redundant calls on this query!
+            # Adaptive Pivot 1: Check rotated skill slice
+            slices = self._build_query_slices(kw)
+            if slices:
+                slice_idx = 0
+                try:
+                    from . import db
+                    slice_idx = int(db.get_setting("li_radar_slice_idx") or 0)
+                except Exception:
+                    pass
+
+                rot_kw = slices[slice_idx % len(slices)]
+                try:
+                    from . import db
+                    db.set_setting("li_radar_slice_idx", str((slice_idx + 1) % len(slices)))
+                except Exception:
+                    pass
+
+                time.sleep(random.uniform(0.3, 0.6))
+                rot_page = _fetch_url(rot_kw, search_loc, 0, "&sortBy=DD&f_TPR=r86400")
+                for it in _parse_cards(rot_page):
+                    if it["jid"] not in known_ids and it["jid"] not in seen_ids and len(out) < 50:
+                        seen_ids.add(it["jid"])
+                        out.append(make_job(
+                            id=f"linkedin-{it['jid']}",
+                            title=it["title"],
+                            company=it["company"],
+                            location=it["location"],
+                            salary=it["salary"],
+                            url=it["url"],
+                            posted_at=it["posted_at"],
+                            description="",
+                            needs_enrichment=True,
+                            source=self.name,
+                            source_credit="LinkedIn public listing",
+                            source_tier=self.tier
+                        ))
+                if out:
+                    activity_msg = f"Page 1 unchanged for '{kw}' · Rotated to '{rot_kw}' ({len(out)} new)"
+
+            # Adaptive Pivot 2: If rotated slice had 0 new jobs, run deep catalog backfill
+            if not out:
+                backfill_offset = 25
+                try:
+                    from . import db
+                    backfill_offset = int(db.get_setting("li_radar_backfill_offset") or 25)
+                except Exception:
+                    pass
+
+                time.sleep(random.uniform(0.3, 0.6))
+                bf_page = _fetch_url(kw, search_loc, backfill_offset, "&sortBy=DD&f_TPR=r604800")
+                bf_items = _parse_cards(bf_page)
+                for it in bf_items:
+                    if it["jid"] not in known_ids and it["jid"] not in seen_ids and len(out) < 50:
+                        seen_ids.add(it["jid"])
+                        out.append(make_job(
+                            id=f"linkedin-{it['jid']}",
+                            title=it["title"],
+                            company=it["company"],
+                            location=it["location"],
+                            salary=it["salary"],
+                            url=it["url"],
+                            posted_at=it["posted_at"],
+                            description="",
+                            needs_enrichment=True,
+                            source=self.name,
+                            source_credit="LinkedIn public listing",
+                            source_tier=self.tier
+                        ))
+
+                next_offset = backfill_offset + 25
+                if next_offset > 250 or len(bf_items) == 0:
+                    next_offset = 25
+                try:
+                    from . import db
+                    db.set_setting("li_radar_backfill_offset", str(next_offset))
+                except Exception:
+                    pass
+
+                if out:
+                    activity_msg = f"Page 1 unchanged · Unseen catalog page {backfill_offset // 25 + 1} ({len(out)} new)"
+                else:
+                    activity_msg = f"Checked 24h & catalog · No new postings at this moment"
+
+        self._last_incremental_activity = activity_msg
         return out
 
 

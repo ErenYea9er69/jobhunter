@@ -7430,6 +7430,239 @@
     }
   }
 
+  // ------------------------------------------------------------------- LinkedIn Live Radar UI
+  async function checkLinkedinRadarStatus() {
+    try {
+      const res = await api('/api/linkedin-radar/status');
+      if (!res || !res.radar) return;
+      const r = res.radar;
+
+      // Update Toolbar Button & Badge
+      const radarBtn = $('#btnLinkedinRadar');
+      const radarDot = $('#radarLiveDot');
+      const radarLabel = $('#p4RadarLabel');
+      const radarBadge = $('#p4RadarBadge');
+
+      if (radarBtn) {
+        radarBtn.classList.toggle('is-disabled', !r.enabled);
+        radarBtn.classList.toggle('is-scanning', Boolean(r.is_running));
+      }
+      if (radarDot) {
+        radarDot.classList.toggle('is-disabled', !r.enabled);
+      }
+      if (radarLabel) {
+        if (!r.enabled) radarLabel.textContent = 'Radar Paused';
+        else if (r.is_running) radarLabel.textContent = 'Radar Scanning...';
+        else radarLabel.textContent = `Radar (${r.interval_min}m)`;
+      }
+      if (radarBadge) {
+        if (r.pending_count > 0) {
+          radarBadge.textContent = `+${r.pending_count} new`;
+          radarBadge.hidden = false;
+        } else {
+          radarBadge.textContent = '0 new';
+          radarBadge.hidden = true;
+        }
+      }
+
+      // Also ensure jobsRefreshBadge reflects pending count
+      const refreshBadge = $('#jobsRefreshBadge');
+      if (refreshBadge && r.pending_count > 0) {
+        refreshBadge.textContent = `${r.pending_count} new`;
+        refreshBadge.hidden = false;
+      }
+
+      // Update Popover contents
+      const chip = $('#radarStatusChip');
+      if (chip) {
+        if (!r.enabled) {
+          chip.textContent = 'Manual Only';
+          chip.className = 'chip chip-muted chip-sm';
+        } else if (r.is_running) {
+          chip.textContent = 'Scanning...';
+          chip.className = 'chip chip-warning chip-sm';
+        } else {
+          chip.textContent = `Active (${r.interval_min}m)`;
+          chip.className = 'chip chip-ok chip-sm';
+        }
+      }
+
+      const lastScanEl = $('#radarLastScanText');
+      if (lastScanEl) {
+        lastScanEl.textContent = r.last_run ? formatTimeSince(new Date(r.last_run).getTime()) : 'Never';
+      }
+
+      const nextScanEl = $('#radarNextScanText');
+      if (nextScanEl) {
+        if (!r.enabled) nextScanEl.textContent = 'Disabled';
+        else if (r.is_running) nextScanEl.textContent = 'In progress...';
+        else if (r.next_run === 'Immediate') nextScanEl.textContent = 'Any moment';
+        else if (r.next_run) nextScanEl.textContent = formatTimeUntil(new Date(r.next_run).getTime());
+        else nextScanEl.textContent = `In ${r.interval_min}m`;
+      }
+
+      const actEl = $('#radarLastActivityText');
+      if (actEl) {
+        actEl.textContent = r.last_action || 'Monitoring LinkedIn 24h feed';
+      }
+
+      const pendEl = $('#radarPendingText');
+      if (pendEl) {
+        pendEl.textContent = `${r.pending_count} new job${r.pending_count === 1 ? '' : 's'} ready`;
+      }
+
+      const freqSel = $('#radarFreqSelect');
+      if (freqSel && document.activeElement !== freqSel) {
+        freqSel.value = r.enabled ? String(r.interval_min) : '0';
+      }
+
+      // Update Settings View Card (#linkedinRadarSettingsCard)
+      const cfgBadge = $('#activeRadarSettingsBadge');
+      if (cfgBadge) {
+        if (!r.enabled) {
+          cfgBadge.textContent = 'Disabled';
+          cfgBadge.className = 'chip chip-muted';
+        } else {
+          cfgBadge.textContent = `Active (${r.interval_min}m)`;
+          cfgBadge.className = 'chip chip-ok';
+        }
+      }
+
+      const cfgSweep = $('#cfgRadarLastSweepText');
+      if (cfgSweep) {
+        cfgSweep.textContent = r.last_run ? formatTimeSince(new Date(r.last_run).getTime()) : 'Never';
+      }
+
+      const cfgNext = $('#cfgRadarNextSweepText');
+      if (cfgNext) {
+        if (!r.enabled) cfgNext.textContent = 'Disabled';
+        else if (r.is_running) cfgNext.textContent = 'Scanning now...';
+        else if (r.next_run === 'Immediate') cfgNext.textContent = 'Any moment';
+        else if (r.next_run) cfgNext.textContent = formatTimeUntil(new Date(r.next_run).getTime());
+        else cfgNext.textContent = `In ${r.interval_min}m`;
+      }
+
+      const cfgSel = $('#cfgRadarIntervalSelect');
+      if (cfgSel && document.activeElement !== cfgSel) {
+        cfgSel.value = r.enabled ? String(r.interval_min) : '0';
+      }
+    } catch (e) {
+      console.debug('linkedin radar status:', e);
+    }
+  }
+
+  function setupLinkedinRadarUi() {
+    const radarBtn = $('#btnLinkedinRadar');
+    const popover = $('#radarPopover');
+    const closeBtn = $('#radarPopoverClose');
+    const freqSel = $('#radarFreqSelect');
+    const scanBtn = $('#btnRadarScanNow');
+    const applyBtn = $('#btnRadarApplyJobs');
+    const cfgScanBtn = $('#btnCfgRadarScanNow');
+    const cfgSaveBtn = $('#btnSaveRadarSettings');
+    const cfgSel = $('#cfgRadarIntervalSelect');
+
+    // Popover open/close
+    if (radarBtn && popover) {
+      radarBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const willShow = popover.hidden;
+        popover.hidden = !willShow;
+        radarBtn.setAttribute('aria-expanded', String(willShow));
+        if (willShow) checkLinkedinRadarStatus();
+      });
+
+      if (closeBtn) {
+        closeBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          popover.hidden = true;
+          radarBtn.setAttribute('aria-expanded', 'false');
+        });
+      }
+
+      document.addEventListener('click', e => {
+        if (!popover.hidden && !popover.contains(e.target) && e.target !== radarBtn && !radarBtn.contains(e.target)) {
+          popover.hidden = true;
+          radarBtn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+
+    // Freq select inside popover
+    if (freqSel) {
+      freqSel.addEventListener('change', async () => {
+        const val = parseInt(freqSel.value, 10);
+        try {
+          await api('/api/linkedin-radar/settings', {
+            method: 'POST',
+            body: { enabled: val > 0, interval_min: val }
+          });
+          toast(val > 0 ? `LinkedIn Radar frequency set to every ${val} minutes.` : 'LinkedIn Radar paused (manual only).');
+          checkLinkedinRadarStatus();
+        } catch (e) {
+          toast('Failed to save radar settings: ' + e.message, 'error');
+        }
+      });
+    }
+
+    // Scan Now in Popover
+    async function triggerRadarScan(btnEl) {
+      if (!btnEl) return;
+      btnEl.disabled = true;
+      const icon = btnEl.querySelector('svg');
+      if (icon) icon.classList.add('is-spinning');
+      try {
+        const res = await api('/api/linkedin-radar/trigger', { method: 'POST' });
+        toast(res.message || 'LinkedIn Radar sweep started in background.');
+        checkLinkedinRadarStatus();
+        setTimeout(checkLinkedinRadarStatus, 3000);
+        setTimeout(checkLinkedinRadarStatus, 8000);
+      } catch (e) {
+        toast('Could not trigger radar scan: ' + e.message, 'error');
+      } finally {
+        setTimeout(() => {
+          btnEl.disabled = false;
+          if (icon) icon.classList.remove('is-spinning');
+        }, 1500);
+      }
+    }
+
+    if (scanBtn) scanBtn.addEventListener('click', () => triggerRadarScan(scanBtn));
+    if (cfgScanBtn) cfgScanBtn.addEventListener('click', () => triggerRadarScan(cfgScanBtn));
+
+    // Review / Import Staged Jobs
+    if (applyBtn) {
+      applyBtn.addEventListener('click', () => {
+        if (popover) popover.hidden = true;
+        const refreshBtn = $('#btnJobsRefreshSync');
+        if (refreshBtn) refreshBtn.click();
+      });
+    }
+
+    // Settings View save button
+    if (cfgSaveBtn && cfgSel) {
+      cfgSaveBtn.addEventListener('click', async () => {
+        cfgSaveBtn.disabled = true;
+        const val = parseInt(cfgSel.value, 10);
+        try {
+          await api('/api/linkedin-radar/settings', {
+            method: 'POST',
+            body: { enabled: val > 0, interval_min: val }
+          });
+          toast(val > 0 ? `Saved: LinkedIn Radar runs every ${val} minutes.` : 'Saved: LinkedIn Radar paused.');
+          checkLinkedinRadarStatus();
+        } catch (e) {
+          toast('Failed to save settings: ' + e.message, 'error');
+        } finally {
+          setTimeout(() => { cfgSaveBtn.disabled = false; }, 800);
+        }
+      });
+    }
+
+    // Initial check
+    checkLinkedinRadarStatus();
+  }
+
   // ----------------------------------------------------------------- application tracker UI
   function setupApplicationTrackerUi() {
     // Search input
@@ -7653,6 +7886,7 @@
     setupAllFiltersDrawer();
     setupOnboardingFlow();
     setupAutoSearchUi();
+    setupLinkedinRadarUi();
     setupApplicationTrackerUi();
     bindEvents();
     await Promise.all([loadProfile(), loadApplications()]);
@@ -7662,9 +7896,11 @@
     renderWsHeader();
     renderIdeas();
 
-    // Auto-search status polling
+    // Auto-search & LinkedIn Radar status polling
     setInterval(checkAutoSearchStatus, 15000);
     checkAutoSearchStatus();
+    setInterval(checkLinkedinRadarStatus, 15000);
+    checkLinkedinRadarStatus();
 
     // Restore auto-reload schedule (defaults to 5 hours)
     const savedMins = getAutoReloadMinutes();
