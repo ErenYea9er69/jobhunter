@@ -5515,25 +5515,41 @@
       btnRefreshSync.addEventListener('click', async () => {
         btnRefreshSync.classList.add('is-refreshing');
         try {
-          const res = await api('/api/jobs/refresh-sync', { method: 'POST' });
+          const f = S.filters || {};
+          const cat = (f.jobFunctions && f.jobFunctions.length) ? f.jobFunctions[0] : '';
+          const payload = {
+            category: cat,
+            q: (f.keyword && f.keyword.toLowerCase() !== cat.toLowerCase()) ? f.keyword : '',
+            work_mode: (f.workMode && f.workMode !== 'Any' && f.workMode !== 'all') ? f.workMode : ((f.workModels && f.workModels.size === 1) ? Array.from(f.workModels)[0] : ''),
+            seniority: (f.seniority && f.seniority !== 'all') ? f.seniority : ((f.expLevels && f.expLevels.size === 1) ? Array.from(f.expLevels)[0] : ''),
+            job_type: (f.jobType && f.jobType !== 'all') ? f.jobType : ((f.jobTypes && f.jobTypes.size === 1) ? Array.from(f.jobTypes)[0] : ''),
+            country: (f.country && f.country !== 'all') ? f.country : '',
+            location: (f.locationQuery && f.locationQuery !== 'Anywhere in the US' && f.locationQuery !== 'Worldwide' && f.locationQuery.trim()) ? f.locationQuery.trim() : '',
+            min_salary: (!f.salaryOpenToAll && f.minSalary > 0) ? String(f.minSalary) : (f.salaryTier && f.salaryTier !== '0' && f.salaryTier !== 'disclosed' ? f.salaryTier.replace('k', '000') : '0'),
+            min_score: f.minScore > 0 ? String(f.minScore) : '0',
+            days: f.freshnessDays > 0 ? String(f.freshnessDays) : '0',
+            famous_mode: f.famousMode || 'all',
+            industry: (f.industry && f.industry !== 'all') ? f.industry : ((f.industries && f.industries.size > 0) ? Array.from(f.industries)[0] : ''),
+            sort: val('sortResultsBy') || 'ranked'
+          };
+          const res = await api('/api/jobs/refresh-sync', { method: 'POST', body: payload });
           if (res) {
-            const pool = res.jobs || [];
-            S.allJobs = pool;
-            S.jobsRanked = pool;
-            S.jobs = pool;
+            const allPool = res.all_jobs || res.jobs || [];
+            S.allJobs = allPool;
+            S.jobsRanked = allPool;
+            S.jobs = res.jobs || allPool;
             S.searchMeta = res.meta || S.searchMeta || {};
             S.searchHasRun = true;
-            if (pool.length && (!S.selectedKey || !pool.some(j => jobKey(j) === S.selectedKey))) {
-              S.selectedKey = jobKey(pool[0]);
+            if (S.jobs.length && (!S.selectedKey || !S.jobs.some(j => jobKey(j) === S.selectedKey))) {
+              S.selectedKey = jobKey(S.jobs[0]);
             }
-            renderResults();
-            updateFacetCounts();
+            filterAndRender(false);
             const badge = $('#jobsRefreshBadge');
             if (badge) {
               badge.textContent = '0 new';
               badge.hidden = true;
             }
-            toast(res.message || 'Database refreshed: New jobs synced and expired jobs removed!');
+            toast(res.message || 'Database refreshed: New jobs synced and active!');
           }
         } catch (err) {
           console.warn('Refresh sync error:', err);

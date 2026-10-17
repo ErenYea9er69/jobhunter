@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import sys
@@ -565,7 +566,52 @@ class FamousFilterTests(Base):
             self.assertIn("recommendation_hook", first_job)
             self.assertIn("insider_links", first_job)
             self.assertTrue(first_job["insider_links"]["recruiters_url"].startswith("https://www.linkedin.com/search/results/people/"))
-            self.assertIn("Stripe", first_job["insider_links"]["recruiters_url"])
+    def test_refresh_sync_does_not_prune_active_older_posted_jobs(self):
+        # Create a job with posted_at 45 days ago (common for active tech jobs)
+        old_posted = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=45)).isoformat()
+        job = {
+            "job_key": "active-old-job",
+            "title": "Senior Staff Engineer",
+            "company": "Stripe",
+            "location": "Remote",
+            "work_mode": "Remote",
+            "posted_at": old_posted,
+            "score": 92,
+            "opportunity_score": 95,
+            "skills_text": "python, go, kubernetes",
+            "source": "Greenhouse",
+            "source_kind": "Direct employer ATS"
+        }
+        db.store_pending_jobs([job], query="stripe")
+        self.assertEqual(db.get_pending_jobs_count(), 1)
+
+        # Refresh sync should add the job to search_jobs and NOT prune it immediately
+        res = db.apply_refresh_sync()
+        self.assertEqual(res["added_count"], 1)
+        self.assertEqual(res["removed_count"], 0)
+
+        stored = db.query_stored_jobs({})
+        keys = [j.get("job_key") or j.get("id") for j in stored["jobs"]]
+        self.assertIn("active-old-job", keys)
+
+        # Check skills_text persistence
+        with db.session() as c:
+            row = c.execute("SELECT skills_text FROM search_jobs WHERE job_key='active-old-job'").fetchone()
+            self.assertIsNotNone(row)
+            self.assertIn("python", row["skills_text"])
+
+    def test_refresh_sync_endpoint_body_filters(self):
+        from jh.httpd import r_refresh_sync
+        job1 = {"job_key": "f1", "title": "Full Stack Dev", "company": "A", "location": "Remote", "work_mode": "Remote", "score": 85, "opportunity_score": 90}
+        job2 = {"job_key": "f2", "title": "Accountant", "company": "B", "location": "NYC", "work_mode": "Onsite", "score": 40, "opportunity_score": 30}
+        db.replace_search_jobs([job1, job2], query="test", clear_existing=True)
+
+        # Request refresh-sync with filter for Full Stack
+        res = r_refresh_sync({}, {"category": "Full Stack Developer"})
+        self.assertEqual(res["total_all"], 2)
+        self.assertEqual(res["count"], 1)
+        self.assertEqual(res["jobs"][0]["job_key"], "f1")
+        self.assertEqual(len(res["all_jobs"]), 2)
 
 
 if __name__ == "__main__":

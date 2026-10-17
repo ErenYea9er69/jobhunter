@@ -142,7 +142,8 @@ def r_auto_search_trigger(q, body):
 @route("POST", "/api/jobs/refresh-sync")
 def r_refresh_sync(q, body):
     res = db.apply_refresh_sync()
-    g = lambda k, d="": q.get(k, [d])[0]
+    f_in = body if isinstance(body, dict) and body else {}
+    g = lambda k, d="": f_in.get(k) or (q.get(k, [d])[0] if q else d)
     filters = {
         "category": g("category") or g("role"),
         "work_mode": g("work_mode"),
@@ -150,21 +151,23 @@ def r_refresh_sync(q, body):
         "job_type": g("job_type"),
         "country": g("country"),
         "location": g("location"),
-        "min_salary": g("min_salary", "0"),
-        "min_score": g("min_score", "0"),
+        "min_salary": str(g("min_salary", "0") or "0"),
+        "min_score": str(g("min_score", "0") or "0"),
         "famous_mode": g("famous_mode", "all"),
         "industry": g("industry"),
-        "days": g("days", "0"),
+        "days": str(g("days", "0") or "0"),
         "q": g("q") or g("keyword"),
         "sort": g("sort", "ranked")
     }
-    query_res = db.query_stored_jobs(filters)
+    all_res = db.query_stored_jobs({})
+    has_filters = any(v and v not in ("0", "all", "Any") for k, v in filters.items() if k != "sort")
+    query_res = db.query_stored_jobs(filters) if has_filters else all_res
     res["jobs"] = query_res["jobs"]
-    res["all_jobs"] = query_res["all_jobs"]
+    res["all_jobs"] = all_res["jobs"]
     res["count"] = query_res["count"]
-    res["total_all"] = query_res["total_all"]
+    res["total_all"] = all_res["total_all"]
     res["meta"] = query_res["meta"]
-    res["facets"] = query_res.get("facets", {})
+    res["facets"] = all_res.get("facets", {})
     return res
 
 

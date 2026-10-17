@@ -162,11 +162,14 @@ def classify_job(j):
     h1b = 1 if re.search(r"\bh1-?b\b|visa sponsorship|sponsor(?:ship)? available", haystack) else 0
 
     # 10. Skills text
-    skills_list = j.get("skills") or j.get("matched_skills") or []
-    if isinstance(skills_list, list):
-        skills_text = ", ".join(str(s) for s in skills_list)
+    if j.get("skills_text"):
+        skills_text = str(j.get("skills_text"))
     else:
-        skills_text = str(skills_list)
+        skills_list = j.get("skills") or j.get("matched_skills") or []
+        if isinstance(skills_list, list):
+            skills_text = ", ".join(str(s) for s in skills_list)
+        else:
+            skills_text = str(skills_list)
 
     return {
         "category": cat,
@@ -269,6 +272,11 @@ def init_db():
         ]:
             if col not in s_cols:
                 c.execute(f"ALTER TABLE search_jobs ADD COLUMN {col} {col_type}")
+
+        # Add skills_text to pending_search_jobs if missing
+        p_cols = _columns(c, "pending_search_jobs")
+        if "skills_text" not in p_cols:
+            c.execute("ALTER TABLE pending_search_jobs ADD COLUMN skills_text TEXT DEFAULT ''")
 
         c.execute("CREATE INDEX IF NOT EXISTS idx_hist_app ON status_history(app_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_apps_status ON applications(status)")
@@ -384,12 +392,19 @@ def set_setting(key, value):
         c.execute("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", (key, str(value)))
 
 
-def replace_search_jobs(jobs, query="", location="", sources=None):
-    """Delete old search jobs and store new ones with extracted categories into DB."""
+def replace_search_jobs(jobs, query="", location="", sources=None, clear_existing=True):
+    """Store search jobs with extracted categories into DB.
+    If clear_existing is True, deletes old search jobs first (explicit query replacement).
+    Otherwise, upserts jobs into the existing database cache so prior discoveries are preserved.
+    """
     now = now_iso()
     with session() as c:
-        c.execute("DELETE FROM search_jobs")
+        if clear_existing:
+            c.execute("DELETE FROM search_jobs")
         for j in jobs:
+            key = j.get("job_key") or j.get("id")
+            if not key:
+                continue
             c_meta = classify_job(j)
             j["category"] = c_meta["category"]
             j["seniority"] = c_meta["seniority"]
@@ -405,7 +420,7 @@ def replace_search_jobs(jobs, query="", location="", sources=None):
                  skills_text, is_startup, h1b, is_active)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
             """, (
-                j.get("job_key", ""), query, j.get("title", ""), j.get("company", ""),
+                key, query or j.get("query", ""), j.get("title", ""), j.get("company", ""),
                 j.get("location", ""), c_meta["work_mode"], j.get("score", 0),
                 j.get("opportunity_score", 0), c_meta["is_famous"],
                 j.get("source_kind", ""), ",".join(j.get("source_names", [])),
@@ -414,10 +429,16 @@ def replace_search_jobs(jobs, query="", location="", sources=None):
                 c_meta["min_salary"], c_meta["max_salary"], c_meta["industry"],
                 c_meta["skills_text"], c_meta["is_startup"], c_meta["h1b"]
             ))
+        total_now = c.execute("SELECT count(*) FROM search_jobs WHERE is_active=1").fetchone()[0]
         c.execute("""INSERT OR REPLACE INTO search_meta
                      (id, query, location, total_count, sources_json, updated_at)
                      VALUES (1, ?, ?, ?, ?, ?)""",
-                  (query, location, len(jobs), json.dumps(sources or []), now))
+                  (query, location, total_now, json.dumps(sources or []), now))
+
+
+def upsert_search_jobs(jobs, query="", location="", sources=None):
+    """Upsert search jobs into search_jobs cache without clearing existing jobs."""
+    return replace_search_jobs(jobs, query=query, location=location, sources=sources, clear_existing=False)
 
 
 def update_search_job(job):
@@ -459,7 +480,7 @@ def query_stored_jobs(filters=None):
     if cat and cat.lower() not in ("all", "any"):
         c_low = cat.lower()
         if "full stack" in c_low or "fullstack" in c_low:
-            clauses.append("(category LIKE '%Full Stack%' OR title LIKE '%Full Stack%' OR title LIKE '%Fullstack%' OR title LIKE '%Full-Stack%')")
+            clauses.append("(category LIKE '%Full Stack%' OR title LIKE '%Full Stack%' OR title LIKE '%Fullstack%' OR title LIKE '%Full-Stack%' OR skills_text LIKE '%fullstack%' OR skills_text LIKE '%full stack%')")
         elif "backend" in c_low or "back end" in c_low:
             clauses.append("(category LIKE '%Backend%' OR title LIKE '%Backend%' OR title LIKE '%Back end%' OR title LIKE '%Back-End%')")
         elif "frontend" in c_low or "front end" in c_low:
@@ -480,6 +501,8 @@ def query_stored_jobs(filters=None):
             clauses.append("(category LIKE '%Product%' OR title LIKE '%Product%')")
         elif any(k in c_low for k in ["design", "ux", "ui"]):
             clauses.append("(category LIKE '%Design%' OR title LIKE '%Design%' OR title LIKE '%UX%' OR title LIKE '%UI%')")
+        elif "software" in c_low or "engineer" in c_low or "developer" in c_low:
+            clauses.append("(category LIKE '%Engineer%' OR category LIKE '%Developer%' OR title LIKE '%Engineer%' OR title LIKE '%Developer%')")
         else:
             clauses.append("(category LIKE ? OR title LIKE ?)")
             params.extend([f"%{cat}%", f"%{cat}%"])
@@ -489,7 +512,7 @@ def query_stored_jobs(filters=None):
     if wm and wm.lower() not in ("any", "all"):
         wm_low = wm.lower()
         if "remote" in wm_low:
-            clauses.append("(LOWER(work_mode) LIKE '%remote%' OR LOWER(location) LIKE '%remote%')")
+            clauses.append("(LOWER(work_mode) LIKE '%remote%' OR LOWER(location) LIKE '%remote%' OR LOWER(country) = 'worldwide')")
         elif "hybrid" in wm_low:
             clauses.append("(LOWER(work_mode) LIKE '%hybrid%' OR LOWER(location) LIKE '%hybrid%')")
         elif any(k in wm_low for k in ["onsite", "on-site", "office"]):
@@ -698,15 +721,15 @@ def store_pending_jobs(jobs, query=""):
                 INSERT OR REPLACE INTO pending_search_jobs
                 (job_key, query, title, company, location, work_mode, category, job_type, seniority, country,
                  min_salary, max_salary, score, opportunity_score, is_famous, is_startup, industry, h1b,
-                 source_kind, source_names, posted_at, job_json, discovered_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 source_kind, source_names, posted_at, job_json, discovered_at, skills_text)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 key, query, j.get("title", ""), j.get("company", ""), j.get("location", ""),
                 c_meta["work_mode"], c_meta["category"], c_meta["job_type"], c_meta["seniority"], c_meta["country"],
                 c_meta["min_salary"], c_meta["max_salary"], j.get("score", 0), j.get("opportunity_score", 0),
                 c_meta["is_famous"], c_meta["is_startup"], c_meta["industry"], c_meta["h1b"],
                 j.get("source_kind", ""), ",".join(j.get("source_names", [])),
-                j.get("posted_at", ""), json.dumps(j), now
+                j.get("posted_at", ""), json.dumps(j), now, c_meta.get("skills_text", "")
             ))
             added_count += 1
     return added_count
@@ -715,7 +738,7 @@ def store_pending_jobs(jobs, query=""):
 def apply_refresh_sync():
     """Triggered when the user presses Refresh:
     1. Moves staged new jobs from pending_search_jobs into search_jobs.
-    2. Removes stale/expired jobs (e.g. jobs older than 30 days).
+    2. Safely prunes truly stale jobs (e.g. jobs not updated in over 90 days).
     3. Clears pending_search_jobs table.
     4. Returns refresh statistics and updated database list.
     """
@@ -726,26 +749,33 @@ def apply_refresh_sync():
     with session() as c:
         pending_rows = c.execute("SELECT * FROM pending_search_jobs").fetchall()
         for r in pending_rows:
+            skills_txt = r["skills_text"] if "skills_text" in r.keys() else ""
             c.execute("""
                 INSERT OR REPLACE INTO search_jobs
                 (job_key, query, title, company, location, work_mode, category, job_type, seniority, country,
                  min_salary, max_salary, score, opportunity_score, is_famous, is_startup, industry, h1b,
-                 source_kind, source_names, posted_at, job_json, created_at, updated_at, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                 source_kind, source_names, posted_at, job_json, created_at, updated_at, is_active, skills_text)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
             """, (
                 r["job_key"], r["query"], r["title"], r["company"], r["location"], r["work_mode"],
                 r["category"], r["job_type"], r["seniority"], r["country"], r["min_salary"], r["max_salary"],
                 r["score"], r["opportunity_score"], r["is_famous"], r["is_startup"], r["industry"], r["h1b"],
-                r["source_kind"], r["source_names"], r["posted_at"], r["job_json"], now, now
+                r["source_kind"], r["source_names"], r["posted_at"], r["job_json"], now, now, skills_txt
             ))
             added_count += 1
 
         # Clear pending queue
         c.execute("DELETE FROM pending_search_jobs")
 
-        # Prune dead / expired jobs (older than 30 days)
-        cutoff_date = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
-        prune_cur = c.execute("DELETE FROM search_jobs WHERE posted_at != '' AND posted_at IS NOT NULL AND posted_at < ?", (cutoff_date,))
+        # Safely prune dead / stale jobs without discarding active listings:
+        # Never prune jobs that were just staged/added/updated today.
+        # Only prune jobs whose last sync was > 90 days ago and posted > 90 days ago.
+        cutoff_date = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=90)).isoformat()
+        prune_cur = c.execute("""
+            DELETE FROM search_jobs
+            WHERE updated_at < ?
+              AND posted_at != '' AND posted_at IS NOT NULL AND posted_at < ?
+        """, (cutoff_date, cutoff_date))
         removed_count = prune_cur.rowcount if prune_cur else 0
 
         # Update meta count and timestamp

@@ -571,7 +571,7 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
     if persist_as_pending:
         db.store_pending_jobs(merged, query=query)
     else:
-        db.replace_search_jobs(merged, query=query, location=location, sources=statuses)
+        db.replace_search_jobs(merged, query=query, location=location, sources=statuses, clear_existing=False)
 
     # Filter according to requested params for immediate response
     bad_keys = [k.lower().strip() for k in profile.get("excluded_keywords", []) if k and k.strip()]
@@ -658,23 +658,23 @@ def get_recommendations(profile=None, force_refresh=False, limit=None):
     existing = db.get_saved_search_jobs() if not force_refresh else []
 
     if len(existing) >= 8 and not is_empty:
-        scored_jobs = []
-        for j in existing:
+        # Sort existing jobs by pre-computed opportunity_score and score
+        top_pool = sorted(existing, key=lambda x: (x.get("opportunity_score", 0), x.get("score", 0)), reverse=True)
+        max_recs = min(len(top_pool), max(60, (limit or 40) * 2))
+        recs = []
+        for j in top_pool[:max_recs]:
             j_copy = dict(j)
-            scored = score_job(j_copy, profile)
-            j_copy.update(scored)
-            _rank_opportunity(j_copy)
             enrich_recommendation_insights(j_copy, profile)
-            scored_jobs.append(j_copy)
+            recs.append(j_copy)
 
-        scored_jobs.sort(key=lambda x: (x.get("score", 0) >= 65, x.get("opportunity_score", 0), x.get("score", 0)), reverse=True)
-        recs = scored_jobs[:(limit or config.get_max_results())]
+        recs.sort(key=lambda x: (x.get("score", 0) >= 65, x.get("opportunity_score", 0), x.get("score", 0)), reverse=True)
+        result_recs = recs[:(limit or config.get_max_results())]
         return {
             "success": True,
-            "count": len(recs),
-            "recommendations": recs,
-            "jobs": recs,
-            "all_jobs": scored_jobs,
+            "count": len(result_recs),
+            "recommendations": result_recs,
+            "jobs": result_recs,
+            "all_jobs": recs,
             "profile_target": {
                 "title": tgt_title or "Software Professional",
                 "work_mode": work_mode,
