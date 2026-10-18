@@ -1282,15 +1282,32 @@ class LinkedInGuest(Source):
         remote_flag = "&f_WT=2" if is_remote else ""
         search_loc = loc if loc and loc.lower() not in ("remote", "anywhere") else "Worldwide"
 
-        # Load known IDs to skip already-seen jobs
+        # Load known IDs and canonical keys to skip already-seen/stored jobs from ANY source
         known_ids = set()
+        known_canonical_keys = set()
         try:
-            from . import db
+            from . import db, dedup
             with db.session() as c:
-                rows = c.execute("SELECT job_key FROM search_jobs WHERE job_key LIKE 'linkedin-%' LIMIT 5000").fetchall()
-                known_ids = {r["job_key"].replace("linkedin-", "") for r in rows}
-                rows2 = c.execute("SELECT job_key FROM seen_jobs WHERE job_key LIKE 'linkedin-%' LIMIT 5000").fetchall()
-                known_ids.update(r["job_key"].replace("linkedin-", "") for r in rows2)
+                # Direct LinkedIn IDs
+                for tbl in ("search_jobs", "seen_jobs", "pending_search_jobs"):
+                    try:
+                        rows = c.execute(f"SELECT job_key FROM {tbl} WHERE job_key LIKE 'linkedin-%' LIMIT 5000").fetchall()
+                        known_ids.update(r["job_key"].replace("linkedin-", "") for r in rows)
+                    except Exception:
+                        pass
+                
+                # Canonical company|title deduplication keys across ALL existing jobs
+                for tbl in ("search_jobs", "pending_search_jobs", "seen_jobs"):
+                    try:
+                        rows = c.execute(f"SELECT job_key, title, company FROM {tbl} LIMIT 10000").fetchall()
+                        for r in rows:
+                            if r["job_key"]:
+                                known_canonical_keys.add(r["job_key"])
+                            if r["company"] and r["title"]:
+                                ck = dedup.job_key({"company": r["company"], "title": r["title"]})
+                                known_canonical_keys.add(ck)
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -1301,6 +1318,11 @@ class LinkedInGuest(Source):
             parsed = []
             if not page_text or page_text == "429":
                 return parsed
+            try:
+                from . import dedup
+            except Exception:
+                dedup = None
+
             cards = re.findall(r"<li>(.*?)</li>", page_text, re.S)
             for card in cards:
                 t = re.search(r'base-search-card__title[^>]*>\s*([^<]+)', card)
@@ -1315,11 +1337,15 @@ class LinkedInGuest(Source):
 
                 jid_match = re.search(r"(\d{6,})", u.group(1))
                 jid = jid_match.group(1) if jid_match else str(abs(hash(u.group(1))))
+                raw_title = html.unescape(t.group(1).strip())
+                raw_company = html.unescape(c.group(1).strip())
+                canon_k = dedup.job_key({"company": raw_company, "title": raw_title}) if dedup else f"li-{jid}"
 
                 parsed.append({
                     "jid": jid,
-                    "title": html.unescape(t.group(1).strip()),
-                    "company": html.unescape(c.group(1).strip()),
+                    "canon_key": canon_k,
+                    "title": raw_title,
+                    "company": raw_company,
                     "location": html.unescape(l.group(1).strip()) if l else "",
                     "salary": html.unescape(sal_m.group(1).strip()) if sal_m else "",
                     "url": u.group(1),
@@ -1352,7 +1378,7 @@ class LinkedInGuest(Source):
             pass
 
         top_id = p1_items[0]["jid"] if p1_items else ""
-        new_in_p1 = [it for it in p1_items if it["jid"] not in known_ids and it["jid"] not in seen_ids]
+        new_in_p1 = [it for it in p1_items if it["jid"] not in known_ids and it["jid"] not in seen_ids and it.get("canon_key") not in known_canonical_keys]
         is_stagnant = len(p1_items) > 0 and (top_id == last_top_id or len(new_in_p1) == 0)
 
         activity_msg = ""
@@ -1367,8 +1393,11 @@ class LinkedInGuest(Source):
 
             for it in new_in_p1:
                 seen_ids.add(it["jid"])
+                if it.get("canon_key"):
+                    known_canonical_keys.add(it["canon_key"])
                 out.append(make_job(
                     id=f"linkedin-{it['jid']}",
+                    job_key=it.get("canon_key"),
                     title=it["title"],
                     company=it["company"],
                     location=it["location"],
@@ -1389,10 +1418,13 @@ class LinkedInGuest(Source):
                 time.sleep(random.uniform(0.3, 0.6))
                 p2_page = _fetch_url(kw, search_loc, 25, "&sortBy=DD&f_TPR=r86400")
                 for it in _parse_cards(p2_page):
-                    if it["jid"] not in known_ids and it["jid"] not in seen_ids and len(out) < 80:
+                    if it["jid"] not in known_ids and it["jid"] not in seen_ids and it.get("canon_key") not in known_canonical_keys and len(out) < 80:
                         seen_ids.add(it["jid"])
+                        if it.get("canon_key"):
+                            known_canonical_keys.add(it["canon_key"])
                         out.append(make_job(
                             id=f"linkedin-{it['jid']}",
+                            job_key=it.get("canon_key"),
                             title=it["title"],
                             company=it["company"],
                             location=it["location"],
@@ -1427,10 +1459,13 @@ class LinkedInGuest(Source):
                 time.sleep(random.uniform(0.3, 0.6))
                 rot_page = _fetch_url(rot_kw, search_loc, 0, "&sortBy=DD&f_TPR=r86400")
                 for it in _parse_cards(rot_page):
-                    if it["jid"] not in known_ids and it["jid"] not in seen_ids and len(out) < 50:
+                    if it["jid"] not in known_ids and it["jid"] not in seen_ids and it.get("canon_key") not in known_canonical_keys and len(out) < 50:
                         seen_ids.add(it["jid"])
+                        if it.get("canon_key"):
+                            known_canonical_keys.add(it["canon_key"])
                         out.append(make_job(
                             id=f"linkedin-{it['jid']}",
+                            job_key=it.get("canon_key"),
                             title=it["title"],
                             company=it["company"],
                             location=it["location"],
@@ -1459,10 +1494,13 @@ class LinkedInGuest(Source):
                 bf_page = _fetch_url(kw, search_loc, backfill_offset, "&sortBy=DD&f_TPR=r604800")
                 bf_items = _parse_cards(bf_page)
                 for it in bf_items:
-                    if it["jid"] not in known_ids and it["jid"] not in seen_ids and len(out) < 50:
+                    if it["jid"] not in known_ids and it["jid"] not in seen_ids and it.get("canon_key") not in known_canonical_keys and len(out) < 50:
                         seen_ids.add(it["jid"])
+                        if it.get("canon_key"):
+                            known_canonical_keys.add(it["canon_key"])
                         out.append(make_job(
                             id=f"linkedin-{it['jid']}",
+                            job_key=it.get("canon_key"),
                             title=it["title"],
                             company=it["company"],
                             location=it["location"],

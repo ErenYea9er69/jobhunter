@@ -471,6 +471,61 @@ class SourceParserTests(Base):
         self.assertTrue(ok)
         self.assertIn("Scan", msg)
 
+    def test_linkedin_radar_no_non_linkedin_or_duplicate_recommendations(self):
+        """Radar status recent_matches must ONLY contain LinkedIn jobs and must not duplicate items."""
+        from jh import pipeline, db
+        # Insert a high-scoring non-LinkedIn job (e.g. Ashby/OpenAI) and a LinkedIn job
+        ashby_job = sources.make_job(
+            id="ashby-openai-1",
+            title="Software Engineer, Full Stack - Dots",
+            company="OpenAI",
+            location="Remote",
+            source="Ashby",
+            url="https://jobs.ashbyhq.com/openai/1",
+            score=99
+        )
+        li_job = sources.make_job(
+            id="linkedin-test-1",
+            title="Senior Backend Engineer",
+            company="LinkedInCo",
+            location="Remote",
+            source="LinkedIn",
+            url="https://linkedin.com/jobs/view/1",
+            score=88
+        )
+        db.replace_search_jobs([ashby_job, li_job], query="Software Engineer", clear_existing=False)
+
+        st = pipeline.get_linkedin_radar_status()
+        recent = st.get("recent_matches", [])
+        for r in recent:
+            self.assertNotEqual(r.get("company"), "OpenAI", "Non-LinkedIn jobs like OpenAI must never appear in LinkedIn Radar matches")
+            self.assertEqual(r.get("source"), "LinkedIn", "All radar matches must be LinkedIn jobs")
+
+    def test_store_pending_jobs_deduplicates_against_existing(self):
+        """store_pending_jobs must reject jobs already in search_jobs by key or company/title."""
+        from jh import db
+        existing = sources.make_job(
+            id="ashby-existing-1",
+            title="Platform Architect",
+            company="Acme Corp",
+            location="Remote",
+            source="Ashby",
+            score=90
+        )
+        db.replace_search_jobs([existing], query="Platform", clear_existing=False)
+
+        # Attempt to stage a duplicate from LinkedIn
+        li_dup = sources.make_job(
+            id="linkedin-999999",
+            title="Platform Architect",
+            company="Acme Corp",
+            location="Remote",
+            source="LinkedIn",
+            score=90
+        )
+        added = db.store_pending_jobs([li_dup])
+        self.assertEqual(added, 0, "Duplicate role already in search_jobs must not be staged into pending_search_jobs")
+
     def test_source_hierarchy_prefers_direct_employer_application(self):
         jobs = [
             sources.make_job(id="li-1", title="Senior Backend Engineer", company="Acme", location="Remote",

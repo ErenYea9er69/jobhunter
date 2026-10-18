@@ -794,17 +794,34 @@ def get_pending_jobs():
 
 def store_pending_jobs(jobs, query=""):
     """Store newly discovered jobs from background search into pending_search_jobs staging table."""
+    from . import dedup
     now = now_iso()
     added_count = 0
     with session() as c:
         for j in jobs:
-            key = j.get("job_key") or j.get("id")
+            clean_job_dict(j)
+            canon_key = dedup.job_key(j) if hasattr(dedup, "job_key") else ""
+            key = j.get("job_key") or canon_key or j.get("id")
             if not key:
                 continue
-            # Ignore if already in active search_jobs
-            if c.execute("SELECT 1 FROM search_jobs WHERE job_key=?", (key,)).fetchone():
+            j["job_key"] = key
+
+            # Ignore if already in active search_jobs (by exact key, canonical key, or normalized company/title)
+            if c.execute("SELECT 1 FROM search_jobs WHERE job_key=? OR job_key=?", (key, canon_key or key)).fetchone():
                 continue
-            clean_job_dict(j)
+            if j.get("company") and j.get("title"):
+                norm_co = dedup.normalize_company(j.get("company"))
+                norm_ti = dedup._title_key(j.get("title"))
+                if norm_co and norm_ti:
+                    # Check exact company/title in search_jobs
+                    if c.execute("SELECT 1 FROM search_jobs WHERE LOWER(company)=? AND LOWER(title)=?",
+                                 (j.get("company", "").lower().strip(), j.get("title", "").lower().strip())).fetchone():
+                        continue
+
+            # Ignore if already staged in pending_search_jobs
+            if c.execute("SELECT 1 FROM pending_search_jobs WHERE job_key=? OR job_key=?", (key, canon_key or key)).fetchone():
+                continue
+
             c_meta = classify_job(j)
             j["category"] = c_meta["category"]
             j["seniority"] = c_meta["seniority"]

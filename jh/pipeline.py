@@ -841,6 +841,8 @@ def run_linkedin_incremental():
         added_count = 0
         if new_jobs:
             for j in new_jobs:
+                if not j.get("job_key"):
+                    j["job_key"] = dedup.job_key(j) if hasattr(dedup, "job_key") else j.get("id")
                 j.update(score_job(j, profile))
                 _rank_opportunity(j)
 
@@ -957,12 +959,26 @@ def get_linkedin_radar_status():
     recent_matches = []
     try:
         all_saved = db.get_saved_search_jobs()
-        li_matches = [x for x in all_saved if "linkedin" in (x.get("source") or "").lower()]
-        other_matches = [x for x in all_saved if "linkedin" not in (x.get("source") or "").lower()]
+        def _is_li(job):
+            src = str(job.get("source") or "").lower()
+            if "linkedin" in src:
+                return True
+            s_names = job.get("source_names")
+            if isinstance(s_names, list) and any("linkedin" in str(n).lower() for n in s_names):
+                return True
+            if isinstance(s_names, str) and "linkedin" in s_names.lower():
+                return True
+            url = str(job.get("url") or "").lower()
+            return "linkedin.com" in url
+
+        li_matches = [x for x in all_saved if _is_li(x)]
         li_matches.sort(key=lambda x: int(x.get("score") or 0), reverse=True)
-        other_matches.sort(key=lambda x: int(x.get("score") or 0), reverse=True)
-        pool = (li_matches[:3] + other_matches[:2]) if li_matches else other_matches[:4]
-        for j in pool:
+        seen_keys = set()
+        for j in li_matches:
+            canon_k = dedup.job_key(j) if hasattr(dedup, "job_key") else (j.get("job_key") or j.get("id"))
+            if canon_k in seen_keys:
+                continue
+            seen_keys.add(canon_k)
             recent_matches.append({
                 "job_key": j.get("job_key") or j.get("id"),
                 "title": j.get("title", "Unknown Role"),
@@ -972,9 +988,12 @@ def get_linkedin_radar_status():
                 "score": int(j.get("score") or 0),
                 "salary": j.get("salary") or "",
                 "url": j.get("url") or j.get("apply_url") or "",
-                "source": j.get("source", "LinkedIn"),
+                "source": "LinkedIn",
+                "in_feed": True,
                 "posted_at": j.get("posted_at") or j.get("discovered_at") or ""
             })
+            if len(recent_matches) >= 5:
+                break
     except Exception:
         pass
 

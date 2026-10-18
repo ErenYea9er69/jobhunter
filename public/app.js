@@ -5792,6 +5792,7 @@
             if (btnLabel) btnLabel.textContent = 'Synced!';
 
             toast(res.message || 'Database refreshed: New jobs synced and active!');
+            checkLinkedinRadarStatus();
           }
         } catch (err) {
           if (liveTickerTimer) clearInterval(liveTickerTimer);
@@ -5802,6 +5803,7 @@
         } finally {
           btnRefreshSync.classList.remove('is-refreshing');
           checkAutoSearchStatus();
+          checkLinkedinRadarStatus();
 
           // Smoothly slide out live sync banner and reset button
           setTimeout(() => {
@@ -7523,6 +7525,7 @@
       const jobsSubEl = $('#radarJobsSubtitle');
       const jobsBadgeEl = $('#radarJobsBadge');
       const applyBtnText = $('#btnRadarApplyJobsText');
+      const applyBtn = $('#btnRadarApplyJobs');
       const listEl = $('#radarJobsList');
 
       const stagedJobs = Array.isArray(r.staged_jobs) ? r.staged_jobs : [];
@@ -7535,34 +7538,64 @@
         displayJobs = stagedJobs;
         isStaged = true;
         if (jobsTitleEl) jobsTitleEl.textContent = 'Staged for Review';
-        if (jobsSubEl) jobsSubEl.textContent = 'New jobs ready to import into your feed';
-        if (jobsBadgeEl) jobsBadgeEl.textContent = `+${stagedJobs.length} new ready`;
+        if (jobsSubEl) jobsSubEl.textContent = `${stagedJobs.length} new LinkedIn job${stagedJobs.length > 1 ? 's' : ''} ready to add to feed`;
+        if (jobsBadgeEl) {
+          jobsBadgeEl.textContent = `+${stagedJobs.length} pending`;
+          jobsBadgeEl.className = 'radar-jobs-badge is-pending';
+        }
         if (applyBtnText) applyBtnText.textContent = `Review Staged Jobs (${stagedJobs.length})`;
+        if (applyBtn) {
+          applyBtn.disabled = false;
+          applyBtn.classList.remove('is-disabled', 'btn-secondary');
+          applyBtn.classList.add('btn-primary');
+          applyBtn.title = `Import ${stagedJobs.length} staged jobs into your active feed`;
+        }
       } else {
-        const recent = Array.isArray(r.recent_matches) && r.recent_matches.length ? r.recent_matches : (S.jobs || []).slice(0, 4);
+        const recent = Array.isArray(r.recent_matches) ? r.recent_matches : [];
         displayJobs = recent;
         isStaged = false;
-        if (jobsTitleEl) jobsTitleEl.textContent = 'Recent Matched Jobs';
-        if (jobsSubEl) jobsSubEl.textContent = 'Scored in real-time against your profile';
-        if (jobsBadgeEl) jobsBadgeEl.textContent = `${displayJobs.length} top matches`;
-        if (applyBtnText) applyBtnText.textContent = 'Review Staged Jobs';
+        if (jobsTitleEl) jobsTitleEl.textContent = displayJobs.length ? 'Active LinkedIn Matches' : 'LinkedIn Live Radar';
+        if (jobsSubEl) jobsSubEl.textContent = displayJobs.length ? 'Roles already imported into your job feed' : 'Feed is up to date • 0 pending';
+        if (jobsBadgeEl) {
+          jobsBadgeEl.textContent = displayJobs.length ? `${displayJobs.length} in feed` : '0 pending';
+          jobsBadgeEl.className = 'radar-jobs-badge is-synced';
+        }
+        if (applyBtnText) applyBtnText.textContent = 'Feed Up to Date';
+        if (applyBtn) {
+          applyBtn.disabled = true;
+          applyBtn.classList.add('is-disabled', 'btn-secondary');
+          applyBtn.classList.remove('btn-primary');
+          applyBtn.title = 'No staged jobs waiting to be imported. Feed is up to date.';
+        }
       }
 
       if (listEl) {
         if (!displayJobs.length) {
-          listEl.innerHTML = '<div class="radar-jobs-empty">No active matches found. Click <strong>Scan Now</strong> to run a live LinkedIn sweep.</div>';
+          listEl.innerHTML = `
+            <div class="radar-jobs-empty radar-jobs-synced">
+              <div class="radar-synced-icon" aria-hidden="true">✓</div>
+              <div class="radar-synced-title">Feed is Up to Date</div>
+              <div class="radar-synced-desc">No new LinkedIn postings waiting for review.<br>Click <strong>Scan Now</strong> to sweep for fresh jobs.</div>
+            </div>
+          `;
         } else {
           listEl.innerHTML = displayJobs.slice(0, 4).map(j => {
             const score = Math.round(Number(j.score) || 0);
             const scoreClass = score >= 85 ? 'is-high' : (score >= 70 ? 'is-good' : 'is-mid');
             const key = j.job_key || j.id || '';
             const salaryHtml = j.salary ? `<span class="radar-job-salary">${esc(j.salary)}</span>` : '';
+            const tagHtml = isStaged
+              ? `<span class="radar-job-tag is-staged">New Staged</span>`
+              : `<span class="radar-job-tag is-saved">In Feed</span>`;
             return `
-              <div class="radar-job-card" data-key="${esc(key)}" data-staged="${isStaged ? 'true' : 'false'}" role="button" tabindex="0" title="Click to view ${esc(j.title)}">
+              <div class="radar-job-card" data-key="${esc(key)}" data-staged="${isStaged ? 'true' : 'false'}" role="button" tabindex="0" title="${isStaged ? 'Click to import ' + esc(j.title) : 'View ' + esc(j.title) + ' in feed'}">
                 <div class="radar-job-main">
                   <div class="radar-job-title-row">
                     <span class="radar-job-title" title="${esc(j.title)}">${esc(j.title)}</span>
-                    <span class="radar-job-score ${scoreClass}">${score}% match</span>
+                    <div class="radar-job-badges">
+                      ${tagHtml}
+                      <span class="radar-job-score ${scoreClass}">${score}% match</span>
+                    </div>
                   </div>
                   <div class="radar-job-sub-row">
                     <span class="radar-job-company">${esc(j.company || 'Company')}</span>
@@ -7587,6 +7620,7 @@
               if (radarBtn) radarBtn.setAttribute('aria-expanded', 'false');
 
               if (cardStaged) {
+                if (key) S.selectedKey = key;
                 const refreshBtn = $('#btnJobsRefreshSync');
                 if (refreshBtn) refreshBtn.click();
               } else if (key) {
@@ -7601,6 +7635,8 @@
                     S.jobs = [inAll, ...(S.jobs || []).filter(item => jobKey(item) !== key)];
                     renderJobList();
                     selectJob(key);
+                    const el = $(`#jobList .job-item[data-key="${key}"]`);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                   } else {
                     const matchedJob = displayJobs.find(item => (item.job_key || item.id) === key);
                     if (matchedJob && matchedJob.url) {
@@ -7735,8 +7771,15 @@
 
     // Review / Import Staged Jobs
     if (applyBtn) {
-      applyBtn.addEventListener('click', () => {
+      applyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (applyBtn.disabled || applyBtn.classList.contains('is-disabled')) {
+          toast('Feed is already up to date. No pending staged jobs waiting.');
+          return;
+        }
         if (popover) popover.hidden = true;
+        const radarBtn = $('#btnLinkedinRadar');
+        if (radarBtn) radarBtn.setAttribute('aria-expanded', 'false');
         const refreshBtn = $('#btnJobsRefreshSync');
         if (refreshBtn) refreshBtn.click();
       });
