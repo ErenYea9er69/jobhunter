@@ -7345,12 +7345,15 @@
     if (!timestamp || isNaN(timestamp)) return 'Soon';
     const diff = timestamp - Date.now();
     if (diff <= 0) return 'Any moment';
-    const mins = Math.floor(diff / 60000);
-    if (mins < 60) return `In ${mins}m`;
+    const totalSecs = Math.floor(diff / 1000);
+    if (totalSecs < 60) return `In ${Math.max(1, totalSecs)}s`;
+    const mins = Math.floor(totalSecs / 60);
+    const remSecs = totalSecs % 60;
+    if (mins < 60) {
+      return remSecs > 0 ? `In ${mins}m ${remSecs}s` : `In ${mins}m`;
+    }
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `In ${hrs}h ${mins % 60}m`;
-    const days = Math.floor(hrs / 24);
-    return `In ${days}d ${hrs % 24}h`;
+    return `In ${hrs}h ${mins % 60}m`;
   }
 
   function setupAutoSearchUi() {
@@ -7433,11 +7436,17 @@
   }
 
   // ------------------------------------------------------------------- LinkedIn Live Radar UI
+  let radarCountdownTicker = null;
+  let radarStatusPollTimer = null;
+  let lastRadarTelemetry = null;
+  let isRadarAutoPolling = false;
+
   async function checkLinkedinRadarStatus() {
     try {
       const res = await api('/api/linkedin-radar/status');
       if (!res || !res.radar) return;
       const r = res.radar;
+      lastRadarTelemetry = r;
 
       // Update Toolbar Button & Badge
       const radarBtn = $('#btnLinkedinRadar');
@@ -7497,9 +7506,14 @@
       const nextScanEl = $('#radarNextScanText');
       if (nextScanEl) {
         if (!r.enabled) nextScanEl.textContent = 'Disabled';
-        else if (r.is_running) nextScanEl.textContent = 'In progress...';
+        else if (r.is_running) nextScanEl.textContent = 'Scanning LinkedIn...';
         else if (r.next_run === 'Immediate') nextScanEl.textContent = 'Any moment';
-        else if (r.next_run) nextScanEl.textContent = formatTimeUntil(new Date(r.next_run).getTime());
+        else if (r.next_run) {
+          const nextMs = new Date(r.next_run).getTime();
+          const diff = nextMs - Date.now();
+          if (diff <= 0) nextScanEl.textContent = 'Sweeping LinkedIn...';
+          else nextScanEl.textContent = formatTimeUntil(nextMs);
+        }
         else nextScanEl.textContent = `In ${r.interval_min}m`;
       }
 
@@ -7562,10 +7576,11 @@
         }
         if (applyBtnText) applyBtnText.textContent = 'Feed Up to Date';
         if (applyBtn) {
-          applyBtn.disabled = true;
+          // Keep clickable for user feedback, but style as disabled secondary button
+          applyBtn.disabled = false;
           applyBtn.classList.add('is-disabled', 'btn-secondary');
           applyBtn.classList.remove('btn-primary');
-          applyBtn.title = 'No staged jobs waiting to be imported. Feed is up to date.';
+          applyBtn.title = 'Feed is up to date: 0 new postings waiting. Click for details or hit Scan Now.';
         }
       }
 
@@ -7575,11 +7590,35 @@
             <div class="radar-jobs-empty radar-jobs-synced">
               <div class="radar-synced-icon" aria-hidden="true">✓</div>
               <div class="radar-synced-title">Feed is Up to Date</div>
-              <div class="radar-synced-desc">No new LinkedIn postings waiting for review.<br>Click <strong>Scan Now</strong> to sweep for fresh jobs.</div>
+              <div class="radar-synced-desc">0 new LinkedIn postings waiting for review.<br>Click <strong>Scan Now</strong> to sweep for fresh jobs.</div>
             </div>
           `;
         } else {
-          listEl.innerHTML = displayJobs.slice(0, 4).map(j => {
+          const bannerHtml = !hasStaged
+            ? `
+              <div class="radar-synced-status-banner">
+                <div class="radar-synced-status-header">
+                  <span class="radar-synced-icon-sm" aria-hidden="true">✓</span>
+                  <span class="radar-synced-status-title">Feed is Up to Date (0 New Postings)</span>
+                </div>
+                <div class="radar-synced-status-desc">
+                  Last LinkedIn sweep found no new postings. The roles below are active listings <strong>already imported into your feed</strong>.
+                </div>
+              </div>
+            `
+            : `
+              <div class="radar-staged-status-banner">
+                <div class="radar-staged-status-header">
+                  <span class="radar-staged-icon-sm" aria-hidden="true">⚡</span>
+                  <span class="radar-staged-status-title">${stagedJobs.length} New LinkedIn Posting${stagedJobs.length > 1 ? 's' : ''} Ready</span>
+                </div>
+                <div class="radar-staged-status-desc">
+                  Discovered in latest scan. Click <strong>Review Staged Jobs</strong> below to add them to your feed.
+                </div>
+              </div>
+            `;
+
+          const cardsHtml = displayJobs.slice(0, 4).map(j => {
             const score = Math.round(Number(j.score) || 0);
             const scoreClass = score >= 85 ? 'is-high' : (score >= 70 ? 'is-good' : 'is-mid');
             const key = j.job_key || j.id || '';
@@ -7609,6 +7648,8 @@
             `;
           }).join('');
 
+          listEl.innerHTML = bannerHtml + cardsHtml;
+
           listEl.querySelectorAll('.radar-job-card').forEach(card => {
             card.addEventListener('click', (e) => {
               e.stopPropagation();
@@ -7616,7 +7657,10 @@
               const cardStaged = card.dataset.staged === 'true';
               const popover = $('#radarPopover');
               const radarBtn = $('#btnLinkedinRadar');
-              if (popover) popover.hidden = true;
+              if (popover) {
+                popover.hidden = true;
+                stopRadarCountdown();
+              }
               if (radarBtn) radarBtn.setAttribute('aria-expanded', 'false');
 
               if (cardStaged) {
@@ -7690,6 +7734,57 @@
     }
   }
 
+  function updateRadarLiveTicker() {
+    const r = lastRadarTelemetry;
+    if (!r) return;
+    const nextScanEl = $('#radarNextScanText');
+    const lastScanEl = $('#radarLastScanText');
+
+    if (lastScanEl && r.last_run) {
+      lastScanEl.textContent = formatTimeSince(new Date(r.last_run).getTime());
+    }
+
+    if (nextScanEl) {
+      if (!r.enabled) {
+        nextScanEl.textContent = 'Disabled';
+      } else if (r.is_running) {
+        nextScanEl.textContent = 'Scanning LinkedIn...';
+      } else if (r.next_run === 'Immediate') {
+        nextScanEl.textContent = 'Any moment';
+      } else if (r.next_run) {
+        const nextMs = new Date(r.next_run).getTime();
+        const diff = nextMs - Date.now();
+        if (diff <= 0) {
+          nextScanEl.textContent = 'Sweeping LinkedIn...';
+          if (!isRadarAutoPolling) {
+            isRadarAutoPolling = true;
+            setTimeout(async () => {
+              await checkLinkedinRadarStatus();
+              isRadarAutoPolling = false;
+            }, 3000);
+          }
+        } else {
+          nextScanEl.textContent = formatTimeUntil(nextMs);
+        }
+      } else {
+        nextScanEl.textContent = `In ${r.interval_min}m`;
+      }
+    }
+  }
+
+  function startRadarCountdown() {
+    if (radarCountdownTicker) clearInterval(radarCountdownTicker);
+    updateRadarLiveTicker();
+    radarCountdownTicker = setInterval(updateRadarLiveTicker, 1000);
+  }
+
+  function stopRadarCountdown() {
+    if (radarCountdownTicker) {
+      clearInterval(radarCountdownTicker);
+      radarCountdownTicker = null;
+    }
+  }
+
   function setupLinkedinRadarUi() {
     const radarBtn = $('#btnLinkedinRadar');
     const popover = $('#radarPopover');
@@ -7701,14 +7796,19 @@
     const cfgSaveBtn = $('#btnSaveRadarSettings');
     const cfgSel = $('#cfgRadarIntervalSelect');
 
-    // Popover open/close
+    // Popover open/close with ticker
     if (radarBtn && popover) {
       radarBtn.addEventListener('click', e => {
         e.stopPropagation();
         const willShow = popover.hidden;
         popover.hidden = !willShow;
         radarBtn.setAttribute('aria-expanded', String(willShow));
-        if (willShow) checkLinkedinRadarStatus();
+        if (willShow) {
+          checkLinkedinRadarStatus();
+          startRadarCountdown();
+        } else {
+          stopRadarCountdown();
+        }
       });
 
       if (closeBtn) {
@@ -7716,6 +7816,7 @@
           e.stopPropagation();
           popover.hidden = true;
           radarBtn.setAttribute('aria-expanded', 'false');
+          stopRadarCountdown();
         });
       }
 
@@ -7723,6 +7824,7 @@
         if (!popover.hidden && !popover.contains(e.target) && e.target !== radarBtn && !radarBtn.contains(e.target)) {
           popover.hidden = true;
           radarBtn.setAttribute('aria-expanded', 'false');
+          stopRadarCountdown();
         }
       });
     }
@@ -7744,40 +7846,76 @@
       });
     }
 
-    // Scan Now in Popover
+    // Scan Now in Popover with live polling
     async function triggerRadarScan(btnEl) {
-      if (!btnEl) return;
+      if (!btnEl || btnEl.disabled) return;
       btnEl.disabled = true;
+      const textEl = btnEl.querySelector('span');
+      const origText = textEl ? textEl.textContent : 'Scan Now';
+      if (textEl) textEl.textContent = 'Scanning...';
       const icon = btnEl.querySelector('svg');
       if (icon) icon.classList.add('is-spinning');
+
       try {
         const res = await api('/api/linkedin-radar/trigger', { method: 'POST' });
-        toast(res.message || 'LinkedIn Radar sweep started in background.');
-        checkLinkedinRadarStatus();
-        setTimeout(checkLinkedinRadarStatus, 3000);
-        setTimeout(checkLinkedinRadarStatus, 8000);
+        toast('LinkedIn Radar sweep started. Checking 24h postings...', 'info');
+        await checkLinkedinRadarStatus();
+
+        let attempts = 0;
+        if (radarStatusPollTimer) clearInterval(radarStatusPollTimer);
+        radarStatusPollTimer = setInterval(async () => {
+          attempts++;
+          try {
+            const statusRes = await api('/api/linkedin-radar/status');
+            if (statusRes && statusRes.radar) {
+              const r = statusRes.radar;
+              lastRadarTelemetry = r;
+              await checkLinkedinRadarStatus();
+              if (!r.is_running || attempts >= 12) {
+                clearInterval(radarStatusPollTimer);
+                radarStatusPollTimer = null;
+                btnEl.disabled = false;
+                if (textEl) textEl.textContent = origText;
+                if (icon) icon.classList.remove('is-spinning');
+                if (r.pending_count > 0) {
+                  toast(`🎉 Scan complete: Found ${r.pending_count} new job(s) ready to review!`, 'success');
+                } else {
+                  toast('✓ Scan complete: 0 new postings on LinkedIn right now. Feed is up to date.', 'info');
+                }
+              }
+            }
+          } catch (pollErr) {
+            clearInterval(radarStatusPollTimer);
+            radarStatusPollTimer = null;
+            btnEl.disabled = false;
+            if (textEl) textEl.textContent = origText;
+            if (icon) icon.classList.remove('is-spinning');
+          }
+        }, 1500);
       } catch (e) {
         toast('Could not trigger radar scan: ' + e.message, 'error');
-      } finally {
-        setTimeout(() => {
-          btnEl.disabled = false;
-          if (icon) icon.classList.remove('is-spinning');
-        }, 1500);
+        btnEl.disabled = false;
+        if (textEl) textEl.textContent = origText;
+        if (icon) icon.classList.remove('is-spinning');
       }
     }
 
     if (scanBtn) scanBtn.addEventListener('click', () => triggerRadarScan(scanBtn));
     if (cfgScanBtn) cfgScanBtn.addEventListener('click', () => triggerRadarScan(cfgScanBtn));
 
-    // Review / Import Staged Jobs
+    // Review / Import Staged Jobs button
     if (applyBtn) {
       applyBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (applyBtn.disabled || applyBtn.classList.contains('is-disabled')) {
-          toast('Feed is already up to date. No pending staged jobs waiting.');
+        const stagedJobs = Array.isArray(lastRadarTelemetry?.staged_jobs) ? lastRadarTelemetry.staged_jobs : [];
+        if (!stagedJobs.length || applyBtn.classList.contains('is-disabled')) {
+          toast('✓ Feed is up to date: 0 new LinkedIn jobs waiting. Click "Scan Now" to check again.', 'info');
           return;
         }
-        if (popover) popover.hidden = true;
+        if (popover) {
+          popover.hidden = true;
+          stopRadarCountdown();
+        }
         const radarBtn = $('#btnLinkedinRadar');
         if (radarBtn) radarBtn.setAttribute('aria-expanded', 'false');
         const refreshBtn = $('#btnJobsRefreshSync');

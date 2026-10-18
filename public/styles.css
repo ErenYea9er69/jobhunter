@@ -7018,7 +7018,7 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   display: flex;
   flex-direction: column;
   gap: 5px;
-  max-height: 142px;
+  max-height: 200px;
   overflow-y: auto;
   padding-right: 2px;
 }
@@ -7250,13 +7250,116 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   animation: spinRefresh 0.8s linear infinite;
 }
 
-.radar-popover-foot .btn:disabled,
-.radar-popover-foot .btn.is-disabled {
+.radar-popover-foot .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
   pointer-events: none;
   filter: grayscale(0.4);
   box-shadow: none !important;
+}
+
+.radar-popover-foot .btn.is-disabled {
+  opacity: 0.72;
+  cursor: pointer;
+  pointer-events: auto !important;
+  box-shadow: none !important;
+}
+
+.radar-synced-status-banner {
+  padding: 7px 9px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.22);
+  border-radius: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+:root[data-theme="dark"] .radar-synced-status-banner {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(52, 211, 153, 0.28);
+}
+
+.radar-synced-status-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.radar-synced-icon-sm {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #10b981;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8.5px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.radar-synced-status-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #059669;
+  letter-spacing: -0.1px;
+}
+
+:root[data-theme="dark"] .radar-synced-status-title {
+  color: #34d399;
+}
+
+.radar-synced-status-desc {
+  font-size: 9.5px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.radar-staged-status-banner {
+  padding: 7px 9px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+:root[data-theme="dark"] .radar-staged-status-banner {
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+.radar-staged-status-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.radar-staged-icon-sm {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.radar-staged-status-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #2563eb;
+  letter-spacing: -0.1px;
+}
+
+:root[data-theme="dark"] .radar-staged-status-title {
+  color: #60a5fa;
+}
+
+.radar-staged-status-desc {
+  font-size: 9.5px;
+  color: var(--muted);
+  line-height: 1.35;
 }
 
 .radar-job-badges {

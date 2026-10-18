@@ -155,12 +155,14 @@ def r_linkedin_radar_settings(q, body):
         db.set_setting("linkedin_incremental_minutes", "0")
     else:
         db.set_setting("linkedin_incremental_minutes", str(max(1, min(120, interval_min))))
+    pipeline.notify_linkedin_worker()
     return {"success": True, "radar": pipeline.get_linkedin_radar_status()}
 
 
 @route("POST", "/api/linkedin-radar/trigger")
 def r_linkedin_radar_trigger(q, body):
     ok, msg = pipeline.trigger_linkedin_radar_now()
+    pipeline.notify_linkedin_worker()
     return {"success": ok, "message": msg, "radar": pipeline.get_linkedin_radar_status()}
 
 

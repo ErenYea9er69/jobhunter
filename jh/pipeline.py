@@ -796,6 +796,7 @@ def start_auto_search_worker():
 _li_scraper = None  # singleton LinkedInGuest instance for incremental scraping
 _li_bg_thread = None
 _li_bg_stop = threading.Event()
+_li_bg_wake = threading.Event()
 _radar_lock = threading.Lock()
 _radar_telemetry = {
     "last_run": None,
@@ -1025,33 +1026,48 @@ def trigger_linkedin_radar_now():
     return True, "Scan started in background."
 
 
+def notify_linkedin_worker():
+    """Wake the background worker immediately when settings change or scan is requested."""
+    try:
+        _li_bg_wake.set()
+    except Exception:
+        pass
+
+
 def _linkedin_incremental_worker():
-    """Background daemon: runs lightweight LinkedIn scrape every N minutes."""
-    # Initial delay to let the app settle
-    for _ in range(4):
+    """Background daemon: runs lightweight LinkedIn scrape every N minutes with instant wake."""
+    # Brief initial settle delay (3s)
+    for _ in range(3):
         if _li_bg_stop.is_set():
             return
-        time.sleep(5)
+        time.sleep(1)
 
     while not _li_bg_stop.is_set():
         try:
             interval_min = config.get_linkedin_incremental_minutes()
-            if interval_min <= 0:
-                # Disabled — check again in 30s
-                time.sleep(30)
-                continue
+            if interval_min > 0:
+                last_run = _radar_telemetry.get("last_run") or db.get_setting("li_radar_last_run")
+                should_run = False
+                if not last_run:
+                    should_run = True
+                else:
+                    try:
+                        lr_dt = datetime.datetime.fromisoformat(last_run.replace("Z", "+00:00"))
+                        now_dt = datetime.datetime.now(datetime.timezone.utc)
+                        elapsed_s = (now_dt - lr_dt).total_seconds()
+                        if elapsed_s >= (interval_min * 60):
+                            should_run = True
+                    except Exception:
+                        should_run = True
 
-            run_linkedin_incremental()
+                if should_run:
+                    run_linkedin_incremental()
         except Exception as e:
             log.debug("LinkedIn incremental worker error: %s", e)
 
-        # Sleep for the configured interval (minimum 2 minutes)
-        interval_min = config.get_linkedin_incremental_minutes()
-        sleep_seconds = max(120, interval_min * 60)
-        for _ in range(int(sleep_seconds / 5)):
-            if _li_bg_stop.is_set():
-                return
-            time.sleep(5)
+        # Wakeable sleep: checks every 4 seconds or immediately on notify
+        _li_bg_wake.wait(timeout=4)
+        _li_bg_wake.clear()
 
 
 def start_linkedin_incremental_worker():
