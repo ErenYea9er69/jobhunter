@@ -374,7 +374,7 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
         for q_term in queries_for_s:
             key = f"{s.name}|{q_term.lower()}|{location.lower()}"
             lbl = f"{s.name}:{q_term}" if len(queries_for_s) > 1 else s.name
-            if s.name == "LinkedIn":
+            if isinstance(s, src.LinkedInGuest):
                 tasks[_pool.submit(_run_source, lbl, lambda s=s, q_term=q_term: s.fetch(q_term, location, _deadline_at=time.time() + config.SEARCH_DEADLINE_SECONDS), key, force_refresh)] = lbl
             else:
                 tasks[_pool.submit(_run_source, lbl, lambda s=s, q_term=q_term: s.fetch(q_term, location), key, force_refresh)] = lbl
@@ -971,12 +971,14 @@ def get_linkedin_radar_status():
                 "job_key": j.get("job_key") or j.get("id"),
                 "title": j.get("title", "Unknown Role"),
                 "company": j.get("company", "Company"),
+                "company_url": j.get("company_url") or "",
                 "location": j.get("location", ""),
                 "work_mode": j.get("work_mode", ""),
                 "score": int(j.get("score") or 0),
                 "salary": j.get("salary") or "",
                 "url": j.get("url") or j.get("apply_url") or "",
-                "posted_at": j.get("posted_at") or j.get("discovered_at") or ""
+                "posted_at": j.get("posted_at") or j.get("discovered_at") or "",
+                "posted_relative": j.get("posted_relative") or "",
             })
     except Exception:
         pass
@@ -1008,6 +1010,7 @@ def get_linkedin_radar_status():
                 "job_key": j.get("job_key") or j.get("id"),
                 "title": j.get("title", "Unknown Role"),
                 "company": j.get("company", "Company"),
+                "company_url": j.get("company_url") or "",
                 "location": j.get("location", ""),
                 "work_mode": j.get("work_mode", ""),
                 "score": int(j.get("score") or 0),
@@ -1015,7 +1018,8 @@ def get_linkedin_radar_status():
                 "url": j.get("url") or j.get("apply_url") or "",
                 "source": "LinkedIn",
                 "in_feed": True,
-                "posted_at": j.get("posted_at") or j.get("discovered_at") or ""
+                "posted_at": j.get("posted_at") or j.get("discovered_at") or "",
+                "posted_relative": j.get("posted_relative") or "",
             })
             if len(recent_matches) >= 5:
                 break

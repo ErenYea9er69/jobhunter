@@ -422,6 +422,49 @@ class SourceParserTests(Base):
         self.assertIn("linkedin-1111111111", job_ids, "New job should be included")
         self.assertNotIn("linkedin-2222222222", job_ids, "Known job should be filtered out")
 
+    def test_linkedin_relative_time_and_company_url_parsing(self):
+        """Relative times ('18 minutes ago', '2 hours ago') and company links are parsed with tags."""
+        lg = sources.LinkedInGuest()
+        card_with_rel = """<li>
+          <div class="base-card base-search-card base-search-card--link job-search-card">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/fresh-eng-5555555555">
+              <h3 class="base-search-card__title">Fresh Engineer</h3>
+            </a>
+            <h4 class="base-search-card__subtitle">
+              <a href="https://www.linkedin.com/company/acme-corp?trk=public_jobs">Acme Corp</a>
+            </h4>
+            <span class="job-search-card__location">Austin, TX</span>
+            <time class="job-search-card__listdate--new" datetime="2026-10-18">
+              18 minutes ago
+            </time>
+          </div>
+        </li>"""
+        with mock.patch.object(lg, "_get_page", return_value=card_with_rel):
+            with mock.patch("time.sleep"):
+                jobs = lg.fetch_incremental("Python", "Austin, TX")
+
+        self.assertEqual(len(jobs), 1)
+        j = jobs[0]
+        self.assertEqual(j["id"], "linkedin-5555555555")
+        self.assertEqual(j["company_url"], "https://www.linkedin.com/company/acme-corp")
+        self.assertEqual(j["posted_relative"], "18m ago")
+        self.assertIn("just-posted", j.get("tags", []))
+        self.assertIn("T", j["posted_at"], "Minute-precision ISO timestamp expected")
+
+    def test_linkedin_easy_apply_flag(self):
+        """Passing easy_apply=True appends &f_AL=true to LinkedIn search URLs."""
+        lg = sources.LinkedInGuest()
+        captured_urls = []
+        def fake_get_page(url, timeout=6):
+            captured_urls.append(url)
+            return ""
+        with mock.patch.object(lg, "_get_page", side_effect=fake_get_page):
+            lg.fetch("Python", "Remote", depth="fast", easy_apply=True)
+
+        self.assertTrue(len(captured_urls) > 0)
+        self.assertTrue(any("&f_AL=true" in u for u in captured_urls),
+                        f"Expected &f_AL=true in URLs: {captured_urls}")
+
     def test_linkedin_incremental_adaptive_stagnant_page1_rotates_or_backfills(self):
         """When Page 1 top ID is identical to last run, it pivots to skill rotation or backfill."""
         lg = sources.LinkedInGuest()

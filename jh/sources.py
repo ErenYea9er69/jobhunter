@@ -143,6 +143,7 @@ def make_job(**kw):
 
     return {
         "id": kw["id"], "title": title, "company": company,
+        "company_url": _safe_text(kw.get("company_url")),
         "location": loc or ("Remote" if mode == "Remote" else ""), "work_mode": mode,
         "salary": sal, "job_type": job_type, "seniority": seniority,
         "url": _safe_text(kw.get("url")),
@@ -157,6 +158,7 @@ def make_job(**kw):
         "contact_email": contact_email,
         "contact_website": contact_website,
         "posted_at": iso_or_empty(kw.get("posted_at")),
+        "posted_relative": _safe_text(kw.get("posted_relative")),
         "source": kw.get("source", ""), "source_credit": kw.get("source_credit", kw.get("source", "")),
         "source_tier": kw.get("source_tier", ""), "source_rank": source_rank(kw.get("source", ""), kw.get("source_tier", "")),
         "source_kind": source_kind(kw.get("source", ""), kw.get("source_tier", "")), "tags": kw.get("tags", []),
@@ -215,7 +217,7 @@ class Source:
     def unavailable_reason(self):
         return ""
 
-    def fetch(self, query, location):
+    def fetch(self, query, location, **kwargs):
         raise NotImplementedError
 
     def enrich(self, job):
@@ -876,6 +878,50 @@ class LinkedInGuest(Source):
             except Exception:
                 pass
 
+    @staticmethod
+    def _parse_card_time(card):
+        """Extract datetime attribute and relative text ('5 minutes ago', '2 hours ago')
+        to produce a high-precision ISO timestamp, relative freshness label, and is_new flag."""
+        dt_m = re.search(r'datetime="([^"]+)"', card)
+        fallback_dt = dt_m.group(1).strip() if dt_m else ""
+
+        time_text_m = re.search(r'<time[^>]*>(.*?)</time>', card, re.S)
+        if not time_text_m:
+            return fallback_dt, "", False
+
+        raw_txt = html.unescape(re.sub(r'\s+', ' ', time_text_m.group(1)).strip())
+        is_new = "job-search-card__listdate--new" in card
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        t_low = raw_txt.lower()
+
+        # Minute precision: "5 minutes ago", "32 mins ago"
+        m_min = re.search(r'(\d+)\s+min(?:ute)?s?\s+ago', t_low)
+        if m_min:
+            mins = int(m_min.group(1))
+            iso_ts = (now - datetime.timedelta(minutes=mins)).replace(microsecond=0).isoformat()
+            return iso_ts, f"{mins}m ago", True
+
+        # Hour precision: "1 hour ago", "3 hours ago"
+        m_hr = re.search(r'(\d+)\s+hour?s?\s+ago', t_low)
+        if m_hr:
+            hrs = int(m_hr.group(1))
+            iso_ts = (now - datetime.timedelta(hours=hrs)).replace(microsecond=0).isoformat()
+            return iso_ts, f"{hrs}h ago", (hrs <= 2)
+
+        # Day precision: "1 day ago", "3 days ago"
+        m_day = re.search(r'(\d+)\s+day?s?\s+ago', t_low)
+        if m_day:
+            days = int(m_day.group(1))
+            iso_ts = (now - datetime.timedelta(days=days)).replace(microsecond=0).isoformat()
+            return iso_ts, f"{days}d ago", False
+
+        # Instant / Moments ago
+        if "just now" in t_low or "moment" in t_low:
+            return now.replace(microsecond=0).isoformat(), "just now", True
+
+        return fallback_dt, raw_txt, is_new
+
     def _build_query_slices(self, kw):
         """Generate narrower query variants from profile skills to multiply LinkedIn's result window.
 
@@ -964,7 +1010,7 @@ class LinkedInGuest(Source):
                 return "429"
             return ""
 
-    def fetch(self, query, location, _deadline_at=None, depth=None):
+    def fetch(self, query, location, _deadline_at=None, depth=None, easy_apply=False):
         # Warmup is now async from __init__; if it hasn't finished yet, wait briefly
         if hasattr(self, '_warmup_thread') and self._warmup_thread.is_alive():
             self._warmup_thread.join(timeout=1.0)
@@ -987,6 +1033,7 @@ class LinkedInGuest(Source):
 
         is_remote = "remote" in f"{kw} {loc}".lower()
         remote_flag = "&f_WT=2" if is_remote else ""
+        easy_apply_flag = "&f_AL=true" if easy_apply else ""
         search_loc = loc if loc and loc.lower() not in ("remote", "anywhere") else "Worldwide"
 
         # Load known IDs from all 3 tables for promoted-safe early stopping and avoiding re-downloads
@@ -1156,7 +1203,7 @@ class LinkedInGuest(Source):
             geo_param = f"&geoId={geo_id}" if geo_id else ""
             url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
                    f"keywords={urllib.parse.quote(term)}&location={urllib.parse.quote(place)}"
-                   f"{geo_param}{remote_flag}{extra_params}&start={start_idx}")
+                   f"{geo_param}{remote_flag}{easy_apply_flag}{extra_params}&start={start_idx}")
 
             # Rate limiting: minimum gap between request starts across all workers
             with _rlock:
@@ -1202,9 +1249,9 @@ class LinkedInGuest(Source):
             for card in cards:
                 t = re.search(r'base-search-card__title[^>]*>\s*([^<]+)', card)
                 c = re.search(r'base-search-card__subtitle[^>]*>\s*(?:<a[^>]*>\s*)?([^<]+)', card)
+                comp_url_m = re.search(r'base-search-card__subtitle[^>]*>\s*<a[^>]*href="([^"?]+)', card)
                 l = re.search(r'job-search-card__location[^>]*>\s*([^<]+)', card)
                 u = re.search(r'base-card__full-link[^>]*href="([^"?]+)', card)
-                d = re.search(r'datetime="([^"]+)"', card)
                 sal_m = re.search(r'job-search-card__salary-info[^>]*>\s*([^<]+)', card)
 
                 if not (t and c and u):
@@ -1215,21 +1262,28 @@ class LinkedInGuest(Source):
 
                 title = html.unescape(t.group(1).strip())
                 comp = html.unescape(c.group(1).strip())
+                comp_url = comp_url_m.group(1).strip() if comp_url_m else ""
                 place_str = html.unescape(l.group(1).strip()) if l else ""
                 salary = html.unescape(sal_m.group(1).strip()) if sal_m else ""
+
+                posted_ts, rel_label, is_just_posted = self._parse_card_time(card)
 
                 tags = []
                 if is_startup_term or "startup" in card.lower() or "early-stage" in card.lower():
                     tags.append("startup")
+                if is_just_posted:
+                    tags.append("just-posted")
 
                 results.append((jid, make_job(
                     id=f"linkedin-{jid}",
                     title=title,
                     company=comp,
+                    company_url=comp_url,
                     location=place_str,
                     salary=salary,
                     url=u.group(1),
-                    posted_at=d.group(1) if d else "",
+                    posted_at=posted_ts,
+                    posted_relative=rel_label,
                     description="",
                     tags=tags,
                     needs_enrichment=True,
@@ -1423,6 +1477,9 @@ class LinkedInGuest(Source):
                 jid = jid_match.group(1) if jid_match else str(abs(hash(u.group(1))))
                 raw_title = html.unescape(t.group(1).strip())
                 raw_company = html.unescape(c.group(1).strip())
+                comp_url_m = re.search(r'base-search-card__subtitle[^>]*>\s*<a[^>]*href="([^"?]+)', card)
+                comp_url = comp_url_m.group(1).strip() if comp_url_m else ""
+                posted_ts, rel_label, is_just_posted = self._parse_card_time(card)
                 canon_k = dedup.job_key({"company": raw_company, "title": raw_title}) if dedup else f"li-{jid}"
 
                 parsed.append({
@@ -1430,10 +1487,13 @@ class LinkedInGuest(Source):
                     "canon_key": canon_k,
                     "title": raw_title,
                     "company": raw_company,
+                    "company_url": comp_url,
                     "location": html.unescape(l.group(1).strip()) if l else "",
                     "salary": html.unescape(sal_m.group(1).strip()) if sal_m else "",
                     "url": u.group(1),
-                    "posted_at": d.group(1) if d else "",
+                    "posted_at": posted_ts,
+                    "posted_relative": rel_label,
+                    "is_just_posted": is_just_posted,
                 })
             return parsed
 
@@ -1477,19 +1537,28 @@ class LinkedInGuest(Source):
                 except Exception:
                     pass
 
+            latest_rel = ""
             for it in new_in_p1:
                 seen_ids.add(it["jid"])
                 if it.get("canon_key"):
                     known_canonical_keys.add(it["canon_key"])
+                tags = []
+                if it.get("is_just_posted"):
+                    tags.append("just-posted")
+                if not latest_rel and it.get("posted_relative"):
+                    latest_rel = it["posted_relative"]
                 out.append(make_job(
                     id=f"linkedin-{it['jid']}",
                     job_key=it.get("canon_key"),
                     title=it["title"],
                     company=it["company"],
+                    company_url=it.get("company_url", ""),
                     location=it["location"],
                     salary=it["salary"],
                     url=it["url"],
                     posted_at=it["posted_at"],
+                    posted_relative=it.get("posted_relative", ""),
+                    tags=tags,
                     description="",
                     needs_enrichment=True,
                     source=self.name,
@@ -1497,26 +1566,33 @@ class LinkedInGuest(Source):
                     source_tier=self.tier
                 ))
 
-            activity_msg = f"Found {len(new_in_p1)} fresh 24h posting{'s' if len(new_in_p1) != 1 else ''} for '{kw}'"
+            rel_suffix = f" (latest: {latest_rel})" if latest_rel else ""
+            activity_msg = f"Found {len(new_in_p1)} fresh 24h posting{'s' if len(new_in_p1) != 1 else ''}{rel_suffix} for '{kw}'"
 
-            # If page 1 was full of new jobs, check page 2 for overflow
+            # If page 1 was full of new jobs, check page 2 for overflow with polite jitter
             if len(new_in_p1) >= 8 and len(out) < 60:
-                time.sleep(random.uniform(0.3, 0.6))
+                time.sleep(random.uniform(0.8, 1.5))
                 p2_page = _fetch_url(kw, search_loc, 25, "&sortBy=DD&f_TPR=r86400")
                 for it in _parse_cards(p2_page):
                     if it["jid"] not in known_ids and it["jid"] not in seen_ids and it.get("canon_key") not in known_canonical_keys and len(out) < 80:
                         seen_ids.add(it["jid"])
                         if it.get("canon_key"):
                             known_canonical_keys.add(it["canon_key"])
+                        tags = []
+                        if it.get("is_just_posted"):
+                            tags.append("just-posted")
                         out.append(make_job(
                             id=f"linkedin-{it['jid']}",
                             job_key=it.get("canon_key"),
                             title=it["title"],
                             company=it["company"],
+                            company_url=it.get("company_url", ""),
                             location=it["location"],
                             salary=it["salary"],
                             url=it["url"],
                             posted_at=it["posted_at"],
+                            posted_relative=it.get("posted_relative", ""),
+                            tags=tags,
                             description="",
                             needs_enrichment=True,
                             source=self.name,
@@ -1542,22 +1618,28 @@ class LinkedInGuest(Source):
                 except Exception:
                     pass
 
-                time.sleep(random.uniform(0.3, 0.6))
+                time.sleep(random.uniform(0.8, 1.5))
                 rot_page = _fetch_url(rot_kw, search_loc, 0, "&sortBy=DD&f_TPR=r86400")
                 for it in _parse_cards(rot_page):
                     if it["jid"] not in known_ids and it["jid"] not in seen_ids and it.get("canon_key") not in known_canonical_keys and len(out) < 50:
                         seen_ids.add(it["jid"])
                         if it.get("canon_key"):
                             known_canonical_keys.add(it["canon_key"])
+                        tags = []
+                        if it.get("is_just_posted"):
+                            tags.append("just-posted")
                         out.append(make_job(
                             id=f"linkedin-{it['jid']}",
                             job_key=it.get("canon_key"),
                             title=it["title"],
                             company=it["company"],
+                            company_url=it.get("company_url", ""),
                             location=it["location"],
                             salary=it["salary"],
                             url=it["url"],
                             posted_at=it["posted_at"],
+                            posted_relative=it.get("posted_relative", ""),
+                            tags=tags,
                             description="",
                             needs_enrichment=True,
                             source=self.name,
@@ -1576,7 +1658,7 @@ class LinkedInGuest(Source):
                 except Exception:
                     pass
 
-                time.sleep(random.uniform(0.3, 0.6))
+                time.sleep(random.uniform(0.8, 1.5))
                 bf_page = _fetch_url(kw, search_loc, backfill_offset, "&sortBy=DD&f_TPR=r604800")
                 bf_items = _parse_cards(bf_page)
                 for it in bf_items:
@@ -1584,15 +1666,21 @@ class LinkedInGuest(Source):
                         seen_ids.add(it["jid"])
                         if it.get("canon_key"):
                             known_canonical_keys.add(it["canon_key"])
+                        tags = []
+                        if it.get("is_just_posted"):
+                            tags.append("just-posted")
                         out.append(make_job(
                             id=f"linkedin-{it['jid']}",
                             job_key=it.get("canon_key"),
                             title=it["title"],
                             company=it["company"],
+                            company_url=it.get("company_url", ""),
                             location=it["location"],
                             salary=it["salary"],
                             url=it["url"],
                             posted_at=it["posted_at"],
+                            posted_relative=it.get("posted_relative", ""),
+                            tags=tags,
                             description="",
                             needs_enrichment=True,
                             source=self.name,

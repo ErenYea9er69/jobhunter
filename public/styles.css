@@ -1409,6 +1409,7 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
 .meta-pill.meta-loc .meta-text {
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   word-break: break-word;
@@ -6273,6 +6274,7 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   width: 100%;
   height: 6px;
   -webkit-appearance: none;
+  appearance: none;
   background: #E5E7EB;
   border-radius: 4px;
   outline: none;
@@ -6281,6 +6283,7 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
 
 .af-range-input::-webkit-slider-thumb {
   -webkit-appearance: none;
+  appearance: none;
   width: 20px;
   height: 20px;
   border-radius: 50%;
