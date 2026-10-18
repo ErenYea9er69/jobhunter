@@ -42,7 +42,7 @@ PORT = int(os.environ.get("JH_PORT", "8080"))
 
 # Search behavior
 SEARCH_WORKERS = 16
-SEARCH_DEADLINE_SECONDS = float(os.environ.get("JH_SEARCH_DEADLINE", "20"))
+SEARCH_DEADLINE_SECONDS = float(os.environ.get("JH_SEARCH_DEADLINE", "35"))
 SOURCE_TIMEOUT_SECONDS = float(os.environ.get("JH_SOURCE_TIMEOUT", "10"))
 CACHE_TTL_SECONDS = int(os.environ.get("JH_CACHE_TTL", "900"))
 STALE_CACHE_MAX_SECONDS = int(os.environ.get("JH_STALE_MAX", str(24 * 3600)))

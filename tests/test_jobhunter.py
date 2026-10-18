@@ -526,6 +526,154 @@ class SourceParserTests(Base):
         added = db.store_pending_jobs([li_dup])
         self.assertEqual(added, 0, "Duplicate role already in search_jobs must not be staged into pending_search_jobs")
 
+    def test_linkedin_fetch_step25_offsets_and_priority_ordering(self):
+        """fetch generates step-25 offsets and orders high-priority fresh/page-0 queries first."""
+        lg = sources.LinkedInGuest()
+        requested_urls = []
+
+        def fake_get_page(url, timeout=6):
+            requested_urls.append(url)
+            return ""
+
+        with mock.patch.object(lg, "_get_page", side_effect=fake_get_page):
+            with mock.patch("time.sleep"):
+                lg.fetch("Python", "Remote", depth="deep")
+
+        self.assertTrue(len(requested_urls) > 0)
+        import urllib.parse
+        start_vals = []
+        for u in requested_urls:
+            parsed = urllib.parse.urlparse(u)
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "start" in qs:
+                start_vals.append(int(qs["start"][0]))
+        self.assertTrue(all(s % 25 == 0 for s in start_vals), f"Offsets must be multiples of 25: {start_vals}")
+        self.assertNotIn(10, start_vals)
+
+        first_few_urls = requested_urls[:4]
+        has_fresh_stream = any("f_TPR=r86400" in u or "f_TPR=r604800" in u for u in first_few_urls)
+        self.assertTrue(has_fresh_stream, "Fresh streams must be prioritized at the front of query queue")
+
+    def test_linkedin_geoid_location_mapping(self):
+        """Known countries/regions map to exact LinkedIn geoId to eliminate location noise."""
+        lg = sources.LinkedInGuest()
+        urls = []
+
+        def fake_get_page(url, timeout=6):
+            urls.append(url)
+            return ""
+
+        with mock.patch.object(lg, "_get_page", side_effect=fake_get_page):
+            with mock.patch("time.sleep"):
+                lg.fetch("Python", "United States", depth="fast")
+
+        self.assertTrue(len(urls) > 0)
+        self.assertTrue(any("geoId=103644278" in u for u in urls), f"Expected geoId=103644278 in requested URLs: {urls}")
+
+    def test_linkedin_fetch_deduplicates_against_all_three_tables(self):
+        """fetch filters out jobs present in search_jobs, pending_search_jobs, or seen_jobs."""
+        from jh import db
+        lg = sources.LinkedInGuest()
+
+        # Insert 1 into search_jobs
+        db.replace_search_jobs([sources.make_job(
+            id="linkedin-1000000001", title="Job 1", company="C1", location="Remote", source="LinkedIn"
+        )], query="test", clear_existing=False)
+
+        # Insert 1 into pending_search_jobs
+        db.store_pending_jobs([sources.make_job(
+            id="linkedin-1000000002", title="Job 2", company="C2", location="Remote", source="LinkedIn"
+        )])
+
+        # Insert 1 into seen_jobs
+        with db.session() as c:
+            c.execute(
+                "INSERT OR IGNORE INTO seen_jobs (job_key,title,company,url,source_names,first_seen,last_seen,best_score) VALUES (?,?,?,?,?,?,?,?)",
+                ("linkedin-1000000003", "Job 3", "C3", "url", "LinkedIn", "2026-10-10", "2026-10-10", 0)
+            )
+
+        html_card = """<li>
+          <div class="base-card base-search-card base-search-card--link job-search-card">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/j1-1000000001"><h3 class="base-search-card__title">J1</h3></a>
+            <h4 class="base-search-card__subtitle">C1</h4>
+          </div></li>
+        <li>
+          <div class="base-card base-search-card base-search-card--link job-search-card">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/j2-1000000002"><h3 class="base-search-card__title">J2</h3></a>
+            <h4 class="base-search-card__subtitle">C2</h4>
+          </div></li>
+        <li>
+          <div class="base-card base-search-card base-search-card--link job-search-card">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/j3-1000000003"><h3 class="base-search-card__title">J3</h3></a>
+            <h4 class="base-search-card__subtitle">C3</h4>
+          </div></li>
+        <li>
+          <div class="base-card base-search-card base-search-card--link job-search-card">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/j4-1000000004"><h3 class="base-search-card__title">J4</h3></a>
+            <h4 class="base-search-card__subtitle">C4</h4>
+          </div></li>"""
+
+        with mock.patch.object(lg, "_get_page", return_value=html_card):
+            with mock.patch("time.sleep"):
+                res = lg.fetch("Software", "Remote", depth="fast")
+
+        res_ids = [j["id"] for j in res]
+        self.assertIn("linkedin-1000000004", res_ids, "Unseen job should be included")
+        self.assertNotIn("linkedin-1000000001", res_ids, "Job in search_jobs should be excluded")
+        self.assertNotIn("linkedin-1000000002", res_ids, "Job in pending_search_jobs should be excluded")
+        self.assertNotIn("linkedin-1000000003", res_ids, "Job in seen_jobs should be excluded")
+
+    def test_linkedin_backfill_advances_beyond_250(self):
+        """Adaptive backfill advances past 250 up to 900 without resetting prematurely."""
+        lg = sources.LinkedInGuest()
+        card_stagnant = """<li>
+          <div class="base-card base-search-card base-search-card--link job-search-card">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/stale-role-9999999999">
+              <h3 class="base-search-card__title">Stale Role</h3>
+            </a>
+            <h4 class="base-search-card__subtitle">StaleCo</h4>
+          </div>
+        </li>"""
+        card_backfill = """<li>
+          <div class="base-card base-search-card base-search-card--link job-search-card">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/unseen-role-7777777777">
+              <h3 class="base-search-card__title">Unseen Backfill Role</h3>
+            </a>
+            <h4 class="base-search-card__subtitle">BackfillCo</h4>
+          </div>
+        </li>"""
+
+        db.set_setting("li_radar_last_top_id", "9999999999")
+        db.set_setting("li_radar_backfill_offset", "250")
+        with db.session() as c:
+            c.execute("INSERT OR IGNORE INTO seen_jobs (job_key,title,company,url,source_names,first_seen,last_seen,best_score) VALUES (?,?,?,?,?,?,?,?)",
+                      ("linkedin-9999999999", "Stale", "StaleCo", "x", "LinkedIn", "2026-10-10", "2026-10-10", 0))
+
+        with mock.patch.object(lg, "_get_page", side_effect=[card_stagnant, card_backfill]):
+            with mock.patch("time.sleep"):
+                lg.fetch_incremental("Python", "Remote")
+
+        saved_offset = int(db.get_setting("li_radar_backfill_offset") or 0)
+        self.assertEqual(saved_offset, 275, "Backfill offset should advance from 250 to 275 instead of resetting to 25")
+
+    def test_linkedin_radar_multi_query_rotation(self):
+        """Radar increments query index and rotates across primary and derived roles."""
+        from jh import pipeline
+        db.save_profile({"target_title": "Backend Engineer", "skills": ["Python", "Golang", "PostgreSQL", "AWS"]})
+        db.set_setting("li_radar_query_idx", "0")
+
+        queries_used = []
+        with mock.patch("jh.sources.LinkedInGuest.fetch_incremental", return_value=[]) as mock_fetch:
+            pipeline.run_linkedin_incremental()
+            queries_used.append(mock_fetch.call_args[0][0])
+            pipeline.run_linkedin_incremental()
+            queries_used.append(mock_fetch.call_args[0][0])
+
+        self.assertEqual(len(queries_used), 2)
+        idx_after = db.get_setting("li_radar_query_idx")
+        self.assertEqual(idx_after, "2")
+
+
     def test_source_hierarchy_prefers_direct_employer_application(self):
         jobs = [
             sources.make_job(id="li-1", title="Senior Backend Engineer", company="Acme", location="Remote",

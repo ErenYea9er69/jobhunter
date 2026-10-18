@@ -816,6 +816,29 @@ def detect_board(company_name):
 
 # ---------------------------------------------------------------- major job boards
 
+LINKEDIN_GEO_MAP = {
+    "united states": "103644278",
+    "usa": "103644278",
+    "us": "103644278",
+    "united kingdom": "102257491",
+    "uk": "102257491",
+    "canada": "101174742",
+    "germany": "101282230",
+    "france": "105015875",
+    "india": "102713980",
+    "australia": "101452733",
+    "netherlands": "102890719",
+    "ireland": "104738515",
+    "spain": "105646813",
+    "italy": "103350119",
+    "brazil": "106057199",
+    "singapore": "102454443",
+    "switzerland": "106693272",
+    "sweden": "105117694",
+    "poland": "105072130",
+}
+
+
 class LinkedInGuest(Source):
     name, tier = "LinkedIn", "Major job board"
 
@@ -834,6 +857,9 @@ class LinkedInGuest(Source):
         self._tls_session = None
         self._session_lock = threading.Lock()
         self._warmed = False
+        # Fire warmup asynchronously so it doesn't block the fetch budget
+        self._warmup_thread = threading.Thread(target=self._warmup, daemon=True)
+        self._warmup_thread.start()
 
     def available(self):
         return True
@@ -924,8 +950,8 @@ class LinkedInGuest(Source):
             if r.status_code == 200:
                 return r.text
             elif r.status_code == 429:
-                with self._session_lock:
-                    self._tls_session = None
+                # Keep the TLS session alive — 429 is a rate-limit signal, not session corruption.
+                # Destroying and recreating costs a cold TLS handshake + warmup page on every retry.
                 return "429"
         except Exception:
             pass
@@ -938,8 +964,10 @@ class LinkedInGuest(Source):
                 return "429"
             return ""
 
-    def fetch(self, query, location):
-        self._warmup()
+    def fetch(self, query, location, _deadline_at=None, depth=None):
+        # Warmup is now async from __init__; if it hasn't finished yet, wait briefly
+        if hasattr(self, '_warmup_thread') and self._warmup_thread.is_alive():
+            self._warmup_thread.join(timeout=1.0)
         out = []
         seen_ids = set()
         kw = (query or "software engineer").strip()
@@ -961,13 +989,28 @@ class LinkedInGuest(Source):
         remote_flag = "&f_WT=2" if is_remote else ""
         search_loc = loc if loc and loc.lower() not in ("remote", "anywhere") else "Worldwide"
 
-        # Load known IDs from SQLite for promoted-safe early stopping
+        # Load known IDs from all 3 tables for promoted-safe early stopping and avoiding re-downloads
         known_db_ids = set()
         try:
             from . import db
             with db.session() as c:
-                rows = c.execute("SELECT job_key FROM search_jobs WHERE job_key LIKE 'linkedin-%' LIMIT 3000").fetchall()
-                known_db_ids = {r["job_key"].replace("linkedin-", "") for r in rows}
+                try:
+                    for r in c.execute("SELECT job_key FROM seen_jobs WHERE job_key LIKE 'linkedin-%' LIMIT 5000").fetchall():
+                        known_db_ids.add(r["job_key"].replace("linkedin-", ""))
+                except Exception:
+                    pass
+                for tbl in ("search_jobs", "pending_search_jobs"):
+                    try:
+                        for r in c.execute(f"SELECT job_key, job_json FROM {tbl} WHERE job_key LIKE 'linkedin-%' OR source_names LIKE '%LinkedIn%' OR job_json LIKE '%linkedin-%' LIMIT 5000").fetchall():
+                            jk = r["job_key"] or ""
+                            if jk.startswith("linkedin-"):
+                                known_db_ids.add(jk.replace("linkedin-", ""))
+                            jj = r["job_json"] or ""
+                            m = re.search(r'linkedin-(\d{6,})', jj)
+                            if m:
+                                known_db_ids.add(m.group(1))
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -986,33 +1029,35 @@ class LinkedInGuest(Source):
         except Exception:
             pass
 
-        depth = config.get_linkedin_scrape_depth()
+        depth = depth or config.get_linkedin_scrape_depth()
+        # Step-25 pagination: LinkedIn returns up to 25 cards per page, so step-25
+        # gives zero overlap. Step-10 wasted ~60% of fetches on duplicate cards.
         if depth == "max":
-            primary_offsets = [base_cursor + (i * 10) for i in range(8)]
-            fresh_offsets = [0, 10, 20, 30, 40, 50]
-            startup_offsets = [0, 10, 20]
-            slice_offsets = [0, 10, 20]
-            filter_offsets = [0, 10]
+            primary_offsets = [base_cursor + (i * 25) for i in range(8)]
+            fresh_offsets = [0, 25, 50, 75, 100, 125]
+            startup_offsets = [0, 25, 50]
+            slice_offsets = [0, 25, 50]
+            filter_offsets = [0, 25]
             max_out = 1500
         elif depth == "deep":
-            primary_offsets = [base_cursor + (i * 10) for i in range(5)]
-            fresh_offsets = [0, 10, 20, 30, 40]
-            startup_offsets = [0, 10, 20]
-            slice_offsets = [0, 10]
-            filter_offsets = [0, 10]
+            primary_offsets = [base_cursor + (i * 25) for i in range(5)]
+            fresh_offsets = [0, 25, 50, 75, 100]
+            startup_offsets = [0, 25, 50]
+            slice_offsets = [0, 25]
+            filter_offsets = [0, 25]
             max_out = 800
         elif depth == "fast":
-            primary_offsets = [0, 10]
-            fresh_offsets = [0, 10]
+            primary_offsets = [0, 25]
+            fresh_offsets = [0, 25]
             startup_offsets = [0]
             slice_offsets = [0]
             filter_offsets = []
             max_out = 150
         else:
-            primary_offsets = [0, 10, 20, 30]
-            fresh_offsets = [0, 10, 20, 30]
-            startup_offsets = [0, 10]
-            slice_offsets = [0, 10]
+            primary_offsets = [0, 25, 50, 75]
+            fresh_offsets = [0, 25, 50, 75]
+            startup_offsets = [0, 25]
+            slice_offsets = [0, 25]
             filter_offsets = [0]
             max_out = 400
 
@@ -1020,19 +1065,11 @@ class LinkedInGuest(Source):
         if user_c and user_c.lower() not in ("remote", "anywhere", "worldwide") and user_c.lower() != search_loc.lower():
             target_places.append(user_c)
 
-        # Dual-stream query matrix:
-        # Stream 1: Core relevance (best matched roles)
-        # Stream 2: Chronological fresh (sortBy=DD & f_TPR=r604800, newest first)
-        # Stream 3: High-growth startup roles
+        # Query matrix reordered by marginal value: if the budget cuts execution
+        # short, the highest-unique-yield queries will have already run.
         queries = []
-        for pl in target_places:
-            for off in primary_offsets:
-                queries.append((kw, pl, off, "", False, False))
-            for off in fresh_offsets:
-                queries.append((kw, pl, off, "&sortBy=DD&f_TPR=r604800", False, True))
-            for off in startup_offsets:
-                queries.append((f"{kw} startup", pl, off, "", True, False))
 
+        # Build synonym and slices upfront so we can weave them in priority order
         q_lower = kw.lower()
         syn = ""
         if "developer" in q_lower:
@@ -1043,34 +1080,64 @@ class LinkedInGuest(Source):
             syn = re.sub(r"\bprogrammer\b", "engineer", kw, flags=re.I)
         else:
             syn = f"{kw} developer"
-
-        if syn and syn != kw:
-            queries.append((syn, search_loc, 0, "", False, False))
-            if depth in ("deep", "max"):
-                queries.append((syn, search_loc, 10, "", False, False))
-
-        if search_loc == "Worldwide" and not remote_flag:
-            queries.append((kw, "Worldwide", 0, "&f_WT=2", False, False))
-            if depth in ("deep", "max"):
-                queries.append((kw, "Worldwide", 10, "&f_WT=2", False, False))
-
-        # Stream 4: Query slices — skill-based variants to multiply the result window
         query_slices = self._build_query_slices(kw)
+
+        # Priority 1: Ultra-fresh 24h stream (today's postings — highest value, least overlap with DB)
+        if depth != "fast":
+            for off in [0, 25]:
+                queries.append((kw, search_loc, off, "&sortBy=DD&f_TPR=r86400", False, True))
+
+        # Priority 2: Fresh 7-day chronological (page 0 only — most new content per fetch)
+        for pl in target_places:
+            queries.append((kw, pl, 0, "&sortBy=DD&f_TPR=r604800", False, True))
+
+        # Priority 3: Primary relevance page 0 (LinkedIn's best-match ranking)
+        for pl in target_places:
+            queries.append((kw, pl, 0, "", False, False))
+
+        # Priority 4: Skill-slice variants (unique queries = unique result windows)
         for sl in query_slices:
             for pl in target_places[:1]:
-                for off in slice_offsets:
-                    queries.append((sl, pl, off, "", False, False))
+                queries.append((sl, pl, 0, "", False, False))
 
-        # Stream 5: Experience level filter variants (Mid-Senior, Associate)
+        # Priority 5: Synonym variant page 0
+        if syn and syn != kw:
+            queries.append((syn, search_loc, 0, "", False, False))
+
+        # Priority 6: Remote worldwide variant
+        if search_loc == "Worldwide" and not remote_flag:
+            queries.append((kw, "Worldwide", 0, "&f_WT=2", False, False))
+
+        # Priority 7: Startup roles page 0
+        for pl in target_places:
+            queries.append((f"{kw} startup", pl, 0, "", True, False))
+
+        # Priority 8: Deeper pagination (pages 1+ of the highest-value streams)
+        for pl in target_places:
+            for off in primary_offsets[1:]:
+                queries.append((kw, pl, off, "", False, False))
+            for off in fresh_offsets[1:]:
+                queries.append((kw, pl, off, "&sortBy=DD&f_TPR=r604800", False, True))
+            for off in startup_offsets[1:]:
+                queries.append((f"{kw} startup", pl, off, "", True, False))
+
+        # Priority 9: Deeper pages for slices and synonyms
+        for sl in query_slices:
+            for pl in target_places[:1]:
+                for off in slice_offsets[1:]:
+                    queries.append((sl, pl, off, "", False, False))
+        if syn and syn != kw:
+            if depth in ("deep", "max"):
+                queries.append((syn, search_loc, 25, "", False, False))
+        if search_loc == "Worldwide" and not remote_flag:
+            if depth in ("deep", "max"):
+                queries.append((kw, "Worldwide", 25, "&f_WT=2", False, False))
+
+        # Priority 10: Experience level filter variants (lowest marginal value)
         if filter_offsets:
             for ef in ("&f_E=4", "&f_E=3"):
                 for off in filter_offsets:
                     queries.append((kw, search_loc, off, ef, False, False))
-
-        # Stream 6: Ultra-fresh 24h stream (catches today's postings)
-        if depth != "fast":
-            for off in [0, 10]:
-                queries.append((kw, search_loc, off, "&sortBy=DD&f_TPR=r86400", False, True))
 
         # Parallel page fetching with rate limiting and 429 retry
         _last_req = [0.0]
@@ -1080,9 +1147,11 @@ class LinkedInGuest(Source):
             """Fetch one LinkedIn page with rate limiting and 429 retry."""
             term, place, start_idx, extra_params, is_startup_term, is_fresh_stream = query_tuple
 
+            geo_id = LINKEDIN_GEO_MAP.get(str(place).lower().strip(), "")
+            geo_param = f"&geoId={geo_id}" if geo_id else ""
             url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
                    f"keywords={urllib.parse.quote(term)}&location={urllib.parse.quote(place)}"
-                   f"{remote_flag}{extra_params}&start={start_idx}")
+                   f"{geo_param}{remote_flag}{extra_params}&start={start_idx}")
 
             # Rate limiting: minimum gap between request starts across all workers
             with _rlock:
@@ -1161,14 +1230,16 @@ class LinkedInGuest(Source):
                 )))
             return results
 
-        t_start = time.time()
         n_workers = 3 if depth in ("deep", "max") else 2
         batch_size = n_workers * 3
+        # Use the pipeline-provided deadline if available, otherwise no inner wall.
+        # The pipeline's SEARCH_DEADLINE_SECONDS is the single timeout gate.
+        fetch_deadline = _deadline_at or (time.time() + 120.0)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as pool:
             qi = 0
             while qi < len(queries) and len(out) < max_out:
-                if time.time() - t_start > 20.0 and len(out) >= 20:
+                if time.time() > fetch_deadline:
                     break
 
                 batch = queries[qi:qi + batch_size]
@@ -1179,7 +1250,7 @@ class LinkedInGuest(Source):
                     for f in concurrent.futures.as_completed(futs, timeout=8.0):
                         try:
                             for jid, job in f.result():
-                                if jid not in seen_ids and len(out) < max_out:
+                                if jid not in seen_ids and jid not in known_db_ids and len(out) < max_out:
                                     seen_ids.add(jid)
                                     out.append(job)
                         except Exception:
@@ -1191,7 +1262,7 @@ class LinkedInGuest(Source):
         if depth in ("deep", "max") and primary_offsets:
             try:
                 from . import db
-                next_cur = primary_offsets[-1] + 10
+                next_cur = primary_offsets[-1] + 25
                 if next_cur >= 900:
                     next_cur = 0
                 db.set_setting(cursor_key, str(next_cur))
@@ -1262,7 +1333,9 @@ class LinkedInGuest(Source):
            and pivots to rotated profile skill slices or an advancing backfill cursor
            so every run discovers new unseen opportunities for the user.
         """
-        self._warmup()
+        # Warmup is async from __init__; wait briefly if still running
+        if hasattr(self, '_warmup_thread') and self._warmup_thread.is_alive():
+            self._warmup_thread.join(timeout=1.0)
         kw = (query or "software engineer").strip()
         loc = (location or "").strip()
 
@@ -1354,9 +1427,11 @@ class LinkedInGuest(Source):
             return parsed
 
         def _fetch_url(term, place, start_idx, extra):
+            geo_id = LINKEDIN_GEO_MAP.get(str(place).lower().strip(), "")
+            geo_param = f"&geoId={geo_id}" if geo_id else ""
             url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
                    f"keywords={urllib.parse.quote(term)}&location={urllib.parse.quote(place)}"
-                   f"{remote_flag}{extra}&start={start_idx}")
+                   f"{geo_param}{remote_flag}{extra}&start={start_idx}")
             page = self._get_page(url, timeout=5)
             if page == "429":
                 time.sleep(random.uniform(1.5, 3.0))
@@ -1515,7 +1590,8 @@ class LinkedInGuest(Source):
                         ))
 
                 next_offset = backfill_offset + 25
-                if next_offset > 250 or len(bf_items) == 0:
+                # Extend backfill to LinkedIn's ~1000 result cap (offset 900 at step-25)
+                if next_offset > 900 or len(bf_items) == 0:
                     next_offset = 25
                 try:
                     from . import db

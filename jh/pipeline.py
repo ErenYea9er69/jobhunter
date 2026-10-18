@@ -374,7 +374,10 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
         for q_term in queries_for_s:
             key = f"{s.name}|{q_term.lower()}|{location.lower()}"
             lbl = f"{s.name}:{q_term}" if len(queries_for_s) > 1 else s.name
-            tasks[_pool.submit(_run_source, lbl, lambda s=s, q_term=q_term: s.fetch(q_term, location), key, force_refresh)] = lbl
+            if s.name == "LinkedIn":
+                tasks[_pool.submit(_run_source, lbl, lambda s=s, q_term=q_term: s.fetch(q_term, location, _deadline_at=time.time() + config.SEARCH_DEADLINE_SECONDS), key, force_refresh)] = lbl
+            else:
+                tasks[_pool.submit(_run_source, lbl, lambda s=s, q_term=q_term: s.fetch(q_term, location), key, force_refresh)] = lbl
 
     fam_mode = (famous_mode or "all").lower().strip()
     with db.session() as c:
@@ -829,8 +832,29 @@ def run_linkedin_incremental():
             return 0
 
         tgt_title = (profile.get("target_title") or "").strip()
-        query = tgt_title or (profile.get("skills", ["Software Engineer"])[0] if profile.get("skills") else "Software Engineer")
+        base_query = tgt_title or (profile.get("skills", ["Software Engineer"])[0] if profile.get("skills") else "Software Engineer")
         location = (profile.get("location") or "").strip()
+
+        # Build a rotation of queries: primary title + derived target roles from profile
+        all_queries = [base_query]
+        try:
+            from .scoring import derive_target_roles
+            extras = [r for r in derive_target_roles(profile) if r.lower() != base_query.lower()][:3]
+            all_queries.extend(extras)
+        except Exception:
+            pass
+
+        # Rotate through queries across incremental runs
+        q_idx = 0
+        try:
+            q_idx = int(db.get_setting("li_radar_query_idx") or 0) % len(all_queries)
+        except Exception:
+            pass
+        query = all_queries[q_idx]
+        try:
+            db.set_setting("li_radar_query_idx", str((q_idx + 1) % len(all_queries)))
+        except Exception:
+            pass
 
         if _li_scraper is None:
             _li_scraper = src.LinkedInGuest()
