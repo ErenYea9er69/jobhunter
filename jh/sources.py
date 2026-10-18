@@ -1143,8 +1143,13 @@ class LinkedInGuest(Source):
         _last_req = [0.0]
         _rlock = threading.Lock()
 
+        # Ensure we return to pipeline with safety margin before the outer timeout hits
+        safe_deadline = (_deadline_at - 4.0) if _deadline_at else (time.time() + 20.0)
+
         def _throttled_fetch(query_tuple):
             """Fetch one LinkedIn page with rate limiting and 429 retry."""
+            if time.time() >= safe_deadline:
+                return []
             term, place, start_idx, extra_params, is_startup_term, is_fresh_stream = query_tuple
 
             geo_id = LINKEDIN_GEO_MAP.get(str(place).lower().strip(), "")
@@ -1155,23 +1160,27 @@ class LinkedInGuest(Source):
 
             # Rate limiting: minimum gap between request starts across all workers
             with _rlock:
-                gap = random.uniform(0.14, 0.30)
+                gap = random.uniform(0.10, 0.22)
                 wait = max(0, _last_req[0] + gap - time.time())
                 if wait > 0:
+                    if time.time() + wait >= safe_deadline:
+                        return []
                     time.sleep(wait)
                 _last_req[0] = time.time()
 
-            page = self._get_page(url, timeout=5)
+            req_timeout = min(4, max(1, int(safe_deadline - time.time())))
+            page = self._get_page(url, timeout=req_timeout)
 
-            # 429 retry: recover the page instead of discarding it
+            # 429 retry: recover the page instead of discarding it if deadline allows
             if page == "429":
-                time.sleep(random.uniform(1.5, 3.0))
-                page = self._get_page(url, timeout=5)
-                if page == "429":
-                    time.sleep(random.uniform(2.0, 5.0))
-                    page = self._get_page(url, timeout=5)
-                    if page == "429" or not page:
-                        return []
+                if time.time() + 2.0 < safe_deadline:
+                    time.sleep(random.uniform(1.2, 2.0))
+                    page = self._get_page(url, timeout=3)
+                    if page == "429" and time.time() + 2.5 < safe_deadline:
+                        time.sleep(random.uniform(1.5, 2.5))
+                        page = self._get_page(url, timeout=3)
+                        if page == "429" or not page:
+                            return []
 
             if not page:
                 return []
@@ -1230,24 +1239,26 @@ class LinkedInGuest(Source):
                 )))
             return results
 
-        n_workers = 3 if depth in ("deep", "max") else 2
-        batch_size = n_workers * 3
-        # Use the pipeline-provided deadline if available, otherwise no inner wall.
-        # The pipeline's SEARCH_DEADLINE_SECONDS is the single timeout gate.
-        fetch_deadline = _deadline_at or (time.time() + 120.0)
+        n_workers = 4 if depth in ("deep", "max") else 3
+        batch_size = n_workers
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as pool:
             qi = 0
             while qi < len(queries) and len(out) < max_out:
-                if time.time() > fetch_deadline:
+                now = time.time()
+                if now >= safe_deadline:
+                    break
+                # If we already have a healthy yield and time is winding down, exit gracefully
+                if len(out) >= 60 and now >= safe_deadline - 5.0:
                     break
 
                 batch = queries[qi:qi + batch_size]
                 qi += batch_size
 
                 futs = [pool.submit(_throttled_fetch, q) for q in batch]
+                rem_timeout = max(0.5, safe_deadline - time.time())
                 try:
-                    for f in concurrent.futures.as_completed(futs, timeout=8.0):
+                    for f in concurrent.futures.as_completed(futs, timeout=rem_timeout):
                         try:
                             for jid, job in f.result():
                                 if jid not in seen_ids and jid not in known_db_ids and len(out) < max_out:
@@ -1256,7 +1267,7 @@ class LinkedInGuest(Source):
                         except Exception:
                             continue
                 except concurrent.futures.TimeoutError:
-                    pass
+                    break
 
         # Advance cursor for deep searches
         if depth in ("deep", "max") and primary_offsets:
