@@ -4069,16 +4069,15 @@
       <div class="kcard-top">
         <div class="kcard-brand">
           ${companyAvatarHtml(a, 'kcard')}
-          <div class="kcard-co-wrap">
-            <div class="kcard-company" title="${esc(a.company)}">${esc(a.company)}</div>
-            <div class="kcard-title" title="${esc(cleanTitle(a.title))}">${esc(cleanTitle(a.title))}</div>
-          </div>
+          <div class="kcard-company" title="${esc(a.company)}">${esc(a.company)}</div>
         </div>
         <div class="kcard-pills-top">
           ${scoreBadge}
           ${priorityBadge}
         </div>
       </div>
+
+      <div class="kcard-title" title="${esc(cleanTitle(a.title))}">${esc(cleanTitle(a.title))}</div>
 
       ${roundTag}
 
@@ -5420,16 +5419,64 @@
       const app = S.applications.find(a => a.id === card.dataset.id);
       if (app) openAppDrawer(app);
     });
-    board.addEventListener('dragstart', e => { const c = e.target.closest('.kcard'); if (c) { e.dataTransfer.setData('text/plain', c.dataset.id); c.classList.add('dragging'); } });
-    board.addEventListener('dragend', e => { const c = e.target.closest('.kcard'); if (c) c.classList.remove('dragging'); $$('.col', board).forEach(x => x.classList.remove('drop-over')); });
-    board.addEventListener('dragover', e => { const c = e.target.closest('.col'); if (c) { e.preventDefault(); $$('.col', board).forEach(x => x.classList.toggle('drop-over', x === c)); } });
+    board.addEventListener('dragstart', e => {
+      const c = e.target.closest('.kcard');
+      if (c) {
+        e.dataTransfer.setData('text/plain', c.dataset.id);
+        e.dataTransfer.effectAllowed = 'move';
+        c.classList.add('dragging');
+      }
+    });
+    board.addEventListener('dragend', e => {
+      const c = e.target.closest('.kcard') || $('.kcard.dragging', board);
+      if (c) c.classList.remove('dragging');
+      $$('.col', board).forEach(x => x.classList.remove('drop-over'));
+    });
+    board.addEventListener('dragenter', e => {
+      const c = e.target.closest('.col');
+      if (c) {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      }
+    });
+    board.addEventListener('dragover', e => {
+      const c = e.target.closest('.col');
+      if (c) {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        $$('.col', board).forEach(x => x.classList.toggle('drop-over', x === c));
+      }
+      // Edge auto-scrolling for long lists of cards
+      const wrap = $('#appBoardWrap');
+      const mouseY = e.clientY;
+      const mouseX = e.clientX;
+      const vh = window.innerHeight;
+      if (mouseY < 70) {
+        window.scrollBy({ top: -14, behavior: 'auto' });
+      } else if (mouseY > vh - 90) {
+        window.scrollBy({ top: 14, behavior: 'auto' });
+      }
+      if (wrap) {
+        const wrapRect = wrap.getBoundingClientRect();
+        if (mouseX < wrapRect.left + 60) {
+          wrap.scrollBy({ left: -18, behavior: 'auto' });
+        } else if (mouseX > wrapRect.right - 60) {
+          wrap.scrollBy({ left: 18, behavior: 'auto' });
+        }
+      }
+    });
+    board.addEventListener('dragleave', e => {
+      if (!e.relatedTarget || !board.contains(e.relatedTarget)) {
+        $$('.col', board).forEach(x => x.classList.remove('drop-over'));
+      }
+    });
     board.addEventListener('drop', e => {
       const c = e.target.closest('.col');
+      $$('.col', board).forEach(x => x.classList.remove('drop-over'));
       if (!c) return;
       e.preventDefault();
-      $$('.col', board).forEach(x => x.classList.remove('drop-over'));
       const id = e.dataTransfer.getData('text/plain');
-      if (id) moveApp(id, c.dataset.stage);
+      if (id && c.dataset.stage) moveApp(id, c.dataset.stage);
     });
 
     // applications table: stage menu and row click
