@@ -1071,6 +1071,7 @@ def _linkedin_incremental_worker():
         time.sleep(1)
 
     while not _li_bg_stop.is_set():
+        wait_s = 60
         try:
             interval_min = config.get_linkedin_incremental_minutes()
             if interval_min > 0:
@@ -1083,18 +1084,25 @@ def _linkedin_incremental_worker():
                         lr_dt = datetime.datetime.fromisoformat(last_run.replace("Z", "+00:00"))
                         now_dt = datetime.datetime.now(datetime.timezone.utc)
                         elapsed_s = (now_dt - lr_dt).total_seconds()
-                        if elapsed_s >= (interval_min * 60):
+                        interval_s = interval_min * 60
+                        if elapsed_s >= interval_s:
                             should_run = True
+                        else:
+                            wait_s = max(5, min(int(interval_s - elapsed_s), 60))
                     except Exception:
                         should_run = True
 
                 if should_run:
                     run_linkedin_incremental()
+                    wait_s = max(10, min(interval_min * 60, 60))
+            else:
+                wait_s = 60
         except Exception as e:
             log.debug("LinkedIn incremental worker error: %s", e)
+            wait_s = 30
 
-        # Wakeable sleep: checks every 4 seconds or immediately on notify
-        _li_bg_wake.wait(timeout=4)
+        # Wakeable sleep: sleeps for remaining interval or immediately on notify
+        _li_bg_wake.wait(timeout=wait_s)
         _li_bg_wake.clear()
 
 

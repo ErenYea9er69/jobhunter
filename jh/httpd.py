@@ -186,7 +186,8 @@ def r_refresh_sync(q, body):
         "q": g("q") or g("keyword"),
         "sort": g("sort", "ranked")
     }
-    all_res = db.query_stored_jobs({})
+    sort_order = filters.get("sort") or "ranked"
+    all_res = db.query_stored_jobs({"sort": sort_order})
     has_filters = any(v and v not in ("0", "all", "Any") for k, v in filters.items() if k != "sort")
     query_res = db.query_stored_jobs(filters) if has_filters else all_res
     res["jobs"] = query_res["jobs"]

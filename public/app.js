@@ -270,8 +270,15 @@
     el.className = `toast${type === 'error' ? ' toast-error' : ''}`;
     el.innerHTML = `${ico(type === 'error' ? 'alert' : 'check')}<span>${esc(message)}</span>`;
     box.appendChild(el);
-    setTimeout(() => el.remove(), type === 'error' ? 6000 : 3500);
+    const duration = type === 'error' ? 6000 : 3500;
+    setTimeout(() => {
+      el.classList.add('toast-out');
+      setTimeout(() => {
+        if (el.parentNode) el.remove();
+      }, 200);
+    }, duration);
   }
+
 
   function confirmDialog(title, text, okLabel = 'Confirm') {
     return new Promise(resolve => {
@@ -2283,13 +2290,27 @@
 
   function applySort() {
     const how = val('sortResultsBy') || 'ranked';
-    const pool = (S.allJobs && S.allJobs.length) ? S.allJobs.slice() : (S.jobsRanked || []).slice();
-    if (how === 'score_desc') pool.sort((a, b) => (b.score || 0) - (a.score || 0));
-    else if (how === 'salary_desc') pool.sort((a, b) => (jobAnnualSalaryMax(b) || 0) - (jobAnnualSalaryMax(a) || 0) || (b.score || 0) - (a.score || 0));
-    else if (how === 'date_desc') pool.sort((a, b) => String(b.posted_at || '').localeCompare(String(a.posted_at || '')));
-    else if (how === 'company_asc') pool.sort((a, b) => String(a.company || '').localeCompare(String(b.company || '')));
-    else pool.sort((a, b) => (b.opportunity_score || 0) - (a.opportunity_score || 0) || (b.score || 0) - (a.score || 0));
+    const pool = (S.allJobs && S.allJobs.length)
+      ? S.allJobs.slice()
+      : ((S.jobsRanked && S.jobsRanked.length)
+          ? S.jobsRanked.slice()
+          : (S.jobs && S.jobs.length ? S.jobs.slice() : []));
+
+    if (how === 'score_desc') {
+      pool.sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0) || (Number(b.opportunity_score) || 0) - (Number(a.opportunity_score) || 0));
+    } else if (how === 'salary_desc') {
+      pool.sort((a, b) => (jobAnnualSalaryMax(b) || 0) - (jobAnnualSalaryMax(a) || 0) || (Number(b.score) || 0) - (Number(a.score) || 0));
+    } else if (how === 'date_desc') {
+      pool.sort((a, b) => String(b.posted_at || '').localeCompare(String(a.posted_at || '')) || (Number(b.score) || 0) - (Number(a.score) || 0));
+    } else if (how === 'company_asc') {
+      pool.sort((a, b) => String(a.company || '').localeCompare(String(b.company || '')) || (Number(b.score) || 0) - (Number(a.score) || 0));
+    } else {
+      pool.sort((a, b) => (Number(b.opportunity_score) || 0) - (Number(a.opportunity_score) || 0) || (Number(b.score) || 0) - (Number(a.score) || 0));
+    }
     S.jobsRanked = pool;
+    if (!S.allJobs || !S.allJobs.length) {
+      S.allJobs = pool.slice();
+    }
     S.jobs = filteredJobs();
   }
 
@@ -5341,7 +5362,7 @@
       const label = e.target.options[e.target.selectedIndex].text;
       toast(label === 'Off' ? 'Auto-refresh disabled' : `Auto-refresh set to ${label.toLowerCase()}`);
     });
-    $('#sortResultsBy').addEventListener('change', () => { filterAndRender(false); });
+    $('#sortResultsBy').addEventListener('change', () => { filterAndRender(true); });
     $('#sourceToggle').addEventListener('click', () => {
       const p = $('#sourcePanel'); p.hidden = !p.hidden;
       $('#sourceToggle').setAttribute('aria-expanded', String(!p.hidden));
@@ -5746,10 +5767,10 @@
           if (liveTickerTimer) clearInterval(liveTickerTimer);
 
           if (res) {
-            const allPool = res.all_jobs || res.jobs || [];
+            const allPool = (res.all_jobs && res.all_jobs.length) ? res.all_jobs : ((res.jobs && res.jobs.length) ? res.jobs : (S.allJobs && S.allJobs.length ? S.allJobs : []));
             S.allJobs = allPool;
             S.jobsRanked = allPool;
-            S.jobs = res.jobs || allPool;
+            S.jobs = (res.jobs && res.jobs.length) ? res.jobs : allPool;
             S.searchMeta = res.meta || S.searchMeta || {};
             S.searchHasRun = true;
             if (S.jobs.length && (!S.selectedKey || !S.jobs.some(j => jobKey(j) === S.selectedKey))) {
@@ -7674,10 +7695,14 @@
                   const el = $(`#jobList .job-item[data-key="${key}"]`);
                   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 } else {
-                  const inAll = (S.allJobs || []).find(item => jobKey(item) === key);
+                  const inAll = (S.allJobs || []).find(item => jobKey(item) === key) || displayJobs.find(item => (item.job_key || item.id) === key);
                   if (inAll) {
-                    S.jobs = [inAll, ...(S.jobs || []).filter(item => jobKey(item) !== key)];
-                    renderJobList();
+                    S.selectedKey = key;
+                    if (!S.allJobs.some(j => jobKey(j) === key)) {
+                      S.allJobs.push(inAll);
+                    }
+                    applySort();
+                    renderResults();
                     selectJob(key);
                     const el = $(`#jobList .job-item[data-key="${key}"]`);
                     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });

@@ -838,6 +838,17 @@ LINKEDIN_GEO_MAP = {
     "switzerland": "106693272",
     "sweden": "105117694",
     "poland": "105072130",
+    "united arab emirates": "104305787",
+    "uae": "104305787",
+    "dubai": "104305787",
+    "japan": "101355337",
+    "belgium": "105080838",
+    "austria": "103883259",
+    "portugal": "100364837",
+    "denmark": "104514075",
+    "norway": "103819153",
+    "finland": "100456013",
+    "mexico": "103323778",
 }
 
 
@@ -858,25 +869,12 @@ class LinkedInGuest(Source):
         ]
         self._tls_session = None
         self._session_lock = threading.Lock()
-        self._warmed = False
-        # Fire warmup asynchronously so it doesn't block the fetch budget
-        self._warmup_thread = threading.Thread(target=self._warmup, daemon=True)
-        self._warmup_thread.start()
 
     def available(self):
         return True
 
     def unavailable_reason(self):
         return ""
-
-    def _warmup(self):
-        if not self._warmed:
-            try:
-                with self._opener.open("https://www.linkedin.com/jobs", timeout=4) as _:
-                    pass
-                self._warmed = True
-            except Exception:
-                pass
 
     @staticmethod
     def _parse_card_time(card):
@@ -902,8 +900,8 @@ class LinkedInGuest(Source):
             iso_ts = (now - datetime.timedelta(minutes=mins)).replace(microsecond=0).isoformat()
             return iso_ts, f"{mins}m ago", True
 
-        # Hour precision: "1 hour ago", "3 hours ago"
-        m_hr = re.search(r'(\d+)\s+hour?s?\s+ago', t_low)
+        # Hour precision: "1 hour ago", "2 hours ago", "2 hrs ago", "1 hr ago"
+        m_hr = re.search(r'(\d+)\s+(?:hour|hr)s?\s+ago', t_low)
         if m_hr:
             hrs = int(m_hr.group(1))
             iso_ts = (now - datetime.timedelta(hours=hrs)).replace(microsecond=0).isoformat()
@@ -947,11 +945,13 @@ class LinkedInGuest(Source):
         if not role_base:
             role_base = q_lower
 
-        # 1. Skill + role variants (e.g. "Python developer", "React engineer")
+        # 1. Skill + role variants (e.g. "React developer" for "frontend developer")
         for skill in profile_skills[:4]:
-            variant = f"{skill} {role_base}"
-            if variant.lower() not in (q_lower, kw.lower()):
-                variants.append(variant)
+            s_clean = skill.strip()
+            if s_clean.lower() not in role_base.lower() and role_base.lower() not in s_clean.lower():
+                variant = f"{s_clean} {role_base}".strip()
+                if variant.lower() not in (q_lower, kw.lower()):
+                    variants.append(variant)
 
         # 2. Role family expansion
         if "full stack" in q_lower or "fullstack" in q_lower:
@@ -982,10 +982,6 @@ class LinkedInGuest(Source):
             with self._session_lock:
                 if self._tls_session is None:
                     self._tls_session = curl_requests.Session(impersonate="chrome")
-                    try:
-                        self._tls_session.get("https://www.linkedin.com/jobs", timeout=4)
-                    except Exception:
-                        pass
                 session = self._tls_session
 
             headers = {
@@ -996,8 +992,6 @@ class LinkedInGuest(Source):
             if r.status_code == 200:
                 return r.text
             elif r.status_code == 429:
-                # Keep the TLS session alive — 429 is a rate-limit signal, not session corruption.
-                # Destroying and recreating costs a cold TLS handshake + warmup page on every retry.
                 return "429"
         except Exception:
             pass
@@ -1011,9 +1005,6 @@ class LinkedInGuest(Source):
             return ""
 
     def fetch(self, query, location, _deadline_at=None, depth=None, easy_apply=False):
-        # Warmup is now async from __init__; if it hasn't finished yet, wait briefly
-        if hasattr(self, '_warmup_thread') and self._warmup_thread.is_alive():
-            self._warmup_thread.join(timeout=1.0)
         out = []
         seen_ids = set()
         kw = (query or "software engineer").strip()
@@ -1042,20 +1033,21 @@ class LinkedInGuest(Source):
             from . import db
             with db.session() as c:
                 try:
-                    for r in c.execute("SELECT job_key FROM seen_jobs WHERE job_key LIKE 'linkedin-%' LIMIT 5000").fetchall():
+                    for r in c.execute("SELECT job_key FROM seen_jobs WHERE job_key LIKE 'linkedin-%'").fetchall():
                         known_db_ids.add(r["job_key"].replace("linkedin-", ""))
                 except Exception:
                     pass
                 for tbl in ("search_jobs", "pending_search_jobs"):
                     try:
-                        for r in c.execute(f"SELECT job_key, job_json FROM {tbl} WHERE job_key LIKE 'linkedin-%' OR source_names LIKE '%LinkedIn%' OR job_json LIKE '%linkedin-%' LIMIT 5000").fetchall():
+                        for r in c.execute(f"SELECT job_key, job_json FROM {tbl} WHERE job_key LIKE 'linkedin-%' OR source_names LIKE '%LinkedIn%' OR job_json LIKE '%linkedin-%'").fetchall():
                             jk = r["job_key"] or ""
                             if jk.startswith("linkedin-"):
                                 known_db_ids.add(jk.replace("linkedin-", ""))
                             jj = r["job_json"] or ""
-                            m = re.search(r'linkedin-(\d{6,})', jj)
-                            if m:
-                                known_db_ids.add(m.group(1))
+                            if "linkedin-" in jj:
+                                m = re.search(r'linkedin-(\d{6,})', jj)
+                                if m:
+                                    known_db_ids.add(m.group(1))
                     except Exception:
                         pass
         except Exception:
@@ -1186,12 +1178,17 @@ class LinkedInGuest(Source):
                 for off in filter_offsets:
                     queries.append((kw, search_loc, off, ef, False, False))
 
-        # Parallel page fetching with rate limiting and 429 retry
+        # Parallel page fetching with circuit breaker, rate limiting and 429 backoff
         _last_req = [0.0]
+        _cooldown_until = [0.0]
         _rlock = threading.Lock()
 
         # Ensure we return to pipeline with safety margin before the outer timeout hits
         safe_deadline = (_deadline_at - 4.0) if _deadline_at else (time.time() + 20.0)
+
+        def _trigger_cooldown(seconds=3.0):
+            with _rlock:
+                _cooldown_until[0] = max(_cooldown_until[0], time.time() + seconds)
 
         def _throttled_fetch(query_tuple):
             """Fetch one LinkedIn page with rate limiting and 429 retry."""
@@ -1205,9 +1202,15 @@ class LinkedInGuest(Source):
                    f"keywords={urllib.parse.quote(term)}&location={urllib.parse.quote(place)}"
                    f"{geo_param}{remote_flag}{easy_apply_flag}{extra_params}&start={start_idx}")
 
-            # Rate limiting: minimum gap between request starts across all workers
+            # Rate limiting: minimum gap between request starts across all workers + shared cooldown
             with _rlock:
-                gap = random.uniform(0.10, 0.22)
+                now = time.time()
+                if _cooldown_until[0] > now:
+                    wait_cool = _cooldown_until[0] - now
+                    if now + wait_cool >= safe_deadline:
+                        return []
+                    time.sleep(wait_cool)
+                gap = random.uniform(0.35, 0.65)
                 wait = max(0, _last_req[0] + gap - time.time())
                 if wait > 0:
                     if time.time() + wait >= safe_deadline:
@@ -1220,10 +1223,12 @@ class LinkedInGuest(Source):
 
             # 429 retry: recover the page instead of discarding it if deadline allows
             if page == "429":
+                _trigger_cooldown(random.uniform(2.5, 4.0))
                 if time.time() + 2.0 < safe_deadline:
                     time.sleep(random.uniform(1.2, 2.0))
                     page = self._get_page(url, timeout=3)
                     if page == "429" and time.time() + 2.5 < safe_deadline:
+                        _trigger_cooldown(random.uniform(3.0, 5.0))
                         time.sleep(random.uniform(1.5, 2.5))
                         page = self._get_page(url, timeout=3)
                         if page == "429" or not page:
@@ -1293,7 +1298,7 @@ class LinkedInGuest(Source):
                 )))
             return results
 
-        n_workers = 4 if depth in ("deep", "max") else 3
+        n_workers = 3 if depth in ("deep", "max") else 2
         batch_size = n_workers
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as pool:
@@ -1337,7 +1342,7 @@ class LinkedInGuest(Source):
         return out[:max_out]
 
     def enrich(self, job):
-        m = re.search(r"(\d{6,})", job.get("id", ""))
+        m = re.search(r"(\d{6,})", job.get("url", "") or job.get("id", ""))
         if not m:
             return job
         headers = {
@@ -1350,6 +1355,9 @@ class LinkedInGuest(Source):
             page = self._get_page(detail_url, timeout=6)
             if not page or page == "429":
                 page = http_get(detail_url, headers=headers, retries=0)
+            if not page or page == "429":
+                return job
+
             d = re.search(r'show-more-less-html__markup[^>]*>(.*?)</div>', page, re.S)
             if d:
                 full_desc = html_to_text(d.group(1))
@@ -1374,16 +1382,23 @@ class LinkedInGuest(Source):
                     elif "industries" in h_text and v_text:
                         job.setdefault("tags", []).append(v_text)
 
-            # Check for ld+json if salary missing
-            if not job.get("salary"):
-                parsed = parse_schema_job_posting(page)
-                if parsed.get("salary"):
+            # Always check for ld+json if description, salary or job_type missing
+            parsed = parse_schema_job_posting(page)
+            if parsed:
+                if parsed.get("salary") and not job.get("salary"):
                     job["salary"] = parsed["salary"]
                 if parsed.get("job_type") and not job.get("job_type"):
                     job["job_type"] = parsed["job_type"]
+                if not job.get("description") and parsed.get("description"):
+                    job["description"] = parsed["description"]
+                    secs = extract_job_sections(parsed["description"])
+                    for k, v in secs.items():
+                        if v and not job.get(k):
+                            job[k] = v
 
-            job["enriched"] = True
-            job["needs_enrichment"] = False
+            if len(job.get("description", "") or "") > 50:
+                job["enriched"] = True
+                job["needs_enrichment"] = False
         except Exception:
             pass
         return job
@@ -1424,26 +1439,21 @@ class LinkedInGuest(Source):
         known_ids = set()
         known_canonical_keys = set()
         try:
-            from . import db, dedup
+            from . import db
             with db.session() as c:
                 # Direct LinkedIn IDs
                 for tbl in ("search_jobs", "seen_jobs", "pending_search_jobs"):
                     try:
-                        rows = c.execute(f"SELECT job_key FROM {tbl} WHERE job_key LIKE 'linkedin-%' LIMIT 5000").fetchall()
+                        rows = c.execute(f"SELECT job_key FROM {tbl} WHERE job_key LIKE 'linkedin-%'").fetchall()
                         known_ids.update(r["job_key"].replace("linkedin-", "") for r in rows)
                     except Exception:
                         pass
                 
-                # Canonical company|title deduplication keys across ALL existing jobs
+                # Canonical deduplication keys across ALL existing jobs
                 for tbl in ("search_jobs", "pending_search_jobs", "seen_jobs"):
                     try:
-                        rows = c.execute(f"SELECT job_key, title, company FROM {tbl} LIMIT 10000").fetchall()
-                        for r in rows:
-                            if r["job_key"]:
-                                known_canonical_keys.add(r["job_key"])
-                            if r["company"] and r["title"]:
-                                ck = dedup.job_key({"company": r["company"], "title": r["title"]})
-                                known_canonical_keys.add(ck)
+                        rows = c.execute(f"SELECT job_key FROM {tbl}").fetchall()
+                        known_canonical_keys.update(r["job_key"] for r in rows if r["job_key"])
                     except Exception:
                         pass
         except Exception:
@@ -1505,7 +1515,7 @@ class LinkedInGuest(Source):
                    f"{geo_param}{remote_flag}{extra}&start={start_idx}")
             page = self._get_page(url, timeout=5)
             if page == "429":
-                time.sleep(random.uniform(1.5, 3.0))
+                time.sleep(random.uniform(2.0, 3.5))
                 page = self._get_page(url, timeout=5)
                 if page == "429" or not page:
                     return ""
@@ -2286,13 +2296,13 @@ def enrich_job(job):
 
     # 2. Match by URL domain
     if "indeed.com" in url:
-        job = Indeed().enrich(job)
+        job = by_name.get("Indeed", Indeed()).enrich(job)
     elif "linkedin.com" in url:
-        job = LinkedInGuest().enrich(job)
+        job = by_name.get("LinkedIn", LinkedInGuest()).enrich(job)
     elif "ziprecruiter.com" in url:
-        job = ZipRecruiter().enrich(job)
+        job = by_name.get("ZipRecruiter", ZipRecruiter()).enrich(job)
     elif "bayt.com" in url:
-        job = Bayt().enrich(job)
+        job = by_name.get("Bayt", Bayt()).enrich(job)
     elif "hellowork.com" in url:
         job = HelloWork().enrich(job)
     elif url and url.startswith("http") and (not job.get("enriched") or len(job.get("description", "")) < 500):
