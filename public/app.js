@@ -2217,18 +2217,36 @@
         const jt = (j.job_type || '').toLowerCase();
         const titleLower = (j.title || '').toLowerCase();
         const descLower = ((j.description || '').slice(0, 300)).toLowerCase();
+        const isInternSignal = jt.includes('intern') || titleLower.includes('intern') || titleLower.includes('co-op') ||
+          titleLower.includes('apprentice') || titleLower.includes('werkstudent') || titleLower.includes('praktik') ||
+          titleLower.includes('stage') || titleLower.includes('stagiaire');
+        const isPartTimeSignal = jt.includes('part') || titleLower.includes('part-time') || titleLower.includes('part time') ||
+          titleLower.includes('teilzeit') || descLower.includes('part-time') || descLower.includes('part time');
+        const isContractSignal = jt.includes('contract') || titleLower.includes('contract') || titleLower.includes('freelance') ||
+          titleLower.includes('c2c') || jt.includes('freelance') || descLower.includes('contract');
+
         const matchesType = Array.from(f.jobTypes).some(type => {
           const tLow = type.toLowerCase();
-          if (tLow === 'full-time') return jt.includes('full') || descLower.includes('full-time') || descLower.includes('full time') || (!jt && !descLower.includes('contract') && !descLower.includes('intern'));
-          if (tLow === 'contract') return jt.includes('contract') || titleLower.includes('contract') || descLower.includes('contract');
-          if (tLow === 'part-time') return jt.includes('part') || descLower.includes('part-time') || descLower.includes('part time');
-          if (tLow === 'internship') return jt.includes('intern') || titleLower.includes('intern') || descLower.includes('intern');
+          if (tLow === 'internship') return isInternSignal;
+          if (tLow === 'part-time') return isPartTimeSignal && !isInternSignal;
+          if (tLow === 'contract') return isContractSignal && !isInternSignal;
+          if (tLow === 'full-time') return !isInternSignal && !isPartTimeSignal && (jt.includes('full') || descLower.includes('full-time') || descLower.includes('full time') || (!jt && !isContractSignal));
           return false;
         });
         if (!matchesType) return false;
       } else if (f.jobType && f.jobType !== 'all') {
         const jt = (j.job_type || '').toLowerCase();
-        if (!jt.includes(f.jobType.toLowerCase())) return false;
+        const titleLower = (j.title || '').toLowerCase();
+        const jtTarget = f.jobType.toLowerCase();
+        if (jtTarget.includes('intern')) {
+          if (!jt.includes('intern') && !titleLower.includes('intern')) return false;
+        } else if (jtTarget.includes('part')) {
+          if (!jt.includes('part') && !titleLower.includes('part-time')) return false;
+        } else if (jtTarget.includes('contract')) {
+          if (!jt.includes('contract') && !titleLower.includes('contract')) return false;
+        } else if (!jt.includes(jtTarget)) {
+          return false;
+        }
       }
 
       // 5. Work Models (Onsite, Hybrid, Remote)
@@ -2583,6 +2601,7 @@
 
     renderCountrySelects(all);
     renderExcludedTags();
+    syncJobTypeFilterState();
   }
 
   function renderActiveFilterTags() {
@@ -2871,10 +2890,10 @@
           }
 
           // Job type
-          if (f.jobType && f.jobType !== 'all') {
+          if (f.jobTypes && f.jobTypes.size > 0 && f.jobTypes.size < 4) {
+            params.set('job_type', Array.from(f.jobTypes).join(','));
+          } else if (f.jobType && f.jobType !== 'all') {
             params.set('job_type', f.jobType);
-          } else if (f.jobTypes && f.jobTypes.size === 1) {
-            params.set('job_type', Array.from(f.jobTypes)[0]);
           }
 
           // Country / Location
@@ -3226,7 +3245,16 @@
       <div class="job-item-meta">
         <span class="meta-pill meta-loc" title="${esc(j.location || 'Remote')}"><span class="meta-icon">${ico('pin')}</span><span class="meta-text">${esc(j.location || 'Remote')}</span></span>
         ${j.work_mode ? `<span class="meta-pill"><span class="meta-icon">${ico('briefcase')}</span><span>${esc(j.work_mode)}</span></span>` : ''}
-        ${j.job_type ? `<span class="meta-pill meta-contract">${esc(j.job_type)}</span>` : ''}
+        ${(() => {
+          if (!j.job_type) return '';
+          const jtLow = j.job_type.toLowerCase();
+          let jtClass = 'meta-pill meta-jobtype';
+          if (jtLow.includes('intern') || jtLow.includes('werkstudent') || jtLow.includes('praktik')) jtClass += ' meta-type-internship';
+          else if (jtLow.includes('part') || jtLow.includes('teilzeit')) jtClass += ' meta-type-parttime';
+          else if (jtLow.includes('contract') || jtLow.includes('freelance')) jtClass += ' meta-type-contract';
+          else jtClass += ' meta-type-fulltime';
+          return `<span class="${jtClass}">${esc(j.job_type)}</span>`;
+        })()}
         ${j.salary ? `<span class="meta-pill meta-salary"><span class="meta-icon">${ico('dollar')}</span><span>${esc(j.salary)}</span></span>` : ''}
         ${(() => {
           if (!showScore) return '';
@@ -6171,6 +6199,51 @@
     }
   }
 
+  function syncJobTypeFilterState() {
+    const jtMenu = $('#p4MenuJobType');
+    const f = S.filters || {};
+    const selected = f.jobTypes || new Set();
+
+    if (jtMenu) {
+      // Update check inputs in popover
+      $$('input[name="p4JtCheck"]', jtMenu).forEach(cb => {
+        cb.checked = selected.size > 0 ? selected.has(cb.value) : false;
+      });
+
+      // Compute facet counts dynamically from S.allJobs
+      const jobs = S.allJobs || [];
+      const counts = { 'Full-time': 0, 'Contract': 0, 'Part-time': 0, 'Internship': 0 };
+      for (const j of jobs) {
+        const jt = (j.job_type || '').toLowerCase();
+        const t = (j.title || '').toLowerCase();
+        if (jt.includes('intern') || t.includes('intern') || t.includes('werkstudent') || t.includes('praktik') || t.includes('stage')) counts['Internship']++;
+        else if (jt.includes('part') || t.includes('part-time') || t.includes('part time') || t.includes('teilzeit')) counts['Part-time']++;
+        else if (jt.includes('contract') || t.includes('contract') || t.includes('freelance') || t.includes('c2c')) counts['Contract']++;
+        else counts['Full-time']++;
+      }
+      const cFt = $('#p4CountFullTime'); if (cFt) cFt.textContent = String(counts['Full-time']);
+      const cCt = $('#p4CountContract'); if (cCt) cCt.textContent = String(counts['Contract']);
+      const cPt = $('#p4CountPartTime'); if (cPt) cPt.textContent = String(counts['Part-time']);
+      const cIn = $('#p4CountInternship'); if (cIn) cIn.textContent = String(counts['Internship']);
+    }
+
+    // Update Pill label & active status
+    const pill = $('#p4PillJobType');
+    const labelEl = $('#p4TextJobType');
+    if (labelEl) {
+      if (selected.size === 1) {
+        labelEl.textContent = Array.from(selected)[0];
+      } else if (selected.size > 1 && selected.size < 4) {
+        labelEl.textContent = `${Array.from(selected)[0]} (+${selected.size - 1})`;
+      } else {
+        labelEl.textContent = 'Job Type';
+      }
+    }
+    if (pill) {
+      pill.classList.toggle('is-active', selected.size > 0 && selected.size < 4);
+    }
+  }
+
   // ----------------------------------------------------------------- picture 4 filter bar
   function setupP4FilterBar() {
     document.addEventListener('click', e => {
@@ -6190,6 +6263,7 @@
         if (!isOpen && menu) {
           menu.hidden = false;
           btn.setAttribute('aria-expanded', 'true');
+          if (menuId === 'p4MenuJobType') syncJobTypeFilterState();
         }
         return;
       }
@@ -6284,17 +6358,32 @@
     const jtMenu = $('#p4MenuJobType');
     if (jtMenu) {
       jtMenu.addEventListener('click', e => {
-        const item = e.target.closest('[data-type]');
-        if (!item) return;
-        const jt = item.dataset.type;
-        S.filters.jobType = jt;
-        S.filters.jobTypes = (jt === 'all' ? new Set() : new Set([jt]));
-        const t = $('#p4TextJobType');
-        if (t) t.textContent = jt === 'all' ? 'All Types' : jt;
-        $$('.p4-menu-item', jtMenu).forEach(b => b.classList.toggle('is-selected', b === item));
-        jtMenu.hidden = true;
-        filterAndRender();
+        if (e.target.closest('.p4-check-item')) {
+          e.stopPropagation();
+        }
       });
+
+      const confirmBtn = $('#p4BtnConfirmJobType');
+      if (confirmBtn) {
+        confirmBtn.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          const checked = Array.from($$('input[name="p4JtCheck"]:checked', jtMenu)).map(c => c.value);
+          S.filters.jobTypes = new Set(checked);
+          S.filters.jobType = checked.length === 1 ? checked[0] : (checked.length === 0 || checked.length === 4 ? 'all' : checked.join(','));
+
+          // Sync drawer checkboxes if present
+          $$('input[name="afJobType"]').forEach(cb => {
+            cb.checked = S.filters.jobTypes.size > 0 ? S.filters.jobTypes.has(cb.value) : false;
+          });
+
+          syncJobTypeFilterState();
+          jtMenu.hidden = true;
+          const pill = $('#p4PillJobType');
+          if (pill) pill.setAttribute('aria-expanded', 'false');
+          filterAndRender();
+        });
+      }
     }
 
     const wmMenu = $('#p4MenuWorkMode');
@@ -6467,7 +6556,7 @@
             q: (f.keyword && f.keyword.toLowerCase() !== cat.toLowerCase()) ? f.keyword : '',
             work_mode: (f.workMode && f.workMode !== 'Any' && f.workMode !== 'all') ? f.workMode : ((f.workModels && f.workModels.size === 1) ? Array.from(f.workModels)[0] : ''),
             seniority: (f.seniority && f.seniority !== 'all') ? f.seniority : ((f.expLevels && f.expLevels.size === 1) ? Array.from(f.expLevels)[0] : ''),
-            job_type: (f.jobType && f.jobType !== 'all') ? f.jobType : ((f.jobTypes && f.jobTypes.size === 1) ? Array.from(f.jobTypes)[0] : ''),
+            job_type: (f.jobTypes && f.jobTypes.size > 0 && f.jobTypes.size < 4) ? Array.from(f.jobTypes).join(',') : ((f.jobType && f.jobType !== 'all') ? f.jobType : ''),
             country: (f.country && f.country !== 'all') ? f.country : '',
             location: (f.locationQuery && f.locationQuery !== 'Anywhere in the US' && f.locationQuery !== 'Worldwide' && f.locationQuery.trim()) ? f.locationQuery.trim() : '',
             min_salary: (!f.salaryOpenToAll && f.minSalary > 0) ? String(f.minSalary) : (f.salaryTier && f.salaryTier !== '0' && f.salaryTier !== 'disclosed' ? f.salaryTier.replace('k', '000') : '0'),
@@ -7214,7 +7303,8 @@
     $$('input[name="afJobType"]').forEach(cb => {
       cb.addEventListener('change', () => {
         S.filters.jobTypes = new Set(Array.from($$('input[name="afJobType"]:checked')).map(el => el.value));
-        S.filters.jobType = S.filters.jobTypes.size === 1 ? Array.from(S.filters.jobTypes)[0] : 'all';
+        S.filters.jobType = S.filters.jobTypes.size === 1 ? Array.from(S.filters.jobTypes)[0] : (S.filters.jobTypes.size === 0 || S.filters.jobTypes.size === 4 ? 'all' : Array.from(S.filters.jobTypes).join(','));
+        syncJobTypeFilterState();
         preserveDrawerScroll(() => {
           renderDrawerActivePills();
           filterAndRender();
@@ -8096,8 +8186,8 @@
       else if (f.workModels && f.workModels.size === 1) params.set('work_mode', Array.from(f.workModels)[0]);
       if (f.seniority && f.seniority !== 'all') params.set('seniority', f.seniority);
       else if (f.expLevels && f.expLevels.size === 1) params.set('seniority', Array.from(f.expLevels)[0]);
-      if (f.jobType && f.jobType !== 'all') params.set('job_type', f.jobType);
-      else if (f.jobTypes && f.jobTypes.size === 1) params.set('job_type', Array.from(f.jobTypes)[0]);
+      if (f.jobTypes && f.jobTypes.size > 0 && f.jobTypes.size < 4) params.set('job_type', Array.from(f.jobTypes).join(','));
+      else if (f.jobType && f.jobType !== 'all') params.set('job_type', f.jobType);
       if (f.country && f.country !== 'all') params.set('country', f.country);
       if (f.locationQuery && f.locationQuery !== 'Anywhere in the US' && f.locationQuery !== 'Worldwide' && f.locationQuery.trim()) {
         params.set('location', f.locationQuery.trim());
@@ -9035,6 +9125,7 @@
     syncFamousUi();
     setupP4FilterBar();
     setupAllFiltersDrawer();
+    syncJobTypeFilterState();
     setupOnboardingFlow();
     setupAutoSearchUi();
     setupLinkedinRadarUi();

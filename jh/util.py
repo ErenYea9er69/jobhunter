@@ -181,7 +181,7 @@ def clean_salary_label(text):
 
 
 def clean_job_type(val):
-    """Normalize employment types: Contract, Full-time, Part-time, Internship, Freelance, Temporary."""
+    """Normalize employment types: Contract, Full-time, Part-time, Internship."""
     if not val:
         return ""
     if isinstance(val, (list, tuple, set)):
@@ -189,16 +189,14 @@ def clean_job_type(val):
         items = [x for x in items if x]
         return items[0] if items else ""
     s = clean_text(val).lower().strip().replace("-", " ").replace("_", " ")
-    if re.search(r"\b(contract|contractor|c2c|w2|freelance|freelancer|consultant|subcontract)\b", s):
-        return "Contract"
-    if re.search(r"\b(full\s*time|permanent|cdi|regular|direct\s*hire)\b", s):
-        return "Full-time"
-    if re.search(r"\b(part\s*time)\b", s):
-        return "Part-time"
-    if re.search(r"\b(intern|internship|stage|alternance|apprentice)\b", s):
+    if re.search(r"\b(intern|internship|stage|alternance|apprentice|praktik|praktikum|werkstudent|student|co\s*op)\b", s):
         return "Internship"
-    if re.search(r"\b(temporary|temp|cdd)\b", s):
-        return "Temporary"
+    if re.search(r"\b(part\s*time|parttime|teilzeit|mi\s*temps)\b", s):
+        return "Part-time"
+    if re.search(r"\b(contract|contractor|c2c|w2|freelance|freelancer|consultant|subcontract|temporary|temp|cdd|fixed\s*term)\b", s):
+        return "Contract"
+    if re.search(r"\b(full\s*time|fulltime|permanent|cdi|regular|direct\s*hire|vollzeit|berufserfahren|experienced)\b", s):
+        return "Full-time"
     return str(val).strip().title() if len(str(val).strip()) <= 20 else ""
 
 

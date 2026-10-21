@@ -8,7 +8,7 @@ import threading
 import uuid
 
 from . import config
-from .util import now_iso, parse_salary, annualize, days_since, clean_text
+from .util import now_iso, parse_salary, annualize, days_since, clean_text, clean_job_type
 
 _init_lock = threading.Lock()
 SCHEMA_VERSION = 4
@@ -123,14 +123,20 @@ def classify_job(j):
             wm = "Onsite"
 
     # 4. Job type
-    jt = (j.get("job_type") or "").strip()
-    if not jt or jt.lower() == "any":
-        if sen == "intern" or "intern" in t_lower:
+    jt = clean_job_type(j.get("job_type") or "")
+    if any(k in t_lower for k in ["intern", "internship", "co-op", "stagiaire", "praktikant", "werkstudent", "apprentice"]):
+        jt = "Internship"
+    elif any(k in t_lower for k in ["part-time", "part time"]):
+        jt = "Part-time"
+    elif any(k in t_lower for k in ["contract", "contractor", "freelance", "c2c"]):
+        jt = "Contract"
+    elif not jt or jt.lower() in ("any", "other", "unknown", "unknown."):
+        if sen == "intern" or any(k in haystack for k in ["intern", "internship", "stage", "alternance", "apprentice", "praktikum", "werkstudent", "co-op"]):
             jt = "Internship"
-        elif any(k in haystack for k in ["contract", "contractor", "freelance", "c2c"]):
-            jt = "Contract"
-        elif any(k in haystack for k in ["part-time", "part time"]):
+        elif any(k in haystack for k in ["part-time", "part time", "flexible hours", "20 hours/week", "20 hrs/week"]):
             jt = "Part-time"
+        elif any(k in haystack for k in ["contract", "contractor", "freelance", "c2c", "w2 contract", "subcontract"]):
+            jt = "Contract"
         else:
             jt = "Full-time"
 
@@ -941,18 +947,23 @@ def query_stored_jobs(filters=None, include_all=False):
             params.extend([f"%{cat}%", f"%{cat}%"])
 
     # 2. Work Mode
-    wm = (filters.get("work_mode") or "").strip()
-    if wm and wm.lower() not in ("any", "all"):
-        wm_low = wm.lower()
-        if "remote" in wm_low:
-            clauses.append("(LOWER(work_mode) LIKE '%remote%' OR LOWER(location) LIKE '%remote%' OR LOWER(country) = 'worldwide')")
-        elif "hybrid" in wm_low:
-            clauses.append("(LOWER(work_mode) LIKE '%hybrid%' OR LOWER(location) LIKE '%hybrid%')")
-        elif any(k in wm_low for k in ["onsite", "on-site", "office"]):
-            clauses.append("(LOWER(work_mode) LIKE '%onsite%' OR LOWER(work_mode) LIKE '%on-site%' OR (LOWER(work_mode) NOT LIKE '%remote%' AND LOWER(work_mode) NOT LIKE '%hybrid%'))")
-        else:
-            clauses.append("LOWER(work_mode) = ?")
-            params.append(wm_low)
+    wm_raw = (filters.get("work_mode") or "").strip()
+    if wm_raw and wm_raw.lower() not in ("any", "all"):
+        modes = [m.strip().lower() for m in wm_raw.split(",") if m.strip()]
+        if modes and len(modes) < 3:
+            wm_clauses = []
+            for m_low in modes:
+                if "remote" in m_low:
+                    wm_clauses.append("(LOWER(work_mode) LIKE '%remote%' OR LOWER(location) LIKE '%remote%' OR LOWER(country) = 'worldwide')")
+                elif "hybrid" in m_low:
+                    wm_clauses.append("(LOWER(work_mode) LIKE '%hybrid%' OR LOWER(location) LIKE '%hybrid%')")
+                elif any(k in m_low for k in ["onsite", "on-site", "office"]):
+                    wm_clauses.append("(LOWER(work_mode) LIKE '%onsite%' OR LOWER(work_mode) LIKE '%on-site%' OR (LOWER(work_mode) NOT LIKE '%remote%' AND LOWER(work_mode) NOT LIKE '%hybrid%'))")
+                else:
+                    wm_clauses.append("LOWER(work_mode) = ?")
+                    params.append(m_low)
+            if wm_clauses:
+                clauses.append(f"({' OR '.join(wm_clauses)})")
 
     # 3. Seniority
     sen = (filters.get("seniority") or "").strip()
@@ -970,11 +981,26 @@ def query_stored_jobs(filters=None, include_all=False):
             clauses.append("seniority = ?")
             params.append(s_low)
 
-    # 4. Job Type
-    jt = (filters.get("job_type") or "").strip()
-    if jt and jt.lower() not in ("all", "any"):
-        clauses.append("LOWER(job_type) LIKE ?")
-        params.append(f"%{jt.lower()}%")
+    # 4. Job Type (Supports single or multi-value comma-separated, e.g. 'Part-time,Internship')
+    jt_raw = (filters.get("job_type") or "").strip()
+    if jt_raw and jt_raw.lower() not in ("all", "any"):
+        types = [t.strip().lower() for t in jt_raw.split(",") if t.strip()]
+        if types and len(types) < 4:
+            jt_clauses = []
+            for t in types:
+                if t == "internship":
+                    jt_clauses.append("(LOWER(job_type) LIKE '%intern%' OR LOWER(title) LIKE '%intern%' OR LOWER(title) LIKE '%co-op%' OR LOWER(title) LIKE '%apprentice%')")
+                elif t in ("part-time", "part time"):
+                    jt_clauses.append("(LOWER(job_type) LIKE '%part%' OR LOWER(title) LIKE '%part-time%' OR LOWER(title) LIKE '%part time%')")
+                elif t == "contract":
+                    jt_clauses.append("(LOWER(job_type) LIKE '%contract%' OR LOWER(title) LIKE '%contract%' OR LOWER(title) LIKE '%freelance%')")
+                elif t in ("full-time", "full time"):
+                    jt_clauses.append("(LOWER(job_type) LIKE '%full%' OR (job_type = '' AND LOWER(title) NOT LIKE '%intern%' AND LOWER(title) NOT LIKE '%contract%' AND LOWER(title) NOT LIKE '%part%'))")
+                else:
+                    jt_clauses.append("LOWER(job_type) LIKE ?")
+                    params.append(f"%{t}%")
+            if jt_clauses:
+                clauses.append(f"({' OR '.join(jt_clauses)})")
 
     # 5. Country / Location
     country = (filters.get("country") or "").strip()
@@ -1080,21 +1106,40 @@ def query_stored_jobs(filters=None, include_all=False):
 
     with session() as c:
         total_all = c.execute("SELECT count(*) FROM search_jobs WHERE is_active=1").fetchone()[0]
-        rows = c.execute(f"SELECT job_json FROM search_jobs WHERE {where_sql} {order_clause}", params).fetchall()
+        rows = c.execute(f"SELECT job_type, work_mode, category, seniority, country, best_profile_id, best_profile_name, job_json FROM search_jobs WHERE {where_sql} {order_clause}", params).fetchall()
 
         # Compute dynamic facet counts
         cat_rows = c.execute("SELECT category, count(*) as cnt FROM search_jobs WHERE is_active=1 GROUP BY category ORDER BY cnt DESC").fetchall()
         wm_rows = c.execute("SELECT work_mode, count(*) as cnt FROM search_jobs WHERE is_active=1 GROUP BY work_mode").fetchall()
         sen_rows = c.execute("SELECT seniority, count(*) as cnt FROM search_jobs WHERE is_active=1 GROUP BY seniority").fetchall()
+        jt_rows = c.execute("SELECT job_type, count(*) as cnt FROM search_jobs WHERE is_active=1 AND job_type != '' GROUP BY job_type ORDER BY cnt DESC").fetchall()
         prof_rows = c.execute("SELECT best_profile_id, best_profile_name, count(*) as cnt FROM search_jobs WHERE is_active=1 AND best_profile_id != '' GROUP BY best_profile_id ORDER BY cnt DESC").fetchall()
 
         if include_all and len(clauses) > 1:
-            all_rows = c.execute(f"SELECT job_json FROM search_jobs WHERE is_active=1 {order_clause}").fetchall()
+            all_rows = c.execute(f"SELECT job_type, work_mode, category, seniority, country, best_profile_id, best_profile_name, job_json FROM search_jobs WHERE is_active=1 {order_clause}").fetchall()
         else:
             all_rows = None
 
-    jobs = [json.loads(r["job_json"]) for r in rows]
-    all_jobs = [json.loads(r["job_json"]) for r in all_rows] if all_rows is not None else jobs
+    def _unpack_row(r):
+        j = json.loads(r["job_json"])
+        if r["job_type"]:
+            j["job_type"] = r["job_type"]
+        if r["work_mode"]:
+            j["work_mode"] = r["work_mode"]
+        if r["category"]:
+            j["category"] = r["category"]
+        if r["seniority"]:
+            j["seniority"] = r["seniority"]
+        if r["country"]:
+            j["country"] = r["country"]
+        if r["best_profile_id"]:
+            j["best_profile_id"] = r["best_profile_id"]
+        if r["best_profile_name"]:
+            j["best_profile_name"] = r["best_profile_name"]
+        return j
+
+    jobs = [_unpack_row(r) for r in rows]
+    all_jobs = [_unpack_row(r) for r in all_rows] if all_rows is not None else jobs
     meta = get_search_meta() or {}
 
     return {
@@ -1107,6 +1152,7 @@ def query_stored_jobs(filters=None, include_all=False):
             "categories": {r["category"]: r["cnt"] for r in cat_rows if r["category"]},
             "work_modes": {r["work_mode"]: r["cnt"] for r in wm_rows if r["work_mode"]},
             "seniorities": {r["seniority"]: r["cnt"] for r in sen_rows if r["seniority"]},
+            "job_types": {r["job_type"]: r["cnt"] for r in jt_rows if r["job_type"]},
             "profiles": {r["best_profile_id"]: {"name": r["best_profile_name"], "count": r["cnt"]} for r in prof_rows}
         }
     }

@@ -1474,6 +1474,79 @@ class FamousFilterTests(Base):
         facets = res.get("facets", {})
         self.assertIn("profiles", facets)
 
+    def test_job_type_classification_and_normalization(self):
+        """Verify intelligent classification of Internship, Part-time, and Contract roles."""
+        from jh import db
+        # 1. Internship from title or German/French terms even if raw feed defaulted to Full-time
+        job_intern = {
+            "title": "Summer Backend Engineering Intern",
+            "company": "Stripe",
+            "job_type": "Full-time", # Raw feed defaulted to full-time
+            "description": "Internship for university students."
+        }
+        meta_intern = db.classify_job(job_intern)
+        self.assertEqual(meta_intern["job_type"], "Internship")
+
+        job_praktik = {
+            "title": "Praktikum Softwareentwicklung",
+            "company": "BMW",
+            "job_type": "Praktikum",
+            "description": "Werkstudent oder Praktikant im Bereich Cloud."
+        }
+        meta_praktik = db.classify_job(job_praktik)
+        self.assertEqual(meta_praktik["job_type"], "Internship")
+
+        # 2. Part-time
+        job_part = {
+            "title": "Part-time Python Developer",
+            "company": "EdTech",
+            "job_type": "",
+            "description": "15-20 hours per week helping students."
+        }
+        meta_part = db.classify_job(job_part)
+        self.assertEqual(meta_part["job_type"], "Part-time")
+
+        # 3. Contract
+        job_contract = {
+            "title": "Senior Cloud Infrastructure Consultant (Contract)",
+            "company": "Fintech Corp",
+            "job_type": "Contract",
+            "description": "6 months contract / C2C."
+        }
+        meta_contract = db.classify_job(job_contract)
+        self.assertEqual(meta_contract["job_type"], "Contract")
+
+    def test_query_stored_jobs_multi_job_type_filtering(self):
+        """Verify query_stored_jobs supports multi-value job_type filtering and facet counts."""
+        from jh import db
+        jobs = [
+            {"id": "jt-test-ft", "title": "Full-time SRE", "company": "Co A", "job_type": "Full-time", "description": "Full time role."},
+            {"id": "jt-test-pt", "title": "Part-time Frontend", "company": "Co B", "job_type": "Part-time", "description": "Part time role."},
+            {"id": "jt-test-in", "title": "AI Research Intern", "company": "Co C", "job_type": "Internship", "description": "Summer internship."},
+            {"id": "jt-test-ct", "title": "Go Contractor", "company": "Co D", "job_type": "Contract", "description": "Contractor role."}
+        ]
+        db.replace_search_jobs(jobs, query="jt-test", clear_existing=False)
+
+        # 1. Multi-filter: Part-time + Internship
+        res_multi = db.query_stored_jobs({"job_type": "Part-time,Internship"})
+        returned_ids = {j.get("id") or j.get("job_key") for j in res_multi["jobs"]}
+        self.assertIn("jt-test-pt", returned_ids)
+        self.assertIn("jt-test-in", returned_ids)
+        self.assertNotIn("jt-test-ft", returned_ids)
+        self.assertNotIn("jt-test-ct", returned_ids)
+
+        # 2. Single filter: Contract
+        res_contract = db.query_stored_jobs({"job_type": "Contract"})
+        ret_contract_ids = {j.get("id") or j.get("job_key") for j in res_contract["jobs"]}
+        self.assertIn("jt-test-ct", ret_contract_ids)
+        self.assertNotIn("jt-test-ft", ret_contract_ids)
+
+        # 3. Dynamic facets include job_types
+        facets = res_multi.get("facets", {})
+        self.assertIn("job_types", facets)
+        self.assertGreaterEqual(facets["job_types"].get("Internship", 0), 1)
+        self.assertGreaterEqual(facets["job_types"].get("Part-time", 0), 1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

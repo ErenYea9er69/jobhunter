@@ -632,16 +632,50 @@
 
               <!-- Job Type Pill -->
               <div class="p4-pill-wrap">
-                <button type="button" class="p4-pill-btn" id="p4PillJobType" data-dropdown="p4MenuJobType" title="Filter by job type">
-                  <span class="p4-pill-text" id="p4TextJobType">Full-time</span>
+                <button type="button" class="p4-pill-btn" id="p4PillJobType" data-dropdown="p4MenuJobType" title="Filter by job type" aria-expanded="false">
+                  <span class="p4-pill-text" id="p4TextJobType">Job Type</span>
                   <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
                 </button>
-                <div class="p4-dropdown-menu" id="p4MenuJobType" hidden>
-                  <button type="button" class="p4-menu-item" data-type="all">All Job Types</button>
-                  <button type="button" class="p4-menu-item is-selected" data-type="Full-time">Full-time</button>
-                  <button type="button" class="p4-menu-item" data-type="Contract">Contract</button>
-                  <button type="button" class="p4-menu-item" data-type="Part-time">Part-time</button>
-                  <button type="button" class="p4-menu-item" data-type="Internship">Internship</button>
+                <div class="p4-dropdown-menu p4-jobtype-popover" id="p4MenuJobType" hidden>
+                  <div class="p4-popover-header">
+                    <span class="p4-req-asterisk">*</span><span class="p4-popover-title">Job Type</span>
+                  </div>
+                  <div class="p4-check-list" id="p4JobTypeList">
+                    <label class="p4-check-item">
+                      <input type="checkbox" class="p4-check-input" name="p4JtCheck" value="Full-time">
+                      <span class="p4-custom-box">
+                        <svg class="p4-check-svg" viewBox="0 0 16 16"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </span>
+                      <span class="p4-check-label">Full-time</span>
+                      <span class="p4-check-count" id="p4CountFullTime">0</span>
+                    </label>
+                    <label class="p4-check-item">
+                      <input type="checkbox" class="p4-check-input" name="p4JtCheck" value="Contract">
+                      <span class="p4-custom-box">
+                        <svg class="p4-check-svg" viewBox="0 0 16 16"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </span>
+                      <span class="p4-check-label">Contract</span>
+                      <span class="p4-check-count" id="p4CountContract">0</span>
+                    </label>
+                    <label class="p4-check-item">
+                      <input type="checkbox" class="p4-check-input" name="p4JtCheck" value="Part-time">
+                      <span class="p4-custom-box">
+                        <svg class="p4-check-svg" viewBox="0 0 16 16"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </span>
+                      <span class="p4-check-label">Part-time</span>
+                      <span class="p4-check-count" id="p4CountPartTime">0</span>
+                    </label>
+                    <label class="p4-check-item">
+                      <input type="checkbox" class="p4-check-input" name="p4JtCheck" value="Internship">
+                      <span class="p4-custom-box">
+                        <svg class="p4-check-svg" viewBox="0 0 16 16"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </span>
+                      <span class="p4-check-label">Internship</span>
+                      <span class="p4-check-count" id="p4CountInternship">0</span>
+                    </label>
+                  </div>
+                  <div class="p4-popover-divider"></div>
+                  <button type="button" class="p4-confirm-btn" id="p4BtnConfirmJobType">Confirm</button>
                 </div>
               </div>
 
