@@ -111,6 +111,9 @@
     drawerOpen: false,
     profile: null,
     profileEmpty: true,
+    profiles: [],
+    activeProfileId: 'master',
+    atsAudit: null,
     dirty: false,
     jobs: [],
     jobsRanked: [],
@@ -591,6 +594,7 @@
       else fetchJobsFromDb();
     }
     if (view === 'job') { S.ws.tab = ['strategy', 'resume', 'ats', 'gaps', 'cover', 'prep'].includes(sub) ? sub : 'strategy'; renderWsHeader(); renderWsTab(); }
+    if (view === 'resume') { loadProfilesList(); runAtsAudit(); }
     if (view === 'applications') loadApplications();
     if (view === 'companies') loadWatchlist();
     if (view === 'digest') loadDigest();
@@ -669,15 +673,19 @@
     return q;
   }
 
-  async function loadProfile() {
+  async function loadProfile(profileId = null) {
     try {
-      const raw = await api('/api/profile');
+      const url = profileId ? `/api/profile?id=${encodeURIComponent(profileId)}` : '/api/profile';
+      const raw = await api(url);
       S.profileEmpty = !!raw._is_empty;
       S.profile = normalizeProfile(raw);
+      if (raw._profile_id) S.activeProfileId = raw._profile_id;
       if (['Remote', 'Hybrid', 'Onsite'].includes(S.profile.work_mode)) S.workMode = S.profile.work_mode;
       renderProfile();
       renderIdeas();
       syncWorkModeSeg();
+      await loadProfilesList();
+      await runAtsAudit();
     } catch (err) {
       S.profile = normalizeProfile({});
       renderProfile();
@@ -846,6 +854,7 @@
 
   async function saveProfile() {
     const p = collectProfile();
+    p._profile_id = S.activeProfileId || 'master';
     try {
       await api('/api/profile', { method: 'POST', body: p });
       S.profile = p;
@@ -856,6 +865,8 @@
       updateProfileLink(); renderIdeas();
       $('#onboardNotice').hidden = true;
       renderProfile();
+      await loadProfilesList();
+      await runAtsAudit();
       toast('Profile saved');
       return true;
     } catch (err) {
@@ -868,6 +879,456 @@
     clearDirty();
     await loadProfile();
     toast('Changes discarded');
+  }
+
+  // -------------------------------------------------- resume variants & ats library
+  async function loadProfilesList() {
+    try {
+      const res = await api('/api/profiles');
+      S.profiles = Array.isArray(res.profiles) ? res.profiles : [];
+      S.activeProfileId = res.active_id || (S.profiles[0] && S.profiles[0].id) || 'master';
+      renderProfilesBar();
+    } catch (err) {
+      console.warn('Failed to load profiles:', err);
+    }
+  }
+
+  function renderProfilesBar() {
+    const container = $('#variantPillStrip');
+    if (!container) return;
+    const list = S.profiles || [];
+    if (!list.length) {
+      container.innerHTML = '<span class="muted small" style="padding:10px;">No profile variants yet.</span>';
+      return;
+    }
+
+    container.innerHTML = list.map(p => {
+      const isActive = p.id === S.activeProfileId;
+      return `
+        <div class="variant-pill-card ${isActive ? 'is-active' : ''}" data-action="profile-switch" data-id="${esc(p.id)}" role="button" tabindex="0">
+          <div class="variant-pill-top">
+            <span class="variant-pill-name" title="${esc(p.name)}">${esc(p.name)}</span>
+            ${p.is_master ? '<span class="chip-badge-master">Master</span>' : ''}
+            ${isActive ? '<span class="chip-badge-active">Active</span>' : ''}
+          </div>
+          <div class="variant-pill-target">${esc(p.target_title || 'General Target')}</div>
+          <div class="variant-pill-tags">
+            ${(p.tags || []).slice(0, 3).map(t => `<span class="variant-tag-chip">${esc(t)}</span>`).join('')}
+            ${(p.tags || []).length > 3 ? `<span class="variant-tag-more">+${(p.tags || []).length - 3}</span>` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Update active meta bar
+    const active = list.find(p => p.id === S.activeProfileId) || list[0] || {};
+    const nameEl = $('#variantActiveName');
+    if (nameEl) nameEl.textContent = active.name || 'Master Profile';
+    const typeEl = $('#variantActiveType');
+    if (typeEl) typeEl.textContent = active.is_master ? 'Master Career Base' : (active.target_title ? `Target: ${active.target_title}` : 'Targeted Variant');
+
+    const tagsEl = $('#variantActiveTags');
+    if (tagsEl) {
+      const tags = Array.isArray(active.tags) ? active.tags : [];
+      tagsEl.innerHTML = tags.map(t => `<span class="tag">${esc(t)}</span>`).join('') || '<span class="muted small">No tags set</span>';
+    }
+
+    const btnDel = $('#btnDeleteVariant');
+    if (btnDel) {
+      btnDel.hidden = !!active.is_master;
+    }
+
+    const beaconText = $('#activeProfileBeaconText');
+    if (beaconText) {
+      beaconText.textContent = `Active for Matching: ${active.name || 'Master Profile'}`;
+    }
+
+    const lastSaved = $('#activeProfileLastSaved');
+    if (lastSaved) {
+      lastSaved.textContent = active.updated_at ? ('Updated ' + timeAgo(active.updated_at)) : 'Updated recently';
+    }
+  }
+
+  async function switchProfile(id) {
+    if (!id || id === S.activeProfileId) return;
+    try {
+      toast('Switching active resume profile...');
+      const res = await api('/api/profile/activate', { method: 'POST', body: { id } });
+      if (res && res.profile) {
+        S.activeProfileId = id;
+        S.profile = normalizeProfile(res.profile);
+        S.profileEmpty = !!res.profile._is_empty;
+        renderProfile();
+        renderIdeas();
+        updateProfileLink();
+        await loadProfilesList();
+        await runAtsAudit();
+        toast(`Active resume profile: "${res.profile._profile_name || id}"`);
+        if (S.searchHasRun) {
+          runSearch({ forceRefresh: false });
+        }
+      }
+    } catch (err) {
+      toast('Could not switch profile: ' + err.message, 'error');
+    }
+  }
+
+  function openNewVariantDialog(isRename = false, targetId = null) {
+    const dlg = $('#variantDialog');
+    if (!dlg) return;
+    const titleEl = $('#variantDialogTitle');
+    const idInput = $('#variantFormId');
+    const nameInput = $('#variantFormName');
+    const titleInput = $('#variantFormTitle');
+    const tagsInput = $('#variantFormTags');
+    const submitBtn = $('#variantDialogSubmit');
+
+    if (isRename && targetId) {
+      const prof = (S.profiles || []).find(p => p.id === targetId);
+      if (!prof) return;
+      titleEl.textContent = 'Edit Variant Details';
+      idInput.value = prof.id;
+      nameInput.value = prof.name || '';
+      titleInput.value = prof.target_title || '';
+      tagsInput.value = (prof.tags || []).join(', ');
+      submitBtn.textContent = 'Save Changes';
+    } else {
+      titleEl.textContent = 'Create New Variant from Active Resume';
+      idInput.value = '';
+      const active = (S.profiles || []).find(p => p.id === S.activeProfileId) || {};
+      nameInput.value = active.name ? `${active.name} (Variant)` : 'Specialized Variant';
+      titleInput.value = active.target_title || '';
+      tagsInput.value = (active.tags || []).join(', ');
+      submitBtn.textContent = 'Create Variant';
+    }
+    dlg.showModal();
+    nameInput.focus();
+  }
+
+  async function submitVariantDialog(e) {
+    if (e) e.preventDefault();
+    const id = $('#variantFormId').value.trim();
+    const name = $('#variantFormName').value.trim();
+    const target_title = $('#variantFormTitle').value.trim();
+    const tagsStr = $('#variantFormTags').value.trim();
+    const tags = tagsStr ? tagsStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+    if (!name) {
+      toast('Please enter a variant name', 'error');
+      return;
+    }
+
+    try {
+      if (id) {
+        // Edit existing variant
+        await api('/api/profile', {
+          method: 'POST',
+          body: Object.assign({}, S.profile, {
+            _profile_id: id,
+            _variant_name: name,
+            target_title: target_title,
+            tags: tags
+          })
+        });
+        toast('Variant details updated');
+      } else {
+        // Create new clone
+        const res = await api('/api/profile/duplicate', {
+          method: 'POST',
+          body: {
+            id: S.activeProfileId,
+            name: name,
+            target_title: target_title,
+            tags: tags
+          }
+        });
+        toast(`Created variant "${name}"`);
+        if (res.profile && res.profile._profile_id) {
+          S.activeProfileId = res.profile._profile_id;
+        }
+      }
+      const dlg = $('#variantDialog');
+      if (dlg) dlg.close();
+      await loadProfilesList();
+      await loadProfile();
+    } catch (err) {
+      toast('Error: ' + err.message, 'error');
+    }
+  }
+
+  async function duplicateActiveProfile() {
+    const active = (S.profiles || []).find(p => p.id === S.activeProfileId);
+    const baseName = active ? active.name : 'Resume';
+    const newName = `${baseName} (Copy)`;
+    try {
+      toast('Cloning resume profile...');
+      const res = await api('/api/profile/duplicate', {
+        method: 'POST',
+        body: {
+          id: S.activeProfileId,
+          name: newName,
+          target_title: active ? active.target_title : '',
+          tags: active ? active.tags : []
+        }
+      });
+      toast(`Created variant "${newName}"`);
+      if (res.profile && res.profile._profile_id) S.activeProfileId = res.profile._profile_id;
+      await loadProfilesList();
+      await loadProfile();
+    } catch (err) {
+      toast('Could not duplicate profile: ' + err.message, 'error');
+    }
+  }
+
+  async function deleteProfileVariant(id) {
+    const targetId = id || S.activeProfileId;
+    const prof = (S.profiles || []).find(p => p.id === targetId);
+    if (!prof) return;
+    if (prof.is_master) {
+      toast('Master profile cannot be deleted.', 'error');
+      return;
+    }
+    if (!confirm(`Delete variant "${prof.name}"? This cannot be undone.`)) return;
+
+    try {
+      await api('/api/profile/delete', { method: 'POST', body: { id: targetId } });
+      toast(`Deleted variant "${prof.name}"`);
+      S.activeProfileId = 'master';
+      await loadProfilesList();
+      await loadProfile();
+    } catch (err) {
+      toast('Could not delete profile: ' + err.message, 'error');
+    }
+  }
+
+  async function runAtsAudit() {
+    try {
+      const card = $('#atsHealthCard');
+      if (!card) return;
+      const res = await api('/api/profile/audit', {
+        method: 'POST',
+        body: { id: S.activeProfileId || 'master' }
+      });
+      if (!res || !res.report) return;
+      const a = res.report;
+      S.atsAudit = a;
+
+      // Update score ring & grade badge
+      const ringPath = $('#atsAuditScorePath');
+      const scoreText = $('#atsAuditScoreText');
+      const gradeBadge = $('#atsGradeBadge');
+      const score = Math.round(a.score || 0);
+
+      if (ringPath) {
+        ringPath.setAttribute('stroke-dasharray', `${score}, 100`);
+        ringPath.className = `circle ${score >= 85 ? 'score-high' : score >= 70 ? 'score-med' : 'score-low'}`;
+      }
+      if (scoreText) scoreText.textContent = `${score}%`;
+      if (gradeBadge) {
+        gradeBadge.textContent = a.grade || 'ATS Ready';
+        gradeBadge.className = score >= 85 ? 'chip chip-ok' : score >= 70 ? 'chip chip-info' : 'chip chip-warn';
+      }
+
+      const st = a.stats || {};
+
+      // 4 Core Metric Ribbons
+      const qv = $('#atsQuantVal'), qs = $('#atsQuantSub');
+      if (qv && qs) {
+        qv.textContent = `${st.quantified_rate || 0}%`;
+        qs.textContent = `${st.quantified_bullet_count || 0} of ${st.bullet_count || 0} bullets with metrics`;
+      }
+
+      const sv = $('#atsSkillsVal'), ss = $('#atsSkillsSub');
+      if (sv && ss) {
+        sv.textContent = `${st.skills_count || 0}`;
+        ss.textContent = `${st.skills_count || 0} keywords indexed`;
+      }
+
+      const hv = $('#atsHeadlineVal'), hs = $('#atsHeadlineSub');
+      if (hv && hs) {
+        hv.textContent = st.has_target_title && st.has_summary ? 'Verified' : 'Incomplete';
+        hv.style.color = st.has_target_title && st.has_summary ? 'var(--brand-primary, #00E599)' : 'var(--warn-color, #eab308)';
+        hs.textContent = st.has_target_title ? (S.profile && S.profile.target_title || 'Target set') : 'No target title set';
+      }
+
+      const cv = $('#atsContactVal'), cs = $('#atsContactSub');
+      if (cv && cs) {
+        const contacts = [st.has_email, st.has_phone, st.has_linkedin, st.has_github, st.has_location].filter(Boolean).length;
+        cv.textContent = contacts >= 3 ? 'Complete' : 'Needs Review';
+        cv.style.color = contacts >= 3 ? 'var(--brand-primary, #00E599)' : 'var(--warn-color, #eab308)';
+        cs.textContent = `${contacts} of 5 channels present`;
+      }
+
+      // Expandable checks & tips
+      const checksList = $('#atsChecksList');
+      if (checksList && Array.isArray(a.checks)) {
+        checksList.innerHTML = a.checks.map(c => `
+          <div class="ats-check-item ${c.passed ? 'check-pass' : 'check-warn'}">
+            <span class="ats-check-icon">${c.passed ? ico('check') : ico('alert')}</span>
+            <div class="ats-check-content">
+              <div class="ats-check-title">${esc(c.rule)}</div>
+              <div class="ats-check-desc muted small">${esc(c.detail)}</div>
+            </div>
+            <span class="ats-check-weight muted small">+${c.weight} pts</span>
+          </div>
+        `).join('');
+      }
+
+      const tipsBox = $('#atsTipsBox');
+      if (tipsBox) {
+        const tips = Array.isArray(a.tips) ? a.tips : [];
+        if (tips.length) {
+          tipsBox.innerHTML = `
+            <div class="ats-tips-title">${ico('sparkles')} Actionable 10x ATS Recommendations</div>
+            <ul class="ats-tips-list">
+              ${tips.map(t => `<li>${esc(t)}</li>`).join('')}
+            </ul>
+          `;
+          tipsBox.hidden = false;
+        } else {
+          tipsBox.hidden = true;
+        }
+      }
+    } catch (err) {
+      console.warn('ATS audit failed:', err);
+    }
+  }
+
+  function openSaveTailoredDialog() {
+    const dlg = $('#tailoredVariantDialog');
+    if (!dlg) return;
+    const w = S.ws;
+    if (!w || !w.job) {
+      toast('No job currently open in workspace', 'error');
+      return;
+    }
+    const job = w.job;
+    const comp = job.company || '';
+    const title = job.title || '';
+    const defName = comp && title ? `Tailored: ${comp} - ${title}` : (title ? `Tailored: ${title}` : 'Job Tailored Variant');
+
+    $('#tailoredFormName').value = defName;
+    const skills = Array.isArray(job.matched_skills) ? job.matched_skills : (Array.isArray(job.required_skills) ? job.required_skills : []);
+    $('#tailoredFormTags').value = skills.slice(0, 5).join(', ');
+    dlg.showModal();
+    $('#tailoredFormName').focus();
+  }
+
+  async function submitTailoredDialog(e) {
+    if (e) e.preventDefault();
+    const name = $('#tailoredFormName').value.trim();
+    const tagsStr = $('#tailoredFormTags').value.trim();
+    const tags = tagsStr ? tagsStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+    if (!name) {
+      toast('Please enter a name for the tailored variant', 'error');
+      return;
+    }
+    const w = S.ws;
+    if (!w || !w.job) return;
+
+    try {
+      toast('Saving tailored variant to library...');
+      const tailoredResume = effectiveResume();
+      const res = await api('/api/profile/save-tailored', {
+        method: 'POST',
+        body: {
+          job: w.job,
+          tailored_resume: tailoredResume,
+          name: name,
+          tags: tags
+        }
+      });
+      toast(`Saved variant "${name}" to your Resume Library!`);
+      const dlg = $('#tailoredVariantDialog');
+      if (dlg) dlg.close();
+      await loadProfilesList();
+    } catch (err) {
+      toast('Could not save variant: ' + err.message, 'error');
+    }
+  }
+
+  async function openVariantCompareDialog(job) {
+    const dlg = $('#variantCompareDialog');
+    if (!dlg) return;
+    const targetJob = job || selectedJob();
+    if (!targetJob) {
+      toast('Please select a job first', 'error');
+      return;
+    }
+
+    const subEl = $('#variantCompareSub');
+    if (subEl) {
+      subEl.textContent = `Ranking all saved resume variants for: ${targetJob.company || ''} - ${cleanTitle(targetJob.title || '')}`;
+    }
+    const body = $('#variantCompareBody');
+    if (body) {
+      body.innerHTML = '<div style="padding:28px 14px; text-align:center;"><span class="spinner-sm"></span> Scoring all resume variants against this posting...</div>';
+    }
+    dlg.showModal();
+
+    try {
+      const res = await api('/api/profile/compare-job', {
+        method: 'POST',
+        body: { job: targetJob }
+      });
+      const comparisons = Array.isArray(res.comparisons) ? res.comparisons : [];
+      if (!comparisons.length) {
+        body.innerHTML = '<div class="empty"><p>No variants found to compare.</p></div>';
+        return;
+      }
+
+      body.innerHTML = comparisons.map((c, idx) => {
+        const isTop = idx === 0 && comparisons.length > 1;
+        const isActive = c.id === S.activeProfileId;
+        const score = Math.round(c.score || 0);
+        return `
+          <div class="variant-compare-card ${isActive ? 'is-active-variant' : ''} ${isTop ? 'is-top-match' : ''}">
+            <div class="vc-top">
+              <div class="vc-title-group">
+                <span class="vc-name">${esc(c.name)}</span>
+                ${c.is_master ? '<span class="chip-badge-master">Master</span>' : ''}
+                ${isActive ? '<span class="chip-badge-active">Active Profile</span>' : ''}
+                ${isTop ? '<span class="chip chip-ok" style="font-size:11px; padding:2px 6px;">⭐ Highest Match</span>' : ''}
+              </div>
+              <div class="vc-score-box">
+                <span class="vc-score-num ${score >= 80 ? 'text-ok' : score >= 60 ? 'text-info' : 'text-warn'}">${score}%</span>
+                <span class="vc-score-sub">Fit</span>
+              </div>
+            </div>
+            <div class="vc-meta muted small">
+              <span>Target: <strong>${esc(c.target_title || 'General')}</strong></span>
+              <span>&bull;</span>
+              <span>${c.matched_count || 0} matched / ${c.missing_count || 0} missing skills</span>
+            </div>
+            <div class="vc-skills-preview">
+              ${(c.matched_skills || []).slice(0, 5).map(s => `<span class="chip chip-ok" style="font-size:11px;">✓ ${esc(s)}</span>`).join('')}
+              ${(c.missing_skills || []).slice(0, 3).map(s => `<span class="chip chip-warn" style="font-size:11px;">! ${esc(s)}</span>`).join('')}
+            </div>
+            <div class="vc-actions">
+              ${isActive
+                ? '<span class="muted small">Currently active profile</span>'
+                : `<button type="button" class="btn btn-secondary btn-sm" data-action="switch-and-close-compare" data-id="${esc(c.id)}">
+                     Switch to this Variant &amp; Score
+                   </button>`
+              }
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (err) {
+      if (body) body.innerHTML = `<div class="empty"><p class="text-warn">Could not score variants: ${esc(err.message)}</p></div>`;
+    }
+  }
+
+  function setupResumeVariantUi() {
+    const vForm = $('#variantDialogForm');
+    if (vForm) {
+      vForm.addEventListener('submit', submitVariantDialog);
+    }
+    const tForm = $('#tailoredVariantForm');
+    if (tForm) {
+      tForm.addEventListener('submit', submitTailoredDialog);
+    }
   }
 
   async function handleFile(file) {
@@ -3073,6 +3534,14 @@
                     return '';
                   })()}
                 </div>
+                <div class="variant-indicator-bar" style="margin-top:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <span class="muted small" style="display:inline-flex; align-items:center; gap:4px;">
+                    ${ico('file')} Scored with: <strong>${esc(((S.profiles || []).find(p => p.id === S.activeProfileId) || {}).name || 'Master Profile')}</strong>
+                  </span>
+                  <button type="button" class="btn btn-ghost btn-sm" data-action="compare-variants-modal" style="padding:2px 8px; font-size:12px; height:24px;" title="Compare how all your resume variants match this posting">
+                    ${ico('grid')} Compare all variants
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -3658,7 +4127,10 @@
       </div>
       <div class="ats-copy-banner">
         <div><strong>${ico('shield')} 100% Grounded Tailoring</strong> &bull; <small>Zero Hallucinations. Every tailored point mirrors verified resume facts.</small></div>
-        <button type="button" class="btn btn-secondary btn-sm" data-action="bullets-copy">${ico('copy')}Copy Plain ATS Bullets</button>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button type="button" class="btn btn-primary btn-sm" data-action="save-tailored-variant" title="Save this tailored version to your resume library for reuse">${ico('bookmark')}Save to Library</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="bullets-copy">${ico('copy')}Copy Plain ATS Bullets</button>
+        </div>
       </div>
       <div class="diff-layout">
         <div>
@@ -5101,6 +5573,27 @@
     'parse-paste': () => parsePasted(),
     'profile-save': () => saveProfile(),
     'profile-discard': () => discardProfile(),
+    'profile-switch': el => switchProfile(el.dataset.id),
+    'profile-new-variant': () => openNewVariantDialog(false),
+    'profile-duplicate-variant': () => duplicateActiveProfile(),
+    'profile-rename-variant': () => openNewVariantDialog(true, S.activeProfileId),
+    'profile-delete-variant': () => deleteProfileVariant(S.activeProfileId),
+    'profile-reaudit': () => runAtsAudit(),
+    'profile-export-menu': () => exportResume('pdf'),
+    'save-tailored-variant': () => openSaveTailoredDialog(),
+    'compare-variants-modal': el => {
+      const card = el.closest('.job-item, .detail-body, [data-key]');
+      const key = card && card.dataset.key;
+      const job = key ? S.jobs.find(x => jobKey(x) === key) : selectedJob();
+      openVariantCompareDialog(job);
+    },
+    'switch-and-close-compare': async el => {
+      const id = el.dataset.id;
+      const dlg = $('#variantCompareDialog');
+      if (dlg) dlg.close();
+      await switchProfile(id);
+      renderDetail();
+    },
     // workspace
     'ws-back': () => go(S.ws.from === 'applications' ? 'applications' : S.ws.from === 'digest' ? 'digest' : 'jobs'),
     'ws-save': () => saveJob(S.ws.job),
@@ -8394,6 +8887,7 @@
     setupAutoSearchUi();
     setupLinkedinRadarUi();
     setupApplicationTrackerUi();
+    setupResumeVariantUi();
     bindEvents();
     await Promise.all([loadProfile(), loadApplications()]);
     if (!S.profileEmpty) {

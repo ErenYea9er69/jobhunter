@@ -709,7 +709,12 @@ class SourceParserTests(Base):
             c.execute("INSERT OR IGNORE INTO seen_jobs (job_key,title,company,url,source_names,first_seen,last_seen,best_score) VALUES (?,?,?,?,?,?,?,?)",
                       ("linkedin-9999999999", "Stale", "StaleCo", "x", "LinkedIn", "2026-10-10", "2026-10-10", 0))
 
-        with mock.patch.object(lg, "_get_page", side_effect=[card_stagnant, card_backfill]):
+        def fake_get_page(url, timeout=5):
+            if "f_TPR=r604800" in url:
+                return card_backfill
+            return card_stagnant
+
+        with mock.patch.object(lg, "_get_page", side_effect=fake_get_page):
             with mock.patch("time.sleep"):
                 lg.fetch_incremental("Python", "Remote")
 
@@ -1181,6 +1186,157 @@ class FamousFilterTests(Base):
         self.assertGreaterEqual(result["score"], 40)
 
 
+    def test_resume_profiles_lifecycle(self):
+        """Verify resume profiles listing, creation, activation, cloning, updating, and deletion."""
+        from jh import db
+        # 1. Save demo profile so master has valid data
+        db.save_profile(DEMO_PROFILE)
+        profs = db.list_resume_profiles()
+        self.assertGreaterEqual(len(profs), 1)
+        master = next((p for p in profs if p["id"] == "master"), None)
+        self.assertIsNotNone(master)
+        self.assertTrue(master["is_master"])
+
+        # 2. Duplicate master into a new variant
+        cloned = db.duplicate_resume_profile("master", new_name="Python Backend Specialist", target_title="Senior Backend Engineer", tags=["Python", "FastAPI", "AWS"])
+        self.assertEqual(cloned["_profile_name"], "Python Backend Specialist")
+        self.assertEqual(cloned["target_title"], "Senior Backend Engineer")
+        self.assertIn("Python", cloned["skills"])
+
+        # 3. Activate the new variant
+        active = db.set_active_resume_profile(cloned["_profile_id"])
+        self.assertEqual(active["_profile_id"], cloned["_profile_id"])
+        self.assertTrue(active["_is_active"])
+
+        # Verify get_profile() returns active profile
+        current = db.get_profile()
+        self.assertEqual(current["_profile_id"], cloned["_profile_id"])
+
+        # 4. Save edits to this variant
+        current["summary"] = "High performance distributed systems backend engineer."
+        saved = db.save_profile(current, profile_id=cloned["_profile_id"])
+        self.assertEqual(saved["summary"], "High performance distributed systems backend engineer.")
+
+        # 5. Prevent deleting master
+        with self.assertRaises(ValueError):
+            db.delete_resume_profile("master")
+
+        # 6. Delete the created variant
+        deleted = db.delete_resume_profile(cloned["_profile_id"])
+        self.assertTrue(deleted)
+
+        # Deleting active variant must safely restore master as active
+        restored = db.get_profile()
+        self.assertEqual(restored["_profile_id"], "master")
+        self.assertTrue(restored["_is_active"])
+
+    def test_save_tailored_variant_from_workspace(self):
+        """Verify saving a workspace tailored resume as a reusable library variant."""
+        from jh import db
+        job = {
+            "id": "job_tailor_test_1",
+            "title": "Senior AI Systems Engineer",
+            "company": "DeepMind",
+            "location": "London, UK",
+            "matched_skills": ["Python", "PyTorch", "Kubernetes"]
+        }
+        tailored = {
+            "summary": "Specialized AI Systems Engineer with proven scale experience.",
+            "skills": ["Python", "PyTorch", "Kubernetes", "Ray", "Docker"],
+            "experience": [
+                {
+                    "company": "Tech Corp",
+                    "role": "AI Infrastructure Lead",
+                    "bullets": ["Optimized training cluster throughput by 35% with Ray and Kubernetes."]
+                }
+            ]
+        }
+        variant = db.save_tailored_variant_from_workspace(job, tailored, variant_name="DeepMind - AI Systems", tags=["AI", "PyTorch", "Scale"])
+        self.assertEqual(variant["_profile_name"], "DeepMind - AI Systems")
+        self.assertEqual(variant["target_title"], "Senior AI Systems Engineer")
+        self.assertIn("AI Infrastructure Lead", [e["role"] for e in variant.get("experience", [])])
+
+        # Cleanup
+        db.delete_resume_profile(variant["_profile_id"])
+
+    def test_audit_resume(self):
+        """Verify ATS audit scoring, checks, metrics, and actionable tips."""
+        from jh import refit
+        sample_profile = {
+            "name": "Jane Developer",
+            "target_title": "Staff Backend Engineer",
+            "email": "jane@example.com",
+            "phone": "+1 555-0199",
+            "location": "San Francisco, CA",
+            "linkedin": "https://linkedin.com/in/janedev",
+            "github": "https://github.com/janedev",
+            "summary": "Accomplished Staff Backend Engineer with 8+ years of production experience architecting high-throughput distributed systems, event-driven microservices, and cloud-native APIs. Proven leader in reliability, database scalability, and optimizing infrastructure costs across complex distributed cloud environments.",
+            "skills": ["Python", "Go", "Distributed Systems", "AWS", "PostgreSQL", "Docker", "Kubernetes", "Redis", "Kafka", "FastAPI"],
+            "experience": [
+                {
+                    "company": "Acme Cloud",
+                    "role": "Senior Engineer",
+                    "bullets": [
+                        "Reduced p99 API latency by 42% across 50M daily requests by caching with Redis.",
+                        "Architected streaming ingestion pipeline saving $120k annually in cloud compute across 12 services.",
+                        "Led migration of 4 core databases to PostgreSQL with 99.99% uptime and zero data loss."
+                    ]
+                }
+            ],
+            "education": [
+                {
+                    "institution": "University of Tech",
+                    "degree": "B.S. in Computer Science",
+                    "graduation_year": "2018"
+                }
+            ]
+        }
+        audit = refit.audit_resume(sample_profile)
+        self.assertIn("score", audit)
+        self.assertIn("grade", audit)
+        self.assertGreaterEqual(audit["score"], 85)
+        self.assertEqual(audit["stats"]["quantified_rate"], 100)
+        self.assertEqual(audit["stats"]["quantified_bullet_count"], 3)
+        self.assertTrue(len(audit["checks"]) >= 5)
+
+    def test_compare_variants_against_job(self):
+        """Verify comparing and ranking multiple resume variants against a target job."""
+        from jh import refit
+        job = {
+            "title": "Senior Python Backend Engineer",
+            "company": "Stripe",
+            "description": "Looking for deep Python, FastAPI, PostgreSQL, and AWS experience to scale payments.",
+            "required_skills": ["Python", "FastAPI", "PostgreSQL", "AWS"]
+        }
+        variant_a = {
+            "_profile_id": "var_a",
+            "_profile_name": "Python Specialist",
+            "_is_master": False,
+            "_is_active": True,
+            "target_title": "Python Backend Engineer",
+            "tags": ["Python", "FastAPI"],
+            "skills": ["Python", "FastAPI", "PostgreSQL", "AWS", "Docker"]
+        }
+        variant_b = {
+            "_profile_id": "var_b",
+            "_profile_name": "Frontend Specialist",
+            "_is_master": False,
+            "_is_active": False,
+            "target_title": "Frontend Engineer",
+            "tags": ["React", "CSS"],
+            "skills": ["JavaScript", "React", "TypeScript", "HTML", "CSS"]
+        }
+
+        res = refit.compare_variants_against_job(job, [variant_a, variant_b])
+        comparisons = res["comparisons"]
+        self.assertEqual(len(comparisons), 2)
+        # Variant A has Python & FastAPI matching Stripe, so it should rank first with a higher score
+        self.assertEqual(comparisons[0]["id"], "var_a")
+        self.assertGreater(comparisons[0]["score"], comparisons[1]["score"])
+        self.assertEqual(res["best_variant"]["id"], "var_a")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
+
 

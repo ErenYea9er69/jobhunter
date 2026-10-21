@@ -47,11 +47,17 @@ def _job(body):
 
 # ------------------------------------------------------------------ routes
 
+@route("GET", "/api/profiles")
+def r_profiles_list(q, body):
+    return {"success": True, "profiles": db.list_resume_profiles()}
+
+
 @route("GET", "/api/profile")
 def r_profile(q, body):
-    p = db.get_profile()
+    pid = q.get("id", [None])[0]
+    p = db.get_profile(pid)
     with db.session() as c:
-        row = c.execute("SELECT updated_at FROM profile WHERE id=1").fetchone()
+        row = c.execute("SELECT updated_at FROM resume_profiles WHERE id=?", (p.get("_profile_id", "master"),)).fetchone()
     p["_updated_at"] = row["updated_at"] if row else None
     return p
 
@@ -60,10 +66,79 @@ def r_profile(q, body):
 def r_save_profile(q, body):
     if not isinstance(body, dict) or not isinstance(body.get("skills", []), list):
         raise ApiError("Profile must be an object with a skills list.")
-    db.save_profile(body)
+    pid = body.get("_profile_id")
+    db.save_profile(body, profile_id=pid)
     import threading
     threading.Thread(target=db.rescore_and_classify_stored_jobs, args=(body,), daemon=True).start()
-    return {"success": True, "message": "Master profile saved and jobs updated."}
+    return {"success": True, "message": "Profile saved and jobs updated.", "profile": db.get_profile(pid)}
+
+
+@route("POST", "/api/profile/activate")
+def r_activate_profile(q, body):
+    pid = body.get("id") or body.get("profile_id")
+    if not pid:
+        raise ApiError("Profile ID is required to activate.")
+    try:
+        active = db.set_active_resume_profile(pid)
+        return {"success": True, "message": f"Activated profile '{active.get('_profile_name')}'", "profile": active}
+    except Exception as e:
+        raise ApiError(str(e))
+
+
+@route("POST", "/api/profile/duplicate")
+def r_duplicate_profile(q, body):
+    pid = body.get("id") or body.get("profile_id") or "master"
+    new_name = body.get("name")
+    target_title = body.get("target_title")
+    tags = body.get("tags")
+    try:
+        cloned = db.duplicate_resume_profile(pid, new_name=new_name, target_title=target_title, tags=tags)
+        return {"success": True, "message": f"Created variant '{cloned.get('_profile_name')}'", "profile": cloned}
+    except Exception as e:
+        raise ApiError(str(e))
+
+
+@route("POST", "/api/profile/delete")
+def r_delete_profile(q, body):
+    pid = body.get("id") or body.get("profile_id")
+    if not pid:
+        raise ApiError("Profile ID is required to delete.")
+    try:
+        ok = db.delete_resume_profile(pid)
+        return {"success": ok, "message": "Variant deleted." if ok else "Profile not found."}
+    except Exception as e:
+        raise ApiError(str(e))
+
+
+@route("POST", "/api/profile/save-tailored")
+def r_save_tailored_profile(q, body):
+    job = body.get("job")
+    tailored = body.get("tailored_resume")
+    name = body.get("name")
+    tags = body.get("tags")
+    if not isinstance(job, dict) or not isinstance(tailored, dict):
+        raise ApiError("Valid job and tailored_resume objects are required.")
+    try:
+        saved = db.save_tailored_variant_from_workspace(job, tailored, variant_name=name, tags=tags)
+        return {"success": True, "message": f"Saved tailored variant '{saved.get('_profile_name')}' into your resume library.", "profile": saved}
+    except Exception as e:
+        raise ApiError(str(e))
+
+
+@route("POST", "/api/profile/audit")
+def r_audit_profile(q, body):
+    profile = body.get("profile") or db.get_profile(body.get("id"))
+    report = refit.audit_resume(profile)
+    return {"success": True, "report": report}
+
+
+@route("POST", "/api/profile/compare-job")
+def r_compare_job(q, body):
+    job = _job(body)
+    all_profiles_meta = db.list_resume_profiles()
+    profiles = [db.get_profile(pm["id"]) for pm in all_profiles_meta]
+    comp = refit.compare_variants_against_job(job, profiles)
+    return {"success": True, **comp}
 
 
 @route("POST", "/api/parse-resume")
@@ -562,6 +637,8 @@ class Handler(SimpleHTTPRequestHandler):
             tracker.delete_application(path.rsplit("/", 1)[-1])
         elif path.startswith("/api/watchlist/"):
             tracker.delete_watch(path.rsplit("/", 1)[-1])
+        elif path.startswith("/api/profiles/"):
+            db.delete_resume_profile(path.rsplit("/", 1)[-1])
         elif path == "/api/purge-all-data":
             db.purge_all()
             pipeline.clear_cache()

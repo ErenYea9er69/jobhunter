@@ -546,3 +546,252 @@ def generate_interview_prep(job, profile):
     asks.append("What is the hardest problem the team is working on right now?")
     return {"role": title, "company": company, "behavioral_questions": beh, "technical_deep_dives": tech,
             "gap_talking_points": gaps, "questions_to_ask_interviewer": asks}
+
+
+# ------------------------------------------------------------ ats intelligence & variant comparison
+
+def audit_resume(profile):
+    """Audit resume across ATS standards: quantification, contact info, skill density, and action verbs."""
+    if not profile or profile.get("_is_empty"):
+        return {
+            "ats_score": 0,
+            "grade": "Incomplete",
+            "metrics_stats": {"total_bullets": 0, "quantified_bullets": 0, "quantification_pct": 0},
+            "categorized_skills": {},
+            "audit_checks": [],
+            "actionable_tips": ["Add your contact information and at least one past position to begin."]
+        }
+
+    checks = []
+    score = 0
+
+    # 1. Contact Information Completeness (20 points max)
+    name = bool(profile.get("name", "").strip())
+    email = bool(re.search(r"[\w.-]+@[\w.-]+\.\w+", profile.get("email", "")))
+    phone = bool(re.search(r"\d{7,}", re.sub(r"\D", "", profile.get("phone", ""))))
+    location = bool(profile.get("location", "").strip())
+    linkedin = bool("linkedin.com" in (profile.get("linkedin", "") or "").lower())
+    github = bool("github.com" in (profile.get("github", "") or "").lower() or (profile.get("github", "") or "").strip())
+
+    contact_pts = 0
+    if name and email:
+        contact_pts += 10
+    if phone:
+        contact_pts += 4
+    if location:
+        contact_pts += 3
+    if linkedin or github:
+        contact_pts += 3
+    score += contact_pts
+
+    checks.append({
+        "category": "Contact Information",
+        "passed": contact_pts >= 16,
+        "label": "Contact Details & Professional Links",
+        "detail": "✓ Full contact info & links provided." if contact_pts >= 16 else "Missing key contact fields (email, phone, or LinkedIn/GitHub).",
+        "score": contact_pts,
+        "max": 20
+    })
+
+    # 2. Target Job Title & Summary (20 points max)
+    target_title = profile.get("target_title", "").strip()
+    summary = profile.get("summary", "").strip()
+    summary_words = len(re.findall(r"\w+", summary))
+
+    title_summary_pts = 0
+    if target_title:
+        title_summary_pts += 8
+    if summary_words >= 35:
+        title_summary_pts += 12
+    elif summary_words >= 15:
+        title_summary_pts += 7
+    score += title_summary_pts
+
+    checks.append({
+        "category": "Target Role & Headline",
+        "passed": title_summary_pts >= 15,
+        "label": "Headline & Executive Summary",
+        "detail": f"Target title '{target_title or 'Missing'}', summary has {summary_words} words.",
+        "score": title_summary_pts,
+        "max": 20
+    })
+
+    # 3. Core Competency & Skills Breadth (25 points max)
+    skills = profile.get("skills", [])
+    skill_count = len(skills)
+    cat_skills = {}
+    for s in skills:
+        placed = False
+        for cname, ont in sk.ONTOLOGY.items():
+            if s in ont or any(s.lower() == k.lower() or s.lower() in [a.lstrip("=").lower() for a in v] for k, v in ont.items()):
+                cat_skills.setdefault(cname, []).append(s)
+                placed = True
+                break
+        if not placed:
+            cat_skills.setdefault("Other Tools & Methodologies", []).append(s)
+
+    skill_pts = min(15, skill_count * 1.5)
+    if len(cat_skills) >= 3:
+        skill_pts += 10
+    elif len(cat_skills) >= 2:
+        skill_pts += 6
+    skill_pts = min(25, int(skill_pts))
+    score += skill_pts
+
+    checks.append({
+        "category": "Skills & Tech Stack",
+        "passed": skill_pts >= 18,
+        "label": "Skill Breadth & Categorization",
+        "detail": f"{skill_count} skills identified across {len(cat_skills)} technical categories.",
+        "score": skill_pts,
+        "max": 25
+    })
+
+    # 4. Accomplishment Quantification & Impact Metrics (25 points max)
+    bullets = [b for e in profile.get("experience", []) for b in e.get("bullets", []) if b.strip()]
+    quantified = [b for b in bullets if NUM_RE.search(b)]
+    total_b = len(bullets)
+    quant_count = len(quantified)
+    quant_pct = int(round((quant_count / total_b * 100))) if total_b > 0 else 0
+
+    metric_pts = 0
+    if total_b >= 3:
+        if quant_pct >= 50:
+            metric_pts = 25
+        elif quant_pct >= 30:
+            metric_pts = 18
+        elif quant_pct >= 15:
+            metric_pts = 10
+        else:
+            metric_pts = 5
+    elif total_b > 0:
+        metric_pts = 8
+    score += metric_pts
+
+    checks.append({
+        "category": "Quantification & Impact",
+        "passed": quant_pct >= 40,
+        "label": "Measurable Metrics & Results",
+        "detail": f"{quant_count} of {total_b} bullets ({quant_pct}%) contain quantifiable metrics (%, $, numbers, latency, scale).",
+        "score": metric_pts,
+        "max": 25
+    })
+
+    # 5. Career History & Education Structure (10 points max)
+    exp = profile.get("experience", [])
+    edu = profile.get("education", [])
+    struct_pts = 0
+    if len(exp) >= 1:
+        struct_pts += 5
+    if len(edu) >= 1:
+        struct_pts += 5
+    score += struct_pts
+
+    checks.append({
+        "category": "Structure & Timeline",
+        "passed": struct_pts == 10,
+        "label": "Experience & Education Sections",
+        "detail": f"{len(exp)} role(s) and {len(edu)} education credential(s) documented.",
+        "score": struct_pts,
+        "max": 10
+    })
+
+    score = min(100, max(0, int(score)))
+    if score >= 90:
+        grade = "A+ (ATS Ready)"
+    elif score >= 80:
+        grade = "A (Strong Alignment)"
+    elif score >= 70:
+        grade = "B (Good Baseline)"
+    elif score >= 55:
+        grade = "C (Needs Polish)"
+    else:
+        grade = "Incomplete"
+
+    tips = []
+    if quant_pct < 45:
+        tips.append("Add numbers, scale, latency improvements, or percentages to more experience bullets (e.g., 'reduced API latency by 35%').")
+    if not summary or summary_words < 30:
+        tips.append("Expand your professional summary to 3–4 sentences highlighting your core stack, years of experience, and primary specialization.")
+    if skill_count < 8:
+        tips.append("Add your secondary tools, libraries, testing frameworks, and cloud services (aim for 10–18 core skills).")
+    if not linkedin:
+        tips.append("Include your LinkedIn profile URL so recruiters can verify social proof in ATS parsers.")
+    if not tips:
+        tips.append("Your resume meets top-tier ATS formatting and keyword density standards.")
+
+    return {
+        "score": score,
+        "ats_score": score,
+        "grade": grade,
+        "metrics_stats": {
+            "total_bullets": total_b,
+            "quantified_bullets": quant_count,
+            "quantification_pct": quant_pct
+        },
+        "stats": {
+            "skills_count": skill_count,
+            "bullet_count": total_b,
+            "quantified_bullet_count": quant_count,
+            "quantified_rate": quant_pct,
+            "has_email": bool(email),
+            "has_phone": bool(phone),
+            "has_linkedin": bool(linkedin),
+            "has_github": bool(github),
+            "has_location": bool(location),
+            "has_target_title": bool(target_title),
+            "has_summary": bool(summary),
+            "experience_count": len(profile.get("experience") or []),
+            "education_count": len(profile.get("education") or [])
+        },
+        "categorized_skills": cat_skills,
+        "checks": checks,
+        "audit_checks": checks,
+        "tips": tips,
+        "actionable_tips": tips
+    }
+
+
+def compare_variants_against_job(job, profile_list):
+    """Evaluate how every saved resume variant fits a specific job and recommend the highest match."""
+    from .scoring import score_job
+    results = []
+    for p in profile_list:
+        try:
+            sc = score_job(job, p)
+            matched = sc.get("matched_skills", [])
+            missing = sc.get("missing_skills", [])
+            pid = p.get("id") or p.get("_profile_id")
+            pname = p.get("name") or p.get("_profile_name", "Variant")
+            results.append({
+                "id": pid,
+                "profile_id": pid,
+                "name": pname,
+                "profile_name": pname,
+                "is_active": bool(p.get("is_active") or p.get("_is_active")),
+                "is_master": bool(p.get("is_master") or p.get("_is_master")),
+                "target_title": p.get("target_title", ""),
+                "score": sc.get("score", 0),
+                "matched_skills": matched,
+                "missing_skills": missing,
+                "matched_count": len(matched),
+                "missing_count": len(missing),
+                "tags": p.get("tags", [])
+            })
+        except Exception:
+            pass
+
+    results.sort(key=lambda r: r["score"], reverse=True)
+    best = results[0] if results else None
+    active = next((r for r in results if r.get("is_active")), None) or (results[0] if results else None)
+    delta = (best["score"] - active["score"]) if (best and active) else 0
+
+    return {
+        "job_title": job.get("title"),
+        "company": job.get("company"),
+        "best_variant": best,
+        "active_variant": active,
+        "score_delta": delta,
+        "comparison": results,
+        "comparisons": results
+    }

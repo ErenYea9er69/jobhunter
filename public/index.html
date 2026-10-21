@@ -1063,10 +1063,122 @@
       <div class="container container-narrow">
         <header class="page-head">
           <div>
-            <h1 class="page-title" id="resumeTitle">Your resume</h1>
-            <p class="page-sub">Every search, score, and tailored document starts here. Fix any detail before you search.</p>
+            <h1 class="page-title" id="resumeTitle">Resume &amp; Career Hub</h1>
+            <p class="page-sub">Master work history, targeted variants, and ATS readiness. Switch active profiles to instantly recalculate match scores.</p>
           </div>
         </header>
+
+        <!-- Multi-Resume Variants & Library Hub -->
+        <section class="card resume-library-card" id="resumeLibraryCard" aria-labelledby="resumeLibraryTitle">
+          <div class="library-header">
+            <div>
+              <div class="library-badge-row">
+                <span class="chip chip-ok" id="activeProfileBeacon"><span class="beacon-dot"></span><span id="activeProfileBeaconText">Active for Searches &amp; Match Scoring</span></span>
+                <span class="muted" id="activeProfileLastSaved">Updated today</span>
+              </div>
+              <h2 class="card-title" id="resumeLibraryTitle">Targeted Resume Variants</h2>
+              <p class="muted">Store multiple targeted resumes tailored by skill, role, or company. Switch the active profile to immediately recalculate search results and match scores.</p>
+            </div>
+            <div class="library-actions">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnNewVariant" data-action="profile-new-variant">
+                <svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>
+                <span>New Variant</span>
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnDuplicateVariant" data-action="profile-duplicate-variant">
+                <svg class="i" aria-hidden="true"><use href="#i-copy"/></svg>
+                <span>Duplicate Active</span>
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btnExportProfile" data-action="profile-export-menu">
+                <svg class="i" aria-hidden="true"><use href="#i-download"/></svg>
+                <span>Export</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Dynamic Variant Selector Strip -->
+          <div class="variant-pill-strip" id="variantPillStrip" role="tablist" aria-label="Resume Variants"></div>
+
+          <!-- Active Variant Metadata Bar -->
+          <div class="variant-meta-bar" id="variantMetaBar">
+            <div class="variant-meta-info">
+              <div class="variant-meta-title-row">
+                <strong id="variantActiveName">Master Resume</strong>
+                <span class="chip-variant-type" id="variantActiveType">Master Career Base</span>
+              </div>
+              <div class="variant-meta-tags" id="variantActiveTags"></div>
+            </div>
+            <div class="variant-meta-actions">
+              <button type="button" class="btn btn-ghost btn-sm" id="btnRenameVariant" data-action="profile-rename-variant" title="Rename variant">
+                <svg class="i" aria-hidden="true"><use href="#i-edit"/></svg>
+                <span>Rename</span>
+              </button>
+              <button type="button" class="btn btn-quiet-danger btn-sm" id="btnDeleteVariant" data-action="profile-delete-variant" title="Delete variant" hidden>
+                <svg class="i" aria-hidden="true"><use href="#i-x"/></svg>
+                <span>Delete</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Live ATS Readiness & Keyword Health Meter -->
+        <section class="card ats-health-card" id="atsHealthCard" aria-labelledby="atsHealthTitle">
+          <div class="ats-health-header">
+            <div class="ats-score-badge-box">
+              <div class="score-ring ats-meter-ring" id="atsAuditScoreRing">
+                <svg viewBox="0 0 36 36" class="circular-chart">
+                  <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                  <path class="circle score-high" id="atsAuditScorePath" stroke-dasharray="90, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                  <text x="18" y="20.35" class="percentage" id="atsAuditScoreText">90%</text>
+                </svg>
+              </div>
+              <div>
+                <div class="ats-health-title-row">
+                  <h2 class="card-title" id="atsHealthTitle">ATS Optimization &amp; Readiness</h2>
+                  <span class="chip chip-ok" id="atsGradeBadge">A+ (ATS Ready)</span>
+                </div>
+                <p class="muted">Scored against 15+ automated Applicant Tracking System rules: keyword density, hard skills ontology, contact parsing, and metric quantification.</p>
+              </div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnReauditAts" data-action="profile-reaudit">
+              <svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>
+              <span>Audit Now</span>
+            </button>
+          </div>
+
+          <!-- 4 Core Metric Ribbons -->
+          <div class="ats-metrics-grid">
+            <div class="ats-metric-tile">
+              <div class="tile-label">Quantified Impact</div>
+              <div class="tile-val" id="atsQuantVal">0%</div>
+              <div class="tile-sub" id="atsQuantSub">Bullets with numbers/metrics</div>
+            </div>
+            <div class="ats-metric-tile">
+              <div class="tile-label">Skill Breadth</div>
+              <div class="tile-val" id="atsSkillsVal">0</div>
+              <div class="tile-sub" id="atsSkillsSub">Across 0 technical categories</div>
+            </div>
+            <div class="ats-metric-tile">
+              <div class="tile-label">Executive Headline</div>
+              <div class="tile-val" id="atsHeadlineVal">Verified</div>
+              <div class="tile-sub" id="atsHeadlineSub">Target role &amp; summary</div>
+            </div>
+            <div class="ats-metric-tile">
+              <div class="tile-label">Contact Parsing</div>
+              <div class="tile-val" id="atsContactVal">Complete</div>
+              <div class="tile-sub" id="atsContactSub">Email, phone, links</div>
+            </div>
+          </div>
+
+          <!-- Expandable Audit Details & Tips -->
+          <details class="ats-audit-details" id="atsAuditDetails">
+            <summary class="ats-details-summary">
+              <span>View detailed ATS checks &amp; recommendations</span>
+              <svg class="i chevron-icon" aria-hidden="true"><use href="#i-chevron"/></svg>
+            </summary>
+            <div class="ats-checks-list" id="atsChecksList"></div>
+            <div class="ats-tips-box" id="atsTipsBox"></div>
+          </details>
+        </section>
 
         <div class="card intake" id="intakeCard">
           <div class="intake-head">
@@ -1586,6 +1698,76 @@
         <button type="button" class="btn btn-danger" data-confirm="ok" id="confirmOk">Confirm</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- ================= VARIANT DIALOG ================= -->
+  <dialog class="dialog dialog-sm" id="variantDialog" aria-labelledby="variantDialogTitle">
+    <form method="dialog" id="variantDialogForm">
+      <div class="dialog-head">
+        <h2 id="variantDialogTitle">New Resume Variant</h2>
+        <button type="button" class="icon-btn" data-action="dialog-close" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </div>
+      <input type="hidden" id="variantFormId">
+      <div class="form-grid">
+        <div class="form-field span-2">
+          <label for="variantFormName">Variant Name</label>
+          <input type="text" id="variantFormName" placeholder="e.g. Senior Python / Cloud Architect" required>
+        </div>
+        <div class="form-field span-2">
+          <label for="variantFormTitle">Target Role / Job Title</label>
+          <input type="text" id="variantFormTitle" placeholder="e.g. Backend Engineer">
+        </div>
+        <div class="form-field span-2">
+          <label for="variantFormTags">Skill &amp; Domain Tags</label>
+          <input type="text" id="variantFormTags" placeholder="e.g. Python, FastAPI, AWS, Docker (comma-separated)">
+          <small class="muted">Used to tag this variant and align with targeted job categories.</small>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" data-action="dialog-close">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="variantDialogSubmit">Save Variant</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ================= TAILORED VARIANT DIALOG ================= -->
+  <dialog class="dialog dialog-sm" id="tailoredVariantDialog" aria-labelledby="tailoredVariantTitle">
+    <form method="dialog" id="tailoredVariantForm">
+      <div class="dialog-head">
+        <h2 id="tailoredVariantTitle">Save to Resume Library</h2>
+        <button type="button" class="icon-btn" data-action="dialog-close" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </div>
+      <p class="muted" style="margin-bottom:14px">Save this job-specific tailored resume as a reusable profile variant in your library. You can switch to it or export it anytime.</p>
+      <div class="form-grid">
+        <div class="form-field span-2">
+          <label for="tailoredFormName">Variant Name</label>
+          <input type="text" id="tailoredFormName" placeholder="e.g. Tailored: Stripe - Backend Engineer" required>
+        </div>
+        <div class="form-field span-2">
+          <label for="tailoredFormTags">Highlighted Skill Tags</label>
+          <input type="text" id="tailoredFormTags" placeholder="e.g. Python, Microservices, REST APIs, SQL">
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" data-action="dialog-close">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="tailoredFormSubmit">Save to Library</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ================= VARIANT COMPARE DIALOG ================= -->
+  <dialog class="dialog" id="variantCompareDialog" aria-labelledby="variantCompareTitle">
+    <div class="dialog-head">
+      <div>
+        <h2 id="variantCompareTitle">Compare Resume Variants</h2>
+        <p class="muted" id="variantCompareSub" style="margin:0">See which saved resume variant scores highest for this role.</p>
+      </div>
+      <button type="button" class="icon-btn" data-action="dialog-close" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="variant-compare-body" id="variantCompareBody" style="max-height: 480px; overflow-y: auto;"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-secondary" data-action="dialog-close">Done</button>
+    </div>
   </dialog>
 
   <!-- ================= ALL FILTERS RIGHT-SIDE SLIDE-OVER DRAWER ================= -->

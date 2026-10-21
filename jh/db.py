@@ -5,12 +5,13 @@ import json
 import re
 import sqlite3
 import threading
+import uuid
 
 from . import config
 from .util import now_iso, parse_salary, annualize, days_since, clean_text
 
 _init_lock = threading.Lock()
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 EMPTY_PROFILE = {
     "name": "", "email": "", "phone": "", "location": "", "linkedin": "", "github": "",
@@ -230,6 +231,21 @@ def init_db():
     os.makedirs(config.DATA_DIR, exist_ok=True)
     with _init_lock, session() as c:
         c.execute("CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL)")
+        c.execute("""CREATE TABLE IF NOT EXISTS resume_profiles (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            target_title TEXT DEFAULT '',
+            target_roles_json TEXT DEFAULT '[]',
+            tags_json TEXT DEFAULT '[]',
+            data_json TEXT NOT NULL,
+            is_active INTEGER DEFAULT 0,
+            is_master INTEGER DEFAULT 0,
+            source_job_id TEXT DEFAULT '',
+            source_job_title TEXT DEFAULT '',
+            source_company TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_resume_profiles_active ON resume_profiles(is_active)")
         c.execute("""CREATE TABLE IF NOT EXISTS applications (
             id TEXT PRIMARY KEY, job_id TEXT, company TEXT NOT NULL, title TEXT NOT NULL, location TEXT,
             salary TEXT, status TEXT NOT NULL, notes TEXT, follow_up_date TEXT, sources_json TEXT,
@@ -333,6 +349,29 @@ def init_db():
         # Clean any HTML entities from stored legacy jobs
         _cleanup_html_entities(c)
 
+        # Backfill resume_profiles from existing legacy profile if empty
+        has_rp = c.execute("SELECT count(*) as cnt FROM resume_profiles").fetchone()["cnt"]
+        if has_rp == 0:
+            legacy_p = c.execute("SELECT data, updated_at FROM profile WHERE id=1").fetchone()
+            if legacy_p:
+                try:
+                    p_data = json.loads(legacy_p["data"])
+                    target_title = p_data.get("target_title", "Master Profile")
+                    roles = p_data.get("target_roles", [])
+                    skills = p_data.get("skills", [])
+                    tags = skills[:6] if skills else ["Core"]
+                    c.execute("""
+                        INSERT INTO resume_profiles
+                        (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        "master", "Master Resume", target_title, json.dumps(roles),
+                        json.dumps(tags), legacy_p["data"], 1, 1,
+                        legacy_p["updated_at"] or now_iso(), legacy_p["updated_at"] or now_iso()
+                    ))
+                except Exception:
+                    pass
+
 
 def _cleanup_html_entities(c):
     """Clean all HTML entities from existing stored database records."""
@@ -404,26 +443,236 @@ def _cleanup_html_entities(c):
     c.execute("DELETE FROM source_cache WHERE payload LIKE '%#x%' OR payload LIKE '%&#%'")
 
 
-def get_profile():
+def get_profile(profile_id=None):
     with session() as c:
-        row = c.execute("SELECT data FROM profile WHERE id=1").fetchone()
-    if not row:
-        return json.loads(json.dumps(EMPTY_PROFILE))
-    data = json.loads(row["data"])
+        row = None
+        if profile_id:
+            row = c.execute("SELECT id, name, data_json, is_active, is_master FROM resume_profiles WHERE id=?", (profile_id,)).fetchone()
+        if not row:
+            row = c.execute("SELECT id, name, data_json, is_active, is_master FROM resume_profiles WHERE is_active=1 LIMIT 1").fetchone()
+        if not row:
+            row = c.execute("SELECT id, name, data_json, is_active, is_master FROM resume_profiles WHERE is_master=1 LIMIT 1").fetchone()
+        if not row:
+            row = c.execute("SELECT id, name, data_json, is_active, is_master FROM resume_profiles ORDER BY updated_at DESC LIMIT 1").fetchone()
+
+        if not row:
+            legacy = c.execute("SELECT data FROM profile WHERE id=1").fetchone()
+            if not legacy:
+                return json.loads(json.dumps(EMPTY_PROFILE))
+            raw_data = legacy["data"]
+        else:
+            raw_data = row["data_json"]
+
+    data = json.loads(raw_data)
     for k, v in EMPTY_PROFILE.items():
         data.setdefault(k, json.loads(json.dumps(v)) if k != "_is_empty" else False)
     if not data.get("target_roles") and (data.get("target_title") or data.get("skills")):
         from .scoring import derive_target_roles
         data["target_roles"] = derive_target_roles(data)
+    if row:
+        data["_profile_id"] = row["id"]
+        data["_profile_name"] = row["name"]
+        data["_is_master"] = bool(row["is_master"])
+        data["_is_active"] = bool(row["is_active"])
+    else:
+        data["_profile_id"] = "master"
+        data["_profile_name"] = "Master Resume"
+        data["_is_master"] = True
+        data["_is_active"] = True
     return data
 
 
-def save_profile(data):
+def get_resume_profile(profile_id=None):
+    return get_profile(profile_id=profile_id)
+
+
+def save_profile(data, profile_id=None):
     data = dict(data)
     data.pop("_is_empty", None)
     data.pop("_updated_at", None)
+    pid = profile_id or data.pop("_profile_id", None) or "master"
+    pname = data.pop("_profile_name", None) or ("Master Resume" if pid == "master" else "Resume Variant")
+    is_master = 1 if pid == "master" or data.pop("_is_master", False) else 0
+    is_active = 1 if data.pop("_is_active", True) else 0
+
+    target_title = data.get("target_title", "")
+    target_roles = data.get("target_roles", [])
+    skills = data.get("skills", [])
+    tags = data.get("tags") or (skills[:6] if skills else ["Core"])
+    iso_now = now_iso()
+
     with session() as c:
-        c.execute("INSERT OR REPLACE INTO profile (id,data,updated_at) VALUES (1,?,?)", (json.dumps(data), now_iso()))
+        exists = c.execute("SELECT id FROM resume_profiles WHERE id=?", (pid,)).fetchone()
+        if exists:
+            c.execute("""
+                UPDATE resume_profiles
+                SET name=?, target_title=?, target_roles_json=?, tags_json=?, data_json=?, updated_at=?
+                WHERE id=?
+            """, (pname, target_title, json.dumps(target_roles), json.dumps(tags), json.dumps(data), iso_now, pid))
+        else:
+            c.execute("""
+                INSERT INTO resume_profiles
+                (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (pid, pname, target_title, json.dumps(target_roles), json.dumps(tags), json.dumps(data), is_active, is_master, iso_now, iso_now))
+
+        if is_active or is_master or pid == "master":
+            c.execute("INSERT OR REPLACE INTO profile (id, data, updated_at) VALUES (1, ?, ?)", (json.dumps(data), iso_now))
+    return get_profile(pid)
+
+
+def list_resume_profiles():
+    with session() as c:
+        rows = c.execute("""
+            SELECT id, name, target_title, target_roles_json, tags_json,
+                   is_active, is_master, source_job_id, source_job_title, source_company,
+                   created_at, updated_at, data_json
+            FROM resume_profiles
+            ORDER BY is_master DESC, updated_at DESC
+        """).fetchall()
+
+    res = []
+    for r in rows:
+        try:
+            d = json.loads(r["data_json"])
+            skills = d.get("skills", [])
+            years = d.get("years_of_experience", 0)
+            exp_count = len(d.get("experience", []))
+            work_mode = d.get("work_mode", "Any")
+            min_salary = d.get("min_salary", 0)
+        except Exception:
+            skills = []
+            years = 0
+            exp_count = 0
+            work_mode = "Any"
+            min_salary = 0
+
+        res.append({
+            "id": r["id"],
+            "name": r["name"],
+            "target_title": r["target_title"] or "General Candidate",
+            "target_roles": json.loads(r["target_roles_json"] or "[]"),
+            "tags": json.loads(r["tags_json"] or "[]"),
+            "is_active": bool(r["is_active"]),
+            "is_master": bool(r["is_master"]),
+            "source_job_id": r["source_job_id"],
+            "source_job_title": r["source_job_title"],
+            "source_company": r["source_company"],
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"],
+            "skills_count": len(skills),
+            "top_skills": skills[:6],
+            "years_of_experience": years,
+            "experience_count": exp_count,
+            "work_mode": work_mode,
+            "min_salary": min_salary
+        })
+    return res
+
+
+def set_active_resume_profile(profile_id):
+    with session() as c:
+        row = c.execute("SELECT id, data_json FROM resume_profiles WHERE id=?", (profile_id,)).fetchone()
+        if not row:
+            raise ValueError(f"Resume profile '{profile_id}' not found.")
+        c.execute("UPDATE resume_profiles SET is_active = CASE WHEN id=? THEN 1 ELSE 0 END", (profile_id,))
+        c.execute("INSERT OR REPLACE INTO profile (id, data, updated_at) VALUES (1, ?, ?)", (row["data_json"], now_iso()))
+    active_profile = get_profile(profile_id)
+    threading.Thread(target=rescore_and_classify_stored_jobs, args=(active_profile,), daemon=True).start()
+    return active_profile
+
+
+def duplicate_resume_profile(profile_id, new_name=None, target_title=None, tags=None):
+    base = get_profile(profile_id)
+    if not base or base.get("_is_empty"):
+        raise ValueError("Cannot duplicate an empty profile.")
+
+    new_id = f"variant_{uuid.uuid4().hex[:8]}"
+    name = new_name or f"{base.get('target_title') or base.get('_profile_name') or 'Resume'} (Variant)"
+    data = dict(base)
+    data.pop("_profile_id", None)
+    data.pop("_is_master", None)
+    data.pop("_is_active", None)
+    data.pop("_profile_name", None)
+
+    if target_title:
+        data["target_title"] = target_title
+        from .scoring import derive_target_roles
+        data["target_roles"] = derive_target_roles(data)
+
+    iso_now = now_iso()
+    skills = data.get("skills", [])
+    variant_tags = tags if tags is not None else (skills[:5] if skills else ["Variant"])
+
+    with session() as c:
+        c.execute("""
+            INSERT INTO resume_profiles
+            (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
+        """, (
+            new_id, name, data.get("target_title", ""),
+            json.dumps(data.get("target_roles", [])), json.dumps(variant_tags),
+            json.dumps(data), iso_now, iso_now
+        ))
+
+    return get_profile(new_id)
+
+
+def delete_resume_profile(profile_id):
+    with session() as c:
+        row = c.execute("SELECT is_master, is_active FROM resume_profiles WHERE id=?", (profile_id,)).fetchone()
+        if not row:
+            return False
+        if row["is_master"]:
+            raise ValueError("The Master Resume cannot be deleted. You can edit it or create variants from it.")
+
+        was_active = bool(row["is_active"])
+        c.execute("DELETE FROM resume_profiles WHERE id=?", (profile_id,))
+        if was_active:
+            c.execute("UPDATE resume_profiles SET is_active=1 WHERE is_master=1")
+            master_row = c.execute("SELECT data_json FROM resume_profiles WHERE is_master=1").fetchone()
+            if master_row:
+                c.execute("INSERT OR REPLACE INTO profile (id, data, updated_at) VALUES (1, ?, ?)", (master_row["data_json"], now_iso()))
+    if was_active:
+        threading.Thread(target=rescore_and_classify_stored_jobs, daemon=True).start()
+    return True
+
+
+def save_tailored_variant_from_workspace(job, tailored_resume, variant_name=None, tags=None):
+    active = get_profile()
+    new_id = f"tailored_{uuid.uuid4().hex[:8]}"
+
+    comp = job.get("company") or "Target"
+    role = job.get("title") or "Role"
+    name = variant_name or f"Tailored: {comp} - {role}"
+
+    new_data = dict(active)
+    if tailored_resume.get("summary"):
+        new_data["summary"] = tailored_resume["summary"]
+    if tailored_resume.get("skills"):
+        new_data["skills"] = tailored_resume["skills"]
+    if tailored_resume.get("experience"):
+        new_data["experience"] = tailored_resume["experience"]
+    new_data["target_title"] = role
+    from .scoring import derive_target_roles
+    new_data["target_roles"] = derive_target_roles(new_data)
+
+    iso_now = now_iso()
+    extracted_tags = tags or (job.get("matched_skills", []) or new_data.get("skills", []))[:6]
+
+    with session() as c:
+        c.execute("""
+            INSERT INTO resume_profiles
+            (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master,
+             source_job_id, source_job_title, source_company, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)
+        """, (
+            new_id, name, role, json.dumps(new_data.get("target_roles", [])),
+            json.dumps(extracted_tags), json.dumps(new_data),
+            job.get("id") or "", role, comp, iso_now, iso_now
+        ))
+
+    return get_profile(new_id)
 
 
 def rescore_and_classify_stored_jobs(profile=None):
@@ -955,7 +1204,7 @@ def set_auto_search_settings(enabled=True, interval_hours=5.0):
 def purge_all():
     """Delete every user table, then VACUUM so removed content leaves the file."""
     with session() as c:
-        for t in ("profile", "applications", "watchlist", "settings", "status_history",
+        for t in ("resume_profiles", "profile", "applications", "watchlist", "settings", "status_history",
                   "seen_jobs", "source_cache", "source_health", "search_jobs", "search_meta", "pending_search_jobs"):
             c.execute(f"DELETE FROM {t}")
     conn = connect()
