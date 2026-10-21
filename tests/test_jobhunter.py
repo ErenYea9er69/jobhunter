@@ -10,7 +10,7 @@ os.environ["JH_DATA_DIR"] = tempfile.mkdtemp()
 os.environ["JH_SEARCH_DEADLINE"] = "5"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from jh import ats, config, db, dedup, exporters, httpd, pipeline, resume_parser as rp, scoring, skills, sources, refit, tracker, util  # noqa: E402
+from jh import ats, autofill, config, db, dedup, exporters, httpd, pipeline, resume_parser as rp, scoring, skills, sources, refit, tracker, util  # noqa: E402
 from jh.demo import DEMO_PROFILE  # noqa: E402
 
 JOB = {"id": "j", "title": "Senior Backend Engineer", "company": "Acme",
@@ -1746,6 +1746,178 @@ class FamousFilterTests(Base):
         self.assertIn("job_types", facets)
         self.assertGreaterEqual(facets["job_types"].get("Internship", 0), 1)
         self.assertGreaterEqual(facets["job_types"].get("Part-time", 0), 1)
+
+
+class AutofillAndEasyApplyTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.profile = {
+            "name": "Alex Mercer",
+            "email": "alex.mercer@example.com",
+            "phone": "+1 (555) 234-5678",
+            "location": "San Francisco, CA, United States",
+            "linkedin": "linkedin.com/in/alexmercer",
+            "github": "github.com/alexmercer",
+            "portfolio": "alexmercer.dev",
+            "target_title": "Senior Full Stack Engineer",
+            "min_salary": 160000,
+            "work_authorization": "US Citizen",
+            "notice_period": "2 weeks",
+            "skills": ["Python", "FastAPI", "React", "PostgreSQL", "Docker", "AWS", "TypeScript"],
+            "experience": [
+                {
+                    "company": "TechNova Inc",
+                    "role": "Senior Software Engineer",
+                    "dates": "2022 - Present",
+                    "bullets": [
+                        "Architected scalable microservices serving 4M requests/day using FastAPI and PostgreSQL.",
+                        "Optimized query latency by 45% through composite indexes and redis caching.",
+                    ]
+                },
+                {
+                    "company": "DataPulse",
+                    "role": "Software Engineer",
+                    "dates": "2019 - 2022",
+                    "bullets": [
+                        "Built React dashboards for real-time telemetry monitoring.",
+                        "Containerized core infrastructure with Docker and AWS ECS."
+                    ]
+                }
+            ],
+            "education": [
+                {
+                    "degree": "B.S. in Computer Science",
+                    "institution": "University of California, Berkeley",
+                    "dates": "2019"
+                }
+            ]
+        }
+        db.save_profile(self.profile)
+        self.job = {
+            "id": "job-stripe-99",
+            "job_key": "job-stripe-99",
+            "title": "Senior Software Engineer, Platform",
+            "company": "Stripe",
+            "location": "San Francisco, CA (Remote)",
+            "url": "https://boards.greenhouse.io/stripe/jobs/123456",
+            "source": "Greenhouse",
+            "salary": "$170,000 - $210,000",
+            "description": "Looking for a Senior Software Engineer with strong Python, PostgreSQL, and AWS experience to scale payment APIs."
+        }
+
+    def test_get_autofill_payload_structure(self):
+        payload = autofill.get_autofill_payload(self.profile, self.job)
+        self.assertEqual(payload["first_name"], "Alex")
+        self.assertEqual(payload["last_name"], "Mercer")
+        self.assertEqual(payload["email"], "alex.mercer@example.com")
+        self.assertEqual(payload["phone"], "+1 (555) 234-5678")
+        self.assertEqual(payload["linkedin_url"], "https://linkedin.com/in/alexmercer")
+        self.assertEqual(payload["github_url"], "https://github.com/alexmercer")
+        self.assertEqual(payload["portfolio_url"], "https://alexmercer.dev")
+        self.assertEqual(payload["current_company"], "TechNova Inc")
+        self.assertEqual(payload["current_role"], "Senior Software Engineer")
+        self.assertEqual(payload["degree"], "B.S. in Computer Science")
+        self.assertEqual(payload["institution"], "University of California, Berkeley")
+        self.assertIn("Python", payload["skills_csv"])
+        self.assertIn("Authorized", payload["work_authorization"])
+        self.assertIn("2 weeks", payload["notice_period"])
+        self.assertIn("$160,000", payload["desired_salary"])
+        self.assertEqual(payload["detected_platform"], "greenhouse")
+        self.assertIn("cover_letter", payload)
+
+    def test_generate_bookmarklet_code(self):
+        payload = autofill.get_autofill_payload(self.profile, self.job)
+        code = autofill.generate_bookmarklet_code(payload)
+        self.assertIn("JobHunter 1-Click Autofill Engine", code)
+        # Verify event dispatching for React/Vue ATS forms
+        self.assertIn("new Event('input', { bubbles: true })", code)
+        self.assertIn("new Event('change', { bubbles: true })", code)
+        # Verify ATS form support
+        self.assertIn("greenhouse", code.lower())
+        self.assertIn("lever", code.lower())
+        self.assertIn("ashby", code.lower())
+        self.assertIn("alex.mercer@example.com", code)
+
+    def test_solve_screening_question_grounded(self):
+        # 1. Notice period question
+        q1 = "What is your current notice period or earliest start date?"
+        ans1 = autofill.solve_screening_question(q1, self.profile, self.job)
+        self.assertTrue(ans1["grounded"])
+        self.assertTrue("2 weeks" in ans1["answer"].lower() or "notice" in ans1["answer"].lower())
+        self.assertLessEqual(ans1["word_count"], 140)
+
+        # 2. Salary expectation question
+        q2 = "What are your salary expectations for this role?"
+        ans2 = autofill.solve_screening_question(q2, self.profile, self.job)
+        self.assertTrue(ans2["grounded"])
+        self.assertIn("160,000", ans2["answer"])
+
+        # 3. Why us question
+        q3 = "Why do you want to work at Stripe as a Senior Software Engineer, Platform?"
+        ans3 = autofill.solve_screening_question(q3, self.profile, self.job)
+        self.assertTrue(ans3["grounded"])
+        self.assertIn("Stripe", ans3["answer"])
+        self.assertGreater(len(ans3["answer"]), 30)
+
+    def test_get_batch_screening_answers(self):
+        batch = autofill.get_batch_screening_answers(self.profile, self.job)
+        self.assertIsInstance(batch, list)
+        self.assertEqual(len(batch), 4)
+        for item in batch:
+            self.assertIn("question", item)
+            self.assertIn("answer", item)
+            self.assertTrue(item["grounded"])
+        self.assertTrue(any("Stripe" in item["question"] or "Stripe" in item["answer"] for item in batch))
+
+    def test_execute_easy_apply_workflow(self):
+        res = autofill.execute_easy_apply(self.job, self.profile)
+        self.assertEqual(res["company"], "Stripe")
+        self.assertEqual(res["title"], "Senior Software Engineer, Platform")
+        self.assertEqual(res["status"], "applied")
+        self.assertIn("application_id", res)
+        self.assertIn("tailored_resume", res)
+        self.assertIn("cover_letter", res)
+        self.assertIn("autofill_payload", res)
+        self.assertIn("bookmarklet", res)
+        self.assertIn("follow_up_date", res)
+
+        # Check DB tracking table
+        apps = tracker.list_applications()
+        matched = [a for a in apps if a.get("id") == res["application_id"]]
+        self.assertEqual(len(matched), 1)
+        self.assertEqual(matched[0]["status"], "applied")
+        self.assertEqual(matched[0]["company"], "Stripe")
+
+    def test_httpd_routes(self):
+        # 1. /api/autofill/payload
+        r_payload = httpd.ROUTES[("POST", "/api/autofill/payload")]({}, {"job": self.job})
+        self.assertTrue(r_payload["success"])
+        self.assertIn("payload", r_payload)
+        self.assertIn("bookmarklet", r_payload)
+        self.assertEqual(r_payload["platform"], "greenhouse")
+        self.assertIn("platform_info", r_payload)
+        self.assertTrue(r_payload["bookmarklet"].startswith("javascript:"))
+
+        # 2. /api/autofill/solve-question
+        r_solve = httpd.ROUTES[("POST", "/api/autofill/solve-question")]({}, {
+            "question": "What is your greatest technical accomplishment?",
+            "job": self.job
+        })
+        self.assertTrue(r_solve["success"])
+        self.assertIn("answer", r_solve)
+        self.assertTrue(r_solve["grounded"])
+
+        # 3. /api/autofill/batch-answers
+        r_batch = httpd.ROUTES[("POST", "/api/autofill/batch-answers")]({}, {"job": self.job})
+        self.assertTrue(r_batch["success"])
+        self.assertIn("answers", r_batch)
+        self.assertEqual(len(r_batch["answers"]), 4)
+
+        # 4. /api/easy-apply
+        r_apply = httpd.ROUTES[("POST", "/api/easy-apply")]({}, {"job": self.job})
+        self.assertTrue(r_apply["success"])
+        self.assertEqual(r_apply["status"], "applied")
+        self.assertEqual(r_apply["company"], "Stripe")
 
 
 if __name__ == "__main__":

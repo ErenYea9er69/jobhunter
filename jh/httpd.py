@@ -11,7 +11,7 @@ import traceback
 import urllib.parse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-from . import ats, config, db, digest, exporters, pipeline, resume_parser, refit, tracker, __version__
+from . import ats, autofill, config, db, digest, exporters, pipeline, resume_parser, refit, tracker, __version__
 
 log = logging.getLogger("jobhunter")
 TOKEN = os.environ.get("JH_TOKEN") or secrets.token_urlsafe(24)
@@ -438,6 +438,55 @@ def r_custom_generate(q, body):
 @route("POST", "/api/auto-hunt")
 def r_hunt(q, body):
     return tracker.prepare_application(_job(body), _need_profile())
+
+
+@route("POST", "/api/autofill/payload")
+def r_autofill_payload(q, body):
+    job = body.get("job")
+    profile = _need_profile()
+    payload = autofill.get_autofill_payload(profile, job)
+    code = autofill.generate_bookmarklet_code(payload)
+    platform = payload.get("detected_platform", "standard")
+    p_info = autofill.PLATFORM_INFO.get(platform, autofill.PLATFORM_INFO["standard"])
+    return {
+        "success": True,
+        "payload": payload,
+        "platform": platform,
+        "platform_info": p_info,
+        "bookmarklet": f"javascript:{urllib.parse.quote(code)}",
+        "script": code
+    }
+
+
+@route("POST", "/api/autofill/solve-question")
+def r_autofill_solve(q, body):
+    question = (body.get("question") or "").strip()
+    if not question:
+        raise ApiError("question string is required.")
+    job = body.get("job")
+    profile = _need_profile()
+    max_words = int(body.get("max_words") or 140)
+    tone = (body.get("tone") or "confident").strip()
+    res = autofill.solve_screening_question(question, profile, job, max_words=max_words, tone=tone)
+    return {"success": True, **res}
+
+
+@route("POST", "/api/autofill/batch-answers")
+def r_autofill_batch(q, body):
+    job = body.get("job")
+    profile = _need_profile()
+    answers = autofill.get_batch_screening_answers(profile, job)
+    return {"success": True, "answers": answers}
+
+
+@route("POST", "/api/easy-apply")
+def r_easy_apply(q, body):
+    job = _job(body)
+    profile = _need_profile()
+    tone = (body.get("tone") or "confident").strip()
+    angle = (body.get("angle") or "strongest").strip()
+    res = autofill.execute_easy_apply(job, profile, tone=tone, angle=angle)
+    return {"success": True, **res}
 
 
 @route("GET", "/api/applications")

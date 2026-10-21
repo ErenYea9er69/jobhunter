@@ -104,7 +104,8 @@
       roleType: 'all',
       companies: new Set(),
       companyStages: new Set(),
-      excludeStaffing: false
+      excludeStaffing: false,
+      easyApplyOnly: false
     },
     hiddenJobs: (function() { try { return new Set(JSON.parse(localStorage.getItem('jh_hidden_jobs') || '[]')); } catch (e) { return new Set(); } })(),
     showHidden: false,
@@ -137,6 +138,10 @@
     watchlist: [],
     watchResults: {},
     enrichingKeys: new Set(),
+    activeAutofillJob: null,
+    autofillPayload: null,
+    autofillScript: '',
+    autofillPlatformInfo: null,
     ws: { job: null, key: '', tab: 'strategy', from: 'jobs', refinement: null, decisions: {}, ats: null, atsFresh: false,
           strategy: null, gaps: null, cover: {}, prep: null, tone: 'direct', showUnchanged: false, seq: 0 }
   };
@@ -2465,6 +2470,16 @@
         if (isAgency) return false;
       }
 
+      // 27b. ⚡ Easy Apply Only
+      if (f.easyApplyOnly) {
+        const u = (j.url || '').toLowerCase();
+        const hasAts = j.is_verified_ats || j.source_kind === 'Direct employer ATS' ||
+          u.includes('greenhouse.io') || u.includes('lever.co') || u.includes('ashbyhq.com') ||
+          u.includes('workday') || u.includes('smartrecruiters') || u.includes('workable') ||
+          u.includes('bamboohr') || u.length > 5;
+        if (!hasAts) return false;
+      }
+
       // 28. Hidden Jobs
       const k = jobKey(j);
       const isHidden = S.hiddenJobs && S.hiddenJobs.has(k);
@@ -2638,6 +2653,7 @@
     if (f.directAtsOnly) tags.push({ type: 'directAtsOnly', label: 'Direct ATS Only' });
     if (f.hideApplied) tags.push({ type: 'hideApplied', label: 'Hide Applied' });
     if (f.savedOnly) tags.push({ type: 'savedOnly', label: 'Saved Only' });
+    if (f.easyApplyOnly) tags.push({ type: 'easyApplyOnly', label: '⚡ Easy Apply Only' });
 
     // Badge on More Filters button
     const drawerActiveCount = [
@@ -2648,7 +2664,8 @@
       f.freshnessDays > 0,
       f.directAtsOnly,
       f.hideApplied,
-      f.savedOnly
+      f.savedOnly,
+      f.easyApplyOnly
     ].filter(Boolean).length;
 
     const drawerBadge = $('#moreFiltersCountBadge');
@@ -2703,16 +2720,32 @@
       f.hideApplied = false;
     } else if (type === 'savedOnly') {
       f.savedOnly = false;
+    } else if (type === 'easyApplyOnly') {
+      f.easyApplyOnly = false;
+      const pill = $('#p4PillEasyApply');
+      if (pill) pill.classList.remove('is-active');
     } else if (type === 'skill' && val) {
       f.selectedSkills.delete(val);
     }
   }
 
   function resetAllFilters() {
+    const pill = $('#p4PillEasyApply');
+    if (pill) pill.classList.remove('is-active');
     S.filters = {
       keyword: '',
       workMode: 'Any',
       minScore: 0,
+      famousMode: 'all',
+      country: 'all',
+      excludedCountries: new Set(),
+      seniority: 'all',
+      salaryTier: '0',
+      freshnessDays: 0,
+      directAtsOnly: false,
+      hideApplied: false,
+      savedOnly: false,
+      easyApplyOnly: false,
       famousMode: 'all',
       country: 'all',
       excludedCountries: new Set(),
@@ -3285,6 +3318,19 @@
         ${j.is_sample ? '<span class="meta-pill meta-sample">Sample</span>' : ''}
         ${jobSources(j).length > 1 ? `<span class="meta-pill meta-sources">${jobSources(j).length} sites</span>` : ''}
       </div>
+      <div class="job-card-quick-actions" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);">
+        <span class="chip-easy-apply" style="font-size:11px;font-weight:700;color:#10b981;display:inline-flex;align-items:center;gap:3px;">
+          <span>⚡ Easy Apply & Autofill Ready</span>
+        </span>
+        <div style="display:flex;gap:6px;">
+          <span class="btn-autofill-copilot-card" role="button" tabindex="0" data-action="open-autofill-copilot" data-key="${esc(key)}" title="Open 1-Click Autofill Copilot for this job">
+            <span>⚡ Autofill</span>
+          </span>
+          <span class="btn-easy-apply-card" role="button" tabindex="0" data-action="easy-apply-now" data-key="${esc(key)}" title="1-Click Apply: Tailors resume, writes cover pitch, logs application">
+            <span>1-Click Apply</span>
+          </span>
+        </div>
+      </div>
     </button>`;
   }
 
@@ -3550,6 +3596,12 @@
 
         <div class="detail-actions-bar">
           <div class="detail-actions-main">
+            <button type="button" class="btn btn-primary" id="btnDetailEasyApply" data-action="easy-apply-now" data-key="${esc(key)}" style="background:#10b981;border-color:#10b981;color:#ffffff;" title="Apply in 1 Click: Auto-tailors resume, drafts customized pitch, logs application with 7-day follow-up">
+              <span>⚡ 1-Click Apply</span>
+            </button>
+            <button type="button" class="btn btn-secondary" id="btnDetailAutofillCopilot" data-action="open-autofill-copilot" data-key="${esc(key)}" title="Open 1-Click Application Autofill Copilot: Injects grounded fields into Greenhouse, Lever, Ashby, Workday">
+              <span>⚡ Autofill Copilot</span>
+            </button>
             ${apply ? `
               <a class="btn btn-apply-primary" href="${esc(apply)}" target="_blank" rel="noopener noreferrer">
                 ${ico('arrow-up-right')}<span>Apply on ${esc(bestApplySource(j).source || 'Official Site')}</span>
@@ -3578,6 +3630,21 @@
                 ${ico('refresh')}<span>Enrich</span>
               </button>
             ` : ''}
+          </div>
+        </div>
+
+        <div class="detail-easy-apply-banner">
+          <div class="detail-easy-apply-info">
+            <h4><span>⚡ 1-Click Application Autofill & Easy Apply</span></h4>
+            <p>Save ~15 min per application. Automatically injects your grounded profile, LinkedIn, and tailored pitch directly into the ATS application form.</p>
+          </div>
+          <div class="detail-easy-apply-btns">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnBannerAutofillCopilot" data-action="open-autofill-copilot" data-key="${esc(key)}">
+              <span>⚡ Autofill Copilot</span>
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnBannerEasyApply" data-action="easy-apply-now" data-key="${esc(key)}" style="background:#10b981;border-color:#10b981;color:#fff;">
+              <span>⚡ 1-Click Apply Now</span>
+            </button>
           </div>
         </div>
 
@@ -6404,8 +6471,327 @@
     'digest-open': el => openWorkspace((S.digestJobs || [])[Number(el.dataset.i)], 'resume', 'digest'),
     'sources-refresh': () => loadSourceHealth(),
     'purge': () => purgeAll(),
+    // ⚡ 1-Click Application Autofill & Easy Apply Actions
+    'open-autofill-copilot': (el, e) => {
+      if (e) { e.stopPropagation(); }
+      const key = el.dataset.key || S.selectedKey;
+      let job = (S.jobs || []).find(j => jobKey(j) === key) || (S.allJobs || []).find(j => jobKey(j) === key) || (S.ws && S.ws.job);
+      if (!job) job = selectedJob() || (S.jobs && S.jobs[0]);
+      if (job) openAutofillCopilot(job);
+    },
+    'easy-apply-now': async (el, e) => {
+      if (e) { e.stopPropagation(); }
+      const key = el.dataset.key || S.selectedKey;
+      let job = (S.jobs || []).find(j => jobKey(j) === key) || (S.allJobs || []).find(j => jobKey(j) === key) || (S.ws && S.ws.job);
+      if (!job) job = selectedJob() || (S.jobs && S.jobs[0]);
+      if (job) await executeEasyApply(job);
+    },
     'dialog-close': el => { const d = el.closest('dialog'); if (d) d.close(); }
   };
+
+  // ------------------------------------------------------------------ ⚡ Autofill & Easy Apply Copilot
+  // ------------------------------------------------------------------ ⚡ Autofill & Easy Apply Copilot
+  async function openAutofillCopilot(job) {
+    if (!job) return;
+    S.activeAutofillJob = job;
+    const modal = $('#autofillModal');
+    if (!modal) return;
+
+    modal.hidden = false;
+    modal.removeAttribute('hidden');
+    modal.style.display = 'flex';
+    const title = $('#afModalTitle');
+    const sub = $('#afModalSubtitle');
+    const badge = $('#afPlatformBadge');
+    if (title) title.textContent = `1-Click Autofill: ${job.company}`;
+    if (sub) sub.textContent = `Autofilling ${cleanTitle(job.title)} at ${job.company}. Dispatches synthetic events to populate standard & controlled ATS inputs.`;
+    if (badge) badge.textContent = 'Detecting ATS...';
+
+    // Reset tabs to bookmarklet
+    $$('#autofillModal .jh-tab-btn').forEach((btn, idx) => {
+      btn.classList.toggle('is-active', idx === 0);
+      btn.setAttribute('aria-selected', String(idx === 0));
+    });
+    $$('#autofillModal .jh-tab-pane').forEach((pane, idx) => {
+      pane.hidden = (idx !== 0);
+      pane.classList.toggle('is-active', idx === 0);
+    });
+
+    // Reset solver
+    const solverInput = $('#afSolverQuestionInput');
+    if (solverInput) solverInput.value = `Why are you interested in joining ${job.company} as a ${cleanTitle(job.title)}?`;
+    const ansCard = $('#afAnswerCard');
+    if (ansCard) ansCard.hidden = true;
+
+    // Reset platform selector to auto
+    const platSel = $('#afPlatformSelect');
+    if (platSel) platSel.value = 'auto';
+
+    try {
+      const res = await api('/api/autofill/payload', {
+        method: 'POST',
+        body: { job }
+      });
+      if (res && res.success) {
+        S.autofillPayload = res.payload;
+        S.autofillScript = res.script;
+        S.autofillPlatformInfo = res.platform_info;
+        S.autofillAllPlatforms = res.payload.platforms || {};
+        S.autofillReadiness = res.payload.readiness_audit || {};
+
+        // Setup Bookmarklet button & script
+        const bmLink = $('#afBookmarkletDraggable');
+        if (bmLink) {
+          bmLink.href = res.bookmarklet;
+          bmLink.setAttribute('title', `Drag me to your Bookmarks Bar! (Autofills ${job.company})`);
+        }
+        const openJobBtn = $('#afBtnOpenJobUrl');
+        if (openJobBtn) {
+          openJobBtn.href = job.url || '#';
+          openJobBtn.hidden = !job.url;
+        }
+
+        // Render Platform Details & Requirements
+        updateSelectedPlatformView('auto');
+      }
+    } catch (err) {
+      toast('Could not load autofill payload: ' + err.message, 'error');
+    }
+  }
+
+  function updateSelectedPlatformView(selectedKey) {
+    const p = S.autofillPayload;
+    if (!p) return;
+    const detectedKey = p.detected_platform || 'standard';
+    const activeKey = (!selectedKey || selectedKey === 'auto') ? detectedKey : selectedKey;
+    const allPlats = S.autofillAllPlatforms || {};
+    const pInfo = allPlats[activeKey] || p.platform_info || {};
+    const audit = (S.autofillReadiness && S.autofillReadiness[activeKey]) || { ready: true, missing: [] };
+
+    // 1. Update Header Badge & Subtitles
+    const badge = $('#afPlatformBadge');
+    if (badge) {
+      badge.textContent = pInfo.badge || (activeKey.toUpperCase() + ' ATS');
+    }
+    const platTitle = $('#afReqPlatformTitle');
+    const platTip = $('#afReqPlatformTip');
+    const styleBadge = $('#afReqInputStyleBadge');
+    const archText = $('#afReqArchText');
+    const coverText = $('#afReqCoverText');
+    const linkedInText = $('#afReqLinkedInText');
+
+    if (platTitle) platTitle.textContent = `${pInfo.name || activeKey} Intelligence`;
+    if (platTip) platTip.textContent = pInfo.tip || 'Platform requirements and guidelines.';
+    if (styleBadge) styleBadge.textContent = pInfo.input_style ? pInfo.input_style.split('&')[0].trim() : 'Standard HTML5';
+    if (archText) archText.textContent = pInfo.input_style || 'HTML5 Form';
+    if (coverText) coverText.textContent = pInfo.cover_letter_style || 'Textarea / Note Field';
+    if (linkedInText) linkedInText.textContent = pInfo.linkedin_style || 'Profile URL';
+
+    // 2. Update Mandatory Rules List
+    const mandList = $('#afReqMandatoryList');
+    if (mandList) {
+      const rules = pInfo.mandatory_rules || [
+        'Full Name or Discrete First/Last Name',
+        'Email Address & Valid Phone Number',
+        'Resume Attachment / Text'
+      ];
+      mandList.innerHTML = rules.map(r => `<li>${esc(r)}</li>`).join('');
+    }
+
+    // 3. Update Readiness Pill
+    const pill = $('#afReadinessPill');
+    const pillIcon = $('#afReadinessPillIcon');
+    const pillText = $('#afReadinessPillText');
+    if (pill && pillIcon && pillText) {
+      if (audit.ready) {
+        pill.className = 'af-readiness-pill is-ready';
+        pillIcon.textContent = '✓';
+        pillText.textContent = `Profile 100% Ready for ${pInfo.name || activeKey}`;
+      } else {
+        pill.className = 'af-readiness-pill is-warning';
+        pillIcon.textContent = '⚠️';
+        pillText.textContent = `Attention: ${audit.missing.join(', ')}`;
+      }
+    }
+
+    // 4. Render Field Palette (Tab 2) with Site Context
+    renderAutofillFieldsPalette(p, activeKey);
+
+    // 5. Render Checklist (Tab 4)
+    renderAutofillRequirements(pInfo);
+  }
+
+  function renderAutofillFieldsPalette(p, activeKey) {
+    const container = $('#afFieldsContainer');
+    if (!container || !p) return;
+
+    activeKey = activeKey || p.detected_platform || 'standard';
+
+    const categories = [
+      {
+        title: '👤 Personal Contact & Identity',
+        fields: [
+          { k: 'Full Name', v: p.full_name, siteNote: activeKey === 'lever' ? 'Lever: input[name="name"]' : '' },
+          { k: 'First Name', v: p.first_name, siteNote: activeKey === 'greenhouse' ? 'Greenhouse: #first_name' : activeKey === 'workday' ? 'Workday: legalName' : '' },
+          { k: 'Last Name', v: p.last_name, siteNote: activeKey === 'greenhouse' ? 'Greenhouse: #last_name' : activeKey === 'workday' ? 'Workday: legalName' : '' },
+          { k: 'Email', v: p.email, siteNote: 'All ATSs' },
+          { k: 'Phone', v: p.phone, siteNote: activeKey === 'jobvite' ? 'Jobvite: cellPhone' : 'All ATSs' },
+          { k: 'Location / City', v: `${p.city}, ${p.country}`, siteNote: activeKey === 'workday' ? 'Workday: addressSection' : '' }
+        ]
+      },
+      {
+        title: '🔗 Web & Social Presence (Site Rules)',
+        fields: [
+          { k: 'LinkedIn Profile URL', v: p.linkedin_url, siteNote: activeKey === 'lever' ? 'Lever: urls[LinkedIn] (MANDATORY)' : activeKey === 'smartrecruiters' ? 'SmartRecruiters: linkedin-input' : 'Direct Link' },
+          { k: 'GitHub Profile URL', v: p.github_url, siteNote: activeKey === 'lever' ? 'Lever: urls[GitHub]' : 'Portfolio Link' },
+          { k: 'Portfolio / Website', v: p.portfolio_url, siteNote: activeKey === 'lever' ? 'Lever: urls[Portfolio]' : 'Web Presence' }
+        ]
+      },
+      {
+        title: '💼 Professional Fit & Legal Status',
+        fields: [
+          { k: 'Current Role', v: p.current_role, siteNote: 'Role Title' },
+          { k: 'Current Employer', v: p.current_company, siteNote: activeKey === 'lever' ? 'Lever: input[name="org"]' : 'Employer' },
+          { k: 'Desired Salary', v: p.desired_salary, siteNote: activeKey === 'bamboohr' ? 'BambooHR: desiredSalary' : 'Compensation' },
+          { k: 'Notice Period', v: p.notice_period, siteNote: 'Availability' },
+          { k: 'Work Authorization', v: p.work_authorization, siteNote: activeKey === 'workday' ? 'Workday Radio: Yes' : 'Legal Auth' },
+          { k: 'Visa Sponsorship', v: p.visa_sponsorship, siteNote: 'Radio: No' },
+          { k: 'Education', v: `${p.degree} @ ${p.institution}`, siteNote: 'Degree' },
+          { k: 'Top Core Skills', v: p.skills_csv, siteNote: 'Skills' }
+        ]
+      },
+      {
+        title: '📝 Cover Pitch & Textareas (Tailored for Role)',
+        fields: [
+          { k: 'Cover Letter Pitch (Comments / Notes)', v: p.cover_pitch || p.cover_letter, full: true, siteNote: activeKey === 'lever' ? 'Lever: textarea[name="comments"]' : activeKey === 'greenhouse' ? 'Greenhouse: #cover_letter_text' : activeKey === 'smartrecruiters' ? 'SmartRecruiters: message-to-hiring-manager' : 'Dedicated Pitch' },
+          { k: 'Full Tailored Cover Letter', v: p.cover_letter, full: true, siteNote: 'Complete Letter' },
+          { k: 'Candidate Executive Summary', v: p.summary, full: true, siteNote: 'Professional Bio' }
+        ]
+      }
+    ];
+
+    let html = '';
+    categories.forEach(cat => {
+      html += `<div class="af-field-category-title">${esc(cat.title)}</div>`;
+      cat.fields.forEach(c => {
+        html += `
+          <div class="af-field-tile${c.full ? ' af-tile-full' : ''}" data-copy-val="${esc(c.v || '')}" style="${c.full ? 'grid-column: 1 / -1;' : ''}">
+            <div class="af-field-tile-head">
+              <span class="af-tile-k">
+                ${esc(c.k)}
+                ${c.siteNote ? `<span class="af-field-site-tag">${esc(c.siteNote)}</span>` : ''}
+              </span>
+              <span class="af-tile-copy-icon">${ico('copy')}</span>
+            </div>
+            <div class="af-tile-v" style="${c.full ? 'white-space: pre-wrap; max-height: 85px; overflow-y: auto; font-weight: normal; font-size: 12.5px; line-height: 1.5;' : ''}">${esc(c.v || '—')}</div>
+          </div>
+        `;
+      });
+    });
+
+    container.innerHTML = html;
+
+    $$('.af-field-tile', container).forEach(tile => {
+      tile.addEventListener('click', async () => {
+        const val = tile.dataset.copyVal;
+        if (!val) return;
+        try {
+          await navigator.clipboard.writeText(val);
+          tile.classList.add('is-copied');
+          const k = tile.querySelector('.af-tile-k');
+          const prevK = k ? k.innerHTML : '';
+          if (k) k.innerHTML = '<span style="color:#10b981;font-weight:700;">Copied to Clipboard! ✓</span>';
+          setTimeout(() => {
+            tile.classList.remove('is-copied');
+            if (k) k.innerHTML = prevK;
+          }, 1800);
+        } catch (e) {
+          toast('Browser blocked copying', 'error');
+        }
+      });
+    });
+  }
+
+  function renderAutofillRequirements(info) {
+    const list = $('#afReqChecklist');
+    if (!list || !info) return;
+    const reqs = info.key_requirements || [];
+    list.innerHTML = reqs.map(r => {
+      const isMand = r.required !== false;
+      return `
+        <div class="af-check-row">
+          <div style="display:flex;flex-direction:column;gap:3px;flex:1;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span class="${isMand ? 'af-req-badge-mandatory' : 'af-req-badge-optional'}">${isMand ? 'Mandatory' : 'Optional'}</span>
+              <strong style="font-size:13px;color:var(--text-1);">${esc(r.label)}</strong>
+              ${r.selector ? `<code style="font-size:11px;background:rgba(0,0,0,0.06);padding:1px 6px;border-radius:4px;color:var(--text-2);font-family:ui-monospace,monospace;">${esc(r.selector)}</code>` : ''}
+            </div>
+            ${r.notes ? `<span style="font-size:11.5px;color:var(--text-3);padding-left:2px;line-height:1.4;">${esc(r.notes)}</span>` : ''}
+          </div>
+          <span class="af-check-status" style="white-space:nowrap;margin-left:8px;">✓ ${esc(r.status || 'Ready')}</span>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function executeEasyApply(job) {
+    if (!job) return;
+    toast(`⚡ Initializing 1-Click Easy Apply for ${job.company}...`);
+    try {
+      const res = await api('/api/easy-apply', {
+        method: 'POST',
+        body: { job }
+      });
+      if (res && res.success) {
+        toast(`✓ Applied to ${job.company} (${cleanTitle(job.title)})! Added to tracker.`);
+        await loadApplications();
+        renderDetail();
+        renderList();
+        openAutofillCopilot(job);
+      }
+    } catch (err) {
+      toast('Easy Apply failed: ' + err.message, 'error');
+    }
+  }
+
+  async function solveScreeningQuestionFromUi() {
+    const qInput = $('#afSolverQuestionInput');
+    const question = (qInput && qInput.value || '').trim();
+    if (!question) {
+      toast('Please enter or select a question first.');
+      return;
+    }
+    const tone = val('afSolverTone') || 'direct';
+    const solveBtn = $('#afBtnSolveQuestion');
+    if (solveBtn) {
+      solveBtn.disabled = true;
+      solveBtn.innerHTML = '<span>⚡ Solving with AI...</span>';
+    }
+
+    try {
+      const res = await api('/api/autofill/solve-question', {
+        method: 'POST',
+        body: { question, job: S.activeAutofillJob, tone }
+      });
+      if (res && res.success) {
+        const card = $('#afAnswerCard');
+        const body = $('#afAnswerBodyText');
+        const tag = $('#afAnswerEngineTag');
+        const count = $('#afAnswerWordCount');
+        if (card) card.hidden = false;
+        if (body) body.textContent = res.answer;
+        if (tag) tag.textContent = `${res.provider.toUpperCase()} Grounded`;
+        if (count) count.textContent = `${res.word_count || res.answer.split(' ').length} words`;
+      }
+    } catch (err) {
+      toast('Could not solve question: ' + err.message, 'error');
+    } finally {
+      if (solveBtn) {
+        solveBtn.disabled = false;
+        solveBtn.innerHTML = '<span>⚡ Solve with AI (Grounded)</span>';
+      }
+    }
+  }
 
   function addSkillFromInput() {
     const input = $('#newSkill'), s = input.value.trim();
@@ -7263,6 +7649,135 @@
           }, 2400);
         }
       });
+    }
+
+    // ⚡ 1-Click Application Autofill & Easy Apply Event Wiring
+    const pillEasyApply = $('#p4PillEasyApply');
+    if (pillEasyApply) {
+      pillEasyApply.addEventListener('click', () => {
+        S.filters.easyApplyOnly = !S.filters.easyApplyOnly;
+        pillEasyApply.classList.toggle('is-active', S.filters.easyApplyOnly);
+        if (S.searchHasRun) filterAndRender();
+      });
+    }
+
+    const modalAf = $('#autofillModal');
+    if (modalAf) {
+      const closeModal = () => {
+        modalAf.hidden = true;
+        modalAf.setAttribute('hidden', '');
+        modalAf.style.display = 'none';
+      };
+      modalAf.addEventListener('click', e => {
+        if (e.target.id === 'autofillModal') closeModal();
+      });
+      const btnCloseTop = $('#afModalCloseBtn');
+      if (btnCloseTop) btnCloseTop.addEventListener('click', closeModal);
+      const btnCloseBtm = $('#afModalBottomClose');
+      if (btnCloseBtm) btnCloseBtm.addEventListener('click', closeModal);
+
+      // Tab switching
+      $$('.jh-tab-btn', modalAf).forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tabKey = btn.dataset.aftab;
+          $$('.jh-tab-btn', modalAf).forEach(b => {
+            const isMatch = b === btn;
+            b.classList.toggle('is-active', isMatch);
+            b.setAttribute('aria-selected', String(isMatch));
+          });
+          $$('.jh-tab-pane', modalAf).forEach(pane => {
+            const paneKey = pane.id.replace('afPane', '').toLowerCase();
+            const show = paneKey === tabKey.toLowerCase();
+            pane.hidden = !show;
+            pane.classList.toggle('is-active', show);
+          });
+        });
+      });
+
+      // Copy script button
+      const btnCopyScript = $('#afBtnCopyScript');
+      if (btnCopyScript) {
+        btnCopyScript.addEventListener('click', async () => {
+          const script = S.autofillScript || (S.autofillPayload && S.autofillPayload.script) || '';
+          if (!script) return;
+          try {
+            await navigator.clipboard.writeText(script);
+            const span = $('#afBtnCopyScriptText');
+            if (span) {
+              const orig = span.textContent;
+              span.textContent = 'Copied Script! ✓';
+              setTimeout(() => { span.textContent = orig; }, 2000);
+            }
+          } catch (e) {
+            toast('Browser blocked copying', 'error');
+          }
+        });
+      }
+
+      // Screening Question Presets
+      $$('.af-preset-btn', modalAf).forEach(btn => {
+        btn.addEventListener('click', () => {
+          const preset = btn.dataset.preset;
+          const comp = (S.activeAutofillJob && S.activeAutofillJob.company) || 'your company';
+          const title = (S.activeAutofillJob && cleanTitle(S.activeAutofillJob.title)) || 'this role';
+          const input = $('#afSolverQuestionInput');
+          if (!input) return;
+
+          if (preset === 'why_us') {
+            input.value = `Why are you interested in joining ${comp} as a ${title}?`;
+          } else if (preset === 'accomplishment') {
+            input.value = `What is your greatest or proudest technical accomplishment?`;
+          } else if (preset === 'salary') {
+            input.value = `What are your salary expectations and earliest start date?`;
+          } else if (preset === 'tech_stack') {
+            input.value = `What is your relevant hands-on experience with the core stack requested by ${comp}?`;
+          }
+          solveScreeningQuestionFromUi();
+        });
+      });
+
+      // Solve Screening Question button
+      const btnSolve = $('#afBtnSolveQuestion');
+      if (btnSolve) {
+        btnSolve.addEventListener('click', solveScreeningQuestionFromUi);
+      }
+
+      // Copy Answer button
+      const btnCopyAns = $('#afBtnCopyAnswer');
+      if (btnCopyAns) {
+        btnCopyAns.addEventListener('click', async () => {
+          const body = $('#afAnswerBodyText');
+          const txt = body ? body.textContent : '';
+          if (!txt) return;
+          try {
+            await navigator.clipboard.writeText(txt);
+            const span = $('#afBtnCopyAnswerText');
+            if (span) {
+              const orig = span.textContent;
+              span.textContent = 'Copied Answer! ✓';
+              setTimeout(() => { span.textContent = orig; }, 2000);
+            }
+          } catch (e) {
+            toast('Browser blocked copying', 'error');
+          }
+        });
+      }
+
+      // Easy Apply from Modal
+      const btnModalEasyApply = $('#afBtnEasyApplyInModal');
+      if (btnModalEasyApply) {
+        btnModalEasyApply.addEventListener('click', () => {
+          if (S.activeAutofillJob) executeEasyApply(S.activeAutofillJob);
+        });
+      }
+
+      // ATS Platform selector change listener
+      const platSel = $('#afPlatformSelect');
+      if (platSel) {
+        platSel.addEventListener('change', e => {
+          updateSelectedPlatformView(e.target.value);
+        });
+      }
     }
 
     updateHiddenJobsBadge();

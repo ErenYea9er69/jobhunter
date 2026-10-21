@@ -739,6 +739,14 @@
                   </div>
                 </div>
               </div>
+
+              <!-- ⚡ Easy Apply Filter Pill -->
+              <div class="p4-pill-wrap">
+                <button type="button" class="p4-pill-btn p4-pill-easy-apply" id="p4PillEasyApply" title="Filter jobs supporting 1-Click Easy Apply & Autofill">
+                  <span class="p4-easy-apply-dot">⚡</span>
+                  <span class="p4-pill-text" id="p4TextEasyApply">Easy Apply</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2483,8 +2491,233 @@
     </aside>
   </div>
 
+  <!-- ⚡ 1-Click Application Autofill & Easy Apply Copilot Modal -->
+  <div id="autofillModal" class="jh-modal-backdrop" hidden>
+    <div class="jh-modal-window jh-autofill-modal" role="dialog" aria-modal="true" aria-labelledby="afModalTitle">
+      <div class="jh-modal-header">
+        <div class="jh-modal-title-wrap">
+          <div class="jh-modal-badge-row">
+            <span class="jh-chip jh-chip-accent">⚡ 1-Click Autofill Copilot</span>
+            <span class="jh-chip jh-chip-platform" id="afPlatformBadge">Detecting ATS...</span>
+            <span class="jh-chip jh-chip-grounded">✓ 100% Grounded</span>
+          </div>
+          <h2 class="jh-modal-title" id="afModalTitle">1-Click Application Autofill</h2>
+          <p class="jh-modal-subtitle" id="afModalSubtitle">Save 15 min per application. Automatically maps ATS fields, handles controlled inputs, and inserts tailored responses.</p>
+        </div>
+        <button type="button" class="jh-modal-close-btn" id="afModalCloseBtn" aria-label="Close modal">&times;</button>
+      </div>
+
+      <!-- ATS Platform Intelligence & Manual Switcher Bar -->
+      <div class="af-platform-bar" id="afPlatformBar">
+        <div class="af-platform-select-group">
+          <label for="afPlatformSelect" class="af-platform-select-label">
+            <span class="af-pulse-dot"></span>
+            <span>Target Career Site:</span>
+          </label>
+          <select id="afPlatformSelect" class="af-platform-select">
+            <option value="auto">🟢 Auto-Detected</option>
+            <option value="lever">Lever ATS (urls[LinkedIn] mandatory)</option>
+            <option value="greenhouse">Greenhouse ATS (Discrete Name & Cover Letter)</option>
+            <option value="ashby">Ashby ATS (React Fiber State Sync)</option>
+            <option value="workday">Workday ATS (Multi-Step & Address)</option>
+            <option value="smartrecruiters">SmartRecruiters (Hiring Manager Message)</option>
+            <option value="workable">Workable ATS (Standard Semantic IDs)</option>
+            <option value="bamboohr">BambooHR (Salary & Start Date)</option>
+            <option value="linkedin">LinkedIn Easy Apply (Step Survey)</option>
+            <option value="taleo">Taleo / Oracle Cloud (Postal Wizard)</option>
+            <option value="icims">iCIMS Portal</option>
+            <option value="jobvite">Jobvite (cellPhone & LinkedIn)</option>
+            <option value="standard">Standard Career Portal</option>
+          </select>
+        </div>
+        <div class="af-readiness-pill is-ready" id="afReadinessPill">
+          <span id="afReadinessPillIcon">✓</span>
+          <span id="afReadinessPillText">Profile 100% Ready</span>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <div class="jh-modal-tabs" role="tablist">
+        <button type="button" class="jh-tab-btn is-active" data-aftab="bookmarklet" role="tab" aria-selected="true">
+          <span>⚡ Universal Bookmarklet</span>
+        </button>
+        <button type="button" class="jh-tab-btn" data-aftab="fields" role="tab" aria-selected="false">
+          <span>📋 1-Click Fields Palette</span>
+        </button>
+        <button type="button" class="jh-tab-btn" data-aftab="solver" role="tab" aria-selected="false">
+          <span>🤖 Screening Question Solver</span>
+        </button>
+        <button type="button" class="jh-tab-btn" data-aftab="requirements" role="tab" aria-selected="false">
+          <span>🎯 Site Requirements</span>
+        </button>
+      </div>
+
+      <div class="jh-modal-body">
+        <!-- TAB 1: Bookmarklet -->
+        <div class="jh-tab-pane is-active" id="afPaneBookmarklet">
+          <div class="af-hero-card">
+            <div class="af-hero-icon-col">
+              <div class="af-lightning-orb">⚡</div>
+            </div>
+            <div class="af-hero-content">
+              <h3>Drag this button to your Bookmarks Bar</h3>
+              <p>When you are on <strong>Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Workable</strong>, or any career form, simply click the bookmarklet. It instantly populates name, email, phone, location, LinkedIn, salary, notice period, and your tailored cover pitch!</p>
+              
+              <div class="af-bookmarklet-actions">
+                <a class="af-bookmarklet-link" id="afBookmarkletDraggable" href="javascript:void(0)" title="Drag me to your Bookmarks Bar!">
+                  <span class="af-bm-icon">⚡</span>
+                  <span class="af-bm-text">JobHunter Autofill</span>
+                </a>
+                <button type="button" class="btn btn-secondary btn-sm" id="afBtnCopyScript">
+                  <svg class="i" style="width:13px;height:13px;"><use href="#i-copy"/></svg>
+                  <span id="afBtnCopyScriptText">Copy Script Code</span>
+                </button>
+                <a class="btn btn-primary btn-sm" id="afBtnOpenJobUrl" href="#" target="_blank" rel="noopener noreferrer">
+                  <span>Open Job Application ↗</span>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <div class="af-features-grid">
+            <div class="af-feature-card">
+              <span class="af-feat-icon">🎯</span>
+              <h4>Platform Intelligent</h4>
+              <p>Detects Greenhouse, Lever, Ashby, and Workday DOM architectures and targets their specific input IDs and controlled React state.</p>
+            </div>
+            <div class="af-feature-card">
+              <span class="af-feat-icon">✍️</span>
+              <h4>Auto Cover Letter Pitch</h4>
+              <p>Populates <code>#cover_letter_text</code>, <code>comments</code>, and <code>message-to-hiring-manager</code> textareas with your tailored pitch.</p>
+            </div>
+            <div class="af-feature-card">
+              <span class="af-feat-icon">🛡️</span>
+              <h4>EEO & Disclosures</h4>
+              <p>Selects "Decline to self-identify" / "Prefer not to say" on demographic surveys and answers work authorization "Yes".</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: Quick Copy Palette -->
+        <div class="jh-tab-pane" id="afPaneFields" hidden>
+          <div class="af-section-intro">
+            <p>Click any card to copy the value directly into your clipboard with instant formatting.</p>
+          </div>
+          <div class="af-fields-grid" id="afFieldsContainer">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- TAB 3: Screening Question Solver -->
+        <div class="jh-tab-pane" id="afPaneSolver" hidden>
+          <div class="af-solver-wrap">
+            <div class="af-solver-input-box">
+              <label for="afSolverQuestionInput" class="af-solver-label">
+                <span>Application Screening Question:</span>
+                <span class="af-sub-label">Paste any custom question from the job posting</span>
+              </label>
+              <textarea id="afSolverQuestionInput" class="af-solver-textarea" rows="3" placeholder="e.g. Why are you interested in joining our team? What is your proudest technical accomplishment? What are your salary expectations?"></textarea>
+              
+              <div class="af-solver-presets-row">
+                <span class="af-presets-title">Quick Presets:</span>
+                <button type="button" class="af-preset-btn" data-preset="why_us">Why This Company?</button>
+                <button type="button" class="af-preset-btn" data-preset="accomplishment">Greatest Accomplishment</button>
+                <button type="button" class="af-preset-btn" data-preset="salary">Salary & Notice</button>
+                <button type="button" class="af-preset-btn" data-preset="tech_stack">Stack Experience</button>
+              </div>
+
+              <div class="af-solver-controls-row">
+                <div class="af-tone-picker">
+                  <label for="afSolverTone">Tone:</label>
+                  <select id="afSolverTone" class="af-tone-select">
+                    <option value="direct" selected>Direct & Confident</option>
+                    <option value="technical">Technical Rigor</option>
+                    <option value="storyteller">Impact / Narrative</option>
+                    <option value="concise">Ultra-Concise</option>
+                  </select>
+                </div>
+                <button type="button" class="btn btn-primary" id="afBtnSolveQuestion">
+                  <span>⚡ Solve with AI (Grounded)</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Answer display card -->
+            <div class="af-answer-card" id="afAnswerCard" hidden>
+              <div class="af-answer-header">
+                <div class="af-answer-meta">
+                  <span class="af-answer-tag" id="afAnswerEngineTag">AI Grounded</span>
+                  <span class="af-word-count" id="afAnswerWordCount">0 words</span>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" id="afBtnCopyAnswer">
+                  <svg class="i" style="width:12px;height:12px;"><use href="#i-copy"/></svg>
+                  <span id="afBtnCopyAnswerText">Copy Answer</span>
+                </button>
+              </div>
+              <div class="af-answer-body" id="afAnswerBodyText"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: Site Requirements & Platform Intelligence -->
+        <div class="jh-tab-pane" id="afPaneRequirements" hidden>
+          <div class="af-req-card">
+            <div class="af-req-head">
+              <div class="af-req-platform-icon" id="afReqPlatformIcon">🎯</div>
+              <div style="flex:1;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
+                  <h4 id="afReqPlatformTitle" style="margin:0;">Greenhouse ATS Requirements</h4>
+                  <span class="af-style-badge" id="afReqInputStyleBadge">Discrete HTML5 IDs</span>
+                </div>
+                <p id="afReqPlatformTip" class="af-req-tip">Standard form fields required by this platform.</p>
+              </div>
+            </div>
+
+            <!-- Mandatory Rules Highlight Box -->
+            <div class="af-mandatory-box" id="afReqMandatoryBox">
+              <div class="af-mandatory-head">
+                <span>⚠️ Site-Mandated Rules & Constraints:</span>
+              </div>
+              <ul class="af-mandatory-list" id="afReqMandatoryList">
+                <!-- Dynamically populated -->
+              </ul>
+            </div>
+
+            <!-- Input Style & Guidelines -->
+            <div class="af-style-details-box" id="afReqStyleDetailsBox">
+              <div class="af-style-row">
+                <span class="af-style-k">Input Architecture:</span>
+                <span class="af-style-v" id="afReqArchText">—</span>
+              </div>
+              <div class="af-style-row">
+                <span class="af-style-k">Cover Letter Handling:</span>
+                <span class="af-style-v" id="afReqCoverText">—</span>
+              </div>
+              <div class="af-style-row">
+                <span class="af-style-k">LinkedIn Parameter:</span>
+                <span class="af-style-v" id="afReqLinkedInText">—</span>
+              </div>
+            </div>
+
+            <h5 style="margin:18px 0 10px;font-size:13px;font-weight:700;color:var(--text-1);">Detailed Field Requirements & Readiness:</h5>
+            <div class="af-checklist" id="afReqChecklist">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="jh-modal-footer">
+        <button type="button" class="btn btn-secondary" id="afModalBottomClose">Close</button>
+        <button type="button" class="btn btn-primary" id="afBtnEasyApplyInModal">
+          <span>⚡ Easy Apply & Save to Tracker</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div class="toasts" id="toastContainer" role="status" aria-live="polite"></div>
 
-  <script src="app.js?v=4.7"></script>
+  <script src="app.js?v=4.9"></script>
 </body>
 </html>
