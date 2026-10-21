@@ -372,13 +372,44 @@ def r_ats(q, body):
 @route("POST", "/api/auto-tailor")
 def r_auto_tailor(q, body):
     t0, job, profile = time.time(), _job(body), _need_profile()
-    ref = refit.refine_resume_for_job(job, profile)
+    archetype = (body.get("archetype") or "startup_velocity").strip()
+    ref = refit.generate_custom_resume(job, profile, archetype=archetype)
     before, after = ats.compute_ats_audit(profile, job), ats.compute_ats_audit(ref["tailored_resume"], job)
     return {"success": True, "status": "success", "job_id": job.get("id"), "job_title": job.get("title"),
             "company": job.get("company"), "tailored_resume": ref["tailored_resume"], "refinement": ref,
+            "executive_hook": ref.get("executive_hook", ""),
+            "recruiter_6sec_audit": ref.get("recruiter_6sec_audit", {}),
+            "core_competencies": ref.get("core_competencies", {}),
             "ats_audit": after, "before_ats": before, "after_ats": after,
             "boost": after["ats_score"] - before["ats_score"], "speed_ms": int((time.time() - t0) * 1000),
             "engine": ref["engine"]}
+
+
+@route("POST", "/api/resume/custom-generate")
+def r_custom_generate(q, body):
+    t0 = time.time()
+    job, profile = _job(body), _need_profile()
+    archetype = (body.get("archetype") or "startup_velocity").strip()
+    ref = refit.generate_custom_resume(job, profile, archetype=archetype)
+    before, after = ats.compute_ats_audit(profile, job), ats.compute_ats_audit(ref["tailored_resume"], job)
+    return {
+        "ok": True,
+        "success": True,
+        "job_id": job.get("id"),
+        "job_title": job.get("title"),
+        "company": job.get("company"),
+        "tailored_resume": ref["tailored_resume"],
+        "refinement": ref,
+        "executive_hook": ref.get("executive_hook", ""),
+        "recruiter_6sec_audit": ref.get("recruiter_6sec_audit", {}),
+        "core_competencies": ref.get("core_competencies", {}),
+        "ats_audit": after,
+        "before_ats": before,
+        "after_ats": after,
+        "boost": max(after["ats_score"] - before["ats_score"], 0),
+        "speed_ms": int((time.time() - t0) * 1000),
+        "engine": ref["engine"]
+    }
 
 
 @route("POST", "/api/auto-hunt")

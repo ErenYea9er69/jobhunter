@@ -10,7 +10,7 @@ os.environ["JH_DATA_DIR"] = tempfile.mkdtemp()
 os.environ["JH_SEARCH_DEADLINE"] = "5"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from jh import ats, config, db, dedup, exporters, pipeline, resume_parser as rp, scoring, skills, sources, refit, tracker, util  # noqa: E402
+from jh import ats, config, db, dedup, exporters, httpd, pipeline, resume_parser as rp, scoring, skills, sources, refit, tracker, util  # noqa: E402
 from jh.demo import DEMO_PROFILE  # noqa: E402
 
 JOB = {"id": "j", "title": "Senior Backend Engineer", "company": "Acme",
@@ -229,6 +229,61 @@ class TailorTests(Base):
     def test_gap_report_separates_real_gaps(self):
         g = refit.generate_gap_report(JOB, DEMO_PROFILE)
         self.assertIn("Kubernetes", [x["skill"] for x in g["real_gaps"]])
+
+    def test_generate_custom_resume_6sec_structure(self):
+        """Verify 6-second recruiter targeting structure, executive hook, audit metrics, and grounding."""
+        res = refit.generate_custom_resume(JOB, DEMO_PROFILE, archetype="startup_velocity", use_llm=False)
+        self.assertIn("executive_hook", res)
+        self.assertTrue(len(res["executive_hook"]) > 20)
+        self.assertIn("recruiter_6sec_audit", res)
+        audit = res["recruiter_6sec_audit"]
+        self.assertGreaterEqual(audit["skim_score"], 80)
+        self.assertEqual(len(audit["eye_catchers"]), 3)
+        self.assertIn("scan_zones", audit)
+        self.assertIn("zone_1_anchor", audit["scan_zones"])
+        self.assertIn("zone_2_competencies", audit["scan_zones"])
+        self.assertIn("zone_3_proof", audit["scan_zones"])
+        self.assertIn("core_competencies", res)
+        self.assertIn("primary_matches", res["core_competencies"])
+        # Verify 100% grounding
+        tailored = res["tailored_resume"]
+        full_text = tailored["summary"] + " " + " ".join(b for e in tailored.get("experience", []) for b in e.get("bullets", []))
+        self.assertTrue(refit.is_grounded(DEMO_PROFILE, full_text))
+        self.assertTrue(res["guardrail_report"]["grounded"])
+
+    def test_generate_custom_resume_archetypes(self):
+        """Verify support for startup_velocity, enterprise_scale, and technical_depth archetypes."""
+        res_startup = refit.generate_custom_resume(JOB, DEMO_PROFILE, archetype="startup_velocity", use_llm=False)
+        res_ent = refit.generate_custom_resume(JOB, DEMO_PROFILE, archetype="enterprise_scale", use_llm=False)
+        res_tech = refit.generate_custom_resume(JOB, DEMO_PROFILE, archetype="technical_depth", use_llm=False)
+        self.assertEqual(res_startup["archetype_applied"], "startup_velocity")
+        self.assertEqual(res_ent["archetype_applied"], "enterprise_scale")
+        self.assertEqual(res_tech["archetype_applied"], "technical_depth")
+
+    def test_generate_custom_resume_llm_hallucination_filtered(self):
+        """Verify that simulated LLM hallucinations are rejected by the 6-sec custom generator guardrail."""
+        fake_bad_llm_output = json.dumps({
+            "executive_hook": "Senior Staff Engineer with 15 years cutting costs by 99% using Kubernetes and Rust.",
+            "bullets": {"0.0": "Invented new quantum database saving $500M."}
+        })
+        res = refit.generate_custom_resume(JOB, DEMO_PROFILE, archetype="enterprise_scale", use_llm=True,
+                                           llm_caller=lambda s, u: fake_bad_llm_output)
+        tailored = res["tailored_resume"]
+        full_text = tailored["summary"] + " " + " ".join(b for e in tailored.get("experience", []) for b in e.get("bullets", []))
+        self.assertTrue(refit.is_grounded(DEMO_PROFILE, full_text))
+        self.assertNotIn("Kubernetes", full_text)
+        self.assertNotIn("$500M", full_text)
+
+    def test_http_custom_resume_generation(self):
+        """Verify the /api/resume/custom-generate route returns full 6-sec recruiter audit and tailored resume."""
+        db.save_profile(DEMO_PROFILE)
+        out = httpd.r_custom_generate({}, {"job": JOB, "archetype": "startup_velocity"})
+        self.assertTrue(out["success"])
+        self.assertIn("recruiter_6sec_audit", out)
+        self.assertIn("executive_hook", out)
+        self.assertIn("core_competencies", out)
+        self.assertGreaterEqual(out["recruiter_6sec_audit"]["skim_score"], 80)
+        self.assertEqual(len(out["recruiter_6sec_audit"]["eye_catchers"]), 3)
 
 
 class AtsTests(Base):

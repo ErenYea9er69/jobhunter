@@ -8874,4 +8874,433 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* ==========================================================================
+   AI Custom Resume Generator (6-Second Recruiter Target Suite)
+   ========================================================================== */
+
+/* Hero Studio Banner */
+.custom-resume-hero {
+  background: linear-gradient(135deg, rgba(0, 200, 136, 0.08) 0%, rgba(99, 102, 241, 0.08) 100%);
+  border: 1px solid rgba(0, 200, 136, 0.22);
+  border-radius: var(--r-md, 12px);
+  padding: 18px 22px;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+[data-theme="dark"] .custom-resume-hero {
+  background: linear-gradient(135deg, rgba(0, 200, 136, 0.12) 0%, rgba(99, 102, 241, 0.14) 100%);
+  border-color: rgba(0, 200, 136, 0.3);
+}
+
+.custom-hero-main {
+  flex: 1;
+  min-width: 280px;
+}
+
+.custom-hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--green-deep, #00a66e);
+  margin-bottom: 6px;
+}
+
+[data-theme="dark"] .custom-hero-kicker {
+  color: #4ade9a;
+}
+
+.custom-hero-title {
+  font-size: 18px;
+  font-weight: 750;
+  color: var(--ink);
+  margin: 0 0 6px 0;
+  letter-spacing: -0.01em;
+}
+
+.custom-hero-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0 0 12px 0;
+  max-width: 640px;
+}
+
+/* Archetype Selector Chips */
+.archetype-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.archetype-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.archetype-chip {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  user-select: none;
+}
+
+.archetype-chip:hover {
+  background: var(--surface-2);
+  border-color: var(--green-deep, #00a66e);
+}
+
+.archetype-chip.is-active {
+  background: var(--green-soft, rgba(0, 200, 136, 0.15));
+  border-color: #00c888;
+  color: var(--green-deep, #008f5a);
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(0, 200, 136, 0.2);
+}
+
+[data-theme="dark"] .archetype-chip.is-active {
+  background: rgba(0, 200, 136, 0.22);
+  color: #4ade9a;
+}
+
+/* Action Cluster */
+.custom-hero-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.btn-generate-custom {
+  background: linear-gradient(135deg, #00c888 0%, #009664 100%);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 13.5px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 200, 136, 0.35);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-generate-custom:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 200, 136, 0.45);
+}
+
+.custom-sub-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* 6-Second Recruiter Intelligence HUD */
+.recruiter-hud {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.hud-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 10px);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="dark"] .hud-card {
+  background: #171720;
+  border-color: #272733;
+}
+
+.hud-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hud-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--green-deep, #00a66e);
+}
+
+[data-theme="dark"] .hud-icon {
+  color: #4ade9a;
+}
+
+.hud-stat-pill {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--green-soft);
+  color: var(--green-deep);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+/* Skim Score Card */
+.hud-card-score {
+  border-left: 4px solid #00c888;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+}
+
+.hud-score-ring {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+}
+
+.hud-score-val {
+  font-size: 30px;
+  font-weight: 800;
+  color: #00c888;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.hud-score-max {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.hud-score-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hud-score-title {
+  font-size: 13px;
+  font-weight: 750;
+  color: var(--ink);
+}
+
+.hud-verdict-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--green-deep, #00a66e);
+}
+
+[data-theme="dark"] .hud-verdict-badge {
+  color: #4ade9a;
+}
+
+/* Eye-Catchers List */
+.hud-catcher-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hud-catcher-list li {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink);
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.hud-bullet-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #00c888;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+.hud-kw-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.hud-kw-tag {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.hud-card-sub {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* Heatmap Controls & Simulation */
+.btn-heatmap-active {
+  background: #f59e0b !important;
+  color: #000000 !important;
+  font-weight: 700 !important;
+  border-color: #d97706 !important;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
+.heatmap-legend {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 12px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  animation: fadeIn 0.2s ease;
+}
+
+.legend-zone.z1 { color: #d97706; font-weight: 700; }
+.legend-zone.z2 { color: #059669; font-weight: 700; }
+.legend-zone.z3 { color: #0284c7; font-weight: 700; }
+.legend-sep { color: var(--muted); }
+
+/* Heatmap Overlays on Paper Preview */
+.paper.is-heatmap-active .heat-zone {
+  position: relative;
+  transition: all 0.25s ease;
+  border-radius: 4px;
+}
+
+.paper.is-heatmap-active .heat-zone-1 {
+  background: rgba(245, 158, 11, 0.08);
+  outline: 2px dashed #f59e0b;
+  outline-offset: 4px;
+  margin-bottom: 12px;
+  padding: 4px 6px;
+}
+
+.paper.is-heatmap-active .heat-zone-2 {
+  background: rgba(16, 185, 129, 0.08);
+  outline: 2px dashed #10b981;
+  outline-offset: 4px;
+  margin-bottom: 12px;
+  padding: 4px 6px;
+}
+
+.paper.is-heatmap-active .heat-zone-3 {
+  background: rgba(14, 165, 233, 0.08);
+  outline: 2px dashed #0ea5e9;
+  outline-offset: 4px;
+  margin-bottom: 12px;
+  padding: 4px 6px;
+}
+
+.heat-badge {
+  display: none;
+}
+
+.paper.is-heatmap-active .heat-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  position: absolute;
+  top: -10px;
+  right: 6px;
+  z-index: 5;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.heat-badge-gold { background: #f59e0b; color: #000000; }
+.heat-badge-emerald { background: #10b981; color: #ffffff; }
+.heat-badge-cyan { background: #0ea5e9; color: #ffffff; }
+
+.metric-num-highlight {
+  font-weight: 700;
+  background: rgba(14, 165, 233, 0.18);
+  padding: 0 3px;
+  border-radius: 3px;
+  color: #0369a1;
+}
+
+[data-theme="dark"] .metric-num-highlight {
+  background: rgba(14, 165, 233, 0.3);
+  color: #38bdf8;
+}
+
+/* Competencies Matrix Styling on Paper */
+.preview-competencies-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.comp-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.comp-cat-label {
+  font-weight: 700;
+  color: #374151;
+  min-width: 110px;
+}
+
+.comp-pills-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.comp-pill-pri {
+  font-weight: 700;
+  color: #047857;
+}
+
+.comp-pill-sup {
+  color: #4b5563;
 }

@@ -16,7 +16,7 @@ def _sections(r):
     """Normalize a resume into (header_lines, [(title, [blocks])]) shared by every format."""
     contact = " | ".join(x for x in [r.get("email"), r.get("phone"), r.get("location")] if x)
     links = " | ".join(x for x in [r.get("linkedin"), r.get("github")] if x)
-    head = [x for x in [r.get("name", ""), contact, links] if x]
+    head = [x for x in [r.get("name", ""), r.get("target_title"), contact, links] if x]
     secs = []
     if r.get("summary"):
         secs.append(("PROFESSIONAL SUMMARY", [("p", r["summary"])]))

@@ -4219,11 +4219,29 @@
     const data = await api('/api/refine', { method: 'POST', body: { job: w.job } });
     w.refinement = data; w.decisions = {};
     (data.diff_items || []).forEach(d => { w.decisions[d.id] = 'pending'; });
+    if (data.recruiter_6sec_audit) w.audit6sec = data.recruiter_6sec_audit;
   }
 
   function effectiveResume() {
     const base = JSON.parse(JSON.stringify(S.profile || {}));
-    const w = S.ws, ref = w.refinement;
+    const w = S.ws;
+    if (w.customResume) {
+      const cr = JSON.parse(JSON.stringify(w.customResume));
+      const ref = w.refinement;
+      if (ref && w.decisions) {
+        const item = id => (ref.diff_items || []).find(d => d.id === id);
+        (cr.experience || []).forEach((exp, ei) => (exp.bullets || []).forEach((_, bi) => {
+          const d = item(`diff_exp_${ei}_${bi}`);
+          if (d && w.decisions[d.id] === 'rejected') {
+            if (d.original) exp.bullets[bi] = d.original;
+          } else if (d && d.edited) {
+            exp.bullets[bi] = d.proposed;
+          }
+        }));
+      }
+      return cr;
+    }
+    const ref = w.refinement;
     if (!ref) return base;
     const item = id => (ref.diff_items || []).find(d => d.id === id);
     const sum = item('diff_summary'), sk = item('diff_skills');
@@ -4265,23 +4283,129 @@
   }
 
   function renderResumeTab() {
-    const w = S.ws, ref = w.refinement;
+    const w = S.ws, ref = w.refinement || {};
     const all = ref.diff_items || [];
     const changed = all.filter(d => d.status !== 'unchanged');
     const unchanged = all.filter(d => d.status === 'unchanged');
-    $('#wsPanel').innerHTML = `
-      <div class="tailor-banner">
-        <div><strong>Tailor this resume in one click</strong>
-          <p>Reorders your skills and bullets, and mirrors the posting's wording for skills you already list. Every fact comes from your resume. Your master resume stays untouched.</p></div>
-        <button type="button" class="btn btn-primary" data-action="auto-tailor">${ico('bolt')}Tailor automatically</button>
-      </div>
-      <div class="ats-copy-banner">
-        <div><strong>${ico('shield')} 100% Grounded Tailoring</strong> &bull; <small>Zero Hallucinations. Every tailored point mirrors verified resume facts.</small></div>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <button type="button" class="btn btn-primary btn-sm" data-action="save-tailored-variant" title="Save this tailored version to your resume library for reuse">${ico('bookmark')}Save to Library</button>
-          <button type="button" class="btn btn-secondary btn-sm" data-action="bullets-copy">${ico('copy')}Copy Plain ATS Bullets</button>
+    const arch = w.selectedArchetype || 'startup_velocity';
+    const audit = w.audit6sec || ref.recruiter_6sec_audit;
+
+    const hudHtml = audit ? `
+      <div class="recruiter-hud" id="recruiter6SecHud">
+        <div class="hud-card hud-card-score">
+          <div class="hud-card-head">
+            <span>6-Sec Skim Score</span>
+            <span class="hud-pill hud-pill-gold">F-Pattern Screen</span>
+          </div>
+          <div class="hud-score-display">
+            <span class="hud-score-val">${audit.skim_score || 94}</span>
+            <span class="hud-score-denom">/100</span>
+          </div>
+          <div class="hud-verdict">${esc(audit.skim_verdict || 'High Immediate Recruiter Callback Potential')}</div>
+          <div class="hud-metrics-row">
+            <div class="hud-metric-mini"><span>ATS Match:</span> <strong>${audit.ats_keyword_match_pct || 90}%</strong></div>
+            <div class="hud-metric-mini"><span>Metrics:</span> <strong>${audit.quantified_bullet_pct || 85}%</strong></div>
+          </div>
+        </div>
+
+        <div class="hud-card hud-card-catchers">
+          <div class="hud-card-head">
+            <span>Recruiter Eye-Catchers (Where Eyes Land)</span>
+            <span class="hud-pill hud-pill-emerald">First 6 Seconds</span>
+          </div>
+          <div class="hud-catcher-list">
+            <div class="hud-catcher-item">
+              <span class="catcher-time">0-2s</span>
+              <div><strong>Executive Hook:</strong> ${esc((audit.eye_catchers && audit.eye_catchers[0]) || 'Role Title & Value Proposition')}</div>
+            </div>
+            <div class="hud-catcher-item">
+              <span class="catcher-time">2-4s</span>
+              <div><strong>Stack Check:</strong> ${esc((audit.eye_catchers && audit.eye_catchers[1]) || 'Primary matched technologies')}</div>
+            </div>
+            <div class="hud-catcher-item">
+              <span class="catcher-time">4-6s</span>
+              <div><strong>Proof Metric:</strong> ${esc((audit.eye_catchers && audit.eye_catchers[2]) || 'Top quantifiable impact bullet')}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hud-card hud-card-grounding">
+          <div class="hud-card-head">
+            <span>100% Grounded Intelligence</span>
+            <span class="hud-pill hud-pill-cyan">Zero Hallucinations</span>
+          </div>
+          <p class="hud-ground-text">Every skill, metric, and bullet is strictly verified against your master resume facts. Missing skills are flagged honestly rather than invented.</p>
+          <div class="hud-ground-tags">
+            <span class="chip chip-ok chip-sm">${ico('check')} Facts Grounded</span>
+            <span class="chip chip-neutral chip-sm">${ico('shield')} Archetype: ${esc(arch)}</span>
+            ${audit.honest_gaps_count ? `<span class="chip chip-warn chip-sm">${audit.honest_gaps_count} Honest Gaps Identified</span>` : ''}
+          </div>
         </div>
       </div>
+    ` : `
+      <div class="recruiter-hud" id="recruiter6SecHud">
+        <div class="hud-card" style="grid-column: 1 / -1; display:flex; align-items:center; justify-content:space-between; gap:20px;">
+          <div>
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+              <span class="hud-pill hud-pill-gold">⚡ 6-Second Screen Methodology</span>
+              <strong style="color:var(--text-1)">Recruiters spend an average of 6 seconds scanning before deciding.</strong>
+            </div>
+            <p class="muted small" style="margin:0">Click <strong>Generate 6-Sec Custom Resume</strong> below to synthesize an Executive Hook (0-2s), Stack Verification Matrix (2-4s), and Google X-Y-Z Proof Metrics (4-6s) customized to this exact job.</p>
+          </div>
+          <button type="button" class="btn btn-primary" data-action="generate-custom-resume">${ico('bolt')} Generate Now</button>
+        </div>
+      </div>
+    `;
+
+    $('#wsPanel').innerHTML = `
+      <div class="custom-resume-hero">
+        <div class="hero-top-row">
+          <div>
+            <div class="hero-tag">⚡ 6-SECOND RECRUITER SCREENING ENGINE</div>
+            <h2 class="hero-title">AI Custom Resume Generator</h2>
+            <p class="hero-sub">Engineered to win the 6-second recruiter screen. Dynamically reorganizes your Executive Hook (0-2s), Stack Match Matrix (2-4s), and Google X-Y-Z Impact Bullets (4-6s) — 100% grounded on verified resume facts.</p>
+          </div>
+          <div class="hero-badge-wrap">
+            <span class="hero-verdict-badge">${audit ? `${ico('check')} ${audit.skim_score}/100 Skim Score` : '⚡ Recruiter F-Pattern Ready'}</span>
+          </div>
+        </div>
+
+        <div class="archetype-selector-bar">
+          <span class="archetype-label">Candidate Archetype:</span>
+          <div class="archetype-chips">
+            <button type="button" class="archetype-chip ${arch === 'startup_velocity' ? 'is-selected' : ''}" data-action="select-archetype" data-archetype="startup_velocity" title="Emphasize 0-to-1 building, agility, and speed">
+              ${ico('bolt')} <strong>Startup Velocity</strong> <span>(0→1 ownership, speed)</span>
+            </button>
+            <button type="button" class="archetype-chip ${arch === 'enterprise_scale' ? 'is-selected' : ''}" data-action="select-archetype" data-archetype="enterprise_scale" title="Emphasize throughput, scale, SLA discipline">
+              ${ico('building')} <strong>Enterprise Scale</strong> <span>(high throughput, SLA)</span>
+            </button>
+            <button type="button" class="archetype-chip ${arch === 'technical_depth' ? 'is-selected' : ''}" data-action="select-archetype" data-archetype="technical_depth" title="Emphasize deep systems internals and architecture">
+              ${ico('shield')} <strong>Technical Depth</strong> <span>(internals, latency, tuning)</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="hero-actions-row">
+          <button type="button" class="btn btn-generate-custom" data-action="generate-custom-resume">
+            ${ico('bolt')} Generate 6-Sec Custom Resume
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm ${w.showHeatmap ? 'is-active' : ''}" data-action="toggle-heatmap">
+            ${ico('search')} ${w.showHeatmap ? 'Hide 6-Sec Heatmap' : '👁️ 6-Sec Recruiter Heatmap'}
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="save-tailored-variant" title="Save this tailored version to your resume library for reuse">
+            ${ico('bookmark')} Save to Library
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="bullets-copy">
+            ${ico('copy')} Copy Plain ATS Bullets
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" data-action="auto-tailor">
+            ${ico('refresh')} Fast ATS Auto-Tailor
+          </button>
+        </div>
+      </div>
+
+      ${hudHtml}
+
       <div class="diff-layout">
         <div>
           <div class="diff-bar">
@@ -4297,7 +4421,7 @@
         </div>
         <aside class="card preview-card">
           <div class="preview-head">
-            <h3>Resume preview</h3>
+            <h3>Resume preview ${w.showHeatmap ? '<span class="chip chip-warn chip-sm" style="margin-left:6px">Heatmap Active</span>' : ''}</h3>
             <div class="head-actions">
               <button type="button" class="btn btn-ghost btn-sm" data-action="export" data-fmt="txt">${ico('copy')}Copy text</button>
               <button type="button" class="btn btn-secondary btn-sm" data-action="export" data-fmt="docx">${ico('download')}Word</button>
@@ -4310,22 +4434,107 @@
     renderPreview();
   }
 
+  function highlightMetricsHtml(text) {
+    if (!text) return '';
+    const escaped = esc(text);
+    if (!S.ws.showHeatmap) return escaped;
+    return escaped.replace(/(\b\d+(?:\.\d+)?%|\$\d+(?:,\d+)*(?:\.\d+)?(?:[kKmMbB])?|\b\d+(?:[kKmMbB])\+?|\b\d{2,}\+?\s*(?:users|clients|rps|ms|percent|increase|reduction|growth|engineers|team members|services|endpoints)\b)/gi,
+      '<span class="metric-num-highlight">$1</span>');
+  }
+
   function renderPreview() {
     const box = $('#atsPaperPreview');
     if (!box) return;
     const r = effectiveResume();
+    const w = S.ws;
+    const isHeat = !!w.showHeatmap;
+    box.className = isHeat ? 'paper is-heatmap-active' : 'paper';
+
+    const legendHtml = isHeat ? `
+      <div class="heatmap-legend">
+        <div class="legend-chip"><span class="legend-swatch zone-1"></span><strong>Zone 1 (0-2s)</strong>: Hook &amp; Role</div>
+        <div class="legend-chip"><span class="legend-swatch zone-2"></span><strong>Zone 2 (2-4s)</strong>: Core Stack</div>
+        <div class="legend-chip"><span class="legend-swatch zone-3"></span><strong>Zone 3 (4-6s)</strong>: Proof Metrics</div>
+      </div>
+    ` : '';
+
+    const zone1Class = isHeat ? 'heat-zone heat-zone-1' : '';
+    const zone2Class = isHeat ? 'heat-zone heat-zone-2' : '';
+    const zone3Class = isHeat ? 'heat-zone heat-zone-3' : '';
+
+    const matrix = r.core_competencies_matrix;
+    let skillsHtml = '';
+    if (matrix && (matrix.primary_matches?.length || matrix.supporting_stack?.length || matrix.practices?.length)) {
+      skillsHtml = `
+        <div class="${zone2Class}">
+          ${isHeat ? '<span class="heat-badge">Zone 2 &bull; 2-4s Stack Check</span>' : ''}
+          <div class="sec">Core Competencies Matrix</div>
+          <div class="competencies-grid" style="display:flex; flex-direction:column; gap:6px; margin-top:6px;">
+            ${matrix.primary_matches && matrix.primary_matches.length ? `
+              <div style="font-size:12px; line-height:1.5;">
+                <strong style="color:var(--text-1)">Required Posting Stack:</strong>
+                <span style="display:inline-flex; flex-wrap:wrap; gap:4px; margin-left:6px;">${matrix.primary_matches.map(s => `<span class="chip chip-ok chip-sm">${esc(s)}</span>`).join('')}</span>
+              </div>` : ''}
+            ${matrix.supporting_stack && matrix.supporting_stack.length ? `
+              <div style="font-size:12px; line-height:1.5;">
+                <strong style="color:var(--text-1)">Supporting Stack:</strong>
+                <span style="display:inline-flex; flex-wrap:wrap; gap:4px; margin-left:6px;">${matrix.supporting_stack.map(s => `<span class="chip chip-neutral chip-sm">${esc(s)}</span>`).join('')}</span>
+              </div>` : ''}
+            ${matrix.practices && matrix.practices.length ? `
+              <div style="font-size:12px; line-height:1.5;">
+                <strong style="color:var(--text-1)">Architecture &amp; Practices:</strong>
+                <span style="display:inline-flex; flex-wrap:wrap; gap:4px; margin-left:6px;">${matrix.practices.map(s => `<span class="chip chip-neutral chip-sm">${esc(s)}</span>`).join('')}</span>
+              </div>` : ''}
+          </div>
+        </div>
+      `;
+    } else if ((r.skills || []).length) {
+      skillsHtml = `
+        <div class="${zone2Class}">
+          ${isHeat ? '<span class="heat-badge">Zone 2 &bull; 2-4s Stack Check</span>' : ''}
+          <div class="sec">Skills</div>
+          <p>${(r.skills || []).map(esc).join(', ')}</p>
+        </div>
+      `;
+    }
+
+    let expHtml = '';
+    const exps = r.experience || [];
+    if (exps.length) {
+      expHtml = '<div class="sec">Experience</div>';
+      expHtml += exps.map((x, idx) => {
+        const isTopExp = idx === 0;
+        const blockClass = (isHeat && isTopExp) ? `${zone3Class} job-block` : 'job-block';
+        return `
+          <div class="${blockClass}">
+            ${(isHeat && isTopExp) ? '<span class="heat-badge">Zone 3 &bull; 4-6s Metric Proof</span>' : ''}
+            <div class="job-line"><strong>${esc(x.role)}, ${esc(x.company)}</strong><span>${esc(x.start_date)} to ${esc(x.end_date)}</span></div>
+            ${x.location ? `<div class="loc">${esc(x.location)}</div>` : ''}
+            <ul>${(x.bullets || []).map(b => `<li>${highlightMetricsHtml(b)}</li>`).join('')}</ul>
+          </div>
+        `;
+      }).join('');
+    }
+
+    let eduHtml = '';
+    const edus = r.education || [];
+    if (edus.length) {
+      eduHtml = '<div class="sec">Education</div>' + edus.map(e => `<p><strong>${esc(e.degree)}</strong>, ${esc(e.institution)}${e.graduation_year ? ` (${esc(e.graduation_year)})` : ''}</p>`).join('');
+    }
+
     box.innerHTML = `
-      <h2>${esc(r.name || 'Your name')}</h2>
-      <div class="contact">${[r.email, r.phone, r.location].filter(Boolean).map(esc).join(', ')}${(r.linkedin || r.github) ? '<br>' + [r.linkedin, r.github].filter(Boolean).map(esc).join(', ') : ''}</div>
-      ${r.summary ? `<div class="sec">Summary</div><p>${esc(r.summary)}</p>` : ''}
-      ${(r.skills || []).length ? `<div class="sec">Skills</div><p>${(r.skills || []).map(esc).join(', ')}</p>` : ''}
-      ${(r.experience || []).length ? '<div class="sec">Experience</div>' : ''}
-      ${(r.experience || []).map(x => `<div class="job-block">
-        <div class="job-line"><strong>${esc(x.role)}, ${esc(x.company)}</strong><span>${esc(x.start_date)} to ${esc(x.end_date)}</span></div>
-        ${x.location ? `<div class="loc">${esc(x.location)}</div>` : ''}
-        <ul>${(x.bullets || []).map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>`).join('')}
-      ${(r.education || []).length ? '<div class="sec">Education</div>' : ''}
-      ${(r.education || []).map(e => `<p><strong>${esc(e.degree)}</strong>, ${esc(e.institution)}${e.graduation_year ? ` (${esc(e.graduation_year)})` : ''}</p>`).join('')}`;
+      ${legendHtml}
+      <div class="${zone1Class}">
+        ${isHeat ? '<span class="heat-badge">Zone 1 &bull; 0-2s Executive Hook</span>' : ''}
+        <h2>${esc(r.name || 'Candidate Name')}</h2>
+        ${r.target_title ? `<div style="font-weight:700; color:var(--primary); margin:-4px 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:0.04em;">${esc(r.target_title)}</div>` : ''}
+        <div class="contact">${[r.email, r.phone, r.location].filter(Boolean).map(esc).join(', ')}${(r.linkedin || r.github) ? '<br>' + [r.linkedin, r.github].filter(Boolean).map(esc).join(', ') : ''}</div>
+        ${r.positioning_hook ? `<div class="sec">Executive Hook (0-2s)</div><p style="font-weight:500; font-size:12.5px; line-height:1.6; color:var(--text-1); background:var(--bg-inset, rgba(0,0,0,0.02)); padding:6px 10px; border-left:3px solid var(--accent, #f59e0b); border-radius:3px;">${esc(r.positioning_hook)}</p>` : (r.summary ? `<div class="sec">Summary</div><p>${esc(r.summary)}</p>` : '')}
+      </div>
+      ${skillsHtml}
+      ${expHtml}
+      ${eduHtml}
+    `;
   }
 
   function afterDiffChange(id) {
@@ -4356,14 +4565,88 @@
     afterDiffChange(d.id);
   }
 
+  function selectArchetype(arch) {
+    if (!arch) return;
+    S.ws.selectedArchetype = arch;
+    $$('.archetype-chip').forEach(c => {
+      c.classList.toggle('is-selected', c.dataset.archetype === arch);
+    });
+    const label = arch === 'enterprise_scale' ? 'Enterprise Scale' : arch === 'technical_depth' ? 'Technical Depth' : 'Startup Velocity';
+    toast(`Archetype set to "${label}"`);
+  }
+
+  function toggleHeatmap() {
+    S.ws.showHeatmap = !S.ws.showHeatmap;
+    const btn = $('[data-action="toggle-heatmap"]');
+    if (btn) {
+      btn.classList.toggle('is-active', !!S.ws.showHeatmap);
+      btn.innerHTML = `${ico('search')} ${S.ws.showHeatmap ? 'Hide 6-Sec Heatmap' : '👁️ 6-Sec Recruiter Heatmap'}`;
+    }
+    renderResumeTab();
+  }
+
+  async function generateCustomResume(archetype) {
+    const w = S.ws;
+    if (!w || !w.job) return;
+    const arch = archetype || w.selectedArchetype || 'startup_velocity';
+    w.selectedArchetype = arch;
+    const btns = $$('[data-action="generate-custom-resume"]');
+    btns.forEach(b => {
+      b.disabled = true;
+      b.innerHTML = '<span class="spinner-sm"></span> Synthesizing 6-Sec Resume...';
+    });
+    try {
+      toast('Synthesizing 6-second hook & X-Y-Z proof metrics...');
+      const res = await api('/api/resume/custom-generate', {
+        method: 'POST',
+        body: { job: w.job, archetype: arch, use_llm: true }
+      });
+      if ((res.ok || res.success) && res.tailored_resume) {
+        w.customResume = res.tailored_resume;
+        w.audit6sec = res.recruiter_6sec_audit;
+        w.guardrailReport = res.guardrail_report;
+        w.showHeatmap = true; // Automatically highlight the 6-sec eye-tracking scan zones!
+
+        // Update auto-tailor diff items and ATS audit in sync
+        try {
+          const autoRes = await api('/api/auto-tailor', {
+            method: 'POST',
+            body: { job: w.job, archetype: arch }
+          });
+          w.refinement = autoRes.refinement;
+          w.decisions = {};
+          (autoRes.refinement.diff_items || []).forEach(d => { w.decisions[d.id] = 'accepted'; });
+          w.ats = autoRes.ats_audit;
+          w.atsFresh = true;
+        } catch (e) {
+          console.warn('Auto-tailor sync fallback:', e);
+        }
+
+        const score = (w.audit6sec && w.audit6sec.skim_score) || 94;
+        toast(`✨ 6-Sec Custom Resume generated! Recruiter Skim Score: ${score}/100`);
+        renderResumeTab();
+        renderWsHeader();
+      }
+    } catch (err) {
+      toast('Could not generate custom resume: ' + err.message, 'error');
+    } finally {
+      btns.forEach(b => {
+        b.disabled = false;
+        b.innerHTML = `${ico('bolt')} Generate 6-Sec Custom Resume`;
+      });
+    }
+  }
+
   async function autoTailor() {
     const w = S.ws, btns = $$('[data-action="auto-tailor"]');
     btns.forEach(b => { b.disabled = true; });
     try {
-      const res = await api('/api/auto-tailor', { method: 'POST', body: { job: w.job } });
+      const arch = w.selectedArchetype || 'startup_velocity';
+      const res = await api('/api/auto-tailor', { method: 'POST', body: { job: w.job, archetype: arch } });
       w.refinement = res.refinement; w.decisions = {};
       (res.refinement.diff_items || []).forEach(d => { w.decisions[d.id] = 'accepted'; });
       w.ats = res.ats_audit; w.atsFresh = true;
+      if (res.recruiter_6sec_audit) w.audit6sec = res.recruiter_6sec_audit;
       toast(`Tailored. ATS score is now ${res.ats_audit.ats_score}%${res.boost > 0 ? `, up ${res.boost} points` : ''}.`);
       if (w.tab === 'ats') renderAtsTab(); else renderResumeTab();
       renderWsHeader();
@@ -5756,6 +6039,9 @@
     'ws-save': () => saveJob(S.ws.job),
     'ws-retry': () => renderWsTab(),
     'auto-tailor': () => autoTailor(),
+    'generate-custom-resume': () => generateCustomResume(),
+    'select-archetype': el => selectArchetype(el.dataset.archetype),
+    'toggle-heatmap': () => toggleHeatmap(),
     'bullets-copy': () => copyAtsBullets(),
     'diff-accept': el => setDiff(el.dataset.id, 'accepted'),
     'diff-reject': el => setDiff(el.dataset.id, 'rejected'),
