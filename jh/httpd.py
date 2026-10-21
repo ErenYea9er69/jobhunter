@@ -355,7 +355,27 @@ def r_gap(q, body):
 
 @route("POST", "/api/cover-letter")
 def r_cover(q, body):
-    return {"cover_letter": refit.generate_cover_letter(_job(body), _need_profile(), body.get("tone", "direct"))}
+    job, profile = _job(body), _need_profile()
+    tone = (body.get("tone") or "direct").strip()
+    angle = (body.get("angle") or "direct_impact").strip()
+    selected_bullets = body.get("selected_bullets")
+    use_llm = body.get("use_llm", False)
+    pitch = refit.generate_cover_pitch(job, profile, tone=tone, angle=angle,
+                                       selected_bullets=selected_bullets, use_llm=use_llm)
+    return {
+        "ok": True,
+        "success": True,
+        "cover_letter": pitch["full_text"],
+        "pitch": pitch,
+        "pitch_hook": pitch.get("pitch_hook", ""),
+        "value_pillars": pitch.get("value_pillars", []),
+        "why_company": pitch.get("why_company", ""),
+        "honest_bridge": pitch.get("honest_bridge", ""),
+        "call_to_action": pitch.get("call_to_action", ""),
+        "telemetry": pitch.get("telemetry", {}),
+        "angle": angle,
+        "tone": tone
+    }
 
 
 @route("POST", "/api/interview-prep")
@@ -538,9 +558,31 @@ def r_clear(q, body):
 @route("POST", "/api/export")
 def r_export(q, body):
     fmt = (body.get("format") or "txt").lower()
-    resume = body.get("resume") or _need_profile()
     if fmt == "doc":
         fmt = "docx"
+    doc_type = body.get("type") or "resume"
+    if doc_type == "cover_letter" or "cover_letter" in body:
+        text = body.get("cover_letter") or body.get("text") or ""
+        profile = _need_profile()
+        job = body.get("job") or {}
+        if fmt == "txt":
+            return {"format": "txt", "content": text, "filename": exporters.safe_cover_name(profile, job, "txt")}
+        if fmt == "docx":
+            data = exporters.cover_letter_to_docx(text, profile, job)
+            mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        elif fmt == "pdf":
+            data = exporters.cover_letter_to_pdf(text, profile, job)
+            mime = "application/pdf"
+        else:
+            raise ApiError("format must be txt, docx, or pdf.")
+        return {
+            "format": fmt,
+            "mime": mime,
+            "content_base64": base64.b64encode(data).decode(),
+            "filename": exporters.safe_cover_name(profile, job, fmt)
+        }
+
+    resume = body.get("resume") or _need_profile()
     if fmt == "txt":
         return {"format": "txt", "content": exporters.to_txt(resume), "filename": exporters.safe_name(resume, "txt")}
     if fmt == "html":

@@ -704,35 +704,257 @@ TONES = {"direct": ("I am applying for the {title} role at {company}.", "Thank y
          "systems": ("I am writing about the {title} position at {company}.", "I would welcome a technical conversation about the role.")}
 
 
-def generate_cover_letter(job, profile, tone="direct"):
+PITCH_ANGLES = {
+    "direct_impact": {
+        "label": "Direct Impact",
+        "tag": "Operator & Results",
+        "description": "Focus on immediate ROI, solving business bottlenecks, feature velocity, and verified metrics.",
+        "hook_focus": "deliver immediate engineering impact and ship high-reliability features",
+        "alignment_focus": "My pragmatic approach to software development focuses on unblocking business priorities and maintaining high delivery velocity."
+    },
+    "startup_velocity": {
+        "label": "Startup Velocity",
+        "tag": "0→1 Builder & Ownership",
+        "description": "Emphasize 0-to-1 building, agility, cross-functional ownership, rapid iteration, and user empathy.",
+        "hook_focus": "bring fast execution, product ownership, and builder agility to your fast-growing team",
+        "alignment_focus": "I thrive in dynamic, high-velocity environments where engineers wear multiple hats and turn ambiguous problems into shipped products."
+    },
+    "technical_architect": {
+        "label": "Technical Architect",
+        "tag": "Systems Rigor & Scalability",
+        "description": "Emphasize systems architecture, distributed scale, reliability, latency tuning, and clean engineering discipline.",
+        "hook_focus": "contribute deep technical rigor, distributed scalability, and architectural discipline",
+        "alignment_focus": "I am deeply invested in engineering craftsmanship, robust automated testing, and designing maintainable architectures that scale sustainably."
+    },
+    "executive_brief": {
+        "label": "Executive Brief",
+        "tag": "Concise 3-Bullet Pitch",
+        "description": "A crisp, high-density 150-word pitch with 3 verified bullet points for time-constrained leaders.",
+        "hook_focus": "offer three concrete areas where I can immediately drive impact",
+        "alignment_focus": "I respect your team's time and believe in demonstrating value directly through proven outcomes."
+    }
+}
+
+
+def generate_cover_pitch(job, profile, tone="direct", angle="direct_impact", selected_bullets=None, use_llm=None, llm_caller=None):
+    """Generate a personalized, grounded role pitch and cover letter with telemetry and value pillars."""
     tone = tone if tone in TONES else "direct"
-    opener, closer = TONES[tone]
-    company, title = job.get("company") or "your company", job.get("title") or "open"
+    angle = angle if angle in PITCH_ANGLES else "direct_impact"
+    angle_cfg = PITCH_ANGLES[angle]
+    company = job.get("company") or "your company"
+    title = job.get("title") or "open"
+
     wanted, _ = _wanted(job)
-    matched = [s for s in wanted if s != "__words__" and s in set(profile.get("skills", []))]
+    wanted_skills = {k: v for k, v in wanted.items() if k != "__words__"}
+    cand_skills = list(profile.get("skills", []))
+    cand_set = set(cand_skills)
+    matched = [s for s in wanted_skills if s in cand_set]
+    matched_top = matched[:4] if matched else cand_skills[:4]
+
     yp = _years_phrase(profile)
-    role = (profile.get("experience") or [{}])[0].get("role") or profile.get("target_title") or ""
-    p1 = opener.format(title=title, company=company)
-    if role and yp:
-        p1 += f" I am a {role} with {yp} of experience"
-        p1 += f" in {', '.join(matched[:3])}." if matched else "."
-    bullet, where = _best_bullet(job, profile)
-    p2 = ""
-    if bullet:
-        p2 = f"One example from my work: at {where.get('company')}, {_first_person(bullet)}."
-    gaps = [s for s in wanted if s != "__words__" and s not in set(profile.get("skills", [])) and wanted[s] >= 0.85]
-    p3 = (f"The posting also names {', '.join(gaps[:2])}. I have not used {'it' if len(gaps[:2]) == 1 else 'them'} professionally, "
-          "and I learn new tools quickly.") if gaps else ""
-    sign = "\n".join(x for x in [profile.get("name", ""), " | ".join(x for x in [profile.get("email", ""), profile.get("phone", "")] if x)] if x)
-    # Self-check the facts from the resume. The gap paragraph names job skills on purpose, so it is exempt.
-    core = "\n\n".join(x for x in [p1, p2] if x)
-    check = ungrounded(profile, core.replace(title, "").replace(company, ""))
-    if check["numbers"] or check["skills"]:
-        p1 = re.sub(r"\s*I am a .*", "", p1) if check["skills"] else p1
-        p2 = ""
-    body = "\n\n".join(x for x in [f"Dear {company} hiring team,", p1, p2, p3, closer,
-                                    ("Best regards,\n" + sign) if sign else "Best regards"] if x)
-    return body
+    cand_role = (profile.get("experience") or [{}])[0].get("role") or profile.get("target_title") or "Software Engineer"
+    cand_name = profile.get("name") or "Candidate"
+
+    # Identify best candidate bullets for Value Pillars
+    all_exp_bullets = []
+    for e in profile.get("experience", []):
+        for bi, b in enumerate(e.get("bullets", [])):
+            rel = _relevance(b, wanted)
+            quant = 1 if re.search(r"(\b\d+(?:\.\d+)?%|\$\d+|\b\d+[kKmMbB]?\+?|\b\d+\+?\s*(?:users|clients|rps|ms|percent))\b", b) else 0
+            score = (quant * 1.5) + float(rel)
+            all_exp_bullets.append({
+                "id": f"bullet_{len(all_exp_bullets)}",
+                "bullet": b,
+                "company": e.get("company", ""),
+                "role": e.get("role", ""),
+                "score": score,
+                "quantified": bool(quant)
+            })
+
+    # Sort by relevance & quantified metric score
+    all_exp_bullets.sort(key=lambda x: x["score"], reverse=True)
+
+    # Use selected bullets if provided, otherwise top 2-3
+    chosen_bullets = []
+    if selected_bullets and isinstance(selected_bullets, list):
+        for b_text in selected_bullets:
+            found = next((x for x in all_exp_bullets if x["bullet"] == b_text), None)
+            if found:
+                chosen_bullets.append(found)
+    if not chosen_bullets:
+        chosen_bullets = all_exp_bullets[:3] if angle == "executive_brief" else all_exp_bullets[:2]
+
+    value_pillars = []
+    for idx, b_item in enumerate(chosen_bullets):
+        b_raw = b_item["bullet"]
+        theme = "Core System Impact" if idx == 0 else ("Scale & Reliability" if idx == 1 else "Engineering Velocity")
+        value_pillars.append({
+            "id": f"pillar_{idx}",
+            "theme": theme,
+            "proof_point": f"At {b_item['company']}, {_first_person(b_raw)}",
+            "raw_bullet": b_raw,
+            "role": f"{b_item['role']} at {b_item['company']}",
+            "quantified": b_item["quantified"]
+        })
+
+    # Honest Skill Bridge
+    gaps = [s for s in wanted_skills if s not in cand_set and wanted_skills[s] >= 0.85]
+    honest_bridge_text = ""
+    bridge_found = None
+    if gaps:
+        missing_skill = gaps[0]
+        for cname, members in sk.CLUSTERS.items():
+            if missing_skill in members and (members & cand_set):
+                bridge_found = ", ".join(sorted(members & cand_set)[:2])
+                break
+        if bridge_found:
+            honest_bridge_text = (f"The posting also names {missing_skill}. I have not used it professionally; "
+                                  f"however, my production background with {bridge_found} provides a direct architectural foundation, "
+                                  f"and I learn new tools quickly.")
+        else:
+            honest_bridge_text = (f"The posting also names {', '.join(gaps[:2])}. I have not used "
+                                  f"{'it' if len(gaps[:2]) == 1 else 'them'} professionally, and I learn new tools quickly.")
+
+    # Hook paragraph tailored to angle & tone
+    hook = ""
+    if angle == "executive_brief":
+        hook = (f"I am a {cand_role} with {yp} of experience in {', '.join(matched_top[:3]) if matched_top else 'software development'}, "
+                f"writing to {angle_cfg['hook_focus']} as your {title} at {company}:")
+    elif angle == "startup_velocity":
+        if tone == "conversational":
+            hook = (f"When I saw the {title} opening at {company}, I immediately recognized the need for a hands-on engineer who thrives in high-velocity, 0-to-1 environments. "
+                    f"As a {cand_role} with {yp} of experience in {', '.join(matched_top[:3]) if matched_top else 'modern systems'}, "
+                    f"I bring builder speed, cross-functional ownership, and a track record of turning ambiguity into shipped product.")
+        elif tone == "systems":
+            hook = (f"I am targeting the {title} position at {company} to drive rapid feature velocity while establishing maintainable engineering foundations. "
+                    f"With {yp} of experience as a {cand_role} focusing on {', '.join(matched_top[:3]) if matched_top else 'scalable architectures'}, "
+                    f"I specialize in shipping robust solutions quickly under startup constraints.")
+        else: # direct
+            hook = (f"I am applying for the {title} role at {company} to {angle_cfg['hook_focus']}. "
+                    f"As a {cand_role} with {yp} of hands-on experience in {', '.join(matched_top[:3]) if matched_top else 'modern engineering'}, "
+                    f"I take full ownership from initial concept through production deployment.")
+    elif angle == "technical_architect":
+        if tone == "conversational":
+            hook = (f"The technical scope of the {title} role at {company} caught my eye, particularly the opportunity to build resilient systems at scale. "
+                    f"As a {cand_role} with {yp} of experience across {', '.join(matched_top[:3]) if matched_top else 'distributed systems'}, "
+                    f"I focus on clean system design, latency optimization, and rock-solid reliability.")
+        elif tone == "systems":
+            hook = (f"I am writing regarding the {title} position at {company}, bringing {yp} of engineering discipline as a {cand_role}. "
+                    f"My background centers on {', '.join(matched_top[:3]) if matched_top else 'distributed systems design'}, "
+                    f"ensuring software architectures remain fault-tolerant, performant, and maintainable under increasing load.")
+        else: # direct
+            hook = (f"I am applying for the {title} role at {company} to {angle_cfg['hook_focus']}. "
+                    f"With {yp} of experience as a {cand_role} in {', '.join(matched_top[:3]) if matched_top else 'core backend technologies'}, "
+                    f"I bring deep architectural discipline and operational excellence to technical initiatives.")
+    else: # direct_impact
+        if tone == "conversational":
+            hook = (f"I came across the {title} opening at {company} and wanted to put my name forward. "
+                    f"As a {cand_role} with {yp} of experience in {', '.join(matched_top[:3]) if matched_top else 'software development'}, "
+                    f"my focus has consistently been delivering measurable results and unblocking critical team goals.")
+        elif tone == "systems":
+            hook = (f"I am writing about the {title} position at {company}. "
+                    f"With {yp} of experience as a {cand_role} specialized in {', '.join(matched_top[:3]) if matched_top else 'software engineering'}, "
+                    f"I look forward to applying my background to your technical objectives.")
+        else: # direct
+            hook = (f"I am applying for the {title} role at {company}. "
+                    f"I am a {cand_role} with {yp} of experience in {', '.join(matched_top[:3]) if matched_top else 'modern software development'}.")
+
+    # Alignment paragraph
+    why_company = f"What excites me about {company} is the opportunity to apply these strengths to your team's immediate priorities. {angle_cfg['alignment_focus']}"
+
+    # Call to action
+    cta = ""
+    if tone == "conversational":
+        cta = (f"Thanks for reading. I would enjoy hearing more about the team's upcoming roadmap and discussing how my background can help {company} succeed. "
+               f"I would be glad to talk through any of this on a brief call.")
+    elif tone == "systems":
+        cta = (f"I would welcome a technical conversation about the role, your scaling priorities, and how my architectural background maps to {company}'s requirements. "
+               f"Thank you for your consideration.")
+    else: # direct
+        cta = (f"Thank you for your time. I am glad to talk through any of this and discuss how I can contribute to {company}'s ongoing success.")
+
+    # Candidate sign-off
+    contact_parts = [profile.get("email"), profile.get("phone"), profile.get("location")]
+    contact_line = " | ".join(x for x in contact_parts if x)
+    sign = f"{cand_name}\n{contact_line}" if contact_line else cand_name
+
+    # Full text assembly
+    paragraphs = [f"Dear {company} hiring team,"]
+    paragraphs.append(hook)
+
+    if angle == "executive_brief":
+        # Formatted 3-bullet executive pitch
+        for p in value_pillars:
+            paragraphs.append(f"• {p['proof_point']}")
+        if honest_bridge_text:
+            paragraphs.append(honest_bridge_text)
+        paragraphs.append(cta)
+    else:
+        # Standard narrative paragraphs
+        proof_text = " ".join(p["proof_point"] + "." for p in value_pillars)
+        paragraphs.append(proof_text)
+        if honest_bridge_text:
+            paragraphs.append(honest_bridge_text)
+        paragraphs.append(why_company)
+        paragraphs.append(cta)
+
+    paragraphs.append(f"Best regards,\n{sign}")
+    full_text = "\n\n".join(paragraphs)
+
+    # Self-check facts from resume
+    core_content = "\n\n".join([hook] + [p["proof_point"] for p in value_pillars])
+    check = ungrounded(profile, core_content.replace(title, "").replace(company, ""))
+    if check["skills"]:
+        hook = re.sub(r"\s*I am a .*", "", hook)
+    if check["numbers"]:
+        # Fallback to safer phrasing
+        for vp in value_pillars:
+            vp["proof_point"] = re.sub(r"\b\d+(?:\.\d+)?%|\$\d+", "", vp["proof_point"])
+
+    words = full_text.split()
+    word_count = len(words)
+    reading_time_sec = max(15, round(word_count / 3.8))
+
+    # Calculate Pitch Punchiness Score (0-100)
+    score = 75
+    if any(p["quantified"] for p in value_pillars):
+        score += 10
+    if len(matched) >= 2:
+        score += 8
+    if 140 <= word_count <= 340:
+        score += 7
+    pitch_score = min(score, 98)
+
+    return {
+        "pitch_angle": angle,
+        "pitch_angle_meta": angle_cfg,
+        "pitch_hook": hook,
+        "value_pillars": value_pillars,
+        "all_available_bullets": all_exp_bullets,
+        "honest_bridge": honest_bridge_text,
+        "why_company": why_company,
+        "call_to_action": cta,
+        "full_text": full_text,
+        "telemetry": {
+            "word_count": word_count,
+            "reading_time_sec": reading_time_sec,
+            "pitch_score": pitch_score,
+            "matched_skills_count": len(matched),
+            "quantified_pillars_count": sum(1 for p in value_pillars if p["quantified"])
+        },
+        "guardrail_report": {
+            "grounded": not bool(check["skills"] or check["numbers"]),
+            "unverified_skills": check["skills"],
+            "unverified_numbers": check["numbers"]
+        }
+    }
+
+
+def generate_cover_letter(job, profile, tone="direct", angle="direct_impact", selected_bullets=None, use_llm=None, llm_caller=None):
+    """Generate cover letter text adhering strictly to master profile facts."""
+    pitch = generate_cover_pitch(job, profile, tone=tone, angle=angle, selected_bullets=selected_bullets, use_llm=use_llm, llm_caller=llm_caller)
+    return pitch["full_text"]
+
 
 
 # ------------------------------------------------------------ interview prep

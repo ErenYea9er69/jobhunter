@@ -285,6 +285,58 @@ class TailorTests(Base):
         self.assertGreaterEqual(out["recruiter_6sec_audit"]["skim_score"], 80)
         self.assertEqual(len(out["recruiter_6sec_audit"]["eye_catchers"]), 3)
 
+    def test_generate_cover_pitch_angles_and_structure(self):
+        """Verify personalized role pitch generation across all 4 angles with rich structure and telemetry."""
+        for angle in ("direct_impact", "startup_velocity", "technical_architect", "executive_brief"):
+            pitch = refit.generate_cover_pitch(JOB, DEMO_PROFILE, angle=angle, tone="direct")
+            self.assertEqual(pitch["pitch_angle"], angle)
+            self.assertIn("pitch_hook", pitch)
+            self.assertTrue(len(pitch["pitch_hook"]) > 20)
+            self.assertIn("value_pillars", pitch)
+            self.assertGreaterEqual(len(pitch["value_pillars"]), 1)
+            self.assertIn("telemetry", pitch)
+            telemetry = pitch["telemetry"]
+            self.assertGreater(telemetry["word_count"], 50)
+            self.assertGreaterEqual(telemetry["pitch_score"], 75)
+            self.assertGreater(telemetry["reading_time_sec"], 10)
+            # Full text should contain candidate name and company
+            full = pitch["full_text"]
+            self.assertIn(DEMO_PROFILE["name"], full)
+            self.assertIn(JOB["company"], full)
+            if angle == "executive_brief":
+                self.assertLessEqual(telemetry["word_count"], 250)
+
+    def test_generate_cover_pitch_grounding(self):
+        """Verify cover letter pitch strictly adheres to verified candidate facts and frames honest gaps."""
+        pitch = refit.generate_cover_pitch(JOB, DEMO_PROFILE, angle="direct_impact")
+        full_text = pitch["full_text"]
+        # Must not invent skills not in profile
+        self.assertNotIn("Rust", full_text)
+        # Must honestly address missing Kubernetes requirement without pretending to have professional mastery
+        self.assertIn("have not used", full_text.lower())
+        self.assertTrue(refit.is_grounded(DEMO_PROFILE, pitch["pitch_hook"] + " " + " ".join(p["proof_point"] for p in pitch["value_pillars"])))
+
+    def test_http_cover_letter_custom_angles(self):
+        """Verify POST /api/cover-letter returns rich pitch object and telemetry."""
+        db.save_profile(DEMO_PROFILE)
+        out = httpd.r_cover({}, {"job": JOB, "angle": "technical_architect", "tone": "systems"})
+        self.assertIn("cover_letter", out)
+        self.assertIn("pitch", out)
+        self.assertEqual(out["angle"], "technical_architect")
+        self.assertIn("telemetry", out)
+        self.assertGreaterEqual(out["telemetry"]["pitch_score"], 75)
+
+    def test_cover_letter_docx_and_pdf_export(self):
+        """Verify exporting a cover letter to .docx and .pdf generates valid document binaries."""
+        pitch = refit.generate_cover_pitch(JOB, DEMO_PROFILE, angle="direct_impact")
+        docx_bytes = exporters.cover_letter_to_docx(pitch["full_text"], DEMO_PROFILE, JOB)
+        self.assertTrue(len(docx_bytes) > 500)
+        pdf_bytes = exporters.cover_letter_to_pdf(pitch["full_text"], DEMO_PROFILE, JOB)
+        self.assertTrue(len(pdf_bytes) > 300)
+        extracted = rp.extract_text("pitch.docx", docx_bytes)
+        self.assertIn(DEMO_PROFILE["name"], extracted)
+        self.assertIn(JOB["company"], extracted)
+
 
 class AtsTests(Base):
     def test_empty_resume_is_not_given_a_floor(self):

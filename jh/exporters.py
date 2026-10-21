@@ -229,3 +229,117 @@ def to_pdf(r):
 def safe_name(r, ext):
     base = re.sub(r"[^A-Za-z0-9_-]+", "_", (r.get("name") or "resume").strip()) or "resume"
     return f"{base}_Resume.{ext}"
+
+
+def cover_letter_to_docx(text, profile, job):
+    e = lambda s: html.escape(s or "", quote=False)
+    name = profile.get("name") or "Candidate"
+    contact = " | ".join(x for x in [profile.get("email"), profile.get("phone"), profile.get("location")] if x)
+    company = job.get("company") or "Employer"
+    title = job.get("title") or "Position"
+
+    def para(t, bold=False, size=22, align=None, border=False, space_after=120):
+        ppr = f'<w:spacing w:after="{space_after}"/>'
+        if align:
+            ppr += f'<w:jc w:val="{align}"/>'
+        if border:
+            ppr += '<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="222222"/></w:pBdr>'
+        rpr = f'<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>{"<w:b/>" if bold else ""}<w:sz w:val="{size}"/>'
+        return f'<w:p><w:pPr>{ppr}</w:pPr><w:r><w:rPr>{rpr}</w:rPr><w:t xml:space="preserve">{e(t)}</w:t></w:r></w:p>'
+
+    body = [
+        para(name, bold=True, size=32, align="left", space_after=40),
+        para(contact, bold=False, size=18, align="left", border=True, space_after=180),
+        para(f"Re: Application for {title} Role at {company}", bold=True, size=22, space_after=160),
+    ]
+    for p in text.split("\n\n"):
+        p_clean = p.strip()
+        if p_clean:
+            body.append(para(p_clean, bold=False, size=21, space_after=140))
+
+    doc = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+           f'<w:body>{"".join(body)}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>')
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                   '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                   '<Default Extension="xml" ContentType="application/xml"/>'
+                   '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')
+        z.writestr("_rels/.rels", '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                   '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
+        z.writestr("word/document.xml", doc)
+    return buf.getvalue()
+
+
+def cover_letter_to_pdf(text, profile, job):
+    PW, PH, M = 612, 792, 54
+    pages, cmds, y = [], [], PH - M
+    name = profile.get("name") or "Candidate"
+    contact = " | ".join(x for x in [profile.get("email"), profile.get("phone"), profile.get("location")] if x)
+    company = job.get("company") or "Employer"
+    title = job.get("title") or "Position"
+
+    def new_page():
+        nonlocal cmds, y
+        if cmds:
+            pages.append(cmds)
+        cmds, y = [], PH - M
+
+    def text_cmd(s, size, bold=False, x=M):
+        nonlocal y
+        font = "F2" if bold else "F1"
+        cmds.append(f"BT /{font} {size} Tf {x:.1f} {y:.1f} Td {_pdf_str(s)} Tj ET")
+
+    def line(s, size=10, bold=False, gap=3.0):
+        nonlocal y
+        for part in _wrap(s, size, PW - 2 * M):
+            if y < M + size:
+                new_page()
+            text_cmd(part, size, bold=bold)
+            y -= (size + gap)
+
+    line(name, size=18, bold=True, gap=3)
+    if contact:
+        line(contact, size=9.5, bold=False, gap=6)
+    cmds.append(f"{M} {y:.1f} m {PW - M} {y:.1f} l 0.7 w S")
+    y -= 14
+    line(f"Re: Application for {title} Role at {company}", size=11, bold=True, gap=10)
+
+    for p in text.split("\n\n"):
+        p_clean = p.strip()
+        if p_clean:
+            for l in p_clean.split("\n"):
+                line(l.strip(), size=10, bold=False, gap=3.5)
+            y -= 8
+
+    pages.append(cmds)
+    objs = [b"<< /Type /Catalog /Pages 2 0 R >>", None,
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"]
+    kids = []
+    for pc in pages:
+        stream = "\n".join(pc).encode("cp1252", errors="replace")
+        content_id = len(objs) + 2
+        page_id = len(objs) + 1
+        objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PW} {PH}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {content_id} 0 R >>".encode())
+        objs.append(b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream")
+        kids.append(f"{page_id} 0 R")
+    objs[1] = f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(kids)} >>".encode()
+    out = io.BytesIO()
+    out.write(b"%PDF-1.4\n")
+    offs = []
+    for i, o in enumerate(objs, 1):
+        offs.append(out.tell())
+        out.write(f"{i} 0 obj\n".encode() + o + b"\nendobj\n")
+    xref = out.tell()
+    out.write(f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode())
+    for o in offs:
+        out.write(f"{o:010d} 00000 n \n".encode())
+    out.write(f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode())
+    return out.getvalue()
+
+
+def safe_cover_name(r, job, ext):
+    base = re.sub(r"[^A-Za-z0-9_-]+", "_", (r.get("name") or "candidate").strip()) or "candidate"
+    comp = re.sub(r"[^A-Za-z0-9_-]+", "_", (job.get("company") or "company").strip()) or "company"
+    return f"{base}_{comp}_Cover_Letter.{ext}"
