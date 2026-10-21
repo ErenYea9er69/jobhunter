@@ -5938,13 +5938,13 @@
   }
 
   const AI_PROVIDER_LABELS = {
-    gemini: { label: 'Google Gemini API Key', placeholder: 'AIzaSy...', defaultModel: 'gemini-2.0-flash' },
+    gemini: { label: 'Google Gemini API Key', placeholder: 'AIzaSy...', defaultModel: 'gemini-2.5-flash' },
     openai: { label: 'OpenAI API Key', placeholder: 'sk-proj-...', defaultModel: 'gpt-4o-mini' },
-    anthropic: { label: 'Anthropic Claude API Key', placeholder: 'sk-ant-...', defaultModel: 'claude-3-5-sonnet-20241022' },
+    anthropic: { label: 'Anthropic Claude API Key', placeholder: 'sk-ant-...', defaultModel: 'claude-3-7-sonnet-20250219' },
     deepseek: { label: 'DeepSeek API Key', placeholder: 'sk-...', defaultModel: 'deepseek-chat' },
     groq: { label: 'Groq Cloud API Key', placeholder: 'gsk_...', defaultModel: 'llama-3.3-70b-versatile' },
-    mistral: { label: 'Mistral AI API Key', placeholder: '...', defaultModel: 'mistral-small-latest' },
-    ollama: { label: '', placeholder: '', defaultModel: 'llama3:latest' },
+    mistral: { label: 'Mistral AI API Key', placeholder: '...', defaultModel: 'mistral-large-latest' },
+    ollama: { label: '', placeholder: '', defaultModel: 'llama3.3' },
     custom: { label: 'Custom / OpenRouter API Key', placeholder: 'sk-or-...', defaultModel: '' }
   };
 
@@ -6051,7 +6051,7 @@
       modelField.hidden = false;
       ollamaField.hidden = false;
       if (customField) customField.hidden = true;
-      if (modelInput) modelInput.placeholder = 'llama3:latest or mistral:latest';
+      if (modelInput) modelInput.placeholder = 'llama3.3 or deepseek-r1:8b';
     } else if (provider === 'custom') {
       keyField.hidden = false;
       modelField.hidden = false;
@@ -6059,7 +6059,7 @@
       if (customField) customField.hidden = false;
       if (keyLabel) keyLabel.textContent = 'Custom API Key (or OpenRouter Key)';
       if (keyInput) keyInput.placeholder = 'sk-... (optional if keyless)';
-      if (modelInput) modelInput.placeholder = 'e.g. anthropic/claude-3.5-sonnet';
+      if (modelInput) modelInput.placeholder = 'e.g. anthropic/claude-3.7-sonnet';
     } else {
       keyField.hidden = false;
       modelField.hidden = false;

@@ -1474,14 +1474,14 @@
               <label for="aiProviderSelect">Active AI Provider</label>
               <select id="aiProviderSelect">
                 <option value="deterministic">Local Deterministic Engine (Fast, 100% Free, Zero Hallucinations)</option>
-                <option value="gemini">Google Gemini (Gemini 2.0 / 1.5 Flash, Pro)</option>
-                <option value="openai">OpenAI (GPT-4o Mini / GPT-4o / o3-mini)</option>
-                <option value="anthropic">Anthropic Claude (Claude 3.5 Sonnet / Haiku)</option>
-                <option value="deepseek">DeepSeek (DeepSeek-V3 / DeepSeek-R1)</option>
-                <option value="groq">Groq Cloud (Llama 3.3 70B Ultra-Fast)</option>
-                <option value="mistral">Mistral AI (Mistral Large / Small / Codestral)</option>
-                <option value="ollama">Ollama (Local Self-Hosted LLM)</option>
-                <option value="custom">Custom OpenAI-Compatible (OpenRouter, Azure, LM Studio)</option>
+                <option value="gemini">Google Gemini (Gemini 2.5 Flash, 2.5 Pro, 2.5 Flash-Lite)</option>
+                <option value="openai">OpenAI (GPT-4o Mini, GPT-4o, GPT-4.5, o3-mini)</option>
+                <option value="anthropic">Anthropic Claude (Claude 3.7 Sonnet Hybrid Reasoning, 3.5 Haiku)</option>
+                <option value="deepseek">DeepSeek (DeepSeek-V4 Flash / Chat, DeepSeek-V4 Pro / Reasoner)</option>
+                <option value="groq">Groq Cloud (Llama 3.3 70B, GPT-OSS 120B, Llama 3.1 8B Instant)</option>
+                <option value="mistral">Mistral AI (Mistral Large 4, Mistral Small 4, Codestral)</option>
+                <option value="ollama">Ollama (Local Self-Hosted: Llama 3.3, DeepSeek-R1, Qwen 2.5)</option>
+                <option value="custom">Custom OpenAI-Compatible (OpenRouter, Azure, LM Studio, vLLM)</option>
               </select>
             </div>
             <div class="form-field span-2" id="aiKeyField" hidden>
@@ -2485,6 +2485,6 @@
 
   <div class="toasts" id="toastContainer" role="status" aria-live="polite"></div>
 
-  <script src="app.js?v=4.6"></script>
+  <script src="app.js?v=4.7"></script>
 </body>
 </html>

@@ -179,11 +179,11 @@ def get_active_ai_config():
     if prov == "deterministic":
         return {"provider": "deterministic", "model": "", "key": "", "endpoint": ""}
     if prov == "gemini" and gemini_key:
-        return {"provider": "gemini", "model": model or "gemini-2.0-flash", "key": gemini_key, "endpoint": ""}
+        return {"provider": "gemini", "model": model or "gemini-2.5-flash", "key": gemini_key, "endpoint": ""}
     if prov == "openai" and openai_key:
         return {"provider": "openai", "model": model or "gpt-4o-mini", "key": openai_key, "endpoint": ""}
     if prov == "anthropic" and anthropic_key:
-        return {"provider": "anthropic", "model": model or "claude-3-5-sonnet-20241022", "key": anthropic_key, "endpoint": ""}
+        return {"provider": "anthropic", "model": model or "claude-3-7-sonnet-20250219", "key": anthropic_key, "endpoint": ""}
     if prov == "deepseek" and deepseek_key:
         return {"provider": "deepseek", "model": model or "deepseek-chat", "key": deepseek_key, "endpoint": "https://api.deepseek.com/chat/completions"}
     if prov == "groq" and groq_key:
@@ -191,17 +191,17 @@ def get_active_ai_config():
     if prov == "mistral" and mistral_key:
         return {"provider": "mistral", "model": model or "mistral-large-latest", "key": mistral_key, "endpoint": "https://api.mistral.ai/v1/chat/completions"}
     if prov == "ollama":
-        return {"provider": "ollama", "model": model or "llama3.2", "key": "", "endpoint": ollama_url}
+        return {"provider": "ollama", "model": model or "llama3.3", "key": "", "endpoint": ollama_url}
     if prov == "custom" and (custom_url or custom_key):
         return {"provider": "custom", "model": model or "default", "key": custom_key, "endpoint": custom_url}
 
     # Auto-detection based on configured keys
     if gemini_key:
-        return {"provider": "gemini", "model": model or "gemini-2.0-flash", "key": gemini_key, "endpoint": ""}
+        return {"provider": "gemini", "model": model or "gemini-2.5-flash", "key": gemini_key, "endpoint": ""}
     if openai_key:
         return {"provider": "openai", "model": model or "gpt-4o-mini", "key": openai_key, "endpoint": ""}
     if anthropic_key:
-        return {"provider": "anthropic", "model": model or "claude-3-5-sonnet-20241022", "key": anthropic_key, "endpoint": ""}
+        return {"provider": "anthropic", "model": model or "claude-3-7-sonnet-20250219", "key": anthropic_key, "endpoint": ""}
     if deepseek_key:
         return {"provider": "deepseek", "model": model or "deepseek-chat", "key": deepseek_key, "endpoint": "https://api.deepseek.com/chat/completions"}
     if groq_key:
@@ -224,7 +224,7 @@ def _call_llm(system, user, cfg=None):
 
     if prov == "gemini":
         key = cfg["key"]
-        model = cfg["model"] or "gemini-2.0-flash"
+        model = cfg["model"] or "gemini-2.5-flash"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
         body = json.dumps({
             "contents": [{"role": "user", "parts": [{"text": f"{system}\n\nTask:\n{user}"}]}],
@@ -277,7 +277,7 @@ def _call_llm(system, user, cfg=None):
 
     elif prov == "anthropic":
         key = cfg["key"]
-        model = cfg["model"] or "claude-3-5-sonnet-20241022"
+        model = cfg["model"] or "claude-3-7-sonnet-20250219"
         url = "https://api.anthropic.com/v1/messages"
         body = json.dumps({
             "model": model,
@@ -295,7 +295,7 @@ def _call_llm(system, user, cfg=None):
         ep = (cfg.get("endpoint") or "http://127.0.0.1:11434").rstrip("/")
         url = f"{ep}/api/generate"
         body = json.dumps({
-            "model": cfg["model"] or "llama3.2",
+            "model": cfg["model"] or "llama3.3",
             "prompt": f"{system}\n\n{user}",
             "stream": False
         }).encode()
