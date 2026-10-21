@@ -359,7 +359,7 @@ def r_cover(q, body):
     tone = (body.get("tone") or "direct").strip()
     angle = (body.get("angle") or "direct_impact").strip()
     selected_bullets = body.get("selected_bullets")
-    use_llm = body.get("use_llm", False)
+    use_llm = body.get("use_llm")
     pitch = refit.generate_cover_pitch(job, profile, tone=tone, angle=angle,
                                        selected_bullets=selected_bullets, use_llm=use_llm)
     return {
@@ -374,7 +374,10 @@ def r_cover(q, body):
         "call_to_action": pitch.get("call_to_action", ""),
         "telemetry": pitch.get("telemetry", {}),
         "angle": angle,
-        "tone": tone
+        "tone": tone,
+        "provider": pitch.get("provider", "deterministic"),
+        "model": pitch.get("model", ""),
+        "used_llm": pitch.get("used_llm", False)
     }
 
 
@@ -487,7 +490,9 @@ def r_digest_send(q, body):
 @route("GET", "/api/settings")
 def r_get_settings(q, body):
     allowed = {"digest_min_score", "digest_email", "adzuna_app_id", "adzuna_app_key",
-               "ai_provider", "gemini_api_key", "openai_api_key", "anthropic_api_key", "ai_model", "ollama_endpoint",
+               "ai_provider", "gemini_api_key", "openai_api_key", "anthropic_api_key",
+               "deepseek_api_key", "groq_api_key", "mistral_api_key", "custom_ai_key", "custom_ai_endpoint",
+               "ai_model", "ollama_endpoint",
                "max_scored_jobs", "max_results", "linkedin_scrape_depth", "user_country", "include_worldwide_remote"}
     out = {}
     with db.session() as c:
@@ -498,6 +503,16 @@ def r_get_settings(q, body):
     out["active_provider"] = cfg["provider"]
     out["active_model"] = cfg["model"]
     out["llm_available"] = refit.llm_available()
+    out["env_keys"] = {
+        "gemini": bool(config.GEMINI_API_KEY),
+        "openai": bool(config.OPENAI_API_KEY),
+        "anthropic": bool(config.ANTHROPIC_API_KEY),
+        "deepseek": bool(config.DEEPSEEK_API_KEY),
+        "groq": bool(config.GROQ_API_KEY),
+        "mistral": bool(config.MISTRAL_API_KEY),
+        "custom": bool(config.CUSTOM_AI_KEY or config.CUSTOM_AI_ENDPOINT),
+        "ollama": bool(config.OLLAMA_ENDPOINT)
+    }
     out.setdefault("max_scored_jobs", str(config.get_max_scored_jobs()))
     out.setdefault("max_results", str(config.get_max_results()))
     out.setdefault("linkedin_scrape_depth", config.get_linkedin_scrape_depth())
@@ -509,7 +524,9 @@ def r_get_settings(q, body):
 @route("POST", "/api/settings")
 def r_settings(q, body):
     allowed = {"digest_min_score", "digest_email", "adzuna_app_id", "adzuna_app_key",
-               "ai_provider", "gemini_api_key", "openai_api_key", "anthropic_api_key", "ai_model", "ollama_endpoint",
+               "ai_provider", "gemini_api_key", "openai_api_key", "anthropic_api_key",
+               "deepseek_api_key", "groq_api_key", "mistral_api_key", "custom_ai_key", "custom_ai_endpoint",
+               "ai_model", "ollama_endpoint",
                "max_scored_jobs", "max_results", "linkedin_scrape_depth", "user_country", "include_worldwide_remote"}
     for k, v in body.items():
         if k in allowed:
@@ -520,14 +537,23 @@ def r_settings(q, body):
 @route("POST", "/api/test-ai")
 def r_test_ai(q, body):
     t0 = time.time()
-    cfg = refit.get_active_ai_config()
+    cfg = dict(refit.get_active_ai_config())
+    if body and body.get("ai_provider"):
+        p = body["ai_provider"].lower()
+        cfg["provider"] = p
+        if body.get("ai_key"):
+            cfg["key"] = body["ai_key"].strip()
+        if body.get("ai_model"):
+            cfg["model"] = body["ai_model"].strip()
+        if body.get("endpoint"):
+            cfg["endpoint"] = body["endpoint"].strip()
     if cfg["provider"] == "deterministic":
         return {"success": True, "provider": "deterministic", "latency_ms": 1,
                 "message": "Deterministic engine active (100% local, fast, zero cost, 0 hallucinations)."}
     try:
         reply = refit._call_llm("You are an assistant. Reply with 'OK'.", "Ping", cfg)
         ms = int((time.time() - t0) * 1000)
-        return {"success": True, "provider": cfg["provider"], "model": cfg["model"], "latency_ms": ms,
+        return {"success": True, "provider": cfg["provider"], "model": cfg.get("model", ""), "latency_ms": ms,
                 "message": f"Successfully connected to {cfg['provider'].title()} in {ms}ms."}
     except Exception as e:
         return {"success": False, "provider": cfg["provider"], "error": str(e),

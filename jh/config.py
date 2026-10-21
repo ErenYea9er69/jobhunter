@@ -99,11 +99,16 @@ ADZUNA_COUNTRY = os.environ.get("JH_ADZUNA_COUNTRY", "us")
 ADZUNA_APP_ID = os.environ.get("ADZUNA_APP_ID", "")
 ADZUNA_APP_KEY = os.environ.get("ADZUNA_APP_KEY", "")
 
-# Optional LLM for tailoring and strategy. Without a key the app uses the deterministic engine.
+# Optional LLM for tailoring, cover letters, and strategy. Without a key the app uses the deterministic engine.
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-AI_PROVIDER = os.environ.get("JH_AI_PROVIDER", "auto")  # "auto", "gemini", "openai", "anthropic", "ollama", "deterministic"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
+CUSTOM_AI_KEY = os.environ.get("JH_CUSTOM_AI_KEY", "")
+CUSTOM_AI_ENDPOINT = os.environ.get("JH_CUSTOM_AI_ENDPOINT") or os.environ.get("JH_LLM_BASE_URL", "")
+AI_PROVIDER = os.environ.get("JH_AI_PROVIDER", "auto")  # "auto", "gemini", "openai", "anthropic", "deepseek", "groq", "mistral", "ollama", "custom", "deterministic"
 LLM_MODEL = os.environ.get("JH_LLM_MODEL", "")
 LLM_TIMEOUT_SECONDS = float(os.environ.get("JH_LLM_TIMEOUT", "40"))
 OLLAMA_ENDPOINT = os.environ.get("JH_OLLAMA_ENDPOINT", "http://127.0.0.1:11434")

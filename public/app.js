@@ -4823,7 +4823,12 @@
 
     $('#wsPanel').innerHTML = `
       <div class="cover-studio-hero">
-        <div class="cover-hero-tag">🎯 ROLE PITCH ENGINE &bull; PERSONALIZED FOR THIS ROLE</div>
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+          <div class="cover-hero-tag">🎯 ROLE PITCH ENGINE &bull; PERSONALIZED FOR THIS ROLE</div>
+          <a href="#/privacy" class="chip ${pitch.used_llm ? 'chip-ok' : 'chip-soft'}" style="text-decoration:none; cursor:pointer;" title="Configure AI Provider & API keys in Settings">
+            ${ico('sparkles')} <strong>Engine:</strong> ${esc(pitch.used_llm ? ((pitch.provider || 'AI').toUpperCase() + (pitch.model ? ' (' + pitch.model + ')' : '')) : 'Deterministic Grounded Engine')} &bull; Settings &rarr;
+          </a>
+        </div>
         <h2 class="cover-hero-title">AI Cover Letter &amp; Executive Role Pitch</h2>
         <p class="cover-hero-sub">Engineered to hook hiring managers and founders. Automatically pairs verified achievements from your career directly with ${esc(j.company || 'the employer')}'s biggest challenges — 100% grounded on real resume facts.</p>
 
@@ -5932,9 +5937,21 @@
     } catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
   }
 
+  const AI_PROVIDER_LABELS = {
+    gemini: { label: 'Google Gemini API Key', placeholder: 'AIzaSy...', defaultModel: 'gemini-2.0-flash' },
+    openai: { label: 'OpenAI API Key', placeholder: 'sk-proj-...', defaultModel: 'gpt-4o-mini' },
+    anthropic: { label: 'Anthropic Claude API Key', placeholder: 'sk-ant-...', defaultModel: 'claude-3-5-sonnet-20241022' },
+    deepseek: { label: 'DeepSeek API Key', placeholder: 'sk-...', defaultModel: 'deepseek-chat' },
+    groq: { label: 'Groq Cloud API Key', placeholder: 'gsk_...', defaultModel: 'llama-3.3-70b-versatile' },
+    mistral: { label: 'Mistral AI API Key', placeholder: '...', defaultModel: 'mistral-small-latest' },
+    ollama: { label: '', placeholder: '', defaultModel: 'llama3:latest' },
+    custom: { label: 'Custom / OpenRouter API Key', placeholder: 'sk-or-...', defaultModel: '' }
+  };
+
   async function loadAiSettings() {
     try {
       const cfg = await api('/api/settings');
+      S.aiSettings = cfg;
       const provSelect = $('#aiProviderSelect');
       if (provSelect) {
         provSelect.value = cfg.active_provider || 'deterministic';
@@ -5944,6 +5961,8 @@
       if (modelInput && cfg.ai_model) modelInput.value = cfg.ai_model;
       const ollamaInput = $('#ollamaEndpointInput');
       if (ollamaInput && cfg.ollama_endpoint) ollamaInput.value = cfg.ollama_endpoint;
+      const customInput = $('#customEndpointInput');
+      if (customInput && cfg.custom_ai_endpoint) customInput.value = cfg.custom_ai_endpoint;
 
       const badge = $('#activeAiBadge');
       if (badge) {
@@ -6001,16 +6020,55 @@
     const keyField = $('#aiKeyField');
     const modelField = $('#aiModelField');
     const ollamaField = $('#ollamaEndpointField');
+    const customField = $('#customEndpointField');
     const keyLabel = $('#aiKeyLabel');
+    const keyInput = $('#aiApiKeyInput');
+    const modelInput = $('#aiModelInput');
+    const envBadge = $('#aiEnvKeyBadge');
     if (!keyField) return;
 
+    const envKeys = (S.aiSettings && S.aiSettings.env_keys) || {};
+    const hasEnvKey = !!envKeys[provider];
+
+    if (envBadge) {
+      if (hasEnvKey) {
+        envBadge.hidden = false;
+        envBadge.textContent = 'Active from .env';
+        envBadge.className = 'chip chip-ok chip-sm';
+        envBadge.title = 'API key is detected and automatically loaded from your environment (.env)';
+      } else {
+        envBadge.hidden = true;
+      }
+    }
+
     if (provider === 'deterministic') {
-      keyField.hidden = true; modelField.hidden = true; ollamaField.hidden = true;
+      keyField.hidden = true;
+      modelField.hidden = true;
+      ollamaField.hidden = true;
+      if (customField) customField.hidden = true;
     } else if (provider === 'ollama') {
-      keyField.hidden = true; modelField.hidden = false; ollamaField.hidden = false;
+      keyField.hidden = true;
+      modelField.hidden = false;
+      ollamaField.hidden = false;
+      if (customField) customField.hidden = true;
+      if (modelInput) modelInput.placeholder = 'llama3:latest or mistral:latest';
+    } else if (provider === 'custom') {
+      keyField.hidden = false;
+      modelField.hidden = false;
+      ollamaField.hidden = true;
+      if (customField) customField.hidden = false;
+      if (keyLabel) keyLabel.textContent = 'Custom API Key (or OpenRouter Key)';
+      if (keyInput) keyInput.placeholder = 'sk-... (optional if keyless)';
+      if (modelInput) modelInput.placeholder = 'e.g. anthropic/claude-3.5-sonnet';
     } else {
-      keyField.hidden = false; modelField.hidden = false; ollamaField.hidden = true;
-      keyLabel.textContent = `${provider.toUpperCase()} API Key`;
+      keyField.hidden = false;
+      modelField.hidden = false;
+      ollamaField.hidden = true;
+      if (customField) customField.hidden = true;
+      const meta = AI_PROVIDER_LABELS[provider] || { label: `${provider.toUpperCase()} API Key`, placeholder: 'Enter API key', defaultModel: '' };
+      if (keyLabel) keyLabel.textContent = meta.label;
+      if (keyInput) keyInput.placeholder = hasEnvKey ? '(Loaded from .env — type here to override)' : meta.placeholder;
+      if (modelInput) modelInput.placeholder = meta.defaultModel || 'Default model';
     }
   }
 
@@ -6020,9 +6078,18 @@
     btn.disabled = true;
     btn.innerHTML = `${ico('refresh')} Testing...`;
     try {
-      const res = await api('/api/test-ai', { method: 'POST' });
+      const prov = val('aiProviderSelect');
+      const key = val('aiApiKeyInput').trim();
+      const model = val('aiModelInput').trim();
+      const endpoint = prov === 'ollama' ? val('ollamaEndpointInput').trim() : (prov === 'custom' ? val('customEndpointInput').trim() : '');
+      const body = { ai_provider: prov };
+      if (key) body.ai_key = key;
+      if (model) body.ai_model = model;
+      if (endpoint) body.endpoint = endpoint;
+      const res = await api('/api/test-ai', { method: 'POST', body });
       if (res.success) toast(res.message);
       else toast(res.message, 'error');
+      await loadAiSettings();
     } catch (err) {
       toast('Test failed: ' + err.message, 'error');
     } finally {
@@ -6036,18 +6103,26 @@
     const key = val('aiApiKeyInput').trim();
     const model = val('aiModelInput').trim();
     const ollama = val('ollamaEndpointInput').trim();
+    const custom = val('customEndpointInput').trim();
 
     const payload = { ai_provider: prov };
     if (model) payload.ai_model = model;
     if (ollama) payload.ollama_endpoint = ollama;
+    if (custom) payload.custom_ai_endpoint = custom;
     if (key) {
       if (prov === 'gemini') payload.gemini_api_key = key;
       else if (prov === 'openai') payload.openai_api_key = key;
       else if (prov === 'anthropic') payload.anthropic_api_key = key;
+      else if (prov === 'deepseek') payload.deepseek_api_key = key;
+      else if (prov === 'groq') payload.groq_api_key = key;
+      else if (prov === 'mistral') payload.mistral_api_key = key;
+      else if (prov === 'custom') payload.custom_ai_key = key;
     }
     try {
       await api('/api/settings', { method: 'POST', body: payload });
       toast('AI configuration saved');
+      const keyInput = $('#aiApiKeyInput');
+      if (keyInput) keyInput.value = '';
       await loadAiSettings();
     } catch (err) {
       toast('Failed to save settings: ' + err.message, 'error');

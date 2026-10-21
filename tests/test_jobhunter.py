@@ -337,6 +337,99 @@ class TailorTests(Base):
         self.assertIn(DEMO_PROFILE["name"], extracted)
         self.assertIn(JOB["company"], extracted)
 
+    def test_ai_providers_env_and_settings_resolution(self):
+        """Verify get_active_ai_config resolves Gemini, OpenAI, Claude, DeepSeek, Groq, Mistral from env and DB."""
+        # Clear any prior DB overrides to isolate env var testing
+        db.set_setting("ai_provider", "")
+        db.set_setting("deepseek_api_key", "")
+        db.set_setting("groq_api_key", "")
+        db.set_setting("mistral_api_key", "")
+
+        # Test env resolution
+        with mock.patch.dict(os.environ, {
+            "DEEPSEEK_API_KEY": "sk-deepseek-env-123",
+            "JH_AI_PROVIDER": "deepseek",
+            "JH_LLM_MODEL": "deepseek-chat"
+        }):
+            cfg = refit.get_active_ai_config()
+            self.assertEqual(cfg["provider"], "deepseek")
+            self.assertEqual(cfg["key"], "sk-deepseek-env-123")
+            self.assertEqual(cfg["model"], "deepseek-chat")
+
+        with mock.patch.dict(os.environ, {
+            "GROQ_API_KEY": "gsk-groq-env-123",
+            "JH_AI_PROVIDER": "groq"
+        }):
+            cfg = refit.get_active_ai_config()
+            self.assertEqual(cfg["provider"], "groq")
+            self.assertEqual(cfg["key"], "gsk-groq-env-123")
+            self.assertEqual(cfg["model"], "llama-3.3-70b-versatile")
+
+        # Test DB settings override
+        db.set_setting("ai_provider", "mistral")
+        db.set_setting("mistral_api_key", "sk-mistral-db-999")
+        db.set_setting("ai_model", "mistral-large-latest")
+        cfg_db = refit.get_active_ai_config()
+        self.assertEqual(cfg_db["provider"], "mistral")
+        self.assertEqual(cfg_db["key"], "sk-mistral-db-999")
+        self.assertEqual(cfg_db["model"], "mistral-large-latest")
+        # Clean up db setting
+        db.set_setting("ai_provider", "deterministic")
+
+    def test_generate_cover_pitch_with_real_llm(self):
+        """Verify generate_cover_pitch with use_llm=True calls LLM and returns structured, grounded pitch."""
+        cand_name = DEMO_PROFILE["name"]
+        comp = JOB["company"]
+        mock_llm_json = json.dumps({
+            "pitch_hook": f"I am a Senior Full-Stack Engineer applying for the Senior Backend Engineer role at {comp}.",
+            "value_pillars": [
+                {"theme": "Python & Scalability", "proof_point": "Built Python microservices for high throughput", "quantified": False}
+            ],
+            "why_company": f"{comp} is pioneering engineering standards in this domain.",
+            "honest_bridge": "While I have not used Kubernetes, my Docker background provides architectural foundation.",
+            "call_to_action": "I would love to discuss your engineering scaling roadmap on a brief call.",
+            "full_text": f"Dear {comp} hiring team,\n\nI am a Senior Full-Stack Engineer applying for the Senior Backend Engineer role at {comp}.\n\nBuilt Python microservices for high throughput.\n\nWhile I have not used Kubernetes, my Docker background provides architectural foundation.\n\n{comp} is pioneering engineering standards in this domain.\n\nI would love to discuss your engineering scaling roadmap on a brief call.\n\nSincerely,\n{cand_name}"
+        })
+        pitch = refit.generate_cover_pitch(JOB, DEMO_PROFILE, angle="startup_velocity", use_llm=True,
+                                           llm_caller=lambda s, u: mock_llm_json)
+        self.assertEqual(pitch["pitch_angle"], "startup_velocity")
+        self.assertIn(cand_name, pitch["full_text"])
+        self.assertIn(comp, pitch["full_text"])
+        self.assertIn("telemetry", pitch)
+        self.assertGreaterEqual(pitch["telemetry"]["pitch_score"], 80)
+        self.assertTrue(pitch["guardrail_report"]["grounded"])
+
+    def test_generate_cover_pitch_llm_hallucination_filtered(self):
+        """Verify that hallucinated metrics or skills in LLM pitch output are caught and sanitized."""
+        mock_bad_json = json.dumps({
+            "pitch_hook": "I am a Quantum Computing Architect with 25 years experience using Rust and Kubernetes.",
+            "value_pillars": [
+                {"theme": "Fake Tech", "proof_point": "Saved $999B using Rust and invented Kubernetes", "quantified": True}
+            ],
+            "why_company": "Great company.",
+            "honest_bridge": "",
+            "call_to_action": "Hire me.",
+            "full_text": "Dear Acme Corp hiring team,\n\nI am a Quantum Computing Architect with 25 years experience using Rust and Kubernetes saving $999B.\n\nSincerely,\nJane Doe"
+        })
+        pitch = refit.generate_cover_pitch(JOB, DEMO_PROFILE, angle="direct_impact", use_llm=True,
+                                           llm_caller=lambda s, u: mock_bad_json)
+        # Full text must not contain unverified numbers or fake claims
+        self.assertNotIn("$999B", pitch["full_text"])
+        self.assertNotIn("Rust", pitch["full_text"])
+
+    def test_generate_cover_pitch_fallback_on_llm_error(self):
+        """Verify that if LLM raises a network or runtime error, pitch falls back seamlessly to deterministic engine."""
+        def failing_llm(s, u):
+            raise RuntimeError("API Connection timeout or rate limit")
+
+        pitch = refit.generate_cover_pitch(JOB, DEMO_PROFILE, angle="technical_architect", use_llm=True,
+                                           llm_caller=failing_llm)
+        self.assertEqual(pitch["pitch_angle"], "technical_architect")
+        self.assertIn("pitch_hook", pitch)
+        self.assertTrue(len(pitch["full_text"]) > 50)
+        self.assertIn("telemetry", pitch)
+
+
 
 class AtsTests(Base):
     def test_empty_resume_is_not_given_a_floor(self):

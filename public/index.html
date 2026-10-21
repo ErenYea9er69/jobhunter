@@ -1474,14 +1474,21 @@
               <label for="aiProviderSelect">Active AI Provider</label>
               <select id="aiProviderSelect">
                 <option value="deterministic">Local Deterministic Engine (Fast, 100% Free, Zero Hallucinations)</option>
-                <option value="gemini">Google Gemini (Gemini 1.5/2.0 Flash)</option>
-                <option value="openai">OpenAI (GPT-4o Mini / GPT-4o)</option>
-                <option value="anthropic">Anthropic Claude (Claude Sonnet 3.5)</option>
-                <option value="ollama">Ollama (Local LLM)</option>
+                <option value="gemini">Google Gemini (Gemini 2.0 / 1.5 Flash, Pro)</option>
+                <option value="openai">OpenAI (GPT-4o Mini / GPT-4o / o3-mini)</option>
+                <option value="anthropic">Anthropic Claude (Claude 3.5 Sonnet / Haiku)</option>
+                <option value="deepseek">DeepSeek (DeepSeek-V3 / DeepSeek-R1)</option>
+                <option value="groq">Groq Cloud (Llama 3.3 70B Ultra-Fast)</option>
+                <option value="mistral">Mistral AI (Mistral Large / Small / Codestral)</option>
+                <option value="ollama">Ollama (Local Self-Hosted LLM)</option>
+                <option value="custom">Custom OpenAI-Compatible (OpenRouter, Azure, LM Studio)</option>
               </select>
             </div>
             <div class="form-field span-2" id="aiKeyField" hidden>
-              <label for="aiApiKeyInput" id="aiKeyLabel">API Key</label>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <label for="aiApiKeyInput" id="aiKeyLabel" style="margin-bottom:0;">API Key</label>
+                <span class="chip chip-info chip-sm" id="aiEnvKeyBadge" hidden>Loaded from .env</span>
+              </div>
               <input type="password" id="aiApiKeyInput" placeholder="Enter API key" autocomplete="off">
             </div>
             <div class="form-field" id="aiModelField" hidden>
@@ -1492,10 +1499,14 @@
               <label for="ollamaEndpointInput">Ollama URL</label>
               <input type="text" id="ollamaEndpointInput" placeholder="http://127.0.0.1:11434">
             </div>
+            <div class="form-field span-2" id="customEndpointField" hidden>
+              <label for="customEndpointInput">Base URL / Endpoint</label>
+              <input type="text" id="customEndpointInput" placeholder="https://openrouter.ai/api/v1">
+            </div>
           </div>
           <div class="ai-guardrail-summary">
             <strong><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Zero-Hallucination Guardrail Active</strong>
-            <p class="muted small">All AI rewrites are filtered through our local Grounding Guard. If any AI invents a metric, technology, or title you don't possess, it is automatically rejected.</p>
+            <p class="muted small">All AI role pitches and resume rewrites pass through our strict Grounding Guard. If any AI invents a metric, technology, or title you don't possess, it is automatically intercepted and rejected.</p>
           </div>
           <div class="head-actions" style="margin-top:14px; gap:8px;">
             <button type="button" class="btn btn-secondary btn-sm" id="btnTestAi"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>Test connection</button>
@@ -2474,6 +2485,6 @@
 
   <div class="toasts" id="toastContainer" role="status" aria-live="polite"></div>
 
-  <script src="app.js?v=4.5"></script>
+  <script src="app.js?v=4.6"></script>
 </body>
 </html>

@@ -4,6 +4,7 @@ The deterministic engine only reorders and re-words using terms already true of 
 An optional LLM can rewrite more freely, but each rewrite passes a grounding check first."""
 import copy
 import json
+import os
 import re
 
 from . import config, db, skills as sk
@@ -163,36 +164,58 @@ def refit_deterministic(job, profile):
 # ------------------------------------------------------------ universal AI engine
 def get_active_ai_config():
     """Retrieve the active AI provider configuration from DB settings with fallback to environment variables."""
-    prov = (db.get_setting("ai_provider") or config.AI_PROVIDER or "auto").lower()
-    gemini_key = db.get_setting("gemini_api_key") or config.GEMINI_API_KEY
-    openai_key = db.get_setting("openai_api_key") or config.OPENAI_API_KEY
-    anthropic_key = db.get_setting("anthropic_api_key") or config.ANTHROPIC_API_KEY
-    model = db.get_setting("ai_model") or config.LLM_MODEL
-    ollama_url = db.get_setting("ollama_endpoint") or config.OLLAMA_ENDPOINT
+    prov = (db.get_setting("ai_provider") or os.environ.get("JH_AI_PROVIDER") or config.AI_PROVIDER or "auto").lower()
+    gemini_key = db.get_setting("gemini_api_key") or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or config.GEMINI_API_KEY
+    openai_key = db.get_setting("openai_api_key") or os.environ.get("OPENAI_API_KEY") or config.OPENAI_API_KEY
+    anthropic_key = db.get_setting("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY") or config.ANTHROPIC_API_KEY
+    deepseek_key = db.get_setting("deepseek_api_key") or os.environ.get("DEEPSEEK_API_KEY") or config.DEEPSEEK_API_KEY
+    groq_key = db.get_setting("groq_api_key") or os.environ.get("GROQ_API_KEY") or config.GROQ_API_KEY
+    mistral_key = db.get_setting("mistral_api_key") or os.environ.get("MISTRAL_API_KEY") or config.MISTRAL_API_KEY
+    custom_key = db.get_setting("custom_ai_key") or os.environ.get("JH_CUSTOM_AI_KEY") or config.CUSTOM_AI_KEY
+    custom_url = db.get_setting("custom_ai_endpoint") or os.environ.get("JH_CUSTOM_AI_ENDPOINT") or os.environ.get("JH_LLM_BASE_URL") or config.CUSTOM_AI_ENDPOINT
+    model = db.get_setting("ai_model") or os.environ.get("JH_LLM_MODEL") or config.LLM_MODEL
+    ollama_url = db.get_setting("ollama_endpoint") or os.environ.get("JH_OLLAMA_ENDPOINT") or config.OLLAMA_ENDPOINT
 
     if prov == "deterministic":
         return {"provider": "deterministic", "model": "", "key": "", "endpoint": ""}
     if prov == "gemini" and gemini_key:
-        return {"provider": "gemini", "model": model or "gemini-1.5-flash", "key": gemini_key, "endpoint": ""}
+        return {"provider": "gemini", "model": model or "gemini-2.0-flash", "key": gemini_key, "endpoint": ""}
     if prov == "openai" and openai_key:
         return {"provider": "openai", "model": model or "gpt-4o-mini", "key": openai_key, "endpoint": ""}
     if prov == "anthropic" and anthropic_key:
-        return {"provider": "anthropic", "model": model or "claude-sonnet-5-5", "key": anthropic_key, "endpoint": ""}
+        return {"provider": "anthropic", "model": model or "claude-3-5-sonnet-20241022", "key": anthropic_key, "endpoint": ""}
+    if prov == "deepseek" and deepseek_key:
+        return {"provider": "deepseek", "model": model or "deepseek-chat", "key": deepseek_key, "endpoint": "https://api.deepseek.com/chat/completions"}
+    if prov == "groq" and groq_key:
+        return {"provider": "groq", "model": model or "llama-3.3-70b-versatile", "key": groq_key, "endpoint": "https://api.groq.com/openai/v1/chat/completions"}
+    if prov == "mistral" and mistral_key:
+        return {"provider": "mistral", "model": model or "mistral-large-latest", "key": mistral_key, "endpoint": "https://api.mistral.ai/v1/chat/completions"}
     if prov == "ollama":
         return {"provider": "ollama", "model": model or "llama3.2", "key": "", "endpoint": ollama_url}
+    if prov == "custom" and (custom_url or custom_key):
+        return {"provider": "custom", "model": model or "default", "key": custom_key, "endpoint": custom_url}
 
     # Auto-detection based on configured keys
     if gemini_key:
-        return {"provider": "gemini", "model": model or "gemini-1.5-flash", "key": gemini_key, "endpoint": ""}
+        return {"provider": "gemini", "model": model or "gemini-2.0-flash", "key": gemini_key, "endpoint": ""}
     if openai_key:
         return {"provider": "openai", "model": model or "gpt-4o-mini", "key": openai_key, "endpoint": ""}
     if anthropic_key:
-        return {"provider": "anthropic", "model": model or "claude-sonnet-5-5", "key": anthropic_key, "endpoint": ""}
+        return {"provider": "anthropic", "model": model or "claude-3-5-sonnet-20241022", "key": anthropic_key, "endpoint": ""}
+    if deepseek_key:
+        return {"provider": "deepseek", "model": model or "deepseek-chat", "key": deepseek_key, "endpoint": "https://api.deepseek.com/chat/completions"}
+    if groq_key:
+        return {"provider": "groq", "model": model or "llama-3.3-70b-versatile", "key": groq_key, "endpoint": "https://api.groq.com/openai/v1/chat/completions"}
+    if mistral_key:
+        return {"provider": "mistral", "model": model or "mistral-large-latest", "key": mistral_key, "endpoint": "https://api.mistral.ai/v1/chat/completions"}
+    if custom_url and custom_key:
+        return {"provider": "custom", "model": model or "default", "key": custom_key, "endpoint": custom_url}
+
     return {"provider": "deterministic", "model": "", "key": "", "endpoint": ""}
 
 
 def llm_available():
-    return get_active_ai_config()["provider"] in ("gemini", "openai", "anthropic", "ollama")
+    return get_active_ai_config()["provider"] in ("gemini", "openai", "anthropic", "deepseek", "groq", "mistral", "ollama", "custom")
 
 
 def _call_llm(system, user, cfg=None):
@@ -201,7 +224,7 @@ def _call_llm(system, user, cfg=None):
 
     if prov == "gemini":
         key = cfg["key"]
-        model = cfg["model"] or "gemini-1.5-flash"
+        model = cfg["model"] or "gemini-2.0-flash"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
         body = json.dumps({
             "contents": [{"role": "user", "parts": [{"text": f"{system}\n\nTask:\n{user}"}]}],
@@ -212,10 +235,35 @@ def _call_llm(system, user, cfg=None):
         data = json.loads(raw)
         return data["candidates"][0]["content"]["parts"][0]["text"]
 
-    elif prov == "openai":
-        key = cfg["key"]
-        model = cfg["model"] or "gpt-4o-mini"
-        url = "https://api.openai.com/v1/chat/completions"
+    elif prov in ("openai", "deepseek", "groq", "mistral", "custom"):
+        key = cfg.get("key", "")
+        model = cfg.get("model", "")
+        if prov == "openai":
+            url = "https://api.openai.com/v1/chat/completions"
+            model = model or "gpt-4o-mini"
+        elif prov == "deepseek":
+            url = "https://api.deepseek.com/chat/completions"
+            model = model or "deepseek-chat"
+        elif prov == "groq":
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            model = model or "llama-3.3-70b-versatile"
+        elif prov == "mistral":
+            url = "https://api.mistral.ai/v1/chat/completions"
+            model = model or "mistral-large-latest"
+        elif prov == "custom":
+            raw_ep = (cfg.get("endpoint") or "").rstrip("/")
+            if "/chat/completions" in raw_ep:
+                url = raw_ep
+            elif raw_ep.endswith("/v1"):
+                url = f"{raw_ep}/chat/completions"
+            else:
+                url = f"{raw_ep}/v1/chat/completions" if raw_ep else "https://api.openai.com/v1/chat/completions"
+            model = model or "default"
+
+        headers = {"Content-Type": "application/json"}
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+
         body = json.dumps({
             "model": model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -223,13 +271,13 @@ def _call_llm(system, user, cfg=None):
             "max_tokens": 3000
         }).encode()
         raw = http_get(url, data=body, method="POST", retries=0, timeout=config.LLM_TIMEOUT_SECONDS,
-                       headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+                       headers=headers)
         data = json.loads(raw)
         return data["choices"][0]["message"]["content"]
 
     elif prov == "anthropic":
         key = cfg["key"]
-        model = cfg["model"] or "claude-sonnet-5-5"
+        model = cfg["model"] or "claude-3-5-sonnet-20241022"
         url = "https://api.anthropic.com/v1/messages"
         body = json.dumps({
             "model": model,
@@ -261,6 +309,27 @@ def _call_llm(system, user, cfg=None):
 LLM_SYSTEM = ("You edit resumes. Use ONLY facts present in the resume JSON. Never add a number, skill, tool, employer, title, "
               "or claim that the resume does not state. You may reword, reorder, and mirror the job posting's terminology for "
               "skills the candidate already has. Reply with JSON only: {\"summary\": str, \"bullets\": {\"<role_index>.<bullet_index>\": str}}.")
+
+COVER_PITCH_LLM_SYSTEM = (
+    "You are an elite executive career strategist and engineering hiring advisor. "
+    "You write concise, high-converting personalized pitches and cover letters for top tech candidates. "
+    "You hate corporate fluff, cliché phrases, and generic templates. Every pitch you write feels thoughtful, "
+    "deeply knowledgeable about the company's product, and grounded strictly in verified candidate facts.\n\n"
+    "CRITICAL RULES:\n"
+    "1. Grounding: Every single number, metric, project, and skill MUST originate strictly from the candidate's verified profile. "
+    "NEVER invent or extrapolate unearned skills, metrics, credentials, or employers.\n"
+    "2. Hook: Open with the role, company name, and a compelling 1-2 sentence hook tailored to the specified pitch_angle and tone.\n"
+    "3. Value Pillars: Pick 2-3 verified achievements that directly answer the posting's core requirements.\n"
+    "4. Transparent Learning Bridge: If the job requires a skill the candidate lacks, acknowledge it honestly and highlight parallel foundational mastery without claiming proficiency.\n"
+    "5. Output JSON schema ONLY: {\n"
+    "  \"pitch_hook\": str,\n"
+    "  \"value_pillars\": [{\"theme\": str, \"proof_point\": str, \"quantified\": bool}],\n"
+    "  \"why_company\": str,\n"
+    "  \"honest_bridge\": str,\n"
+    "  \"call_to_action\": str,\n"
+    "  \"full_text\": str\n"
+    "}"
+)
 
 
 def generate_guardrail_report(profile, tailored_resume, rejected_count=0, engine=""):
@@ -901,6 +970,74 @@ def generate_cover_pitch(job, profile, tone="direct", angle="direct_impact", sel
     paragraphs.append(f"Best regards,\n{sign}")
     full_text = "\n\n".join(paragraphs)
 
+    # Real LLM Enhancement (if enabled or requested)
+    active_cfg = get_active_ai_config()
+    should_use_llm = llm_available() if use_llm is None else use_llm
+    llm = llm_caller or _call_llm
+    engine_name = "deterministic"
+    llm_applied = False
+
+    if should_use_llm:
+        try:
+            prompt_payload = {
+                "pitch_angle": angle,
+                "tone": tone,
+                "job_post": {
+                    "title": title,
+                    "company": company,
+                    "location": job.get("location", ""),
+                    "description": (job.get("description", "") or "")[:2500],
+                    "required_skills": list(wanted_skills.keys())[:10]
+                },
+                "candidate_source": {
+                    "name": cand_name,
+                    "target_title": cand_role,
+                    "years_of_experience": yp,
+                    "verified_skills": sorted(list(cand_set))[:25],
+                    "experience": profile.get("experience", [])[:3]
+                },
+                "value_pillars": [p["proof_point"] for p in value_pillars],
+                "honest_skill_gaps": gaps[:2]
+            }
+            raw_out = llm(COVER_PITCH_LLM_SYSTEM, json.dumps(prompt_payload, indent=2))
+            clean_out = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_out.strip(), flags=re.MULTILINE).strip()
+            parsed = json.loads(clean_out)
+
+            llm_full = (parsed.get("full_text") or "").strip()
+            llm_hook = (parsed.get("pitch_hook") or "").strip()
+            llm_why = (parsed.get("why_company") or "").strip()
+            llm_bridge = (parsed.get("honest_bridge") or "").strip()
+            llm_cta = (parsed.get("call_to_action") or "").strip()
+            llm_pillars = parsed.get("value_pillars")
+
+            # Grounding verification of LLM output
+            check_llm = ungrounded(profile, (llm_full or llm_hook).replace(title, "").replace(company, ""))
+            if not check_llm["skills"] and not check_llm["numbers"]:
+                if llm_full:
+                    full_text = llm_full
+                if llm_hook:
+                    hook = llm_hook
+                if llm_why:
+                    why_company = llm_why
+                if llm_bridge:
+                    honest_bridge_text = llm_bridge
+                if llm_cta:
+                    cta = llm_cta
+                if isinstance(llm_pillars, list) and llm_pillars:
+                    for idx, lp in enumerate(llm_pillars[:3]):
+                        if idx < len(value_pillars):
+                            pp = lp.get("proof_point")
+                            if pp and is_grounded(profile, pp):
+                                value_pillars[idx]["proof_point"] = pp
+                                if lp.get("theme"):
+                                    value_pillars[idx]["theme"] = lp["theme"]
+                llm_applied = True
+                engine_name = active_cfg.get("model") or active_cfg.get("provider") or "llm"
+            else:
+                engine_name = f"deterministic (hallucinations rejected: {len(check_llm['skills'])} skills, {len(check_llm['numbers'])} numbers)"
+        except Exception:
+            engine_name = "deterministic (LLM fallback)"
+
     # Self-check facts from resume
     core_content = "\n\n".join([hook] + [p["proof_point"] for p in value_pillars])
     check = ungrounded(profile, core_content.replace(title, "").replace(company, ""))
@@ -916,13 +1053,15 @@ def generate_cover_pitch(job, profile, tone="direct", angle="direct_impact", sel
     reading_time_sec = max(15, round(word_count / 3.8))
 
     # Calculate Pitch Punchiness Score (0-100)
-    score = 75
+    score = 78
     if any(p["quantified"] for p in value_pillars):
         score += 10
     if len(matched) >= 2:
         score += 8
     if 140 <= word_count <= 340:
-        score += 7
+        score += 4
+    if llm_applied:
+        score += 2
     pitch_score = min(score, 98)
 
     return {
@@ -935,12 +1074,18 @@ def generate_cover_pitch(job, profile, tone="direct", angle="direct_impact", sel
         "why_company": why_company,
         "call_to_action": cta,
         "full_text": full_text,
+        "engine": engine_name,
+        "llm_applied": llm_applied,
+        "used_llm": llm_applied,
+        "provider": active_cfg.get("provider") if llm_applied else "deterministic",
+        "model": active_cfg.get("model", ""),
         "telemetry": {
             "word_count": word_count,
             "reading_time_sec": reading_time_sec,
             "pitch_score": pitch_score,
             "matched_skills_count": len(matched),
-            "quantified_pillars_count": sum(1 for p in value_pillars if p["quantified"])
+            "quantified_pillars_count": sum(1 for p in value_pillars if p["quantified"]),
+            "engine": engine_name
         },
         "guardrail_report": {
             "grounded": not bool(check["skills"] or check["numbers"]),
