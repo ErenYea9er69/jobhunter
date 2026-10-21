@@ -8346,3 +8346,325 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   align-items: center;
   gap: 12px;
 }
+
+/* ==========================================================================
+   Multi-Resume Live Pool & Best-Match Scoring UI
+   ========================================================================== */
+
+/* Live Pool Beacon & Header Chip */
+.chip-live-pool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: #10b981;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  letter-spacing: 0.01em;
+}
+
+.beacon-live-pulse {
+  width: 7px;
+  height: 7px;
+  background-color: #10b981;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: live-beacon-pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+@keyframes live-beacon-pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+/* Variant Card Live / Paused States */
+.variant-pill-card {
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.variant-pill-card.is-live {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.03) 0%, var(--surface-2) 100%);
+}
+
+.variant-pill-card.is-paused {
+  opacity: 0.72;
+  border-style: dashed;
+  border-color: var(--line-2, #334155);
+  background: var(--surface);
+  filter: grayscale(0.25);
+}
+
+.variant-pill-card.is-paused:hover {
+  opacity: 0.92;
+  filter: grayscale(0);
+}
+
+/* One-Click Live Toggle Button on Variant Pill Card */
+.variant-live-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: transparent;
+  transition: all 0.15s ease-in-out;
+  user-select: none;
+}
+
+.variant-live-toggle-btn.is-live {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #10b981;
+}
+
+.variant-live-toggle-btn.is-live:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.55);
+  transform: translateY(-1px);
+}
+
+.variant-live-toggle-btn.is-paused {
+  background: rgba(148, 163, 184, 0.08);
+  border-color: var(--line);
+  color: var(--text-3);
+}
+
+.variant-live-toggle-btn.is-paused:hover {
+  background: rgba(148, 163, 184, 0.18);
+  border-color: var(--text-3);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.variant-live-toggle-btn .toggle-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.variant-live-toggle-btn.is-live .toggle-dot {
+  background: #10b981;
+  box-shadow: 0 0 5px rgba(16, 185, 129, 0.8);
+}
+
+.variant-live-toggle-btn.is-paused .toggle-dot {
+  background: var(--text-3);
+}
+
+/* Job Card Best-Match Resume Badge */
+.job-item-best-resume {
+  margin-top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chip-best-resume {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2.5px 8px;
+  background: rgba(16, 185, 129, 0.07);
+  border: 1px solid rgba(16, 185, 129, 0.24);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text);
+  line-height: 1.25;
+  transition: all 0.15s ease;
+}
+
+.chip-best-resume:hover {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.chip-resume-icon {
+  width: 11px;
+  height: 11px;
+  color: #10b981;
+  flex-shrink: 0;
+}
+
+.chip-resume-label {
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+.chip-resume-name {
+  color: #10b981;
+  font-weight: 700;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-live-tested {
+  margin-left: 2px;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* Multi-Resume Fit Leaderboard in Job Detail Pane */
+.fit-live-leaderboard {
+  margin: 14px 0;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.leaderboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.leaderboard-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.leaderboard-pool-pill {
+  font-size: 11px;
+  font-weight: 600;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 2px 7px;
+  border-radius: 9999px;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  transition: all 0.15s ease;
+}
+
+.leaderboard-row.is-winner {
+  background: rgba(16, 185, 129, 0.07);
+  border-color: rgba(16, 185, 129, 0.35);
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.2);
+}
+
+.leaderboard-row-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.leaderboard-rank {
+  font-size: 11px;
+  font-weight: 800;
+  width: 18px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+.leaderboard-row.is-winner .leaderboard-rank {
+  color: #10b981;
+}
+
+.leaderboard-variant-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leaderboard-target-sub {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leaderboard-row-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.leaderboard-score-chip {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.leaderboard-row.is-winner .leaderboard-score-chip {
+  background: #10b981;
+  color: #ffffff;
+}
+
+.leaderboard-winner-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #10b981;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.leaderboard-ignored-footer {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}

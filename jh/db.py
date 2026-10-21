@@ -240,6 +240,7 @@ def init_db():
             data_json TEXT NOT NULL,
             is_active INTEGER DEFAULT 0,
             is_master INTEGER DEFAULT 0,
+            is_live INTEGER DEFAULT 1,
             source_job_id TEXT DEFAULT '',
             source_job_title TEXT DEFAULT '',
             source_company TEXT DEFAULT '',
@@ -269,7 +270,8 @@ def init_db():
             job_key TEXT PRIMARY KEY, query TEXT NOT NULL, title TEXT NOT NULL, company TEXT NOT NULL,
             location TEXT, work_mode TEXT, score INTEGER DEFAULT 0, opportunity_score INTEGER DEFAULT 0,
             is_famous INTEGER DEFAULT 0, source_kind TEXT, source_names TEXT, posted_at TEXT,
-            job_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""")
+            job_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+            best_profile_id TEXT DEFAULT '', best_profile_name TEXT DEFAULT '')""")
         c.execute("""CREATE TABLE IF NOT EXISTS search_meta (
             id INTEGER PRIMARY KEY, query TEXT, location TEXT, total_count INTEGER DEFAULT 0,
             sources_json TEXT, updated_at TEXT NOT NULL)""")
@@ -281,9 +283,15 @@ def init_db():
             min_salary REAL DEFAULT 0, max_salary REAL DEFAULT 0, score INTEGER DEFAULT 0,
             opportunity_score INTEGER DEFAULT 0, is_famous INTEGER DEFAULT 0, is_startup INTEGER DEFAULT 0,
             industry TEXT, h1b INTEGER DEFAULT 0, source_kind TEXT, source_names TEXT, posted_at TEXT,
-            job_json TEXT NOT NULL, discovered_at TEXT NOT NULL)""")
+            job_json TEXT NOT NULL, discovered_at TEXT NOT NULL,
+            best_profile_id TEXT DEFAULT '', best_profile_name TEXT DEFAULT '')""")
 
-        # Add structured category columns to search_jobs if missing
+        # Migration: ensure is_live column exists on resume_profiles
+        rp_cols = _columns(c, "resume_profiles")
+        if "is_live" not in rp_cols:
+            c.execute("ALTER TABLE resume_profiles ADD COLUMN is_live INTEGER DEFAULT 1")
+
+        # Add structured category and profile tracking columns to search_jobs if missing
         s_cols = _columns(c, "search_jobs")
         for col, col_type in [
             ("category", "TEXT DEFAULT ''"),
@@ -297,14 +305,20 @@ def init_db():
             ("is_startup", "INTEGER DEFAULT 0"),
             ("h1b", "INTEGER DEFAULT 0"),
             ("is_active", "INTEGER DEFAULT 1"),
+            ("best_profile_id", "TEXT DEFAULT ''"),
+            ("best_profile_name", "TEXT DEFAULT ''"),
         ]:
             if col not in s_cols:
                 c.execute(f"ALTER TABLE search_jobs ADD COLUMN {col} {col_type}")
 
-        # Add skills_text to pending_search_jobs if missing
+        # Add missing columns to pending_search_jobs if missing
         p_cols = _columns(c, "pending_search_jobs")
         if "skills_text" not in p_cols:
             c.execute("ALTER TABLE pending_search_jobs ADD COLUMN skills_text TEXT DEFAULT ''")
+        if "best_profile_id" not in p_cols:
+            c.execute("ALTER TABLE pending_search_jobs ADD COLUMN best_profile_id TEXT DEFAULT ''")
+        if "best_profile_name" not in p_cols:
+            c.execute("ALTER TABLE pending_search_jobs ADD COLUMN best_profile_name TEXT DEFAULT ''")
 
         c.execute("CREATE INDEX IF NOT EXISTS idx_hist_app ON status_history(app_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_apps_status ON applications(status)")
@@ -315,6 +329,8 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_sen ON search_jobs(seniority)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_jt ON search_jobs(job_type)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_country ON search_jobs(country)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_best_prof ON search_jobs(best_profile_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_resume_profiles_live ON resume_profiles(is_live)")
 
         c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
@@ -362,8 +378,8 @@ def init_db():
                     tags = skills[:6] if skills else ["Core"]
                     c.execute("""
                         INSERT INTO resume_profiles
-                        (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, is_live, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                     """, (
                         "master", "Master Resume", target_title, json.dumps(roles),
                         json.dumps(tags), legacy_p["data"], 1, 1,
@@ -447,13 +463,13 @@ def get_profile(profile_id=None):
     with session() as c:
         row = None
         if profile_id:
-            row = c.execute("SELECT id, name, data_json, is_active, is_master FROM resume_profiles WHERE id=?", (profile_id,)).fetchone()
+            row = c.execute("SELECT id, name, data_json, is_active, is_master, is_live FROM resume_profiles WHERE id=?", (profile_id,)).fetchone()
         if not row:
-            row = c.execute("SELECT id, name, data_json, is_active, is_master FROM resume_profiles WHERE is_active=1 LIMIT 1").fetchone()
+            row = c.execute("SELECT id, name, data_json, is_active, is_master, is_live FROM resume_profiles WHERE is_active=1 LIMIT 1").fetchone()
         if not row:
-            row = c.execute("SELECT id, name, data_json, is_active, is_master FROM resume_profiles WHERE is_master=1 LIMIT 1").fetchone()
+            row = c.execute("SELECT id, name, data_json, is_active, is_master, is_live FROM resume_profiles WHERE is_master=1 LIMIT 1").fetchone()
         if not row:
-            row = c.execute("SELECT id, name, data_json, is_active, is_master FROM resume_profiles ORDER BY updated_at DESC LIMIT 1").fetchone()
+            row = c.execute("SELECT id, name, data_json, is_active, is_master, is_live FROM resume_profiles ORDER BY updated_at DESC LIMIT 1").fetchone()
 
         if not row:
             legacy = c.execute("SELECT data FROM profile WHERE id=1").fetchone()
@@ -474,16 +490,77 @@ def get_profile(profile_id=None):
         data["_profile_name"] = row["name"]
         data["_is_master"] = bool(row["is_master"])
         data["_is_active"] = bool(row["is_active"])
+        data["_is_live"] = bool(row["is_live"]) if "is_live" in row.keys() else True
     else:
         data["_profile_id"] = "master"
         data["_profile_name"] = "Master Resume"
         data["_is_master"] = True
         data["_is_active"] = True
+        data["_is_live"] = True
     return data
 
 
 def get_resume_profile(profile_id=None):
     return get_profile(profile_id=profile_id)
+
+
+def get_live_profiles():
+    """Retrieve full profile objects for all resumes currently in the active live matching pool."""
+    with session() as c:
+        rows = c.execute("""
+            SELECT id, name, data_json, is_active, is_master, is_live
+            FROM resume_profiles
+            WHERE is_live=1
+            ORDER BY is_master DESC, updated_at DESC
+        """).fetchall()
+
+    if not rows:
+        return [get_profile()]
+
+    profiles = []
+    for r in rows:
+        try:
+            d = json.loads(r["data_json"])
+            for k, v in EMPTY_PROFILE.items():
+                d.setdefault(k, json.loads(json.dumps(v)) if k != "_is_empty" else False)
+            if not d.get("target_roles") and (d.get("target_title") or d.get("skills")):
+                from .scoring import derive_target_roles
+                d["target_roles"] = derive_target_roles(d)
+            d["_profile_id"] = r["id"]
+            d["_profile_name"] = r["name"]
+            d["_is_master"] = bool(r["is_master"])
+            d["_is_active"] = bool(r["is_active"])
+            d["_is_live"] = bool(r["is_live"]) if "is_live" in r.keys() else True
+            profiles.append(d)
+        except Exception:
+            pass
+    return profiles or [get_profile()]
+
+
+def set_resume_profile_live(profile_id, is_live=None):
+    """Toggle or set the live matching status for a resume profile.
+    Guarantees that at least one resume remains Live in the pool at all times.
+    """
+    with session() as c:
+        row = c.execute("SELECT id, name, is_live FROM resume_profiles WHERE id=?", (profile_id,)).fetchone()
+        if not row:
+            raise ValueError(f"Resume profile '{profile_id}' not found.")
+
+        current_live = bool(row["is_live"]) if "is_live" in row.keys() else True
+        new_live = (not current_live) if is_live is None else bool(is_live)
+
+        if not new_live:
+            live_count = c.execute("SELECT count(*) as cnt FROM resume_profiles WHERE is_live=1").fetchone()["cnt"]
+            if live_count <= 1 and current_live:
+                raise ValueError("At least one resume must remain Live in the matching pool.")
+
+        c.execute("UPDATE resume_profiles SET is_live=?, updated_at=? WHERE id=?", (1 if new_live else 0, now_iso(), profile_id))
+
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "is_live": new_live
+    }
 
 
 def save_profile(data, profile_id=None):
@@ -494,6 +571,7 @@ def save_profile(data, profile_id=None):
     pname = data.pop("_profile_name", None) or ("Master Resume" if pid == "master" else "Resume Variant")
     is_master = 1 if pid == "master" or data.pop("_is_master", False) else 0
     is_active = 1 if data.pop("_is_active", True) else 0
+    is_live = 1 if data.pop("_is_live", True) else 0
 
     target_title = data.get("target_title", "")
     target_roles = data.get("target_roles", [])
@@ -512,9 +590,9 @@ def save_profile(data, profile_id=None):
         else:
             c.execute("""
                 INSERT INTO resume_profiles
-                (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (pid, pname, target_title, json.dumps(target_roles), json.dumps(tags), json.dumps(data), is_active, is_master, iso_now, iso_now))
+                (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, is_live, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (pid, pname, target_title, json.dumps(target_roles), json.dumps(tags), json.dumps(data), is_active, is_master, is_live, iso_now, iso_now))
 
         if is_active or is_master or pid == "master":
             c.execute("INSERT OR REPLACE INTO profile (id, data, updated_at) VALUES (1, ?, ?)", (json.dumps(data), iso_now))
@@ -525,7 +603,7 @@ def list_resume_profiles():
     with session() as c:
         rows = c.execute("""
             SELECT id, name, target_title, target_roles_json, tags_json,
-                   is_active, is_master, source_job_id, source_job_title, source_company,
+                   is_active, is_master, is_live, source_job_id, source_job_title, source_company,
                    created_at, updated_at, data_json
             FROM resume_profiles
             ORDER BY is_master DESC, updated_at DESC
@@ -555,6 +633,7 @@ def list_resume_profiles():
             "tags": json.loads(r["tags_json"] or "[]"),
             "is_active": bool(r["is_active"]),
             "is_master": bool(r["is_master"]),
+            "is_live": bool(r["is_live"]) if "is_live" in r.keys() else True,
             "source_job_id": r["source_job_id"],
             "source_job_title": r["source_job_title"],
             "source_company": r["source_company"],
@@ -593,6 +672,7 @@ def duplicate_resume_profile(profile_id, new_name=None, target_title=None, tags=
     data.pop("_profile_id", None)
     data.pop("_is_master", None)
     data.pop("_is_active", None)
+    data.pop("_is_live", None)
     data.pop("_profile_name", None)
 
     if target_title:
@@ -607,8 +687,8 @@ def duplicate_resume_profile(profile_id, new_name=None, target_title=None, tags=
     with session() as c:
         c.execute("""
             INSERT INTO resume_profiles
-            (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
+            (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, is_live, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?)
         """, (
             new_id, name, data.get("target_title", ""),
             json.dumps(data.get("target_roles", [])), json.dumps(variant_tags),
@@ -628,13 +708,16 @@ def delete_resume_profile(profile_id):
 
         was_active = bool(row["is_active"])
         c.execute("DELETE FROM resume_profiles WHERE id=?", (profile_id,))
+        # Ensure at least one profile remains live
+        live_cnt = c.execute("SELECT count(*) as cnt FROM resume_profiles WHERE is_live=1").fetchone()["cnt"]
+        if live_cnt == 0:
+            c.execute("UPDATE resume_profiles SET is_live=1 WHERE is_master=1")
         if was_active:
             c.execute("UPDATE resume_profiles SET is_active=1 WHERE is_master=1")
             master_row = c.execute("SELECT data_json FROM resume_profiles WHERE is_master=1").fetchone()
             if master_row:
                 c.execute("INSERT OR REPLACE INTO profile (id, data, updated_at) VALUES (1, ?, ?)", (master_row["data_json"], now_iso()))
-    if was_active:
-        threading.Thread(target=rescore_and_classify_stored_jobs, daemon=True).start()
+    threading.Thread(target=rescore_and_classify_stored_jobs, daemon=True).start()
     return True
 
 
@@ -663,9 +746,9 @@ def save_tailored_variant_from_workspace(job, tailored_resume, variant_name=None
     with session() as c:
         c.execute("""
             INSERT INTO resume_profiles
-            (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master,
+            (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, is_live,
              source_job_id, source_job_title, source_company, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?, ?)
         """, (
             new_id, name, role, json.dumps(new_data.get("target_roles", [])),
             json.dumps(extracted_tags), json.dumps(new_data),
@@ -676,43 +759,54 @@ def save_tailored_variant_from_workspace(job, tailored_resume, variant_name=None
 
 
 def rescore_and_classify_stored_jobs(profile=None):
-    """Re-score and re-classify all stored jobs against updated profile/resume."""
-    from .scoring import score_job
+    """Re-score and re-classify all stored jobs against live resume profiles."""
+    from .scoring import score_job_best
     from .pipeline import _rank_opportunity
     if profile is None:
-        profile = get_profile()
-    if not profile or profile.get("_is_empty"):
+        profiles = get_live_profiles()
+    elif isinstance(profile, list):
+        profiles = profile
+    else:
+        profiles = [profile]
+    if not profiles or (len(profiles) == 1 and profiles[0].get("_is_empty")):
         return 0
     updated_count = 0
     with session() as c:
         rows = c.execute("SELECT job_key, job_json FROM search_jobs").fetchall()
-        for r in rows:
-            try:
-                j = json.loads(r["job_json"])
-                c_meta = classify_job(j)
-                scored = score_job(j, profile)
-                j.update(scored)
-                j["category"] = c_meta["category"]
-                j["seniority"] = c_meta["seniority"]
-                j["job_type"] = c_meta["job_type"]
-                j["country"] = c_meta["country"]
-                j["work_mode"] = c_meta["work_mode"]
-                _rank_opportunity(j)
-                c.execute("""
-                    UPDATE search_jobs
-                    SET score=?, opportunity_score=?, category=?, job_type=?, seniority=?,
-                        country=?, work_mode=?, job_json=?
-                    WHERE job_key=?
-                """, (
-                    j.get("score", 0), j.get("opportunity_score", 0),
-                    c_meta["category"], c_meta["job_type"], c_meta["seniority"],
-                    c_meta["country"], c_meta["work_mode"], json.dumps(j),
-                    r["job_key"]
-                ))
-                updated_count += 1
-            except Exception:
-                pass
-    return updated_count
+
+    updates = []
+    for r in rows:
+        try:
+            j = json.loads(r["job_json"])
+            c_meta = classify_job(j)
+            scored = score_job_best(j, profiles)
+            j.update(scored)
+            j["category"] = c_meta["category"]
+            j["seniority"] = c_meta["seniority"]
+            j["job_type"] = c_meta["job_type"]
+            j["country"] = c_meta["country"]
+            j["work_mode"] = c_meta["work_mode"]
+            _rank_opportunity(j)
+            updates.append((
+                j.get("score", 0), j.get("opportunity_score", 0),
+                c_meta["category"], c_meta["job_type"], c_meta["seniority"],
+                c_meta["country"], c_meta["work_mode"],
+                j.get("best_profile_id", ""), j.get("best_profile_name", ""),
+                json.dumps(j),
+                r["job_key"]
+            ))
+        except Exception:
+            pass
+
+    if updates:
+        with session() as c:
+            c.executemany("""
+                UPDATE search_jobs
+                SET score=?, opportunity_score=?, category=?, job_type=?, seniority=?,
+                    country=?, work_mode=?, best_profile_id=?, best_profile_name=?, job_json=?
+                WHERE job_key=?
+            """, updates)
+    return len(updates)
 
 
 def get_setting(key, default=""):
@@ -752,8 +846,8 @@ def replace_search_jobs(jobs, query="", location="", sources=None, clear_existin
                 (job_key, query, title, company, location, work_mode, score, opportunity_score,
                  is_famous, source_kind, source_names, posted_at, job_json, created_at, updated_at,
                  category, job_type, seniority, country, min_salary, max_salary, industry,
-                 skills_text, is_startup, h1b, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                 skills_text, is_startup, h1b, is_active, best_profile_id, best_profile_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
             """, (
                 key, query or j.get("query", ""), clean_text(j.get("title", "")), clean_text(j.get("company", "")),
                 clean_text(j.get("location", "")), c_meta["work_mode"], j.get("score", 0),
@@ -762,7 +856,8 @@ def replace_search_jobs(jobs, query="", location="", sources=None, clear_existin
                 j.get("posted_at", ""), json.dumps(j), now, now,
                 c_meta["category"], c_meta["job_type"], c_meta["seniority"], c_meta["country"],
                 c_meta["min_salary"], c_meta["max_salary"], c_meta["industry"],
-                c_meta["skills_text"], c_meta["is_startup"], c_meta["h1b"]
+                c_meta["skills_text"], c_meta["is_startup"], c_meta["h1b"],
+                j.get("best_profile_id", ""), j.get("best_profile_name", "")
             ))
         total_now = c.execute("SELECT count(*) FROM search_jobs WHERE is_active=1").fetchone()[0]
         c.execute("""INSERT OR REPLACE INTO search_meta
@@ -791,12 +886,14 @@ def update_search_job(job):
             c.execute("""
                 UPDATE search_jobs
                 SET title=?, company=?, location=?, work_mode=?, score=?, opportunity_score=?,
-                    job_json=?, updated_at=?, category=?, job_type=?, seniority=?, country=?
+                    job_json=?, updated_at=?, category=?, job_type=?, seniority=?, country=?,
+                    best_profile_id=?, best_profile_name=?
                 WHERE job_key=?
             """, (
                 clean_text(job.get("title", "")), clean_text(job.get("company", "")), clean_text(job.get("location", "")),
                 c_meta["work_mode"], job.get("score", 0), job.get("opportunity_score", 0),
                 json.dumps(job), now, c_meta["category"], c_meta["job_type"], c_meta["seniority"], c_meta["country"],
+                job.get("best_profile_id", ""), job.get("best_profile_name", ""),
                 key
             ))
             return True
@@ -960,6 +1057,12 @@ def query_stored_jobs(filters=None, include_all=False):
     if str(filters.get("h1b") or "").lower() in ("1", "true"):
         clauses.append("h1b = 1")
 
+    # 13. Winning Resume Variant
+    pid_filter = (filters.get("best_profile_id") or filters.get("profile_id") or "").strip()
+    if pid_filter and pid_filter.lower() not in ("all", "any"):
+        clauses.append("best_profile_id = ?")
+        params.append(pid_filter)
+
     # Sorting
     sort = (filters.get("sort") or "ranked").lower()
     if sort == "score_desc":
@@ -983,6 +1086,7 @@ def query_stored_jobs(filters=None, include_all=False):
         cat_rows = c.execute("SELECT category, count(*) as cnt FROM search_jobs WHERE is_active=1 GROUP BY category ORDER BY cnt DESC").fetchall()
         wm_rows = c.execute("SELECT work_mode, count(*) as cnt FROM search_jobs WHERE is_active=1 GROUP BY work_mode").fetchall()
         sen_rows = c.execute("SELECT seniority, count(*) as cnt FROM search_jobs WHERE is_active=1 GROUP BY seniority").fetchall()
+        prof_rows = c.execute("SELECT best_profile_id, best_profile_name, count(*) as cnt FROM search_jobs WHERE is_active=1 AND best_profile_id != '' GROUP BY best_profile_id ORDER BY cnt DESC").fetchall()
 
         if include_all and len(clauses) > 1:
             all_rows = c.execute(f"SELECT job_json FROM search_jobs WHERE is_active=1 {order_clause}").fetchall()
@@ -1002,7 +1106,8 @@ def query_stored_jobs(filters=None, include_all=False):
         "facets": {
             "categories": {r["category"]: r["cnt"] for r in cat_rows if r["category"]},
             "work_modes": {r["work_mode"]: r["cnt"] for r in wm_rows if r["work_mode"]},
-            "seniorities": {r["seniority"]: r["cnt"] for r in sen_rows if r["seniority"]}
+            "seniorities": {r["seniority"]: r["cnt"] for r in sen_rows if r["seniority"]},
+            "profiles": {r["best_profile_id"]: {"name": r["best_profile_name"], "count": r["cnt"]} for r in prof_rows}
         }
     }
 
@@ -1081,15 +1186,17 @@ def store_pending_jobs(jobs, query=""):
                 INSERT OR REPLACE INTO pending_search_jobs
                 (job_key, query, title, company, location, work_mode, category, job_type, seniority, country,
                  min_salary, max_salary, score, opportunity_score, is_famous, is_startup, industry, h1b,
-                 source_kind, source_names, posted_at, job_json, discovered_at, skills_text)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 source_kind, source_names, posted_at, job_json, discovered_at, skills_text,
+                 best_profile_id, best_profile_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 key, query, clean_text(j.get("title", "")), clean_text(j.get("company", "")), clean_text(j.get("location", "")),
                 c_meta["work_mode"], c_meta["category"], c_meta["job_type"], c_meta["seniority"], c_meta["country"],
                 c_meta["min_salary"], c_meta["max_salary"], j.get("score", 0), j.get("opportunity_score", 0),
                 c_meta["is_famous"], c_meta["is_startup"], c_meta["industry"], c_meta["h1b"],
                 j.get("source_kind", ""), ",".join(j.get("source_names", [])),
-                j.get("posted_at", ""), json.dumps(j), now, c_meta.get("skills_text", "")
+                j.get("posted_at", ""), json.dumps(j), now, c_meta.get("skills_text", ""),
+                j.get("best_profile_id", ""), j.get("best_profile_name", "")
             ))
             added_count += 1
     return added_count
@@ -1110,17 +1217,21 @@ def apply_refresh_sync():
         pending_rows = c.execute("SELECT * FROM pending_search_jobs").fetchall()
         for r in pending_rows:
             skills_txt = r["skills_text"] if "skills_text" in r.keys() else ""
+            best_pid = r["best_profile_id"] if "best_profile_id" in r.keys() else ""
+            best_pname = r["best_profile_name"] if "best_profile_name" in r.keys() else ""
             c.execute("""
                 INSERT OR REPLACE INTO search_jobs
                 (job_key, query, title, company, location, work_mode, category, job_type, seniority, country,
                  min_salary, max_salary, score, opportunity_score, is_famous, is_startup, industry, h1b,
-                 source_kind, source_names, posted_at, job_json, created_at, updated_at, is_active, skills_text)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                 source_kind, source_names, posted_at, job_json, created_at, updated_at, is_active, skills_text,
+                 best_profile_id, best_profile_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
             """, (
                 r["job_key"], r["query"], r["title"], r["company"], r["location"], r["work_mode"],
                 r["category"], r["job_type"], r["seniority"], r["country"], r["min_salary"], r["max_salary"],
                 r["score"], r["opportunity_score"], r["is_famous"], r["is_startup"], r["industry"], r["h1b"],
-                r["source_kind"], r["source_names"], r["posted_at"], r["job_json"], now, now, skills_txt
+                r["source_kind"], r["source_names"], r["posted_at"], r["job_json"], now, now, skills_txt,
+                best_pid, best_pname
             ))
         added_keys = [r["job_key"] for r in pending_rows]
         added_count = len(added_keys)

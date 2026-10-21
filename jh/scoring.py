@@ -887,3 +887,87 @@ def score_job(job, profile):
         "country": job_country,
         "company_stage": classify_company_stage(job),
     }
+
+
+def score_job_best(job, profiles=None):
+    """Evaluate a job against multiple candidate resume profiles and select the best match.
+
+    Returns a unified match dictionary containing:
+    - The winning profile's score and match details (matched_skills, missing_skills, rationale, etc.)
+    - best_profile_id: ID of the winning resume variant
+    - best_profile_name: Display name of the winning resume variant
+    - best_profile_target: Target title of the winning resume variant
+    - live_matches: Ranked breakdown list of all evaluated profiles
+    - total_live_profiles: Number of active resumes evaluated
+    """
+    if profiles is None:
+        from . import db
+        profiles = db.get_live_profiles()
+
+    if isinstance(profiles, dict):
+        profiles = [profiles]
+    elif not profiles:
+        from . import db
+        profiles = [db.get_profile()]
+
+    evaluations = []
+    for idx, p in enumerate(profiles, start=1):
+        pid = p.get("_profile_id") or p.get("id") or f"profile_{idx}"
+        pname = p.get("_profile_name") or p.get("name") or f"Resume #{idx}"
+        target = p.get("target_title") or "General Candidate"
+        is_master = bool(p.get("_is_master") or p.get("is_master"))
+        is_active = bool(p.get("_is_active") or p.get("is_active"))
+
+        res = score_job(job, p)
+        evaluations.append({
+            "id": pid,
+            "name": pname,
+            "target_title": target,
+            "score": res.get("score", 0),
+            "matched_count": len(res.get("matched_skills", [])),
+            "missing_count": len(res.get("missing_skills", [])),
+            "matched_skills": res.get("matched_skills", []),
+            "missing_skills": res.get("missing_skills", []),
+            "is_master": is_master,
+            "is_active": is_active,
+            "scored_result": res
+        })
+
+    # Rank profiles:
+    # 1. Highest score
+    # 2. Most matched skills
+    # 3. Master profile tie-breaker
+    evaluations.sort(key=lambda e: (e["score"], e["matched_count"], 1 if e["is_master"] else 0), reverse=True)
+
+    winner = evaluations[0]
+    winning_result = dict(winner["scored_result"])
+
+    live_matches = []
+    for idx, e in enumerate(evaluations, start=1):
+        is_best = (idx == 1)
+        live_matches.append({
+            "id": e["id"],
+            "name": e["name"],
+            "target_title": e["target_title"],
+            "score": e["score"],
+            "matched_count": e["matched_count"],
+            "missing_count": e["missing_count"],
+            "is_master": e["is_master"],
+            "is_active": e["is_active"],
+            "is_best": is_best
+        })
+
+    winning_result["best_profile_id"] = winner["id"]
+    winning_result["best_profile_name"] = winner["name"]
+    winning_result["best_profile_target"] = winner["target_title"]
+    winning_result["live_matches"] = live_matches
+    winning_result["total_live_profiles"] = len(evaluations)
+
+    if len(evaluations) > 1:
+        prefix = f"[Best match with {winner['name']}] "
+        orig_rat = winning_result.get("rationale", "")
+        if prefix not in orig_rat:
+            winning_result["rationale"] = f"{prefix}{orig_rat}"
+
+    return winning_result
+

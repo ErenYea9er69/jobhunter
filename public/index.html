@@ -690,6 +690,21 @@
                   <button type="button" class="p4-menu-item" data-famous="startups">Startups Only</button>
                 </div>
               </div>
+
+              <!-- Winning Resume Pill -->
+              <div class="p4-pill-wrap">
+                <button type="button" class="p4-pill-btn" id="p4PillResume" data-dropdown="p4MenuResume" title="Filter jobs by best-matching resume variant">
+                  <svg class="i p4-pill-icon"><use href="#i-user"/></svg>
+                  <span class="p4-pill-text" id="p4TextResume">Resume: All</span>
+                  <svg class="p4-pill-chevron" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+                </button>
+                <div class="p4-dropdown-menu" id="p4MenuResume" hidden>
+                  <div class="p4-menu-header">Winning Resume Variant</div>
+                  <div id="p4MenuResumeItems">
+                    <button type="button" class="p4-menu-item is-selected" data-resume-id="all">All Resumes</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1073,11 +1088,12 @@
           <div class="library-header">
             <div>
               <div class="library-badge-row">
-                <span class="chip chip-ok" id="activeProfileBeacon"><span class="beacon-dot"></span><span id="activeProfileBeaconText">Active for Searches &amp; Match Scoring</span></span>
+                <span class="chip chip-ok" id="activeProfileBeacon"><span class="beacon-dot"></span><span id="activeProfileBeaconText">Active in Editor</span></span>
+                <span class="chip chip-live-pool" id="livePoolCounterChip" title="Resumes currently participating in the live matching pool. Every job is scored against all live resumes, and only the highest match score is displayed."><span class="beacon-dot beacon-live-pulse"></span><span id="livePoolBeaconText">Live Pool: <strong id="livePoolCount">1</strong> of <span id="totalVariantsCount">1</span> active</span></span>
                 <span class="muted" id="activeProfileLastSaved">Updated today</span>
               </div>
-              <h2 class="card-title" id="resumeLibraryTitle">Targeted Resume Variants</h2>
-              <p class="muted">Store multiple targeted resumes tailored by skill, role, or company. Switch the active profile to immediately recalculate search results and match scores.</p>
+              <h2 class="card-title" id="resumeLibraryTitle">Resume Library &amp; Multi-Match Pool</h2>
+              <p class="muted">Store your master profile and specialized resume variants. Toggle variants as <strong>Live</strong> to test them against incoming jobs (the highest match score wins), or <strong>Pause</strong> variants to temporarily ignore them.</p>
             </div>
             <div class="library-actions">
               <button type="button" class="btn btn-secondary btn-sm" id="btnNewVariant" data-action="profile-new-variant">

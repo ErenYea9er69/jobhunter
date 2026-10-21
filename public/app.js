@@ -902,14 +902,28 @@
       return;
     }
 
+    const liveCount = list.filter(p => p.is_live).length;
+    const totalCount = list.length;
+    const liveCntEl = $('#livePoolCount');
+    if (liveCntEl) liveCntEl.textContent = liveCount;
+    const totalCntEl = $('#totalVariantsCount');
+    if (totalCntEl) totalCntEl.textContent = totalCount;
+
     container.innerHTML = list.map(p => {
       const isActive = p.id === S.activeProfileId;
+      const isLive = !!p.is_live;
       return `
-        <div class="variant-pill-card ${isActive ? 'is-active' : ''}" data-action="profile-switch" data-id="${esc(p.id)}" role="button" tabindex="0">
+        <div class="variant-pill-card ${isActive ? 'is-active' : ''} ${isLive ? 'is-live' : 'is-paused'}" data-action="profile-switch" data-id="${esc(p.id)}" role="button" tabindex="0">
           <div class="variant-pill-top">
             <span class="variant-pill-name" title="${esc(p.name)}">${esc(p.name)}</span>
-            ${p.is_master ? '<span class="chip-badge-master">Master</span>' : ''}
-            ${isActive ? '<span class="chip-badge-active">Active</span>' : ''}
+            <div style="display:flex;align-items:center;gap:4px;">
+              ${p.is_master ? '<span class="chip-badge-master">Master</span>' : ''}
+              ${isActive ? '<span class="chip-badge-active">Active</span>' : ''}
+              <button type="button" class="variant-live-toggle-btn ${isLive ? 'is-live' : 'is-paused'}" data-action="profile-toggle-live" data-id="${esc(p.id)}" title="${isLive ? 'Currently LIVE for match scoring. Click to pause.' : 'Currently PAUSED from match scoring. Click to set Live.'}">
+                <span class="toggle-dot"></span>
+                <span>${isLive ? 'Live' : 'Paused'}</span>
+              </button>
+            </div>
           </div>
           <div class="variant-pill-target">${esc(p.target_title || 'General Target')}</div>
           <div class="variant-pill-tags">
@@ -940,12 +954,58 @@
 
     const beaconText = $('#activeProfileBeaconText');
     if (beaconText) {
-      beaconText.textContent = `Active for Matching: ${active.name || 'Master Profile'}`;
+      beaconText.textContent = `Active in Editor: ${active.name || 'Master Profile'}`;
     }
 
     const lastSaved = $('#activeProfileLastSaved');
     if (lastSaved) {
       lastSaved.textContent = active.updated_at ? ('Updated ' + timeAgo(active.updated_at)) : 'Updated recently';
+    }
+
+    // Refresh Search filter resume dropdown
+    renderResumeFilterDropdown();
+  }
+
+  async function toggleLiveProfile(id) {
+    if (!id) return;
+    try {
+      const res = await api('/api/profile/toggle-live', { method: 'POST', body: { id } });
+      if (res && res.success) {
+        if (res.profiles) S.profiles = res.profiles;
+        renderProfilesBar();
+        toast(res.message || 'Updated live matching pool.');
+        if (S.searchHasRun) {
+          runSearch({ forceRefresh: false });
+        }
+      }
+    } catch (err) {
+      toast('Cannot change live status: ' + err.message, 'error');
+    }
+  }
+
+  function renderResumeFilterDropdown() {
+    const menu = $('#p4MenuResumeItems');
+    if (!menu) return;
+    const list = S.profiles || [];
+    const selected = S.filterResume || 'all';
+
+    let html = `<button type="button" class="p4-menu-item ${selected === 'all' ? 'is-selected' : ''}" data-resume-id="all">All Resumes</button>`;
+    list.forEach(p => {
+      const isLive = !!p.is_live;
+      const statusIcon = isLive ? '● ' : '○ ';
+      const statusSuffix = isLive ? '' : ' (Paused)';
+      html += `<button type="button" class="p4-menu-item ${selected === p.id ? 'is-selected' : ''}" data-resume-id="${esc(p.id)}">${statusIcon}${esc(p.name)}${statusSuffix}</button>`;
+    });
+    menu.innerHTML = html;
+
+    const labelEl = $('#p4TextResume');
+    if (labelEl) {
+      if (selected === 'all') {
+        labelEl.textContent = 'Resume: All';
+      } else {
+        const found = list.find(p => p.id === selected);
+        labelEl.textContent = found ? `Resume: ${found.name}` : 'Resume: All';
+      }
     }
   }
 
@@ -2405,6 +2465,12 @@
         if (f.yoe === '8+' && sen !== 'lead_staff') return false;
       }
 
+      // 30. Winning Resume Filter
+      const resumeFilter = S.filterResume || (f.best_profile_id || 'all');
+      if (resumeFilter && resumeFilter !== 'all') {
+        if (j.best_profile_id && j.best_profile_id !== resumeFilter) return false;
+      }
+
       return true;
     });
   }
@@ -3136,6 +3202,19 @@
       <div class="job-card-body">
         <div class="job-card-body-main">
           <span class="job-item-title">${esc(cleanTitle(j.title))}</span>
+          ${(() => {
+            if (!showScore || !j.best_profile_name) return '';
+            const liveCount = (j.live_matches && j.live_matches.length) || (j.total_live_profiles || 1);
+            const liveBadge = liveCount > 1 ? `<span class="chip-live-tested" title="Tested against ${liveCount} live resume variants (${liveCount} in active matching pool)">${liveCount} live</span>` : '';
+            return `<div class="job-item-best-resume" title="Match score (${j.score}%) matched using: ${esc(j.best_profile_name)}">
+              <span class="chip-best-resume">
+                <svg class="i chip-resume-icon" aria-hidden="true"><use href="#i-user"/></svg>
+                <span class="chip-resume-label">Matched with:</span>
+                <strong class="chip-resume-name">${esc(j.best_profile_name)}</strong>
+                ${liveBadge}
+              </span>
+            </div>`;
+          })()}
         </div>
         ${showScore ? `
           <div class="job-score-wrap">
@@ -3536,7 +3615,7 @@
                 </div>
                 <div class="variant-indicator-bar" style="margin-top:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                   <span class="muted small" style="display:inline-flex; align-items:center; gap:4px;">
-                    ${ico('file')} Scored with: <strong>${esc(((S.profiles || []).find(p => p.id === S.activeProfileId) || {}).name || 'Master Profile')}</strong>
+                    ${ico('file')} Best match: <strong>${esc(j.best_profile_name || ((S.profiles || []).find(p => p.id === S.activeProfileId) || {}).name || 'Master Profile')}</strong>
                   </span>
                   <button type="button" class="btn btn-ghost btn-sm" data-action="compare-variants-modal" style="padding:2px 8px; font-size:12px; height:24px;" title="Compare how all your resume variants match this posting">
                     ${ico('grid')} Compare all variants
@@ -3544,6 +3623,49 @@
                 </div>
               </div>
             </div>
+
+            ${(() => {
+              const liveMatches = j.live_matches || [];
+              if (liveMatches.length <= 1) return '';
+              const pausedCount = Math.max(0, (S.profiles ? S.profiles.filter(p => !p.is_live).length : 0));
+              return `
+                <div class="fit-live-leaderboard">
+                  <div class="leaderboard-header">
+                    <div class="leaderboard-title">
+                      ${ico('trophy')}
+                      <span>Live Resumes Match Leaderboard</span>
+                    </div>
+                    <span class="leaderboard-pool-pill">${liveMatches.length} Live Tested</span>
+                  </div>
+                  <div class="leaderboard-list">
+                    ${liveMatches.map((m, mIdx) => {
+                      const isWinner = m.is_best || mIdx === 0;
+                      return `
+                        <div class="leaderboard-row ${isWinner ? 'is-winner' : ''}">
+                          <div class="leaderboard-row-left">
+                            <span class="leaderboard-rank">${isWinner ? '🏆' : `#${mIdx + 1}`}</span>
+                            <div style="min-width:0;">
+                              <div class="leaderboard-variant-name">${esc(m.name)}</div>
+                              <div class="leaderboard-target-sub">${esc(m.target_title || 'General')} • ${m.matched_count} skill matches</div>
+                            </div>
+                          </div>
+                          <div class="leaderboard-row-right">
+                            ${isWinner ? '<span class="leaderboard-winner-tag">Winning Fit</span>' : ''}
+                            <span class="leaderboard-score-chip">${m.score}%</span>
+                          </div>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                  ${pausedCount > 0 ? `
+                    <div class="leaderboard-ignored-footer">
+                      <svg class="i" style="width:12px;height:12px;opacity:0.7;"><use href="#i-info"/></svg>
+                      <span>${pausedCount} paused resume variant${pausedCount > 1 ? 's were' : ' was'} excluded from the matching pool.</span>
+                    </div>
+                  ` : ''}
+                </div>
+              `;
+            })()}
 
             ${j.rationale ? `
               <div class="fit-ai-callout">
@@ -5574,6 +5696,13 @@
     'profile-save': () => saveProfile(),
     'profile-discard': () => discardProfile(),
     'profile-switch': el => switchProfile(el.dataset.id),
+    'profile-toggle-live': (el, e) => {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      toggleLiveProfile(el.dataset.id);
+    },
     'profile-new-variant': () => openNewVariantDialog(false),
     'profile-duplicate-variant': () => duplicateActiveProfile(),
     'profile-rename-variant': () => openNewVariantDialog(true, S.activeProfileId),
@@ -6243,6 +6372,29 @@
         if (t) t.textContent = labels[yoe] || 'Years of Experience';
         $$('.p4-menu-item', yoeMenu).forEach(b => b.classList.toggle('is-selected', b === item));
         yoeMenu.hidden = true;
+        filterAndRender();
+      });
+    }
+
+    const resumeMenu = $('#p4MenuResume');
+    if (resumeMenu) {
+      resumeMenu.addEventListener('click', e => {
+        const item = e.target.closest('[data-resume-id]');
+        if (!item) return;
+        const rid = item.dataset.resumeId || 'all';
+        S.filterResume = rid;
+        $$('.p4-menu-item', resumeMenu).forEach(b => b.classList.toggle('is-selected', b === item));
+        const labelEl = $('#p4TextResume');
+        if (labelEl) {
+          if (rid === 'all') {
+            labelEl.textContent = 'Resume: All';
+          } else {
+            const list = S.profiles || [];
+            const found = list.find(p => p.id === rid);
+            labelEl.textContent = found ? `Resume: ${found.name}` : 'Resume: All';
+          }
+        }
+        resumeMenu.hidden = true;
         filterAndRender();
       });
     }

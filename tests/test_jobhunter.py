@@ -1335,6 +1335,145 @@ class FamousFilterTests(Base):
         self.assertGreater(comparisons[0]["score"], comparisons[1]["score"])
         self.assertEqual(res["best_variant"]["id"], "var_a")
 
+    def test_set_resume_profile_live_and_minimum_guarantee(self):
+        """Verify toggling is_live status and enforcing that at least 1 resume remains live."""
+        from jh import db
+        # Ensure master profile is populated before duplicating
+        db.save_profile({
+            "name": "Master Resume",
+            "target_title": "Software Engineer",
+            "skills": ["Python", "FastAPI", "SQL"],
+        }, profile_id="master")
+        # Create a second variant
+        v2 = db.duplicate_resume_profile("master", new_name="Data Science Variant", target_title="Data Scientist")
+        self.assertTrue(v2.get("_is_live", True))
+
+        # We now have 2 resumes (master and v2). We can toggle v2 to paused (is_live=False)
+        updated = db.set_resume_profile_live(v2["_profile_id"], is_live=False)
+        self.assertFalse(updated["is_live"])
+
+        # Now only master is live. Trying to pause master must raise ValueError
+        with self.assertRaises(ValueError) as ctx:
+            db.set_resume_profile_live("master", is_live=False)
+        self.assertIn("At least one resume must remain Live", str(ctx.exception))
+
+        # Re-enable v2
+        updated2 = db.set_resume_profile_live(v2["_profile_id"], is_live=True)
+        self.assertTrue(updated2["is_live"])
+
+        # Clean up created variant
+        db.delete_resume_profile(v2["_profile_id"])
+
+    def test_score_job_best_picks_highest_matching_live_resume(self):
+        """score_job_best must score across live profiles and pick the winner with the highest fit."""
+        from jh import scoring
+        python_profile = {
+            "_profile_id": "prof_py",
+            "_profile_name": "Python Backend Specialist",
+            "target_title": "Senior Python Backend Engineer",
+            "skills": ["Python", "FastAPI", "PostgreSQL", "Redis", "Docker", "AWS"],
+            "years_of_experience": 5
+        }
+        frontend_profile = {
+            "_profile_id": "prof_fe",
+            "_profile_name": "Frontend React Specialist",
+            "target_title": "Senior React Frontend Engineer",
+            "skills": ["JavaScript", "TypeScript", "React", "Next.js", "Tailwind CSS", "Redux"],
+            "years_of_experience": 5
+        }
+
+        # 1. Job requiring Python & FastAPI
+        py_job = {
+            "title": "Senior Python Engineer",
+            "description": "Building microservices with Python, FastAPI, and PostgreSQL on AWS.",
+            "location": "Remote",
+            "work_mode": "Remote"
+        }
+        res_py = scoring.score_job_best(py_job, [python_profile, frontend_profile])
+        self.assertEqual(res_py["best_profile_id"], "prof_py")
+        self.assertEqual(res_py["best_profile_name"], "Python Backend Specialist")
+        self.assertEqual(len(res_py["live_matches"]), 2)
+        self.assertTrue(res_py["live_matches"][0]["is_best"])
+        self.assertGreater(res_py["live_matches"][0]["score"], res_py["live_matches"][1]["score"])
+
+        # 2. Job requiring React & Next.js
+        fe_job = {
+            "title": "Senior Frontend Engineer",
+            "description": "Building interactive dashboards with React, Next.js, and TypeScript.",
+            "location": "Remote",
+            "work_mode": "Remote"
+        }
+        res_fe = scoring.score_job_best(fe_job, [python_profile, frontend_profile])
+        self.assertEqual(res_fe["best_profile_id"], "prof_fe")
+        self.assertEqual(res_fe["best_profile_name"], "Frontend React Specialist")
+        self.assertEqual(res_fe["live_matches"][0]["id"], "prof_fe")
+        self.assertTrue(res_fe["live_matches"][0]["is_best"])
+
+    def test_score_job_best_ignores_paused_resumes_in_matching_pool(self):
+        """Out of 5 resumes with only 3 Live, the matching engine only scores against the 3 Live and ignores the 2 Paused."""
+        from jh import scoring, db
+        # 3 Live profiles, 2 Paused profiles
+        p1_live = {"_profile_id": "p1", "_profile_name": "Live 1 (Go)", "skills": ["Go", "Kubernetes"], "_is_live": True}
+        p2_live = {"_profile_id": "p2", "_profile_name": "Live 2 (Java)", "skills": ["Java", "Spring Boot"], "_is_live": True}
+        p3_live = {"_profile_id": "p3", "_profile_name": "Live 3 (DevOps)", "skills": ["Terraform", "AWS"], "_is_live": True}
+        # Paused profiles: p4 has 100% Python match, but because it is paused, it MUST NOT be scored
+        p4_paused = {"_profile_id": "p4", "_profile_name": "Paused 1 (Python)", "skills": ["Python", "FastAPI", "Postgres", "Redis"], "_is_live": False}
+        p5_paused = {"_profile_id": "p5", "_profile_name": "Paused 2 (Ruby)", "skills": ["Ruby", "Rails"], "_is_live": False}
+
+        # Save these into DB to verify get_live_profiles() filtering
+        live_pool = [p for p in [p1_live, p2_live, p3_live, p4_paused, p5_paused] if p["_is_live"]]
+        self.assertEqual(len(live_pool), 3)
+
+        job = {
+            "title": "Cloud Infrastructure Engineer",
+            "description": "Looking for AWS and Terraform experts.",
+            "location": "Remote"
+        }
+        res = scoring.score_job_best(job, live_pool)
+        # p3_live (DevOps with AWS and Terraform) must win among the live ones
+        self.assertEqual(res["best_profile_id"], "p3")
+        self.assertEqual(res["total_live_profiles"], 3)
+        evaluated_ids = [m["id"] for m in res["live_matches"]]
+        self.assertIn("p1", evaluated_ids)
+        self.assertIn("p2", evaluated_ids)
+        self.assertIn("p3", evaluated_ids)
+        self.assertNotIn("p4", evaluated_ids)
+        self.assertNotIn("p5", evaluated_ids)
+
+    def test_rescore_and_query_stored_jobs_with_best_profile(self):
+        """Verify rescore_and_classify_stored_jobs stores best_profile_id and query_stored_jobs filters by it."""
+        from jh import db
+        # Ensure master profile is populated with skills
+        db.save_profile({
+            "name": "Staff Architect Resume",
+            "target_title": "Senior Staff Architect",
+            "skills": ["compression", "algorithms", "scale", "Python"],
+        }, profile_id="master")
+        test_job = {
+            "id": "job-best-prof-test-1",
+            "title": "Senior Staff Architect",
+            "company": "Pied Piper",
+            "location": "Remote",
+            "work_mode": "Remote",
+            "description": "Building compression algorithms with high scale.",
+            "score": 0
+        }
+        db.replace_search_jobs([test_job], query="compression", clear_existing=False)
+
+        count = db.rescore_and_classify_stored_jobs()
+        self.assertGreaterEqual(count, 1)
+
+        # Query jobs and verify best_profile_id is present
+        res = db.query_stored_jobs()
+        matching_job = next((j for j in res["jobs"] if j.get("id") == "job-best-prof-test-1" or j.get("job_key") == "job-best-prof-test-1"), None)
+        self.assertIsNotNone(matching_job)
+        self.assertTrue(bool(matching_job.get("best_profile_id")))
+        self.assertTrue(bool(matching_job.get("best_profile_name")))
+
+        # Verify facets include profiles
+        facets = res.get("facets", {})
+        self.assertIn("profiles", facets)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

@@ -85,6 +85,27 @@ def r_activate_profile(q, body):
         raise ApiError(str(e))
 
 
+@route("POST", "/api/profile/toggle-live")
+def r_toggle_live_profile(q, body):
+    pid = body.get("id") or body.get("profile_id")
+    if not pid:
+        raise ApiError("Profile ID is required to toggle live matching status.")
+    is_live = body.get("is_live")
+    try:
+        updated = db.set_resume_profile_live(pid, is_live=is_live)
+        import threading
+        threading.Thread(target=db.rescore_and_classify_stored_jobs, daemon=True).start()
+        status_str = "Live" if updated.get("is_live") else "Paused"
+        return {
+            "success": True,
+            "message": f"Resume variant '{updated.get('name')}' is now {status_str} for matching.",
+            "profile": updated,
+            "profiles": db.list_resume_profiles()
+        }
+    except Exception as e:
+        raise ApiError(str(e))
+
+
 @route("POST", "/api/profile/duplicate")
 def r_duplicate_profile(q, body):
     pid = body.get("id") or body.get("profile_id") or "master"
@@ -181,7 +202,8 @@ def r_saved_search(q, body):
         "days": g("days", "0"),
         "q": g("q") or g("keyword"),
         "sort": g("sort", "ranked"),
-        "h1b": g("h1b")
+        "h1b": g("h1b"),
+        "best_profile_id": g("best_profile_id") or g("profile_id")
     }
     return db.query_stored_jobs(filters, include_all=True)
 

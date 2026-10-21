@@ -8,7 +8,7 @@ import threading
 import time
 
 from . import config, db, dedup, sources as src
-from .scoring import score_job
+from .scoring import score_job, score_job_best
 from .util import now_iso, parse_date
 
 log = logging.getLogger("jobhunter")
@@ -527,11 +527,16 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
             "est_seconds": est_total_s
         })
 
+    live_profiles = db.get_live_profiles()
+    if profile and not profile.get("_is_empty") and not live_profiles:
+        live_profiles = [profile]
+
     t_score_start = time.time()
     for idx, j in enumerate(merged, start=1):
-        j.update(score_job(j, profile))
+        j.update(score_job_best(j, live_profiles))
         _rank_opportunity(j)
-        enrich_recommendation_insights(j, profile)
+        winning_prof = next((p for p in live_profiles if (p.get("_profile_id") or p.get("id")) == j.get("best_profile_id")), profile)
+        enrich_recommendation_insights(j, winning_prof)
         if on_progress and (idx % 25 == 0 or idx == total_unique):
             is_final = (idx == total_unique)
             elapsed = time.time() - t_score_start
@@ -563,9 +568,10 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
             try:
                 res_job = f.result()
                 futs[f].update(res_job)
-                futs[f].update(score_job(futs[f], profile))
+                futs[f].update(score_job_best(futs[f], live_profiles))
                 _rank_opportunity(futs[f])
-                enrich_recommendation_insights(futs[f], profile)
+                winning_prof = next((p for p in live_profiles if (p.get("_profile_id") or p.get("id")) == futs[f].get("best_profile_id")), profile)
+                enrich_recommendation_insights(futs[f], winning_prof)
             except Exception:
                 pass
         merged.sort(key=lambda j: (j["opportunity_score"], j["score"], j.get("posted_at") or ""), reverse=True)
@@ -871,10 +877,11 @@ def run_linkedin_incremental():
 
         added_count = 0
         if new_jobs:
+            live_profs = db.get_live_profiles()
             for j in new_jobs:
                 if not j.get("job_key"):
                     j["job_key"] = dedup.job_key(j) if hasattr(dedup, "job_key") else j.get("id")
-                j.update(score_job(j, profile))
+                j.update(score_job_best(j, live_profs))
                 _rank_opportunity(j)
 
             added_count = db.store_pending_jobs(new_jobs, query=f"linkedin_incremental:{query}")
@@ -1216,11 +1223,12 @@ def _background_enrichment_worker():
                         orig.update(res_job)
                         orig["enrichment_attempted"] = True
                         orig["needs_enrichment"] = False
-                        orig["enriched"] = True
-                        scored = score_job(orig, profile)
+                        live_profs = db.get_live_profiles()
+                        scored = score_job_best(orig, live_profs)
                         orig.update(scored)
                         _rank_opportunity(orig)
-                        enrich_recommendation_insights(orig, profile)
+                        winning_prof = next((p for p in live_profs if (p.get("_profile_id") or p.get("id")) == orig.get("best_profile_id")), profile)
+                        enrich_recommendation_insights(orig, winning_prof)
                         db.update_search_job(orig)
                     except Exception as ex:
                         log.debug("Error in background enrich worker: %s", ex)
