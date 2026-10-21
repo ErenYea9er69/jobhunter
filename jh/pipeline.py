@@ -553,12 +553,12 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
         if on_progress:
             on_progress("stage", {
                 "stage": "enrich",
-                "message": f"Verifying direct employer links for top {len(to_enrich)} roles (~1s remaining)...",
+                "message": f"Reading full requirements & verifying links for top {len(to_enrich)} roles...",
                 "enrich_count": len(to_enrich),
-                "est_seconds": 1.0
+                "est_seconds": 2.5
             })
         futs = {_pool.submit(src.enrich_job, j): j for j in to_enrich}
-        d2, _ = cf.wait(list(futs), timeout=4.0)
+        d2, _ = cf.wait(list(futs), timeout=10.0)
         for f in d2:
             try:
                 res_job = f.result()
@@ -575,6 +575,12 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
         db.store_pending_jobs(merged, query=query)
     else:
         db.replace_search_jobs(merged, query=query, location=location, sources=statuses, clear_existing=False)
+
+    # Trigger continuous background enrichment for all remaining jobs
+    try:
+        trigger_background_enrichment()
+    except Exception:
+        pass
 
     # Filter according to requested params for immediate response
     bad_keys = [k.lower().strip() for k in profile.get("excluded_keywords", []) if k and k.strip()]
@@ -1113,4 +1119,159 @@ def start_linkedin_incremental_worker():
     _li_bg_stop.clear()
     _li_bg_thread = threading.Thread(target=_linkedin_incremental_worker, daemon=True, name="jh-li-incremental")
     _li_bg_thread.start()
+
+
+# ---------------------------------------------------------------- background deep enrichment
+
+_enrich_telemetry = {
+    "is_running": False,
+    "total": 0,
+    "completed": 0,
+    "current_job": "",
+    "updated_at": None,
+}
+_enrich_bg_stop = threading.Event()
+_enrich_bg_wake = threading.Event()
+_enrich_bg_thread = None
+_enrich_lock = threading.Lock()
+_enrich_pool = cf.ThreadPoolExecutor(max_workers=8, thread_name_prefix="jh-bg-enrich")
+
+
+def get_enrichment_telemetry():
+    with _enrich_lock:
+        return dict(_enrich_telemetry)
+
+
+def trigger_background_enrichment():
+    _enrich_bg_wake.set()
+    start_background_enricher()
+    return True
+
+
+def _background_enrichment_worker():
+    """Continuously and politely read all job data, full descriptions, and requirements in background."""
+    for _ in range(2):
+        if _enrich_bg_stop.is_set():
+            return
+        time.sleep(1)
+
+    while not _enrich_bg_stop.is_set():
+        try:
+            profile = db.get_profile()
+            if profile.get("_is_empty"):
+                _enrich_bg_wake.wait(timeout=25)
+                _enrich_bg_wake.clear()
+                continue
+
+            with db.session() as c:
+                rows = c.execute("""
+                    SELECT job_key, job_json
+                    FROM search_jobs
+                    WHERE is_active = 1
+                      AND coalesce(json_extract(job_json, '$.enrichment_attempted'), 0) != 1
+                      AND (
+                           coalesce(json_extract(job_json, '$.needs_enrichment'), 0) = 1
+                           OR (coalesce(json_extract(job_json, '$.enriched'), 0) != 1 AND coalesce(json_extract(job_json, '$.enriched'), 0) != 'true')
+                           OR length(coalesce(json_extract(job_json, '$.description'), '')) < 400
+                      )
+                    ORDER BY opportunity_score DESC, score DESC
+                """).fetchall()
+
+            if not rows:
+                with _enrich_lock:
+                    _enrich_telemetry["is_running"] = False
+                    _enrich_telemetry["updated_at"] = now_iso()
+                _enrich_bg_wake.wait(timeout=30)
+                _enrich_bg_wake.clear()
+                continue
+
+            pending_jobs = []
+            for r in rows:
+                try:
+                    pending_jobs.append(json.loads(r["job_json"]))
+                except Exception:
+                    pass
+
+            total_jobs = len(pending_jobs)
+            with _enrich_lock:
+                _enrich_telemetry["is_running"] = True
+                _enrich_telemetry["total"] = total_jobs
+                _enrich_telemetry["completed"] = 0
+                _enrich_telemetry["updated_at"] = now_iso()
+
+            log.info("Background enrichment started for %d jobs...", total_jobs)
+
+            batch_size = 8
+            for i in range(0, total_jobs, batch_size):
+                if _enrich_bg_stop.is_set():
+                    break
+                batch = pending_jobs[i: i + batch_size]
+                futs = {_enrich_pool.submit(src.enrich_job, j): j for j in batch}
+                d2, _ = cf.wait(list(futs), timeout=15.0)
+
+                for f in d2:
+                    orig = futs[f]
+                    try:
+                        res_job = f.result()
+                        orig.update(res_job)
+                        orig["enrichment_attempted"] = True
+                        orig["needs_enrichment"] = False
+                        orig["enriched"] = True
+                        scored = score_job(orig, profile)
+                        orig.update(scored)
+                        _rank_opportunity(orig)
+                        enrich_recommendation_insights(orig, profile)
+                        db.update_search_job(orig)
+                    except Exception as ex:
+                        log.debug("Error in background enrich worker: %s", ex)
+                        try:
+                            orig["enrichment_attempted"] = True
+                            orig["needs_enrichment"] = False
+                            db.update_search_job(orig)
+                        except Exception:
+                            pass
+                    finally:
+                        with _enrich_lock:
+                            _enrich_telemetry["completed"] += 1
+                            if orig:
+                                _enrich_telemetry["current_job"] = f"{orig.get('company')} - {orig.get('title')}"
+                            _enrich_telemetry["updated_at"] = now_iso()
+
+                # Mark any timed out jobs as attempted to avoid freeze
+                for f, j in futs.items():
+                    if f not in d2:
+                        try:
+                            j["enrichment_attempted"] = True
+                            j["needs_enrichment"] = False
+                            db.update_search_job(j)
+                        except Exception:
+                            pass
+                        with _enrich_lock:
+                            _enrich_telemetry["completed"] += 1
+
+                time.sleep(0.2)
+
+            with _enrich_lock:
+                _enrich_telemetry["is_running"] = False
+                _enrich_telemetry["completed"] = total_jobs
+                _enrich_telemetry["current_job"] = ""
+                _enrich_telemetry["updated_at"] = now_iso()
+
+        except Exception as e:
+            log.warning("Background enricher loop error: %s", e)
+            with _enrich_lock:
+                _enrich_telemetry["is_running"] = False
+            time.sleep(5)
+
+        _enrich_bg_wake.wait(timeout=30)
+        _enrich_bg_wake.clear()
+
+
+def start_background_enricher():
+    global _enrich_bg_thread
+    if _enrich_bg_thread and _enrich_bg_thread.is_alive():
+        return
+    _enrich_bg_stop.clear()
+    _enrich_bg_thread = threading.Thread(target=_background_enrichment_worker, daemon=True, name="jh-bg-enricher")
+    _enrich_bg_thread.start()
 

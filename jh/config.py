@@ -48,7 +48,7 @@ CACHE_TTL_SECONDS = int(os.environ.get("JH_CACHE_TTL", "900"))
 STALE_CACHE_MAX_SECONDS = int(os.environ.get("JH_STALE_MAX", str(24 * 3600)))
 MAX_RESULTS = int(os.environ.get("JH_MAX_RESULTS", "1000"))
 MAX_SCORED_JOBS = int(os.environ.get("JH_MAX_SCORED_JOBS", "2500"))
-ENRICH_TOP_N = int(os.environ.get("JH_ENRICH_TOP_N", "12"))
+ENRICH_TOP_N = int(os.environ.get("JH_ENRICH_TOP_N", "40"))
 
 def get_max_scored_jobs():
     try:

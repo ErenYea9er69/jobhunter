@@ -1,31 +1,49 @@
 """Match scoring. 0 to 100 with no artificial floor, a visible breakdown, and a confidence level."""
 import re
+import unicodedata
 
 from . import skills as sk
 from .util import annualize, days_since, parse_salary
 
 LEVELS = [("intern", 0), ("junior", 1), ("jr", 1), ("entry", 1), ("associate", 1), ("mid", 2), ("senior", 3), ("sr", 3),
-          ("lead", 4), ("staff", 4), ("principal", 5), ("head", 5), ("manager", 4), ("director", 5), ("vp", 6)]
+          ("lead", 4), ("staff", 4), ("principal", 5), ("head", 5), ("manager", 4), ("director", 5), ("vp", 6),
+          ("confirme", 3), ("confirmee", 3), ("stagiaire", 0), ("alternant", 0), ("practicante", 0), ("werkstudent", 0)]
 _LEVEL_RE = re.compile(r"\b(" + "|".join(k for k, _ in LEVELS) + r")\b\.?", re.I)
 _LEVEL_MAP = dict(LEVELS)
 
-TITLE_SYNONYMS = {"developer": "engineer", "programmer": "engineer", "swe": "engineer", "sde": "engineer", "dev": "engineer",
-                  "fullstack": "full stack", "full-stack": "full stack", "frontend": "front end", "front-end": "front end",
-                  "backend": "back end", "back-end": "back end", "devops": "platform", "sre": "platform",
-                  "sr": "senior", "jr": "junior", "mgr": "manager", "ux": "design", "ui": "design"}
-STOP = {"the", "and", "of", "for", "a", "an", "in", "at", "to", "ii", "iii", "i", "remote", "us", "uk", "emea",
-        "senior", "junior", "lead", "staff", "principal", "sr", "jr", "intern", "associate", "mid"}
+TITLE_SYNONYMS = {
+    "developer": "engineer", "programmer": "engineer", "swe": "engineer", "sde": "engineer", "dev": "engineer",
+    "fullstack": "full stack", "full-stack": "full stack", "frontend": "front end", "front-end": "front end",
+    "backend": "back end", "back-end": "back end", "devops": "platform", "sre": "platform",
+    "sr": "senior", "jr": "junior", "mgr": "manager", "ux": "design", "ui": "design",
+    # French
+    "developpeur": "engineer", "developpeuse": "engineer", "ingenieur": "engineer", "ingenieure": "engineer",
+    "confirme": "senior", "confirmee": "senior", "stage": "intern", "stagiaire": "intern", "alternance": "intern", "alternant": "intern",
+    # Spanish
+    "desarrollador": "engineer", "desarrolladora": "engineer", "ingeniero": "engineer", "ingeniera": "engineer",
+    "practicante": "intern", "pasante": "intern",
+    # German
+    "entwickler": "engineer", "entwicklerin": "engineer", "softwareentwickler": "engineer",
+    "praktikant": "intern", "werkstudent": "intern",
+}
+STOP = {
+    "the", "and", "of", "for", "a", "an", "in", "at", "to", "ii", "iii", "i", "remote", "us", "uk", "emea",
+    "senior", "junior", "lead", "staff", "principal", "sr", "jr", "intern", "associate", "mid",
+    "fh", "hf", "f/h", "h/f", "mwd", "m/w/d", "mfd", "m/f/d", "wmd", "w/m/d", "cdi", "cdd", "irc", "ref"
+}
 
 
 def title_tokens(title):
-    t = (title or "").lower().replace("/", " ").replace(",", " ").replace("(", " ").replace(")", " ")
+    raw = unicodedata.normalize('NFKD', title or '').encode('ascii', 'ignore').decode('utf-8')
+    t = raw.lower().replace("/", " ").replace(",", " ").replace("(", " ").replace(")", " ").replace("-", " ")
     for k, v in TITLE_SYNONYMS.items():
         t = re.sub(rf"(?<![a-z]){re.escape(k)}(?![a-z])", v, t)
-    return {w for w in re.findall(r"[a-z+#]+", t) if w not in STOP and len(w) > 1}
+    return {w for w in re.findall(r"[a-z+#]+", t) if w not in STOP and len(w) > 1 and not re.match(r"^irc\d+$", w)}
 
 
 def level_of(title):
-    m = _LEVEL_RE.search(title or "")
+    raw = unicodedata.normalize('NFKD', title or '').encode('ascii', 'ignore').decode('utf-8')
+    m = _LEVEL_RE.search(raw)
     return _LEVEL_MAP[m.group(1).lower()] if m else None
 
 
@@ -265,7 +283,7 @@ NON_SOFTWARE_DISCIPLINES = {
 }
 
 SPECIALIZED_LANGUAGES = {
-    "rust", "golang", "go", "swift", "kotlin", "ruby", "php", "scala", "c++", "c#",
+    "python", "java", "typescript", "javascript", "rust", "golang", "go", "swift", "kotlin", "ruby", "php", "scala", "c++", "c#",
     "salesforce", "sap", "flutter", "react native", "solidity"
 }
 
@@ -581,14 +599,39 @@ def score_job(job, profile):
                 credit[m] = 0.45
                 break
 
+    # If candidate matches primary core domain tech, grant adjacent tooling credit for universal dev tools/practices
+    if matched or (title_ratio := _title_score(job.get("title", ""), profile)) >= 0.7:
+        for m in missing:
+            if m not in credit and m in sk.ADJACENT:
+                credit[m] = 0.45
+
     title_ratio = _title_score(job.get("title", ""), profile)
     title_pts = title_ratio * 20
 
     total_w = sum(weights.values())
     desc_len = len(job.get("description", "") or "")
-    if total_w > 0:
-        cov = (sum(weights[s] for s in matched) + sum(weights[s] * credit[s] for s in credit)) / total_w
+    is_enriched = bool(job.get("enriched"))
+    raw_match_w = sum(weights[s] for s in matched) + sum(weights[s] * credit.get(s, 0.0) for s in credit)
+
+    if desc_len < 400 and not is_enriched:
+        # Sparse/unenriched posting: requirements are incomplete.
+        # 1 observed title skill is NOT 100% of an employer's requirements.
+        # Smooth against an expected requirement baseline horizon.
+        expected_w = max(total_w, 4.5)
+        unobserved_w = expected_w - total_w
+        if matched and title_ratio >= 0.6:
+            unobserved_credit = unobserved_w * (0.35 + 0.22 * title_ratio)
+        elif matched:
+            unobserved_credit = unobserved_w * 0.25
+        elif total_w == 0:
+            unobserved_credit = unobserved_w * (0.36 + 0.20 * title_ratio)
+        else:
+            unobserved_credit = unobserved_w * (0.12 * title_ratio)
+        cov = (raw_match_w + unobserved_credit) / expected_w
         skill_pts = cov * 50
+    elif total_w > 0:
+        cov = raw_match_w / total_w
+        skill_pts = min(50.0, cov * 50)
     else:
         skill_pts = 18 + (title_ratio * 10)  # unknown requirements: neutral baseline + title alignment boost
 
@@ -605,14 +648,14 @@ def score_job(job, profile):
     if bonus_matches:
         notes.append(f"Bonus qualification match: {', '.join(bonus_matches[:3])}")
 
-    # Core required skill verification (must-have requirements)
+    # Core required skill verification (must-have requirements - excluding universal adjacent tools)
     core_penalty = 0
-    core_required = [s for s, w in weights.items() if w >= 0.95]
+    core_required = [s for s, w in weights.items() if w >= 0.95 and s not in sk.ADJACENT]
     if len(core_required) >= 2:
-        matched_core = [s for s in core_required if s in matched]
+        matched_core = [s for s in core_required if s in matched or s in credit]
         if not matched_core:
             core_penalty = 22
-            missing_core = [s for s in core_required if s in missing]
+            missing_core = [s for s in core_required if s in missing and s not in credit]
             notes.append("Missing core required technologies: " + ", ".join(missing_core[:3]))
 
     # Seniority and leveling alignment
@@ -661,6 +704,12 @@ def score_job(job, profile):
 
     job_country = classify_job_country(job.get("location"), job.get("title"), text)
 
+    # Detect candidate remote status
+    cand_is_remote = (
+        (profile.get("work_mode") or "").lower() == "remote" or
+        (profile.get("location") or "").lower() in ("remote", "worldwide")
+    ) and not profile.get("preferred_locations")
+
     # Detect strict country requirements in job description/location
     us_restricted = bool(re.search(r"\b(us only|u\.s\. only|must reside in (the )?us|must be located in (the )?united states|us citizen|green card|security clearance|authorized to work in the (us|united states))\b", text, re.I))
     uk_restricted = bool(re.search(r"\b(uk only|must be located in (the )?united kingdom|right to work in the uk|must reside in the uk)\b", text, re.I))
@@ -687,6 +736,10 @@ def score_job(job, profile):
 
     if geo_blocked:
         mode_pts = 0
+    elif cand_is_remote and jm in ("onsite", "hybrid") and job_country not in ("Worldwide", ""):
+        # Candidate is remote without foreign country preference, but job requires physical on-site presence
+        mode_pts = 2 if jm == "onsite" else 3
+        notes.append(f"Location barrier: Role requires {jm} presence in {job.get('location') or job_country}.")
     elif cm in ("any", ""):
         mode_pts = 8 if jm != "unknown" else 6
     elif cm in jm or (cm == "remote" and jm == "remote"):
@@ -783,9 +836,9 @@ def score_job(job, profile):
         notes.append("Contains excluded keyword: " + ", ".join(bad[:3]))
     score = int(round(max(0, min(100, score))))
 
-    confidence = "high" if total_w >= 3 and desc_len > 400 else "medium" if total_w >= 1 else "low"
+    confidence = "high" if total_w >= 3 and desc_len > 400 else "medium" if (total_w >= 2 and desc_len >= 250) or is_enriched else "low"
     if confidence == "low":
-        notes.append("Few requirements were readable from this posting, so the score leans on the title.")
+        notes.append("Few requirements were readable from this posting, so the score leans on title and role alignment.")
 
     if score >= 85:
         label = "Excellent fit"

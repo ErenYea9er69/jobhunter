@@ -167,7 +167,7 @@ _RESP = re.compile(r"responsibilities|what you.?ll do|the role|your role|in this
 
 
 def extract_weighted(text):
-    """Return {skill: weight}. Required skills weigh 1.0, responsibilities 0.7, preferred 0.4."""
+    """Return {skill: weight}. Core required skills weigh 1.0, adjacent tools 0.5, responsibilities 0.7, preferred 0.4."""
     weights = {}
     mode, mode_w = "neutral", 0.85
     for line in (text or "").splitlines():
@@ -183,7 +183,11 @@ def extract_weighted(text):
             mode, mode_w = "resp", 0.7
         line_w = 0.4 if _PREFERRED.search(s) and not short else mode_w
         for sk in extract(s):
-            weights[sk] = max(weights.get(sk, 0), line_w)
+            effective_w = line_w
+            if sk in ADJACENT:
+                # Universal tooling and workflow practices carry balanced weight so they do not overpower core tech stack
+                effective_w = min(effective_w, 0.40 if sk in {"Agile/Scrum", "Jira", "Excel", "Stakeholder Management"} else 0.50)
+            weights[sk] = max(weights.get(sk, 0), effective_w)
     return weights
 
 

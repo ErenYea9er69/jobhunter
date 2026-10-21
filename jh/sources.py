@@ -852,6 +852,20 @@ LINKEDIN_GEO_MAP = {
 }
 
 
+def _extract_linkedin_jid(url_or_id):
+    if not url_or_id:
+        return ""
+    s = str(url_or_id)
+    digits = re.findall(r"\b(\d{8,12})\b", s)
+    if digits:
+        return digits[-1]
+    m2 = re.search(r"(?:/view/|/jobPosting/|currentJobId=)(\d{6,})", s)
+    if m2:
+        return m2.group(1)
+    all_d = re.findall(r"\d{6,}", s)
+    return all_d[-1] if all_d else ""
+
+
 class LinkedInGuest(Source):
     name, tier = "LinkedIn", "Major job board"
 
@@ -1262,8 +1276,7 @@ class LinkedInGuest(Source):
                 if not (t and c and u):
                     continue
 
-                jid_match = re.search(r"(\d{6,})", u.group(1))
-                jid = jid_match.group(1) if jid_match else str(abs(hash(u.group(1))))
+                jid = _extract_linkedin_jid(u.group(1)) or str(abs(hash(u.group(1))))
 
                 title = html.unescape(t.group(1).strip())
                 comp = html.unescape(c.group(1).strip())
@@ -1342,15 +1355,15 @@ class LinkedInGuest(Source):
         return out[:max_out]
 
     def enrich(self, job):
-        m = re.search(r"(\d{6,})", job.get("url", "") or job.get("id", ""))
-        if not m:
+        jid = _extract_linkedin_jid(job.get("url", "") or job.get("id", ""))
+        if not jid:
             return job
         headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
         }
-        detail_url = f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{m.group(1)}"
+        detail_url = f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{jid}"
         try:
             page = self._get_page(detail_url, timeout=6)
             if not page or page == "429":
@@ -1483,8 +1496,7 @@ class LinkedInGuest(Source):
                 if not (t and c and u):
                     continue
 
-                jid_match = re.search(r"(\d{6,})", u.group(1))
-                jid = jid_match.group(1) if jid_match else str(abs(hash(u.group(1))))
+                jid = _extract_linkedin_jid(u.group(1)) or str(abs(hash(u.group(1))))
                 raw_title = html.unescape(t.group(1).strip())
                 raw_company = html.unescape(c.group(1).strip())
                 comp_url_m = re.search(r'base-search-card__subtitle[^>]*>\s*<a[^>]*href="([^"?]+)', card)

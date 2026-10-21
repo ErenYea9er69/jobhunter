@@ -228,8 +228,22 @@ def r_job_details(q, body):
         enriched.update(scored)
         pipeline._rank_opportunity(enriched)
         pipeline.enrich_recommendation_insights(enriched, profile)
+    enriched["enrichment_attempted"] = True
+    enriched["needs_enrichment"] = False
+    enriched["enriched"] = True
     db.update_search_job(enriched)
     return {"success": True, "job": enriched}
+
+
+@route("GET", "/api/enrichment/status")
+def r_enrichment_status(q, body):
+    return {"success": True, "telemetry": pipeline.get_enrichment_telemetry()}
+
+
+@route("POST", "/api/enrichment/trigger")
+def r_enrichment_trigger(q, body):
+    pipeline.trigger_background_enrichment()
+    return {"success": True, "message": "Background enrichment triggered.", "telemetry": pipeline.get_enrichment_telemetry()}
 
 
 @route("POST", "/api/refine")
@@ -658,6 +672,7 @@ def start_background_server(host=None, port=None):
     db.init_db()
     digest.start_scheduler()
     pipeline.start_auto_search_worker()
+    pipeline.start_background_enricher()
     srv, actual_port = create_server(host, port)
     log.info("JobHunter %s background server started on http://%s:%d (LLM: %s, demo: %s)",
              __version__, config.HOST, actual_port,
@@ -673,6 +688,7 @@ def run(host=None, port=None):
     db.init_db()
     digest.start_scheduler()
     pipeline.start_auto_search_worker()
+    pipeline.start_background_enricher()
     srv, actual_port = create_server(host, port)
     log.info("JobHunter %s on http://%s:%d  (LLM: %s, demo: %s)", __version__, config.HOST, actual_port,
              "on" if refit.llm_available() else "off", config.DEMO)

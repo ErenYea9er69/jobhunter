@@ -1447,6 +1447,7 @@
       sessionStorage.setItem('jh-last-search-time', String(S.lastSearchTime));
     } catch (e) {}
     filterAndRender(true, true);
+    scheduleNextEnrichmentCheck(1000);
   }
 
   function jobWorkMode(j) {
@@ -2687,7 +2688,19 @@
         ${j.work_mode ? `<span class="meta-pill"><span class="meta-icon">${ico('briefcase')}</span><span>${esc(j.work_mode)}</span></span>` : ''}
         ${j.job_type ? `<span class="meta-pill meta-contract">${esc(j.job_type)}</span>` : ''}
         ${j.salary ? `<span class="meta-pill meta-salary"><span class="meta-icon">${ico('dollar')}</span><span>${esc(j.salary)}</span></span>` : ''}
-        ${showScore && required ? `<span class="meta-pill meta-skills${matched === required ? ' is-all' : ''}"><span class="meta-icon">${ico('check')}</span><span>${matched} of ${required} skills</span></span>` : ''}
+        ${(() => {
+          if (!showScore) return '';
+          const descLen = (j.description || '').length;
+          const isSparse = !j.enriched && required <= 2 && descLen < 350;
+          if (isSparse && matched > 0) {
+            const firstSkill = (j.matched_skills && j.matched_skills[0]) || 'Tech';
+            return `<span class="meta-pill meta-skills" title="Matched from title. Full details loaded upon selection."><span class="meta-icon">${ico('check')}</span><span>${esc(firstSkill)} match</span></span>`;
+          }
+          if (required > 0) {
+            return `<span class="meta-pill meta-skills${matched === required ? ' is-all' : ''}"><span class="meta-icon">${ico('check')}</span><span>${matched} of ${required} skills</span></span>`;
+          }
+          return '';
+        })()}
         ${j.bonus_matches && j.bonus_matches.length ? `<span class="meta-pill meta-bonus">+${j.bonus_matches.length} bonus</span>` : ''}
         ${(() => {
           const srcs = jobSources(j);
@@ -2710,6 +2723,7 @@
   function renderList(animate = false) {
     const list = $('#jobList');
     if (!list) return;
+    const prevScroll = list.scrollTop;
     const meta = S.searchMeta || {};
     const jobs = filteredJobs();
     const totalAll = (S.allJobs && S.allJobs.length) || 0;
@@ -2790,6 +2804,9 @@
     }
 
     list.innerHTML = cardsHtml + sentinelHtml;
+    if (prevScroll > 0) {
+      list.scrollTop = prevScroll;
+    }
     if (hasMore) {
       attachJobListObserver();
     }
@@ -2834,7 +2851,7 @@
     S.enrichingKeys.add(key);
 
     if (S.selectedKey === key && S.view === 'jobs') {
-      renderDetail();
+      renderDetail(true);
     }
 
     try {
@@ -2872,13 +2889,15 @@
     } finally {
       if (S.enrichingKeys) S.enrichingKeys.delete(key);
       if (S.selectedKey === key && S.view === 'jobs') {
-        renderDetail();
+        renderDetail(true);
       }
     }
   }
 
-  function renderDetail() {
+  function renderDetail(preserveScroll = false) {
     const el = $('#jobDetail');
+    if (!el) return;
+    const prevScroll = preserveScroll ? el.scrollTop : 0;
     let j = selectedJob();
     if (!j) {
       const jList = filteredJobs();
@@ -3307,6 +3326,9 @@
 
         <p class="credit">Source: ${esc(j.source_credit || j.source || '')}</p>
       </div>`;
+    if (preserveScroll && prevScroll > 0) {
+      el.scrollTop = prevScroll;
+    }
   }
 
   function selectJob(key) {
@@ -5872,6 +5894,7 @@
           btnRefreshSync.classList.remove('is-refreshing');
           checkAutoSearchStatus();
           checkLinkedinRadarStatus();
+          scheduleNextEnrichmentCheck(1000);
 
           // Smoothly slide out live sync banner and reset button
           setTimeout(() => {
@@ -7409,6 +7432,133 @@
     }
   }
 
+  // ------------------------------------------------------------------- background enrichment poller
+  let _enrichmentCheckTimer = null;
+  let _lastCompletedEnrichment = 0;
+  let _wasEnriching = false;
+  let _isSilentSyncing = false;
+
+  async function silentSyncEnrichedJobs() {
+    if (_isSilentSyncing) return;
+    _isSilentSyncing = true;
+    try {
+      const f = S.filters || {};
+      const params = new URLSearchParams();
+      const cat = (f.jobFunctions && f.jobFunctions.length) ? f.jobFunctions[0] : '';
+      if (cat) params.set('category', cat);
+      if (f.keyword && f.keyword.toLowerCase() !== cat.toLowerCase()) params.set('q', f.keyword);
+      if (f.workMode && f.workMode !== 'Any' && f.workMode !== 'all') params.set('work_mode', f.workMode);
+      else if (f.workModels && f.workModels.size === 1) params.set('work_mode', Array.from(f.workModels)[0]);
+      if (f.seniority && f.seniority !== 'all') params.set('seniority', f.seniority);
+      else if (f.expLevels && f.expLevels.size === 1) params.set('seniority', Array.from(f.expLevels)[0]);
+      if (f.jobType && f.jobType !== 'all') params.set('job_type', f.jobType);
+      else if (f.jobTypes && f.jobTypes.size === 1) params.set('job_type', Array.from(f.jobTypes)[0]);
+      if (f.country && f.country !== 'all') params.set('country', f.country);
+      if (f.locationQuery && f.locationQuery !== 'Anywhere in the US' && f.locationQuery !== 'Worldwide' && f.locationQuery.trim()) {
+        params.set('location', f.locationQuery.trim());
+      }
+      if (f.minScore > 0) params.set('min_score', String(f.minScore));
+      if (!f.salaryOpenToAll && f.minSalary > 0) params.set('min_salary', String(f.minSalary));
+      if (f.freshnessDays > 0) params.set('days', String(f.freshnessDays));
+      if (f.industry && f.industry !== 'all') params.set('industry', f.industry);
+      if (f.famousMode && f.famousMode !== 'all') params.set('famous_mode', f.famousMode);
+      if (f.h1b) params.set('h1b', '1');
+      params.set('sort', val('sortResultsBy') || 'ranked');
+
+      const res = await api(`/api/search/saved?${params.toString()}`);
+      if (res) {
+        const allPool = (res.all_jobs && res.all_jobs.length) ? res.all_jobs : (res.jobs || []);
+        S.allJobs = allPool;
+        S.jobsRanked = allPool;
+        S.jobs = (res.jobs && res.jobs.length) ? res.jobs : allPool;
+        S.searchMeta = res.meta || S.searchMeta || {};
+
+        if (S.jobs.length && (!S.selectedKey || !S.jobs.some(j => jobKey(j) === S.selectedKey))) {
+          S.selectedKey = jobKey(S.jobs[0]);
+        }
+
+        renderList(false);
+        if (S.view === 'jobs') {
+          renderDetail(true);
+        }
+        updateFacetCounts();
+      }
+    } catch (e) {
+      console.debug('silentSyncEnrichedJobs error:', e);
+    } finally {
+      _isSilentSyncing = false;
+    }
+  }
+
+  async function checkEnrichmentStatus() {
+    try {
+      const res = await api('/api/enrichment/status');
+      if (!res || !res.telemetry) return;
+      const t = res.telemetry;
+
+      const liveBanner = $('#liveSyncBanner');
+      const liveStatus = $('#liveSyncStatus');
+      const liveFill = $('#liveSyncProgressFill');
+      const liveKicker = $('#liveSyncKicker');
+      const liveCountTag = $('#liveSyncCountTag');
+
+      if (t.is_running) {
+        _wasEnriching = true;
+        if (liveBanner) {
+          liveBanner.hidden = false;
+          liveBanner.classList.remove('is-leaving');
+          liveBanner.classList.add('is-entering');
+        }
+        if (liveKicker) liveKicker.textContent = 'Deep Analysis';
+        if (liveStatus) {
+          liveStatus.textContent = t.current_job
+            ? `Reading full details: ${t.current_job}`
+            : 'Analyzing complete job requirements in background...';
+        }
+        const total = Math.max(1, t.total || 1);
+        const comp = t.completed || 0;
+        const pct = Math.min(98, Math.max(10, Math.round((comp / total) * 100)));
+        if (liveFill) liveFill.style.width = `${pct}%`;
+        if (liveCountTag) liveCountTag.textContent = `${comp} / ${total} analyzed`;
+
+        if (comp > _lastCompletedEnrichment) {
+          _lastCompletedEnrichment = comp;
+          await silentSyncEnrichedJobs();
+        }
+      } else if (_wasEnriching) {
+        _wasEnriching = false;
+        _lastCompletedEnrichment = 0;
+        if (liveStatus) liveStatus.textContent = '✓ All job descriptions read & verified match rates calculated.';
+        if (liveFill) liveFill.style.width = '100%';
+        if (liveCountTag) liveCountTag.textContent = 'Complete';
+        await silentSyncEnrichedJobs();
+
+        setTimeout(() => {
+          if (!_wasEnriching && liveBanner) {
+            liveBanner.classList.remove('is-entering');
+            liveBanner.classList.add('is-leaving');
+            setTimeout(() => {
+              if (!_wasEnriching && liveBanner) {
+                liveBanner.hidden = true;
+                liveBanner.classList.remove('is-leaving');
+              }
+            }, 350);
+          }
+        }, 2500);
+      }
+    } catch (e) {
+      console.debug('checkEnrichmentStatus error:', e);
+    }
+  }
+
+  function scheduleNextEnrichmentCheck(ms = 4000) {
+    clearTimeout(_enrichmentCheckTimer);
+    _enrichmentCheckTimer = setTimeout(async () => {
+      await checkEnrichmentStatus();
+      scheduleNextEnrichmentCheck(_wasEnriching ? 3500 : 12000);
+    }, ms);
+  }
+
   function formatTimeUntil(timestamp) {
     if (!timestamp || isNaN(timestamp)) return 'Soon';
     const diff = timestamp - Date.now();
@@ -8257,6 +8407,11 @@
     checkAutoSearchStatus();
     setInterval(checkLinkedinRadarStatus, 15000);
     checkLinkedinRadarStatus();
+
+    // Background continuous enrichment poller
+    scheduleNextEnrichmentCheck(1500);
+    // Wake up background enricher on startup if any unenriched jobs exist
+    api('/api/enrichment/trigger', { method: 'POST' }).catch(() => {});
 
     // Restore auto-reload schedule (defaults to 5 hours)
     const savedMins = getAutoReloadMinutes();

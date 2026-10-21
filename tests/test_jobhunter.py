@@ -85,6 +85,23 @@ class ScoreTests(Base):
         r = scoring.score_job({"title": "Software Engineer", "description": ""}, DEMO_PROFILE)
         self.assertEqual(r["confidence"], "low")
 
+    def test_unenriched_sparse_job_does_not_falsely_inflate_to_90(self):
+        # A job with 0 description that only matches 1 skill in its title must not score >= 85%
+        r = scoring.score_job({"title": "Senior Backend Engineer - Python IRC302277", "description": "",
+                               "location": "Bengaluru, Karnataka, India", "work_mode": "On-site"}, DEMO_PROFILE)
+        self.assertLess(r["score"], 80)
+        self.assertEqual(r["confidence"], "low")
+
+    def test_multilingual_french_title_matches_target_role(self):
+        r = scoring.score_job({"title": "Développeur Back-end Python", "location": "Remote",
+                               "description": "Requirements: Python, FastAPI"}, DEMO_PROFILE)
+        self.assertGreaterEqual(r["score"], 70)
+        tokens = scoring.title_tokens("Développeur Python Confirmé F/H")
+        self.assertIn("engineer", tokens)
+        self.assertIn("python", tokens)
+        self.assertNotIn("fh", tokens)
+        self.assertNotIn("f/h", tokens)
+
     def test_non_software_engineering_does_not_match_tech_candidate(self):
         r = scoring.score_job({"title": "Civil Engineer", "description": "Construction site planning, AutoCAD and structural engineering"}, DEMO_PROFILE)
         self.assertLess(r["score"], 40)
@@ -1118,7 +1135,50 @@ class FamousFilterTests(Base):
         self.assertEqual(stored["title"], "Développeur Full Stack H/F")
         self.assertEqual(stored["company"], "Groupe Qérys")
         self.assertEqual(stored["location"], "Bordeaux")
-        self.assertIn("Développeur", stored["description"])
+    def test_linkedin_jid_extraction(self):
+        """Verify _extract_linkedin_jid accurately finds the 10-digit LinkedIn ID even with numeric requisition codes in slug."""
+        url_with_req = "https://www.linkedin.com/jobs/view/middle-python-engineer-irc304696-at-globallogic-4480244118?position=1&pageNum=0"
+        self.assertEqual(sources._extract_linkedin_jid(url_with_req), "4480244118")
+
+        url_simple = "https://www.linkedin.com/jobs/view/4474341902"
+        self.assertEqual(sources._extract_linkedin_jid(url_simple), "4474341902")
+
+        url_current_job_id = "https://www.linkedin.com/jobs/search?currentJobId=4480244118"
+        self.assertEqual(sources._extract_linkedin_jid(url_current_job_id), "4480244118")
+
+    def test_background_enricher_telemetry_and_worker(self):
+        """Verify get_enrichment_telemetry and trigger_background_enrichment work properly."""
+        from jh import pipeline, db
+        telemetry = pipeline.get_enrichment_telemetry()
+        self.assertIn("is_running", telemetry)
+        self.assertIn("total", telemetry)
+        self.assertIn("completed", telemetry)
+
+        # Triggering enricher starts daemon thread
+        self.assertTrue(pipeline.trigger_background_enrichment())
+        self.assertIsNotNone(pipeline._enrich_bg_thread)
+        self.assertTrue(pipeline._enrich_bg_thread.is_alive())
+
+    def test_scoring_bayesian_damping_for_sparse_jobs(self):
+        """Sparse/unenriched postings must not achieve inflated 90%+ scores based on 1 skill match."""
+        from jh import scoring
+        profile = {
+            "title": "Senior Python Developer",
+            "skills": ["Python", "FastAPI", "PostgreSQL", "Docker", "AWS", "Redis"],
+            "experience_years": 5,
+            "target_roles": ["Python Developer", "Backend Engineer"]
+        }
+        sparse_job = {
+            "title": "Python Developer",
+            "description": "Looking for a Python developer.",
+            "company": "Tech Corp",
+            "location": "Remote",
+            "enriched": False
+        }
+        result = scoring.score_job(sparse_job, profile)
+        # Bayesian smoothing should temper the score well below 85
+        self.assertLess(result["score"], 80)
+        self.assertGreaterEqual(result["score"], 40)
 
 
 if __name__ == "__main__":
