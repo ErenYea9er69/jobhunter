@@ -271,20 +271,75 @@
     return res.json();
   }
 
+  const MAX_VISIBLE_TOASTS = 3;
+
+  function dismissToast(el) {
+    if (!el || el._isDismissing) return;
+    el._isDismissing = true;
+    if (el._timer) clearTimeout(el._timer);
+    el.classList.add('toast-out');
+    setTimeout(() => {
+      if (el.parentNode) el.remove();
+    }, 220);
+  }
+
   function toast(message, type = 'ok') {
     const box = $('#toastContainer');
     if (!box) return;
+    const cleanMsg = String(message || '').trim();
+    if (!cleanMsg) return;
+
+    const duration = type === 'error' ? 6000 : 3500;
+
+    // 1. Check for existing active toast with the same message and type
+    const existing = Array.from(box.querySelectorAll('.toast:not(.toast-out)')).find(el => {
+      return el.dataset.toastMsg === cleanMsg && el.dataset.toastType === type;
+    });
+
+    if (existing) {
+      // Increment counter badge and refresh timer
+      const count = (parseInt(existing.dataset.toastCount, 10) || 1) + 1;
+      existing.dataset.toastCount = String(count);
+
+      let badge = existing.querySelector('.toast-badge');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'toast-badge';
+        existing.appendChild(badge);
+      }
+      badge.textContent = `×${count}`;
+
+      // Reset auto-dismiss timer
+      if (existing._timer) clearTimeout(existing._timer);
+      existing._timer = setTimeout(() => dismissToast(existing), duration);
+
+      // Re-trigger bounce tactile micro-animation
+      existing.classList.remove('toast-bump');
+      void existing.offsetWidth; // force browser layout reflow
+      existing.classList.add('toast-bump');
+      return;
+    }
+
+    // 2. Cap maximum concurrent toasts (dismiss oldest if >= MAX_VISIBLE_TOASTS)
+    const activeToasts = Array.from(box.querySelectorAll('.toast:not(.toast-out)'));
+    if (activeToasts.length >= MAX_VISIBLE_TOASTS) {
+      dismissToast(activeToasts[0]);
+    }
+
+    // 3. Create fresh toast
     const el = document.createElement('div');
     el.className = `toast${type === 'error' ? ' toast-error' : ''}`;
-    el.innerHTML = `${ico(type === 'error' ? 'alert' : 'check')}<span>${esc(message)}</span>`;
+    el.dataset.toastMsg = cleanMsg;
+    el.dataset.toastType = type;
+    el.dataset.toastCount = '1';
+    el.title = 'Click to dismiss';
+    el.innerHTML = `${ico(type === 'error' ? 'alert' : 'check')}<span class="toast-text">${esc(cleanMsg)}</span>`;
+
+    // Click to dismiss
+    el.addEventListener('click', () => dismissToast(el));
+
     box.appendChild(el);
-    const duration = type === 'error' ? 6000 : 3500;
-    setTimeout(() => {
-      el.classList.add('toast-out');
-      setTimeout(() => {
-        if (el.parentNode) el.remove();
-      }, 200);
-    }, duration);
+    el._timer = setTimeout(() => dismissToast(el), duration);
   }
 
 

@@ -4672,6 +4672,7 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
 }
 .toast {
   pointer-events: auto;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -4688,7 +4689,49 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   animation: toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+.toast:hover {
+  opacity: 0.94;
+}
+.toast-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  background: rgba(255, 255, 255, 0.22);
+  color: inherit;
+  margin-left: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  animation: toast-badge-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+:root:not([data-theme="dark"]) .toast-badge {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+[data-theme="dark"] .toast-badge {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.toast.toast-bump {
+  animation: toast-bump 0.22s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+}
+@keyframes toast-badge-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.22); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes toast-bump {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.06); }
+  100% { transform: scale(1); }
 }
 .toast .i {
   width: 16px;
@@ -12403,7 +12446,7 @@ body.compact-mode .chip {
     max-height: 100%;
     overflow-y: auto;
     scrollbar-width: none;
-    padding-bottom: 96px;
+    padding-bottom: 24px;
   }
 
   #view-settings .settings-rail::-webkit-scrollbar {
@@ -12418,11 +12461,15 @@ body.compact-mode .chip {
     position: relative;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 2px 28px 130px 4px;
+    padding: 2px 28px 24px 4px;
     scroll-behavior: smooth;
     scrollbar-gutter: stable;
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+
+  #view-settings .settings-group:last-child {
+    margin-bottom: 0;
   }
 
   #view-settings .settings-content::-webkit-scrollbar {
