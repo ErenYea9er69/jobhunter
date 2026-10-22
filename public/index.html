@@ -1496,83 +1496,78 @@
 
     <!-- ================= SETTINGS ================= -->
     <section class="view" id="view-settings" aria-labelledby="settingsTitle" hidden>
-      <div class="container container-narrow settings-hub">
+      <div class="container settings-hub">
 
         <!-- Settings Header -->
-        <header class="page-head settings-head">
-          <div class="settings-head-main">
-            <div class="settings-badge-title">
-              <span class="settings-icon-bubble" aria-hidden="true">
-                <svg class="i"><use href="#i-settings"/></svg>
-              </span>
-              <div>
-                <h1 class="page-title" id="settingsTitle">Settings &amp; Preferences</h1>
-                <p class="page-sub">Configure interface appearance, AI engines, search depth, live radar, and data backups.</p>
-              </div>
-            </div>
-            <div class="settings-hub-status-pill">
-              <span class="settings-hub-status-dot" aria-hidden="true"></span>
-              <span>v4.4.0 • Local SQLite WAL • Zero Telemetry</span>
+        <header class="settings-head">
+          <div class="settings-badge-title">
+            <span class="settings-icon-bubble" aria-hidden="true">
+              <svg class="i"><use href="#i-settings"/></svg>
+            </span>
+            <div>
+              <h1 class="page-title" id="settingsTitle">Settings &amp; Preferences</h1>
+              <p class="page-sub">Configure interface appearance, AI engines, search depth, live radar, and data backups.</p>
             </div>
           </div>
 
-          <!-- Quick Search Filter -->
+          <!-- Quick Search Filter (Compact, Modern & Clear) -->
           <div class="settings-filter-wrap">
             <svg class="settings-search-ico" aria-hidden="true"><use href="#i-search"/></svg>
-            <input type="search" id="settingsFilterInput" class="settings-filter-input" placeholder="Search settings (e.g. theme, gemini, radar, backup, adzuna, email)..." autocomplete="off" aria-label="Search settings">
-            <kbd class="settings-search-kbd">⌘K / /</kbd>
+            <input type="search" id="settingsFilterInput" class="settings-filter-input" placeholder="Search settings..." autocomplete="off" aria-label="Search settings">
+            <kbd class="settings-search-kbd">⌘K</kbd>
             <button type="button" class="settings-clear-btn" id="settingsFilterClear" hidden aria-label="Clear filter">&times;</button>
           </div>
-
-          <!-- Category Sub-Nav Pills -->
-          <nav class="settings-pill-nav" id="settingsPillNav" aria-label="Settings categories">
-            <button type="button" class="settings-tab-btn active" data-tab="all">
-              <span>All Settings</span>
-            </button>
-            <button type="button" class="settings-tab-btn" data-tab="general">
-              <svg class="i" aria-hidden="true"><use href="#i-sliders"/></svg>
-              <span>General</span>
-            </button>
-            <button type="button" class="settings-tab-btn" data-tab="ai">
-              <svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>
-              <span>AI Engine</span>
-            </button>
-            <button type="button" class="settings-tab-btn" data-tab="search">
-              <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
-              <span>Search &amp; Capacity</span>
-            </button>
-            <button type="button" class="settings-tab-btn" data-tab="radar">
-              <svg class="i" aria-hidden="true"><use href="#i-linkedin"/></svg>
-              <span>Live Radar</span>
-            </button>
-            <button type="button" class="settings-tab-btn" data-tab="sources">
-              <svg class="i" aria-hidden="true"><use href="#i-link"/></svg>
-              <span>Sources &amp; API</span>
-            </button>
-            <button type="button" class="settings-tab-btn" data-tab="digest">
-              <svg class="i" aria-hidden="true"><use href="#i-mail"/></svg>
-              <span>Morning Digest</span>
-            </button>
-            <button type="button" class="settings-tab-btn" data-tab="data">
-              <svg class="i" aria-hidden="true"><use href="#i-database"/></svg>
-              <span>Data &amp; Backups</span>
-            </button>
-            <button type="button" class="settings-tab-btn" data-tab="tools">
-              <svg class="i" aria-hidden="true"><use href="#i-sparkles"/></svg>
-              <span>Tools &amp; About</span>
-            </button>
-          </nav>
         </header>
 
         <!-- No search results notification inside settings -->
-        <div id="settingsNoResults" class="card" hidden style="text-align:center; padding:32px 20px;">
-          <p class="muted" style="margin:0;">No settings found matching your search. Try another keyword or clear the search.</p>
+        <div id="settingsNoResults" class="card settings-empty" hidden>
+          <p class="muted">No settings found matching your search. Try another keyword or clear the search.</p>
         </div>
 
-        <!-- 1. GENERAL & THEME -->
-        <div class="settings-group" data-group="general" id="group-general">
+        <div class="settings-layout">
+          <aside class="settings-rail" aria-label="Settings navigation">
+            <p class="settings-rail-label">Settings sections</p>
+            <nav class="settings-pill-nav" id="settingsPillNav" aria-label="Settings categories" role="tablist">
+              <button type="button" class="settings-tab-btn" data-tab="general" role="tab" aria-selected="false" aria-controls="group-general">
+                <svg class="i" aria-hidden="true"><use href="#i-sliders"/></svg>
+                <span>General</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="ai" role="tab" aria-selected="false" aria-controls="group-ai">
+                <svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>
+                <span>AI engine</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="search" role="tab" aria-selected="false" aria-controls="group-search">
+                <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+                <span>Search &amp; capacity</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="radar" role="tab" aria-selected="false" aria-controls="group-radar">
+                <svg class="i" aria-hidden="true"><use href="#i-linkedin"/></svg>
+                <span>Live radar</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="sources" role="tab" aria-selected="false" aria-controls="group-sources">
+                <svg class="i" aria-hidden="true"><use href="#i-link"/></svg>
+                <span>Sources &amp; API</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="digest" role="tab" aria-selected="false" aria-controls="group-digest">
+                <svg class="i" aria-hidden="true"><use href="#i-mail"/></svg>
+                <span>Morning digest</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="data" role="tab" aria-selected="false" aria-controls="group-data">
+                <svg class="i" aria-hidden="true"><use href="#i-database"/></svg>
+                <span>Data &amp; backups</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="tools" role="tab" aria-selected="false" aria-controls="group-tools">
+                <svg class="i" aria-hidden="true"><use href="#i-sparkles"/></svg>
+                <span>Tools &amp; about</span>
+              </button>
+            </nav>
+          </aside>
+
+          <!-- 1. GENERAL & THEME -->
+          <div class="settings-content" id="settingsContent" role="region" aria-label="Settings sections">
+        <div class="settings-group" data-group="general" id="group-general" aria-labelledby="settingsGroupGeneralTitle">
           <div class="settings-group-header">
-            <h2 class="settings-group-title"><svg class="i" aria-hidden="true"><use href="#i-sliders"/></svg>General &amp; Appearance</h2>
+            <h2 class="settings-group-title" id="settingsGroupGeneralTitle"><svg class="i" aria-hidden="true"><use href="#i-sliders"/></svg>Appearance &amp; defaults</h2>
             <p class="settings-group-sub">Personalize themes, row density, sound effects, and default search ordering.</p>
           </div>
 
@@ -1676,7 +1671,7 @@
 
               <div class="form-field">
                 <label>Audio Cues &amp; Feedback</label>
-                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:8px; min-height:44px; padding:0 4px;">
+                <div class="settings-toggle-row">
                   <label class="tactile-switch">
                     <input type="checkbox" id="cfgSoundEnabled" checked>
                     <span class="tactile-track"><span class="tactile-thumb"></span></span>
@@ -1685,7 +1680,7 @@
                       <span class="tactile-label-sub">Synthesized Web Audio tones on actions</span>
                     </span>
                   </label>
-                  <button type="button" class="btn btn-secondary btn-sm" id="btnTestSound" style="flex-shrink:0;">
+                  <button type="button" class="btn btn-secondary btn-sm settings-shrink-button" id="btnTestSound">
                     <svg class="i" aria-hidden="true"><use href="#i-volume"/></svg>
                     <span>Test Chime</span>
                   </button>
@@ -1750,16 +1745,16 @@
               </div>
             </div>
 
-            <div class="head-actions" style="margin-top:14px;">
+            <div class="head-actions settings-actions">
               <button type="button" class="btn btn-primary btn-sm" id="btnSaveGeneralSettings">Save general preferences</button>
             </div>
           </section>
         </div>
 
         <!-- 2. AI ENGINE & GUARDRAILS -->
-        <div class="settings-group" data-group="ai" id="group-ai">
+        <div class="settings-group" data-group="ai" id="group-ai" aria-labelledby="settingsGroupAiTitle">
           <div class="settings-group-header">
-            <h2 class="settings-group-title"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>AI Engine &amp; Guardrails</h2>
+            <h2 class="settings-group-title" id="settingsGroupAiTitle"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>AI provider</h2>
             <p class="settings-group-sub">Power tailored pitches, cover letters, and interview coaching with cloud LLMs or local models.</p>
           </div>
 
@@ -1787,14 +1782,14 @@
                 </select>
               </div>
               <div class="form-field span-2" id="aiKeyField" hidden>
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                  <label for="aiApiKeyInput" id="aiKeyLabel" style="margin-bottom:0;">API Key</label>
+                <div class="settings-inline-label">
+                  <label for="aiApiKeyInput" id="aiKeyLabel">API Key</label>
                   <span class="chip chip-info chip-sm" id="aiEnvKeyBadge" hidden>Loaded from .env</span>
                 </div>
-                <div style="position:relative; display:flex; align-items:center;">
-                  <input type="password" id="aiApiKeyInput" placeholder="Enter API key" autocomplete="off" style="padding-right:42px;">
-                  <button type="button" class="btn-input-eye" id="btnToggleApiKeyEye" title="Show/hide API key" aria-label="Toggle API key visibility" style="position:absolute; right:8px; background:none; border:none; color:var(--text-3); cursor:pointer; padding:4px;">
-                    <svg class="i" style="width:18px; height:18px;"><use href="#i-eye"/></svg>
+                <div class="settings-input-wrap">
+                  <input type="password" id="aiApiKeyInput" placeholder="Enter API key" autocomplete="off">
+                  <button type="button" class="btn-input-eye" id="btnToggleApiKeyEye" title="Show/hide API key" aria-label="Toggle API key visibility">
+                    <svg class="i"><use href="#i-eye"/></svg>
                   </button>
                 </div>
               </div>
@@ -1822,7 +1817,7 @@
               </div>
             </div>
 
-            <div class="head-actions" style="margin-top:14px; gap:8px;">
+            <div class="head-actions settings-actions">
               <button type="button" class="btn btn-secondary btn-sm" id="btnTestAi"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>Test connection</button>
               <button type="button" class="btn btn-primary btn-sm" id="btnSaveAi">Save AI configuration</button>
             </div>
@@ -1830,9 +1825,9 @@
         </div>
 
         <!-- 3. SEARCH CAPACITY & TARGETING -->
-        <div class="settings-group" data-group="search" id="group-search">
+        <div class="settings-group" data-group="search" id="group-search" aria-labelledby="settingsGroupSearchTitle">
           <div class="settings-group-header">
-            <h2 class="settings-group-title"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg>Search Capacity &amp; Global Targeting</h2>
+            <h2 class="settings-group-title" id="settingsGroupSearchTitle"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg>Search behavior</h2>
             <p class="settings-group-sub">Scale how many candidates are scraped and scored, and localize searches to your country or global remote pools.</p>
           </div>
 
@@ -1920,16 +1915,16 @@
               </div>
             </div>
 
-            <div class="head-actions" style="margin-top:14px;">
+            <div class="head-actions settings-actions">
               <button type="button" class="btn btn-primary btn-sm" id="btnSaveCapacity">Save search capacity &amp; global targeting</button>
             </div>
           </section>
         </div>
 
         <!-- 4. LIVE RADAR & BACKGROUND SWEEPS -->
-        <div class="settings-group" data-group="radar" id="group-radar">
+        <div class="settings-group" data-group="radar" id="group-radar" aria-labelledby="settingsGroupRadarTitle">
           <div class="settings-group-header">
-            <h2 class="settings-group-title"><svg class="i" aria-hidden="true"><use href="#i-linkedin"/></svg>LinkedIn Live Radar &amp; Background Sweeps</h2>
+            <h2 class="settings-group-title" id="settingsGroupRadarTitle"><svg class="i" aria-hidden="true"><use href="#i-linkedin"/></svg>Live radar</h2>
             <p class="settings-group-sub">Automate hands-free background sweeps, skill rotation, and instant indexing of newly posted roles.</p>
           </div>
 
@@ -1960,9 +1955,9 @@
                 <div class="radar-telemetry-box">
                   <div class="radar-telemetry-row">
                     <span class="muted">Live Status:</span>
-                    <div style="display:flex; align-items:center; gap:6px;">
+                    <div class="settings-inline-status">
                       <span class="radar-pulse-dot" aria-hidden="true"></span>
-                      <strong id="activeRadarSettingsBadgeText" style="color:var(--brand-accent);">Active &amp; Sweeping</strong>
+                      <strong id="activeRadarSettingsBadgeText">Active &amp; Sweeping</strong>
                     </div>
                   </div>
                   <div class="radar-telemetry-row">
@@ -1971,17 +1966,17 @@
                   </div>
                   <div class="radar-telemetry-row">
                     <span class="muted">Next Sweep:</span>
-                    <span id="cfgRadarNextSweepText" style="font-weight:600;">In 10m</span>
+                    <span id="cfgRadarNextSweepText" class="settings-value-strong">In 10m</span>
                   </div>
                   <div class="radar-telemetry-row">
                     <span class="muted">Adaptive Mode:</span>
-                    <span style="color:var(--brand-accent); font-weight:600;">Fingerprint check + Skill rotation</span>
+                    <span class="settings-value-accent">Fingerprint check + Skill rotation</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div class="head-actions" style="margin-top:14px; gap:8px;">
+            <div class="head-actions settings-actions">
               <button type="button" class="btn btn-secondary btn-sm" id="btnCfgRadarScanNow">
                 <svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>
                 <span>Trigger Scan Now</span>
@@ -1992,9 +1987,9 @@
         </div>
 
         <!-- 5. SOURCES & INTEGRATIONS -->
-        <div class="settings-group" data-group="sources" id="group-sources">
+        <div class="settings-group" data-group="sources" id="group-sources" aria-labelledby="settingsGroupSourcesTitle">
           <div class="settings-group-header">
-            <h2 class="settings-group-title"><svg class="i" aria-hidden="true"><use href="#i-link"/></svg>Sources &amp; API Integrations</h2>
+            <h2 class="settings-group-title" id="settingsGroupSourcesTitle"><svg class="i" aria-hidden="true"><use href="#i-link"/></svg>Sources &amp; integrations</h2>
             <p class="settings-group-sub">Inspect job feed connectivity, monitor live uptime pings, and configure optional platform API keys.</p>
           </div>
 
@@ -2021,7 +2016,7 @@
               </div>
             </div>
 
-            <div class="head-actions" style="margin-top:14px;">
+            <div class="head-actions settings-actions">
               <button type="button" class="btn btn-primary btn-sm" id="btnSaveAdzuna">Save Adzuna credentials</button>
             </div>
           </section>
@@ -2053,9 +2048,9 @@
         </div>
 
         <!-- 6. MORNING DIGEST & EMAIL NOTIFICATIONS -->
-        <div class="settings-group" data-group="digest" id="group-digest">
+        <div class="settings-group" data-group="digest" id="group-digest" aria-labelledby="settingsGroupDigestTitle">
           <div class="settings-group-header">
-            <h2 class="settings-group-title"><svg class="i" aria-hidden="true"><use href="#i-mail"/></svg>Morning Digest &amp; Email Delivery</h2>
+            <h2 class="settings-group-title" id="settingsGroupDigestTitle"><svg class="i" aria-hidden="true"><use href="#i-mail"/></svg>Email digest</h2>
             <p class="settings-group-sub">Deliver your highest-scoring roles straight to your inbox each morning.</p>
           </div>
 
@@ -2091,6 +2086,14 @@
                 <input type="text" id="cfgDigestTime" placeholder="08:00" value="08:00">
                 <small class="muted">24-hour format (e.g. 08:00 or 09:30 local time).</small>
               </div>
+            </div>
+
+            <div class="settings-subsection-label">
+              <span>SMTP delivery</span>
+              <span>Optional</span>
+            </div>
+
+            <div class="form-grid">
 
               <div class="form-field">
                 <label for="cfgSmtpHost">SMTP Server Host (Optional)</label>
@@ -2117,7 +2120,7 @@
               </div>
             </div>
 
-            <div class="head-actions" style="margin-top:14px; gap:8px;">
+            <div class="head-actions settings-actions">
               <button type="button" class="btn btn-primary btn-sm" id="btnSaveDigestSettings">Save digest &amp; SMTP settings</button>
               <a href="#/digest" class="btn btn-secondary btn-sm"><svg class="i" aria-hidden="true"><use href="#i-external"/></svg>Preview Morning Digest</a>
             </div>
@@ -2125,9 +2128,9 @@
         </div>
 
         <!-- 7. DATA, BACKUPS & PRIVACY -->
-        <div class="settings-group" data-group="data" id="group-data">
+        <div class="settings-group" data-group="data" id="group-data" aria-labelledby="settingsGroupDataTitle">
           <div class="settings-group-header">
-            <h2 class="settings-group-title"><svg class="i" aria-hidden="true"><use href="#i-database"/></svg>Data Portability, Backups &amp; Privacy</h2>
+            <h2 class="settings-group-title" id="settingsGroupDataTitle"><svg class="i" aria-hidden="true"><use href="#i-database"/></svg>Data &amp; privacy</h2>
             <p class="settings-group-sub">Export full JSON snapshots of your resume, applications, and settings, or restore backups anytime.</p>
           </div>
 
@@ -2146,29 +2149,29 @@
               </div>
             </div>
 
-            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px; margin-top:8px;">
+            <div class="settings-action-grid">
               <!-- Export -->
-              <div style="padding:16px; background:var(--surface-3); border-radius:var(--r-md); border:1px solid var(--line);">
-                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                  <svg class="i" style="color:var(--brand-accent);"><use href="#i-download"/></svg>
+              <div class="settings-action-card">
+                <div class="settings-action-card-head">
+                  <svg class="i settings-icon-accent"><use href="#i-download"/></svg>
                   <strong>Export Backup File</strong>
                 </div>
-                <p class="muted small" style="margin:0 0 14px 0;">Downloads a comprehensive JSON archive including your primary resume profile, variant profiles, tracked applications, notes, company watchlist, and custom settings.</p>
-                <button type="button" class="btn btn-secondary btn-sm" id="btnExportBackup" style="width:100%;">
+                <p class="muted small settings-action-card-copy">Downloads a comprehensive JSON archive including your primary resume profile, variant profiles, tracked applications, notes, company watchlist, and custom settings.</p>
+                <button type="button" class="btn btn-secondary btn-sm settings-full-button" id="btnExportBackup">
                   <svg class="i" aria-hidden="true"><use href="#i-download"/></svg>
                   <span>Download Backup JSON</span>
                 </button>
               </div>
 
               <!-- Import -->
-              <div style="padding:16px; background:var(--surface-3); border-radius:var(--r-md); border:1px solid var(--line);">
-                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                  <svg class="i" style="color:var(--info);"><use href="#i-upload"/></svg>
+              <div class="settings-action-card">
+                <div class="settings-action-card-head">
+                  <svg class="i settings-icon-info"><use href="#i-upload"/></svg>
                   <strong>Restore from Backup</strong>
                 </div>
-                <p class="muted small" style="margin:0 0 14px 0;">Upload a previously exported JobHunter JSON archive. Existing records will be safely updated without losing your ongoing work.</p>
+                <p class="muted small settings-action-card-copy">Upload a previously exported JobHunter JSON archive. Existing records will be safely updated without losing your ongoing work.</p>
                 <input type="file" id="fileImportBackup" accept=".json,application/json" hidden>
-                <button type="button" class="btn btn-secondary btn-sm" id="btnTriggerImportBackup" style="width:100%;">
+                <button type="button" class="btn btn-secondary btn-sm settings-full-button" id="btnTriggerImportBackup">
                   <svg class="i" aria-hidden="true"><use href="#i-upload"/></svg>
                   <span>Choose Backup File...</span>
                 </button>
@@ -2187,47 +2190,47 @@
         </div>
 
         <!-- 8. TOOLS & DIAGNOSTICS -->
-        <div class="settings-group" data-group="tools" id="group-tools">
+        <div class="settings-group" data-group="tools" id="group-tools" aria-labelledby="settingsGroupToolsTitle">
           <div class="settings-group-header">
-            <h2 class="settings-group-title"><svg class="i" aria-hidden="true"><use href="#i-sparkles"/></svg>Tools, Utilities &amp; Diagnostics</h2>
+            <h2 class="settings-group-title" id="settingsGroupToolsTitle"><svg class="i" aria-hidden="true"><use href="#i-sparkles"/></svg>Tools &amp; diagnostics</h2>
             <p class="settings-group-sub">Launch assistant wizards, view environment statistics, and manage scraper cache.</p>
           </div>
 
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px; margin-bottom:16px;">
+          <div class="settings-action-grid settings-tool-grid">
             <!-- Onboarding Wizard -->
-            <div class="card settings-card" data-keywords="onboarding wizard setup starter assist orion copilot" style="margin-bottom:0;">
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                <svg class="i" style="color:var(--brand-accent);"><use href="#i-sparkles"/></svg>
+            <div class="card settings-card settings-tool-card" data-keywords="onboarding wizard setup starter assist orion copilot">
+              <div class="settings-action-card-head">
+                <svg class="i settings-icon-accent"><use href="#i-sparkles"/></svg>
                 <strong>Onboarding Wizard</strong>
               </div>
-              <p class="muted small" style="margin:0 0 14px 0;">Relaunch the interactive Orion onboarding wizard to re-calibrate job functions, desired job types, and work preferences.</p>
-              <button type="button" class="btn btn-secondary btn-sm" id="btnLaunchOnboardingWizard" style="width:100%;">
+              <p class="muted small settings-action-card-copy">Relaunch the interactive Orion onboarding wizard to re-calibrate job functions, desired job types, and work preferences.</p>
+              <button type="button" class="btn btn-secondary btn-sm settings-full-button" id="btnLaunchOnboardingWizard">
                 <svg class="i" aria-hidden="true"><use href="#i-sparkles"/></svg>
                 <span>Launch Wizard</span>
               </button>
             </div>
 
             <!-- Product Landing Page -->
-            <div class="card settings-card" data-keywords="landing product overview documentation guide" style="margin-bottom:0;">
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                <svg class="i" style="color:var(--brand-accent);"><use href="#i-external"/></svg>
+            <div class="card settings-card settings-tool-card" data-keywords="landing product overview documentation guide">
+              <div class="settings-action-card-head">
+                <svg class="i settings-icon-accent"><use href="#i-external"/></svg>
                 <strong>Product Landing Page</strong>
               </div>
-              <p class="muted small" style="margin:0 0 14px 0;">Open the standalone JobHunter interactive marketing presentation and feature walkthrough in a new browser tab.</p>
-              <a href="landing.html" target="_blank" class="btn btn-secondary btn-sm" style="width:100%;">
+              <p class="muted small settings-action-card-copy">Open the standalone JobHunter interactive marketing presentation and feature walkthrough in a new browser tab.</p>
+              <a href="landing.html" target="_blank" class="btn btn-secondary btn-sm settings-full-button">
                 <svg class="i" aria-hidden="true"><use href="#i-external"/></svg>
                 <span>Open Landing Page</span>
               </a>
             </div>
 
             <!-- Search Cache -->
-            <div class="card settings-card" data-keywords="cache clear purge temporary reset fresh query" style="margin-bottom:0;">
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                <svg class="i" style="color:var(--warning);"><use href="#i-refresh"/></svg>
+            <div class="card settings-card settings-tool-card" data-keywords="cache clear purge temporary reset fresh query">
+              <div class="settings-action-card-head">
+                <svg class="i settings-icon-warning"><use href="#i-refresh"/></svg>
                 <strong>Search Results Cache</strong>
               </div>
-              <p class="muted small" style="margin:0 0 14px 0;">Clears cached search queries from memory and database so subsequent searches fetch fresh listings from live endpoints.</p>
-              <button type="button" class="btn btn-secondary btn-sm" id="btnClearSearchCache" style="width:100%;">
+              <p class="muted small settings-action-card-copy">Clears cached search queries from memory and database so subsequent searches fetch fresh listings from live endpoints.</p>
+              <button type="button" class="btn btn-secondary btn-sm settings-full-button" id="btnClearSearchCache">
                 <svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>
                 <span>Clear Cache Now</span>
               </button>
@@ -2263,11 +2266,11 @@
               </div>
             </div>
 
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-md); margin-top:8px; flex-wrap:wrap; gap:8px;">
+            <div class="settings-diagnostics-footer">
               <div>
                 <span class="muted small">JobHunter Core: </span><strong id="sysVersion">4.4.0</strong>
-                <span class="muted small" style="margin:0 8px;">•</span>
-                <span class="muted small">Reasoning: </span><strong id="sysLlmStatus" style="color:var(--brand-accent);">Deterministic Grounded</strong>
+                <span class="muted small settings-separator">•</span>
+                <span class="muted small">Reasoning: </span><strong id="sysLlmStatus" class="settings-value-accent">Deterministic Grounded</strong>
               </div>
               <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshDiagnostics">
                 <svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>
@@ -2275,6 +2278,8 @@
               </button>
             </div>
           </section>
+          </div>
+        </div>
         </div>
 
       </div>

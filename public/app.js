@@ -758,7 +758,7 @@
   // ------------------------------------------------------------ settings hub
   async function loadSettingsView(subTab = '') {
     const targetTab = subTab || 'all';
-    switchSettingsTab(targetTab);
+    switchSettingsTab(targetTab, { scroll: targetTab !== 'all' });
 
     await Promise.all([
       loadAiSettings().catch(() => {}),
@@ -770,21 +770,115 @@
     syncSettingsInputs();
   }
 
-  function switchSettingsTab(tab) {
+  function setSettingsActiveTab(tab) {
     $$('.settings-tab-btn').forEach(btn => {
       const isActive = btn.dataset.tab === tab;
       btn.classList.toggle('active', isActive);
       btn.setAttribute('aria-selected', String(isActive));
+      btn.tabIndex = isActive ? 0 : -1;
+    });
+  }
+
+  function syncSettingsScrollSpy() {
+    const content = $('#settingsContent');
+    if (!content) return;
+    const groups = $$('.settings-group', content).filter(group => !group.classList.contains('is-hidden'));
+    if (!groups.length) return;
+
+    // Check if scrolled near the bottom of settingsContent
+    const atBottom = (content.scrollHeight - content.scrollTop - content.clientHeight) < 56;
+    if (atBottom) {
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup) {
+        setSettingsActiveTab(lastGroup.dataset.group);
+        return;
+      }
+    }
+
+    const contentRect = content.getBoundingClientRect();
+    const marker = contentRect.top + Math.min(150, Math.max(64, contentRect.height * 0.20));
+    let activeGroup = groups[0];
+    for (let i = 0; i < groups.length; i++) {
+      const group = groups[i];
+      const rect = group.getBoundingClientRect();
+      if (rect.top <= marker) {
+        activeGroup = group;
+      } else {
+        break;
+      }
+    }
+    setSettingsActiveTab(activeGroup.dataset.group);
+  }
+
+  function scheduleSettingsScrollSpy() {
+    if (scrollToSettingsGroup.isScrolling) return;
+    if (scheduleSettingsScrollSpy.frame) return;
+    scheduleSettingsScrollSpy.frame = requestAnimationFrame(() => {
+      scheduleSettingsScrollSpy.frame = 0;
+      syncSettingsScrollSpy();
+    });
+  }
+
+  function scrollToSettingsGroup(tab) {
+    const content = $('#settingsContent');
+    const target = content && $(`#group-${tab}`, content);
+    if (!content || !target) return;
+
+    scrollToSettingsGroup.isScrolling = true;
+    clearTimeout(scrollToSettingsGroup.timer);
+
+    setSettingsActiveTab(tab);
+
+    const contentRect = content.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const targetScrollTop = content.scrollTop + (targetRect.top - contentRect.top) - 10;
+
+    content.scrollTo({
+      top: Math.max(0, targetScrollTop),
+      behavior: 'smooth'
     });
 
-    const groups = $$('.settings-group');
-    if (tab === 'all') {
-      groups.forEach(g => g.classList.remove('is-hidden'));
-    } else {
-      groups.forEach(g => {
-        g.classList.toggle('is-hidden', g.dataset.group !== tab);
-      });
+    scrollToSettingsGroup.timer = setTimeout(() => {
+      scrollToSettingsGroup.isScrolling = false;
+      syncSettingsScrollSpy();
+    }, 450);
+  }
+
+  function setupSettingsScrollSpy() {
+    const content = $('#settingsContent');
+    if (!content || content.dataset.scrollSpyReady === 'true') return;
+    content.dataset.scrollSpyReady = 'true';
+    content.addEventListener('scroll', scheduleSettingsScrollSpy, { passive: true });
+    window.addEventListener('resize', scheduleSettingsScrollSpy, { passive: true });
+
+    // Allow scrolling anywhere on view-settings to scroll the content area
+    const viewSettings = $('#view-settings');
+    if (viewSettings && !viewSettings.dataset.wheelBound) {
+      viewSettings.dataset.wheelBound = 'true';
+      viewSettings.addEventListener('wheel', e => {
+        if (content.contains(e.target)) return;
+        content.scrollTop += e.deltaY;
+      }, { passive: true });
     }
+
+    scheduleSettingsScrollSpy();
+  }
+
+  function switchSettingsTab(tab, options = {}) {
+    const selectedTab = (!tab || tab === 'all') ? 'general' : tab;
+    setSettingsActiveTab(selectedTab);
+
+    const groups = $$('.settings-group');
+    groups.forEach(g => {
+      g.classList.remove('is-hidden');
+      g.setAttribute('aria-hidden', 'false');
+    });
+
+    setupSettingsScrollSpy();
+    if (options.scroll && tab && tab !== 'all') {
+      scrollToSettingsGroup(selectedTab);
+    }
+    scheduleSettingsScrollSpy();
   }
 
   function syncSettingsInputs() {
@@ -891,7 +985,16 @@
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           card.click();
+          return;
         }
+        const cards = $$('.theme-card-option');
+        const current = cards.indexOf(card);
+        if (current < 0 || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+        e.preventDefault();
+        const direction = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -1 : 1;
+        const nextIndex = e.key === 'Home' ? 0 : e.key === 'End' ? cards.length - 1 : (current + direction + cards.length) % cards.length;
+        cards[nextIndex].focus();
+        cards[nextIndex].click();
       });
     });
 
@@ -1005,8 +1108,20 @@
         const b = e.target.closest('[data-tab]');
         if (!b) return;
         const tab = b.dataset.tab;
-        switchSettingsTab(tab);
-        go('settings', tab === 'all' ? '' : tab);
+        switchSettingsTab(tab, { scroll: true });
+        try {
+          history.replaceState(null, '', `#/settings${tab && tab !== 'all' ? '/' + tab : ''}`);
+        } catch (_) {}
+      });
+      pillNav.addEventListener('keydown', e => {
+        const tabs = $$('.settings-tab-btn', pillNav);
+        const current = tabs.indexOf(document.activeElement);
+        if (current < 0 || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+        e.preventDefault();
+        const direction = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -1 : 1;
+        const nextIndex = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (current + direction + tabs.length) % tabs.length;
+        tabs[nextIndex].focus();
+        tabs[nextIndex].click();
       });
     }
 
@@ -1046,6 +1161,7 @@
         });
 
         if (noResults) noResults.hidden = visibleCount > 0;
+        scheduleSettingsScrollSpy();
       });
 
       if (clearBtn) {
