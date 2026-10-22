@@ -536,11 +536,15 @@ def r_digest_send(q, body):
 
 @route("GET", "/api/settings")
 def r_get_settings(q, body):
-    allowed = {"digest_min_score", "digest_email", "adzuna_app_id", "adzuna_app_key",
+    allowed = {"digest_min_score", "digest_email", "digest_time",
+               "digest_smtp_host", "digest_smtp_port", "digest_smtp_user", "digest_smtp_pass",
+               "adzuna_app_id", "adzuna_app_key",
                "ai_provider", "gemini_api_key", "openai_api_key", "anthropic_api_key",
                "deepseek_api_key", "groq_api_key", "mistral_api_key", "custom_ai_key", "custom_ai_endpoint",
                "ai_model", "ollama_endpoint",
-               "max_scored_jobs", "max_results", "linkedin_scrape_depth", "user_country", "include_worldwide_remote"}
+               "max_scored_jobs", "max_results", "linkedin_scrape_depth", "user_country", "include_worldwide_remote",
+               "theme_mode", "ui_density", "sound_enabled", "default_sort", "default_work_mode", "default_min_score",
+               "auto_hide_applied", "auto_hide_expired"}
     out = {}
     with db.session() as c:
         for row in c.execute("SELECT key, value FROM settings"):
@@ -565,16 +569,26 @@ def r_get_settings(q, body):
     out.setdefault("linkedin_scrape_depth", config.get_linkedin_scrape_depth())
     out.setdefault("user_country", db.get_setting("user_country", "Worldwide"))
     out.setdefault("include_worldwide_remote", db.get_setting("include_worldwide_remote", "1"))
+    out.setdefault("theme_mode", db.get_setting("theme_mode", "light"))
+    out.setdefault("ui_density", db.get_setting("ui_density", "comfortable"))
+    out.setdefault("sound_enabled", db.get_setting("sound_enabled", "1"))
+    out.setdefault("default_sort", db.get_setting("default_sort", "score"))
+    out.setdefault("auto_hide_applied", db.get_setting("auto_hide_applied", "0"))
+    out.setdefault("auto_hide_expired", db.get_setting("auto_hide_expired", "0"))
     return out
 
 
 @route("POST", "/api/settings")
 def r_settings(q, body):
-    allowed = {"digest_min_score", "digest_email", "adzuna_app_id", "adzuna_app_key",
+    allowed = {"digest_min_score", "digest_email", "digest_time",
+               "digest_smtp_host", "digest_smtp_port", "digest_smtp_user", "digest_smtp_pass",
+               "adzuna_app_id", "adzuna_app_key",
                "ai_provider", "gemini_api_key", "openai_api_key", "anthropic_api_key",
                "deepseek_api_key", "groq_api_key", "mistral_api_key", "custom_ai_key", "custom_ai_endpoint",
                "ai_model", "ollama_endpoint",
-               "max_scored_jobs", "max_results", "linkedin_scrape_depth", "user_country", "include_worldwide_remote"}
+               "max_scored_jobs", "max_results", "linkedin_scrape_depth", "user_country", "include_worldwide_remote",
+               "theme_mode", "ui_density", "sound_enabled", "default_sort", "default_work_mode", "default_min_score",
+               "auto_hide_applied", "auto_hide_expired"}
     for k, v in body.items():
         if k in allowed:
             db.set_setting(k, str(v).strip())
@@ -626,6 +640,76 @@ def r_cache(q, body):
 def r_clear(q, body):
     pipeline.clear_cache()
     return {"success": True, "message": "Search cache cleared."}
+
+
+@route("GET", "/api/backup/export")
+def r_backup_export(q, body):
+    import datetime
+    with db.session() as c:
+        all_settings = {row["key"]: row["value"] for row in c.execute("SELECT key, value FROM settings")}
+    return {
+        "jobhunter_version": __version__,
+        "exported_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "profile": db.get_profile(),
+        "profiles": db.list_resume_profiles(),
+        "applications": tracker.list_applications(),
+        "watchlist": tracker.list_watchlist(),
+        "settings": all_settings,
+    }
+
+
+@route("POST", "/api/backup/import")
+def r_backup_import(q, body):
+    if not isinstance(body, dict):
+        raise ApiError("Invalid backup format. Expected a JSON object.")
+    imported = []
+    if "profile" in body and isinstance(body["profile"], dict):
+        db.save_profile(body["profile"])
+        imported.append("primary profile")
+    if "profiles" in body and isinstance(body["profiles"], list):
+        for p in body["profiles"]:
+            if isinstance(p, dict):
+                pid = p.get("id") or p.get("_profile_id")
+                db.save_profile(p, profile_id=pid)
+        imported.append(f"{len(body['profiles'])} variants")
+    if "settings" in body and isinstance(body["settings"], dict):
+        for k, v in body["settings"].items():
+            db.set_setting(k, str(v))
+        imported.append("settings")
+    if "applications" in body and isinstance(body["applications"], list):
+        for app in body["applications"]:
+            if isinstance(app, dict) and app.get("company"):
+                tracker.upsert_application(app)
+        imported.append(f"{len(body['applications'])} applications")
+    if "watchlist" in body and isinstance(body["watchlist"], list):
+        with db.session() as c:
+            for w in body["watchlist"]:
+                if isinstance(w, dict) and w.get("company_name"):
+                    c.execute("INSERT OR REPLACE INTO watchlist (id,company_name,slug,board_type,target_role,added_at) VALUES (?,?,?,?,?,?)",
+                              (w.get("id") or f"wl-{int(time.time() * 1000)}", w["company_name"], w.get("slug", ""), w.get("board_type", "greenhouse"), w.get("target_role", ""), w.get("added_at", "")))
+        imported.append(f"{len(body['watchlist'])} watchlist companies")
+    return {"success": True, "message": f"Successfully restored: {', '.join(imported) if imported else 'Nothing to import'}."}
+
+
+@route("GET", "/api/system-info")
+def r_system_info(q, body):
+    import sys
+    db_path = config.DB_PATH
+    db_size_kb = 0
+    if os.path.isfile(db_path):
+        db_size_kb = round(os.path.getsize(db_path) / 1024, 1)
+    with db.session() as c:
+        job_count = c.execute("SELECT COUNT(*) n FROM search_jobs").fetchone()["n"]
+        app_count = c.execute("SELECT COUNT(*) n FROM applications").fetchone()["n"]
+    return {
+        "version": __version__,
+        "python_version": sys.version.split()[0],
+        "platform": sys.platform,
+        "db_size_kb": db_size_kb,
+        "stored_jobs_count": job_count,
+        "applications_count": app_count,
+        "llm_available": refit.llm_available()
+    }
 
 
 @route("POST", "/api/export")

@@ -21,10 +21,10 @@
     { key: 'conversational', label: 'Conversational' },
     { key: 'systems', label: 'Systems' }
   ];
-  const VIEWS = ['jobs', 'job', 'recommend', 'applications', 'resume', 'companies', 'digest', 'privacy'];
+  const VIEWS = ['jobs', 'job', 'recommend', 'applications', 'resume', 'companies', 'digest', 'privacy', 'settings'];
   const TITLES = {
     jobs: 'Jobs', job: 'Job workspace', recommend: 'Recommended For You', applications: 'Applications', resume: 'Resume',
-    companies: 'Companies', digest: 'Morning digest', privacy: 'Sources and privacy'
+    companies: 'Companies', digest: 'Morning digest', privacy: 'Sources and privacy', settings: 'Settings'
   };
   const DEFAULT_IDEAS = ['Full Stack', 'Backend Python', 'TypeScript React', 'DevOps Cloud'];
   const isNarrow = () => window.matchMedia('(max-width: 960px)').matches;
@@ -603,16 +603,84 @@
     if (view === 'applications') loadApplications();
     if (view === 'companies') loadWatchlist();
     if (view === 'digest') loadDigest();
-    if (view === 'privacy') { loadSourceHealth(); loadAiSettings(); }
+    if (view === 'privacy' || view === 'settings') { loadSettingsView(sub); }
   }
 
-  // ------------------------------------------------------------ theme, menu
+  // ------------------------------------------------------------ theme & sound
+  const AudioEffects = {
+    ctx: null,
+    getCtx() {
+      if (!this.ctx && (window.AudioContext || window.webkitAudioContext)) {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      return this.ctx;
+    },
+    play(type = 'click') {
+      const enabled = localStorage.getItem('jh-sound') !== '0';
+      if (!enabled) return;
+      try {
+        const ctx = this.getCtx();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') ctx.resume();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        const t = ctx.currentTime;
+        if (type === 'success') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(523.25, t); // C5
+          osc.frequency.exponentialRampToValueAtTime(659.25, t + 0.08); // E5
+          gain.gain.setValueAtTime(0.08, t);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+          osc.start(t);
+          osc.stop(t + 0.22);
+        } else if (type === 'alert') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(329.63, t); // E4
+          gain.gain.setValueAtTime(0.09, t);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+          osc.start(t);
+          osc.stop(t + 0.16);
+        } else {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(580, t);
+          gain.gain.setValueAtTime(0.04, t);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+          osc.start(t);
+          osc.stop(t + 0.06);
+        }
+      } catch (e) { /* ignore */ }
+    }
+  };
+
+  function getEffectiveTheme(choice) {
+    if (choice === 'system') {
+      return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    }
+    return choice === 'dark' ? 'dark' : 'light';
+  }
+
   function initTheme() {
-    // Light mode (White Coffee / Warm Editorial Paper) is the primary default theme.
-    // If the user explicitly saved 'dark', activate dark mode; otherwise always default to light.
     let saved = 'light';
     try { saved = localStorage.getItem('jh-theme') || 'light'; } catch (e) { /* ignore */ }
     setTheme(saved, false);
+
+    // Apply density mode from localStorage
+    try {
+      const density = localStorage.getItem('jh-density') || 'comfortable';
+      document.body.classList.toggle('compact-mode', density === 'compact');
+    } catch (e) {}
+
+    // Synchronize OS system color scheme changes if system mode is chosen
+    if (window.matchMedia) {
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        const cur = localStorage.getItem('jh-theme');
+        if (cur === 'system') {
+          setTheme('system', false);
+        }
+      });
+    }
 
     const toggleBtn = $('#themeToggleBtn');
     if (toggleBtn) {
@@ -626,20 +694,41 @@
 
   function setTheme(choice, persist) {
     const root = document.documentElement;
-    const isDark = choice === 'dark';
+    const effective = getEffectiveTheme(choice);
+    const isDark = effective === 'dark';
+
     root.classList.add('theme-switching');
     if (isDark) {
       root.setAttribute('data-theme', 'dark');
     } else {
       root.removeAttribute('data-theme');
     }
+
+    // Synchronize theme radio options in Settings
+    $$('.theme-card-option').forEach(card => {
+      const isCardSelected = card.dataset.choice === choice;
+      card.setAttribute('aria-checked', String(isCardSelected));
+      card.classList.toggle('is-selected', isCardSelected);
+    });
+
+    const themeBadge = $('#activeThemeBadge');
+    if (themeBadge) {
+      if (choice === 'system') {
+        themeBadge.textContent = isDark ? 'System (Dark active)' : 'System (Light active)';
+      } else {
+        themeBadge.textContent = isDark ? 'Dark theme' : 'Light theme';
+      }
+    }
+
     const icon = $('#themeIcon use');
     if (icon) icon.setAttribute('href', isDark ? '#i-moon-stars' : '#i-sun');
     const label = $('#themeLabel');
     if (label) label.textContent = isDark ? 'Light theme' : 'Dark theme';
+
     if (persist) {
       try {
-        localStorage.setItem('jh-theme', isDark ? 'dark' : 'light');
+        localStorage.setItem('jh-theme', choice);
+        api('/api/settings', { method: 'POST', body: { theme_mode: choice } }).catch(() => {});
       } catch (e) { /* ignore */ }
     }
     requestAnimationFrame(() => {
@@ -651,7 +740,7 @@
 
   function closeMenu() {
     const m = $('#moreMenu');
-    if (m && !m.hidden) { m.hidden = true; $('#moreBtn').setAttribute('aria-expanded', 'false'); }
+    if (m && !m.hidden) { m.hidden = true; const b = $('#moreBtn'); if (b) b.setAttribute('aria-expanded', 'false'); }
   }
   function toggleMenu(e) {
     if (e) {
@@ -659,8 +748,419 @@
       e.stopPropagation();
     }
     const m = $('#moreMenu');
-    m.hidden = !m.hidden;
-    $('#moreBtn').setAttribute('aria-expanded', String(!m.hidden));
+    if (m) {
+      m.hidden = !m.hidden;
+      const b = $('#moreBtn');
+      if (b) b.setAttribute('aria-expanded', String(!m.hidden));
+    }
+  }
+
+  // ------------------------------------------------------------ settings hub
+  async function loadSettingsView(subTab = '') {
+    const targetTab = subTab || 'all';
+    switchSettingsTab(targetTab);
+
+    await Promise.all([
+      loadAiSettings().catch(() => {}),
+      loadSourceHealth().catch(() => {}),
+      checkLinkedinRadarStatus().catch(() => {}),
+      loadSystemInfo().catch(() => {})
+    ]);
+
+    syncSettingsInputs();
+  }
+
+  function switchSettingsTab(tab) {
+    $$('.settings-tab-btn').forEach(btn => {
+      const isActive = btn.dataset.tab === tab;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', String(isActive));
+    });
+
+    const groups = $$('.settings-group');
+    if (tab === 'all') {
+      groups.forEach(g => g.classList.remove('is-hidden'));
+    } else {
+      groups.forEach(g => {
+        g.classList.toggle('is-hidden', g.dataset.group !== tab);
+      });
+    }
+  }
+
+  function syncSettingsInputs() {
+    const s = S.aiSettings || {};
+
+    // Theme cards
+    let savedTheme = 'light';
+    try { savedTheme = localStorage.getItem('jh-theme') || s.theme_mode || 'light'; } catch (e) {}
+    $$('.theme-card-option').forEach(card => {
+      const isCardSelected = card.dataset.choice === savedTheme;
+      card.setAttribute('aria-checked', String(isCardSelected));
+      card.classList.toggle('is-selected', isCardSelected);
+    });
+
+    // Density
+    const densitySel = $('#cfgUiDensity');
+    if (densitySel) {
+      let savedDensity = 'comfortable';
+      try { savedDensity = localStorage.getItem('jh-density') || s.ui_density || 'comfortable'; } catch (e) {}
+      densitySel.value = savedDensity;
+      document.body.classList.toggle('compact-mode', savedDensity === 'compact');
+    }
+
+    // Sound
+    const soundCb = $('#cfgSoundEnabled');
+    if (soundCb) {
+      let soundOn = true;
+      try { soundOn = localStorage.getItem('jh-sound') !== '0'; } catch (e) {}
+      soundCb.checked = soundOn;
+    }
+
+    // Default sort
+    const sortSel = $('#cfgDefaultSort');
+    if (sortSel && s.default_sort) sortSel.value = s.default_sort;
+
+    // Auto refresh
+    const refreshSel = $('#cfgAutoRefresh');
+    if (refreshSel) {
+      const mins = getAutoReloadMinutes();
+      refreshSel.value = String(mins);
+    }
+
+    // Auto hide checkboxes
+    const hideAppliedCb = $('#cfgAutoHideApplied');
+    if (hideAppliedCb) hideAppliedCb.checked = s.auto_hide_applied === '1' || S.filters.hideApplied;
+    const hideExpiredCb = $('#cfgAutoHideExpired');
+    if (hideExpiredCb) hideExpiredCb.checked = s.auto_hide_expired === '1';
+
+    // Adzuna
+    const adzId = $('#cfgAdzunaAppId');
+    if (adzId && s.adzuna_app_id) adzId.value = s.adzuna_app_id;
+    const adzKey = $('#cfgAdzunaAppKey');
+    if (adzKey && s.adzuna_app_key) adzKey.value = s.adzuna_app_key;
+    const adzBadge = $('#adzunaStatusBadge');
+    if (adzBadge) {
+      const hasAdzuna = !!(s.adzuna_app_id && s.adzuna_app_key);
+      adzBadge.textContent = hasAdzuna ? 'Connected' : 'Free Integration';
+      adzBadge.className = `chip ${hasAdzuna ? 'chip-ok' : 'chip-info'}`;
+    }
+
+    // Digest
+    const digScore = $('#cfgDigestThresholdSelect');
+    if (digScore && s.digest_min_score) digScore.value = s.digest_min_score;
+    const digEmail = $('#cfgDigestEmail');
+    if (digEmail && s.digest_email) digEmail.value = s.digest_email;
+    const digTime = $('#cfgDigestTime');
+    if (digTime && s.digest_time) digTime.value = s.digest_time;
+    const smtpHost = $('#cfgSmtpHost');
+    if (smtpHost && s.digest_smtp_host) smtpHost.value = s.digest_smtp_host;
+    const smtpPort = $('#cfgSmtpPort');
+    if (smtpPort && s.digest_smtp_port) smtpPort.value = s.digest_smtp_port;
+    const smtpUser = $('#cfgSmtpUser');
+    if (smtpUser && s.digest_smtp_user) smtpUser.value = s.digest_smtp_user;
+    const smtpPass = $('#cfgSmtpPass');
+    if (smtpPass && s.digest_smtp_pass) smtpPass.value = s.digest_smtp_pass;
+  }
+
+  async function loadSystemInfo() {
+    try {
+      const info = await api('/api/system-info');
+      const v = $('#sysVersion'); if (v) v.textContent = info.version || '4.4.0';
+      const py = $('#sysPythonVer'); if (py) py.textContent = `Python ${info.python_version || '3.x'} (${info.platform || 'windows'})`;
+      const sz = $('#sysDbSize'); if (sz) sz.textContent = `${info.db_size_kb || 0} KB`;
+      const jb = $('#sysJobCount'); if (jb) jb.textContent = `${(info.stored_jobs_count || 0).toLocaleString()} jobs cached`;
+      const ap = $('#sysAppCount'); if (ap) ap.textContent = `${info.applications_count || 0} applications tracked`;
+      const llm = $('#sysLlmStatus');
+      if (llm) {
+        llm.textContent = info.llm_available ? 'Connected' : 'Deterministic Grounded';
+        llm.style.color = info.llm_available ? 'var(--brand-accent)' : 'var(--info)';
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function setupSettingsHub() {
+    // 1. Theme option clicks
+    $$('.theme-card-option').forEach(card => {
+      card.addEventListener('click', () => {
+        const choice = card.dataset.choice;
+        setTheme(choice, true);
+        AudioEffects.play('click');
+        toast(`Switched to ${choice === 'system' ? 'System theme' : choice + ' theme'}`);
+      });
+      card.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          card.click();
+        }
+      });
+    });
+
+    // 2. Density dropdown
+    const densitySel = $('#cfgUiDensity');
+    if (densitySel) {
+      densitySel.addEventListener('change', () => {
+        const d = densitySel.value;
+        document.body.classList.toggle('compact-mode', d === 'compact');
+        try {
+          localStorage.setItem('jh-density', d);
+          api('/api/settings', { method: 'POST', body: { ui_density: d } }).catch(() => {});
+        } catch (e) {}
+        toast(`Density set to ${d}`);
+      });
+    }
+
+    // 3. Audio toggle and test button
+    const soundCb = $('#cfgSoundEnabled');
+    if (soundCb) {
+      soundCb.addEventListener('change', () => {
+        const on = soundCb.checked ? '1' : '0';
+        try {
+          localStorage.setItem('jh-sound', on);
+          api('/api/settings', { method: 'POST', body: { sound_enabled: on } }).catch(() => {});
+        } catch (e) {}
+        if (soundCb.checked) AudioEffects.play('success');
+        toast(soundCb.checked ? 'Audio feedback enabled' : 'Audio feedback muted');
+      });
+    }
+
+    const testSoundBtn = $('#btnTestSound');
+    if (testSoundBtn) {
+      testSoundBtn.addEventListener('click', () => {
+        AudioEffects.play('success');
+        toast('Playing synthesizer feedback chime');
+      });
+    }
+
+    // 4. Save General Preferences
+    const saveGenBtn = $('#btnSaveGeneralSettings');
+    if (saveGenBtn) {
+      saveGenBtn.addEventListener('click', async () => {
+        const payload = {
+          default_sort: val('cfgDefaultSort') || 'score',
+          auto_hide_applied: $('#cfgAutoHideApplied') && $('#cfgAutoHideApplied').checked ? '1' : '0',
+          auto_hide_expired: $('#cfgAutoHideExpired') && $('#cfgAutoHideExpired').checked ? '1' : '0',
+          ui_density: val('cfgUiDensity') || 'comfortable',
+          sound_enabled: $('#cfgSoundEnabled') && $('#cfgSoundEnabled').checked ? '1' : '0'
+        };
+        const reloadMins = parseInt(val('cfgAutoRefresh'), 10) || 0;
+        setAutoReloadMinutes(reloadMins);
+        const autoReloadSel = $('#autoReloadSelect');
+        if (autoReloadSel) autoReloadSel.value = String(reloadMins);
+
+        try {
+          await api('/api/settings', { method: 'POST', body: payload });
+          AudioEffects.play('success');
+          toast('General preferences saved');
+        } catch (e) {
+          toast('Failed to save preferences: ' + e.message, 'error');
+        }
+      });
+    }
+
+    // 5. Adzuna credentials save
+    const saveAdzunaBtn = $('#btnSaveAdzuna');
+    if (saveAdzunaBtn) {
+      saveAdzunaBtn.addEventListener('click', async () => {
+        const appId = val('cfgAdzunaAppId').trim();
+        const appKey = val('cfgAdzunaAppKey').trim();
+        try {
+          await api('/api/settings', { method: 'POST', body: { adzuna_app_id: appId, adzuna_app_key: appKey } });
+          AudioEffects.play('success');
+          toast('Adzuna credentials saved');
+          await loadAiSettings();
+          syncSettingsInputs();
+        } catch (e) {
+          toast('Failed to save Adzuna credentials: ' + e.message, 'error');
+        }
+      });
+    }
+
+    // 6. Digest & SMTP settings save
+    const saveDigBtn = $('#btnSaveDigestSettings');
+    if (saveDigBtn) {
+      saveDigBtn.addEventListener('click', async () => {
+        const payload = {
+          digest_min_score: val('cfgDigestThresholdSelect') || '75',
+          digest_email: val('cfgDigestEmail').trim(),
+          digest_time: val('cfgDigestTime').trim() || '08:00',
+          digest_smtp_host: val('cfgSmtpHost').trim(),
+          digest_smtp_port: val('cfgSmtpPort').trim() || '587',
+          digest_smtp_user: val('cfgSmtpUser').trim(),
+          digest_smtp_pass: val('cfgSmtpPass').trim()
+        };
+        try {
+          await api('/api/settings', { method: 'POST', body: payload });
+          AudioEffects.play('success');
+          toast('Digest preferences & SMTP settings saved');
+        } catch (e) {
+          toast('Failed to save digest settings: ' + e.message, 'error');
+        }
+      });
+    }
+
+    // 7. Sub-nav pill buttons
+    const pillNav = $('#settingsPillNav');
+    if (pillNav) {
+      pillNav.addEventListener('click', e => {
+        const b = e.target.closest('[data-tab]');
+        if (!b) return;
+        const tab = b.dataset.tab;
+        switchSettingsTab(tab);
+        go('settings', tab === 'all' ? '' : tab);
+      });
+    }
+
+    // 8. Settings keyword search / filter
+    const searchInput = $('#settingsFilterInput');
+    const clearBtn = $('#settingsFilterClear');
+    const noResults = $('#settingsNoResults');
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        const q = searchInput.value.toLowerCase().trim();
+        if (clearBtn) clearBtn.hidden = !q;
+        const cards = $$('.settings-card');
+        const groups = $$('.settings-group');
+
+        if (!q) {
+          cards.forEach(c => c.classList.remove('is-filtered-out'));
+          groups.forEach(g => g.classList.remove('is-hidden'));
+          if (noResults) noResults.hidden = true;
+          const activeBtn = $('.settings-tab-btn.active');
+          if (activeBtn) switchSettingsTab(activeBtn.dataset.tab);
+          return;
+        }
+
+        groups.forEach(g => g.classList.remove('is-hidden'));
+        let visibleCount = 0;
+        cards.forEach(card => {
+          const kw = (card.dataset.keywords || '').toLowerCase();
+          const txt = (card.textContent || '').toLowerCase();
+          const match = kw.includes(q) || txt.includes(q);
+          card.classList.toggle('is-filtered-out', !match);
+          if (match) visibleCount++;
+        });
+
+        groups.forEach(g => {
+          const hasVisible = $$('.settings-card:not(.is-filtered-out)', g).length > 0;
+          g.classList.toggle('is-hidden', !hasVisible);
+        });
+
+        if (noResults) noResults.hidden = visibleCount > 0;
+      });
+
+      if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+          searchInput.value = '';
+          searchInput.dispatchEvent(new Event('input'));
+          searchInput.focus();
+        });
+      }
+    }
+
+    // 9. API Key password toggle eye
+    const toggleEye = $('#btnToggleApiKeyEye');
+    if (toggleEye) {
+      toggleEye.addEventListener('click', () => {
+        const inp = $('#aiApiKeyInput');
+        if (!inp) return;
+        const isPass = inp.type === 'password';
+        inp.type = isPass ? 'text' : 'password';
+        toggleEye.innerHTML = `<svg class="i" style="width:18px; height:18px;"><use href="#${isPass ? 'i-eye-off' : 'i-eye'}"/></svg>`;
+      });
+    }
+
+    // 10. Backup export
+    const exportBtn = $('#btnExportBackup');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', async () => {
+        try {
+          toast('Generating complete JobHunter backup snapshot...');
+          const data = await api('/api/backup/export');
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          const dateStr = new Date().toISOString().slice(0, 10);
+          a.href = url;
+          a.download = `jobhunter-backup-${dateStr}.json`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          AudioEffects.play('success');
+          toast('Backup successfully exported and downloaded!');
+        } catch (e) {
+          toast('Failed to export backup: ' + e.message, 'error');
+        }
+      });
+    }
+
+    // 11. Backup restore
+    const triggerImportBtn = $('#btnTriggerImportBackup');
+    const fileImport = $('#fileImportBackup');
+    if (triggerImportBtn && fileImport) {
+      triggerImportBtn.addEventListener('click', () => fileImport.click());
+      fileImport.addEventListener('change', async e => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const confirmed = await confirmDialog(
+          'Restore from backup?',
+          'This will import profile variants, tracked applications, notes, and settings from the backup file.',
+          'Restore Data'
+        );
+        if (!confirmed) {
+          fileImport.value = '';
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = async evt => {
+          try {
+            const json = JSON.parse(evt.target.result);
+            const res = await api('/api/backup/import', { method: 'POST', body: json });
+            AudioEffects.play('success');
+            toast(res.message || 'Data restored successfully!');
+            await loadProfile();
+            await loadApplications();
+            await loadAiSettings();
+            syncSettingsInputs();
+          } catch (err) {
+            toast('Failed to import backup: ' + err.message, 'error');
+          } finally {
+            fileImport.value = '';
+          }
+        };
+        reader.readAsText(file);
+      });
+    }
+
+    // 12. Onboarding wizard launcher
+    const launchWizBtn = $('#btnLaunchOnboardingWizard');
+    if (launchWizBtn) {
+      launchWizBtn.addEventListener('click', () => {
+        const flow = $('#onboardingFlow');
+        if (flow) {
+          flow.hidden = false;
+          const s1 = $('#onboardStep1'); if (s1) s1.hidden = false;
+          const s2 = $('#onboardStep2'); if (s2) s2.hidden = true;
+          const s3 = $('#onboardStep3'); if (s3) s3.hidden = true;
+        }
+      });
+    }
+
+    // 13. Clear cache button
+    const clearCacheBtn = $('#btnClearSearchCache');
+    if (clearCacheBtn) {
+      clearCacheBtn.addEventListener('click', async () => {
+        try {
+          await api('/api/clear-cache', { method: 'POST' });
+          AudioEffects.play('success');
+          toast('Search results cache cleared. Fresh live queries will be used.');
+          loadSystemInfo();
+        } catch (e) {
+          toast('Failed to clear cache: ' + e.message, 'error');
+        }
+      });
+    }
   }
 
   // ---------------------------------------------------------------- profile
@@ -7127,8 +7627,10 @@
       if (el && ACTIONS[el.dataset.action] && el.tagName !== 'SELECT') ACTIONS[el.dataset.action](el, e);
       if (!e.target.closest('.menu-wrap, .dock-menu-wrap')) closeMenu();
     });
-    $('#moreBtn').addEventListener('click', toggleMenu);
-    $('#moreMenu').addEventListener('click', e => { if (e.target.closest('a, button')) closeMenu(); });
+    const moreBtn = $('#moreBtn');
+    if (moreBtn) moreBtn.addEventListener('click', toggleMenu);
+    const moreMenu = $('#moreMenu');
+    if (moreMenu) moreMenu.addEventListener('click', e => { if (e.target.closest('a, button')) closeMenu(); });
     const bd = $('#jobDetailBackdrop');
     if (bd) bd.addEventListener('click', closeDetailSheet);
 
@@ -10584,6 +11086,7 @@
     setupLinkedinRadarUi();
     setupApplicationTrackerUi();
     setupResumeVariantUi();
+    setupSettingsHub();
     bindEvents();
     await Promise.all([loadProfile(), loadApplications()]);
     if (!S.profileEmpty) {
