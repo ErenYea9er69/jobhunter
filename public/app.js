@@ -2166,9 +2166,9 @@
     return false;
   }
 
-  function filteredJobs() {
+  function filteredJobs(customFilters = null) {
     const pool = (S.jobsRanked && S.jobsRanked.length) ? S.jobsRanked : (S.allJobs || S.jobs || []);
-    const f = S.filters || {};
+    const f = customFilters || S.filters || {};
 
     const selectedRole = (f.jobFunctions && f.jobFunctions.length) ? f.jobFunctions[0].toLowerCase() : '';
     return pool.filter(j => {
@@ -2499,7 +2499,7 @@
       }
 
       // 30. Winning Resume Filter
-      const resumeFilter = S.filterResume || (f.best_profile_id || 'all');
+      const resumeFilter = (customFilters && customFilters.filterResume !== undefined) ? customFilters.filterResume : (S.filterResume || (f.best_profile_id || 'all'));
       if (resumeFilter && resumeFilter !== 'all') {
         if (j.best_profile_id && j.best_profile_id !== resumeFilter) return false;
       }
@@ -3083,6 +3083,312 @@
     }
   }
 
+  // ----------------------------------------------------------------- search relaxation widget
+  function detectSearchBottleneck() {
+    const pool = (S.jobsRanked && S.jobsRanked.length) ? S.jobsRanked : (S.allJobs || S.jobs || []);
+    if (!pool.length) return null;
+    const currentCount = filteredJobs().length;
+    const f = S.filters || {};
+    const candidates = [];
+
+    // 1. Freshness / Date Posted
+    if (f.freshnessDays > 0) {
+      let nextDays = 0;
+      let nextLabel = 'All time';
+      let currentLabel = `Past ${f.freshnessDays} days`;
+      if (f.freshnessDays === 1) {
+        currentLabel = 'Past 24 hours';
+        nextDays = 7;
+        nextLabel = 'Past week';
+      } else if (f.freshnessDays === 3) {
+        currentLabel = 'Past 3 days';
+        nextDays = 7;
+        nextLabel = 'Past week';
+      } else if (f.freshnessDays <= 7) {
+        currentLabel = 'Past week';
+        nextDays = 14;
+        nextLabel = 'Past 2 weeks';
+      } else if (f.freshnessDays <= 14) {
+        currentLabel = 'Past 2 weeks';
+        nextDays = 30;
+        nextLabel = 'Past month';
+      }
+      const simCount = filteredJobs({ ...f, freshnessDays: nextDays }).length;
+      const gain = simCount - currentCount;
+      candidates.push({
+        key: 'freshnessDays',
+        gain,
+        priority: 100 + Math.max(0, gain) * 5,
+        limitingLabel: 'Date Posted',
+        limitingValue: currentLabel,
+        adjustLabel: 'Set the Date Posted',
+        adjustValue: nextLabel,
+        apply: () => {
+          S.filters.freshnessDays = nextDays;
+        }
+      });
+    }
+
+    // 2. Minimum Match Score
+    if (f.minScore > 0) {
+      let nextScore = 0;
+      let nextLabel = 'Any match score';
+      if (f.minScore >= 80) {
+        nextScore = 60;
+        nextLabel = '60%+';
+      } else if (f.minScore >= 70) {
+        nextScore = 50;
+        nextLabel = '50%+';
+      } else if (f.minScore >= 50) {
+        nextScore = 0;
+        nextLabel = 'Any match score';
+      }
+      const simCount = filteredJobs({ ...f, minScore: nextScore }).length;
+      const gain = simCount - currentCount;
+      candidates.push({
+        key: 'minScore',
+        gain,
+        priority: 90 + Math.max(0, gain) * 5,
+        limitingLabel: 'Match Score',
+        limitingValue: `${f.minScore}%+`,
+        adjustLabel: 'Lower the Match Score',
+        adjustValue: nextLabel,
+        apply: () => {
+          S.filters.minScore = nextScore;
+          const s = $('#searchMinScore'); if (s) s.value = String(nextScore);
+        }
+      });
+    }
+
+    // 3. Work Mode
+    const hasWorkModeFilter = (f.workMode && f.workMode.toLowerCase() !== 'any') || (f.workModels && f.workModels.size > 0);
+    if (hasWorkModeFilter) {
+      const currentModeLabel = (f.workModels && f.workModels.size > 0)
+        ? Array.from(f.workModels).map(m => m.charAt(0).toUpperCase() + m.slice(1)).join(', ')
+        : (f.workMode ? f.workMode.charAt(0).toUpperCase() + f.workMode.slice(1) : 'Restricted');
+      const simCount = filteredJobs({ ...f, workMode: 'Any', workModels: new Set() }).length;
+      const gain = simCount - currentCount;
+      candidates.push({
+        key: 'workMode',
+        gain,
+        priority: 80 + Math.max(0, gain) * 5,
+        limitingLabel: 'Work Mode',
+        limitingValue: currentModeLabel,
+        adjustLabel: 'Set the Work Mode',
+        adjustValue: 'Any (Remote & Hybrid)',
+        apply: () => {
+          S.filters.workMode = 'Any';
+          if (S.filters.workModels) S.filters.workModels.clear();
+        }
+      });
+    }
+
+    // 4. Job Types (Full-time, Contract, Internship, etc.)
+    const hasJobTypeFilter = (f.jobType && f.jobType !== 'all') || (f.jobTypes && f.jobTypes.size > 0 && f.jobTypes.size < 4);
+    if (hasJobTypeFilter) {
+      const currentJtLabel = (f.jobTypes && f.jobTypes.size > 0)
+        ? Array.from(f.jobTypes).join(', ')
+        : f.jobType;
+      const simCount = filteredJobs({ ...f, jobType: 'all', jobTypes: new Set() }).length;
+      const gain = simCount - currentCount;
+      candidates.push({
+        key: 'jobType',
+        gain,
+        priority: 70 + Math.max(0, gain) * 5,
+        limitingLabel: 'Job Type',
+        limitingValue: currentJtLabel,
+        adjustLabel: 'Include all Job Types',
+        adjustValue: 'Full-time & all types',
+        apply: () => {
+          S.filters.jobType = 'all';
+          if (S.filters.jobTypes) S.filters.jobTypes.clear();
+        }
+      });
+    }
+
+    // 5. Seniority / Experience Level
+    const hasSenFilter = (f.seniority && f.seniority !== 'all') || (f.expLevels && f.expLevels.size > 0 && f.expLevels.size < 6) || (f.yoe && f.yoe !== 'all') || !f.expOpenToAll;
+    if (hasSenFilter) {
+      const currentSenLabel = (f.expLevels && f.expLevels.size > 0)
+        ? Array.from(f.expLevels).join(', ')
+        : (f.seniority !== 'all' ? f.seniority : (f.yoe !== 'all' ? f.yoe : 'Restricted YOE'));
+      const simCount = filteredJobs({ ...f, seniority: 'all', expLevels: new Set(), yoe: 'all', expOpenToAll: true }).length;
+      const gain = simCount - currentCount;
+      candidates.push({
+        key: 'seniority',
+        gain,
+        priority: 65 + Math.max(0, gain) * 5,
+        limitingLabel: 'Experience Level',
+        limitingValue: currentSenLabel,
+        adjustLabel: 'Set Experience Level',
+        adjustValue: 'Open to all levels',
+        apply: () => {
+          S.filters.seniority = 'all';
+          S.filters.yoe = 'all';
+          S.filters.expOpenToAll = true;
+          if (S.filters.expLevels) S.filters.expLevels.clear();
+        }
+      });
+    }
+
+    // 6. Minimum Salary / Salary Tier
+    const hasSalaryFilter = (f.salaryTier && f.salaryTier !== '0') || (!f.salaryOpenToAll && f.minSalary > 0);
+    if (hasSalaryFilter) {
+      const currentSalLabel = f.salaryTier === 'disclosed' ? 'Disclosed only' : (f.salaryTier ? `$${f.salaryTier}` : `$${f.minSalary}+`);
+      const simCount = filteredJobs({ ...f, salaryTier: '0', minSalary: 0, salaryOpenToAll: true }).length;
+      const gain = simCount - currentCount;
+      candidates.push({
+        key: 'salary',
+        gain,
+        priority: 60 + Math.max(0, gain) * 5,
+        limitingLabel: 'Salary Filter',
+        limitingValue: currentSalLabel,
+        adjustLabel: 'Set Salary Filter',
+        adjustValue: 'Open to all (include unlisted)',
+        apply: () => {
+          S.filters.salaryTier = '0';
+          S.filters.minSalary = 0;
+          S.filters.salaryOpenToAll = true;
+        }
+      });
+    }
+
+    // 7. Company Mode (Big Tech vs Startups)
+    if (f.famousMode && f.famousMode !== 'all') {
+      const currentFamLabel = f.famousMode === 'only' ? 'Big Tech only' : (f.famousMode === 'startups' ? 'Startups only' : 'No Big Tech');
+      const simCount = filteredJobs({ ...f, famousMode: 'all' }).length;
+      const gain = simCount - currentCount;
+      candidates.push({
+        key: 'famousMode',
+        gain,
+        priority: 55 + Math.max(0, gain) * 5,
+        limitingLabel: 'Company Filter',
+        limitingValue: currentFamLabel,
+        adjustLabel: 'Set Company Filter',
+        adjustValue: 'All Companies',
+        apply: () => {
+          S.filters.famousMode = 'all';
+          try { localStorage.setItem('jh-famous-filter', 'all'); } catch (e) {}
+        }
+      });
+    }
+
+    // 8. Winning Resume Variant
+    const hasResumeFilter = (S.filterResume && S.filterResume !== 'all') || (f.best_profile_id && f.best_profile_id !== 'all');
+    if (hasResumeFilter) {
+      const profMeta = (S.profiles || []).find(p => p.id === (S.filterResume || f.best_profile_id));
+      const currentResLabel = profMeta ? profMeta.name : 'Single Resume';
+      const simCount = filteredJobs({ ...f, best_profile_id: 'all', filterResume: 'all' }).length;
+      const gain = simCount - currentCount;
+      candidates.push({
+        key: 'resume',
+        gain,
+        priority: 50 + Math.max(0, gain) * 5,
+        limitingLabel: 'Resume Variant',
+        limitingValue: currentResLabel,
+        adjustLabel: 'Include jobs for',
+        adjustValue: 'All Resume Variants',
+        apply: () => {
+          S.filterResume = 'all';
+          S.filters.best_profile_id = 'all';
+        }
+      });
+    }
+
+    // 9. Location / Country
+    const hasLocFilter = (f.country && f.country.toLowerCase() !== 'all') || (f.locationQuery && f.locationQuery.trim() && f.locationQuery.toLowerCase() !== 'anywhere in the us');
+    if (hasLocFilter) {
+      const currentLocLabel = f.locationQuery || f.country;
+      const simCount = filteredJobs({ ...f, country: 'all', locationQuery: '' }).length;
+      const gain = simCount - currentCount;
+      candidates.push({
+        key: 'location',
+        gain,
+        priority: 45 + Math.max(0, gain) * 5,
+        limitingLabel: 'Location',
+        limitingValue: currentLocLabel,
+        adjustLabel: 'Expand Location',
+        adjustValue: 'Worldwide Remote',
+        apply: () => {
+          S.filters.country = 'Worldwide';
+          S.filters.locationQuery = '';
+        }
+      });
+    }
+
+    // 10. Role Function / Category
+    if (f.jobFunctions && f.jobFunctions.length > 0) {
+      const currentFnLabel = f.jobFunctions[0];
+      const simCount = filteredJobs({ ...f, jobFunctions: [] }).length;
+      const gain = simCount - currentCount;
+      candidates.push({
+        key: 'jobFunctions',
+        gain,
+        priority: 40 + Math.max(0, gain) * 5,
+        limitingLabel: 'Role Category',
+        limitingValue: currentFnLabel,
+        adjustLabel: 'Broaden Category',
+        adjustValue: 'All Software Roles',
+        apply: () => {
+          S.filters.jobFunctions = [];
+        }
+      });
+    }
+
+    if (!candidates.length) return null;
+
+    // Sort by positive gain first, then by priority
+    candidates.sort((a, b) => {
+      if (a.gain > 0 && b.gain <= 0) return -1;
+      if (b.gain > 0 && a.gain <= 0) return 1;
+      if (a.gain !== b.gain) return b.gain - a.gain;
+      return b.priority - a.priority;
+    });
+
+    return candidates[0];
+  }
+
+  function renderSearchRelaxationWidget(bottleneck) {
+    if (!bottleneck) return '';
+    S._activeBottleneck = bottleneck;
+    return `<div class="search-relax-widget" id="searchRelaxWidget">
+      <div class="search-relax-notice">
+        <span class="search-relax-badge-icon" aria-hidden="true">!</span>
+        <span class="search-relax-notice-text">We couldn't find more jobs with your current preferences. Try adjusting the following criteria to view more jobs.</span>
+      </div>
+      <div class="search-relax-card">
+        <div class="search-relax-row">
+          <div class="search-relax-label">📌 What's limiting your search:</div>
+          <div class="search-relax-value">
+            <span>${esc(bottleneck.limitingLabel)} is set to</span>
+            <span class="search-relax-pill">${esc(bottleneck.limitingValue)}</span>
+          </div>
+        </div>
+        <div class="search-relax-divider"></div>
+        <div class="search-relax-row">
+          <div class="search-relax-label">💡 How you may adjust:</div>
+          <div class="search-relax-value">
+            <span>${esc(bottleneck.adjustLabel)} to</span>
+            <span class="search-relax-pill">${esc(bottleneck.adjustValue)}</span>
+          </div>
+        </div>
+      </div>
+      <div class="search-relax-actions">
+        <button type="button" class="btn-search-relax-update" data-action="apply-search-relaxation">Update Now</button>
+      </div>
+    </div>`;
+  }
+
+  function applySearchRelaxation() {
+    if (!S._activeBottleneck || typeof S._activeBottleneck.apply !== 'function') return;
+    const b = S._activeBottleneck;
+    b.apply();
+    S._activeBottleneck = null;
+    syncFiltersUi();
+    filterAndRender(true, true);
+    toast(`${b.limitingLabel} updated to ${b.adjustValue}. Showing more jobs!`, 'ok');
+  }
+
   function renderResults(animate = false) {
     stopSearchProgressAnimation();
     const stage = $('#searchProgressStage');
@@ -3354,13 +3660,15 @@
 
       // Case 1: Search returned jobs, but client filters eliminated all of them!
       if (totalAll > 0 && !allFailed) {
+        const bottleneck = detectSearchBottleneck();
         list.innerHTML = `<div class="empty">${ico('search')}
           <h3>No jobs match active filters</h3>
           <p>Found <strong>${totalAll} job${totalAll === 1 ? '' : 's'}</strong> for this search, but your current filters excluded all of them.</p>
+          ${bottleneck ? renderSearchRelaxationWidget(bottleneck) : `
           <div class="empty-actions">
             <button type="button" class="btn btn-primary" data-action="clear-filters">Show all ${totalAll} jobs</button>
             ${S.filters.minScore > 0 ? '<button type="button" class="btn btn-secondary" data-action="relax-score">Show any match score</button>' : ''}
-          </div>
+          </div>`}
         </div>`;
         return;
       }
@@ -3410,6 +3718,15 @@
         </div>
       </div>` : '';
 
+    let relaxWidgetHtml = '';
+    // Show relaxation widget at the end of the list if all current matching jobs are displayed and result count is small or filtered
+    if (!hasMore && (jobs.length <= 6 || (totalAll > jobs.length && jobs.length <= 10))) {
+      const bottleneck = detectSearchBottleneck();
+      if (bottleneck) {
+        relaxWidgetHtml = renderSearchRelaxationWidget(bottleneck);
+      }
+    }
+
     if (animate) {
       list.classList.add('is-animating');
       setTimeout(() => list.classList.remove('is-animating'), 550);
@@ -3417,7 +3734,7 @@
       list.classList.remove('is-animating');
     }
 
-    list.innerHTML = cardsHtml + sentinelHtml;
+    list.innerHTML = cardsHtml + sentinelHtml + relaxWidgetHtml;
     if (prevScroll > 0) {
       list.scrollTop = prevScroll;
     }
@@ -6256,6 +6573,9 @@
       resetAllFilters();
       filterAndRender();
       toast('All filters cleared: showing all available jobs');
+    },
+    'apply-search-relaxation': () => {
+      applySearchRelaxation();
     },
     'search-worldwide-remote': () => {
       const loc = $('#searchLocation');

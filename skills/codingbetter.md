@@ -133,3 +133,155 @@ Unverified: what you did not check, and your assumptions.
 Risks and next steps: what the user should watch.
 
 Keep the report short. Lead with the result. Use simple words and active voice.
+
+---
+
+# ARCHITECTURAL ANALYSIS & SPECIFICATION: SEARCH RELAXATION WIDGET
+## Comprehensive Multi-Aspect Analysis (Filters, Matching Engine, Resume Variants, Profile Calibration, and Auto-Relaxation UX)
+
+### 1. Executive Summary & Objective
+When users search or filter jobs on JobHunter (by Category, Role, Date Posted, Match Score, Work Mode, Location, etc.), combinations of constraints frequently lead to low or zero results (e.g., 0 to 4 jobs displayed). 
+
+The goal is to implement an intelligent, proactive **Search Relaxation Widget** rendered at the end of the home page job list. It:
+1. Explains why result counts are restricted ("What's limiting your search").
+2. Prescribes the single highest-impact adjustment ("How you may adjust").
+3. Provides an instant, one-click **"Update Now"** action button that automatically reconfigures the limiting filter, synchronizes UI controls, and re-queries/re-renders the job stream.
+
+---
+
+### 2. Deep Aspect 1: The App Filtering System (30 Dimensions)
+Grounding in `jh/db.py` (`query_stored_jobs`) and `public/app.js` (`filteredJobs`):
+
+JobHunter filters operate across 30 distinct dimensions divided between backend SQL pre-filtering and frontend reactive filtering:
+
+1. **Date Freshness (`freshnessDays`)**:
+   - Tiers: `Past 24 hours` (1 day), `Past 3 days` (3 days), `Past week` (7 days), `Past 2 weeks` (14 days), `Past month` (30 days), `All time` (0).
+   - *Impact*: In tech scraping and aggregation, fresh listings decay exponentially. Setting Date Posted to "Past 24 hours" drops available listings by 85–95% compared to "Past week".
+2. **Match Score Threshold (`minScore`)**:
+   - Tiers: `0%`, `50%`, `60%`, `70%`, `80%`, `90%`.
+   - *Impact*: Evaluated dynamically by `jh/scoring.py`. Strict thresholding (>70% or >80%) eliminates listings where the candidate has partial skill overlap or missing adjacent tools.
+3. **Work Mode (`workMode` / `workModels`)**:
+   - Modes: `Remote`, `Hybrid`, `Onsite`, `Any`.
+   - *Impact*: Restricting to `Remote` excludes 65%+ of hybrid tech roles in tech hubs.
+4. **Category & Role Function (`category`, `jobFunctions`)**:
+   - Roles: Full Stack, Backend, Frontend, DevOps/SRE, ML/AI, Data Engineering, Mobile, QA, Security, Product, Design.
+   - *Impact*: Niche roles (e.g., Security, QA, Mobile) have lower baseline volumes than Full Stack or Backend.
+5. **Seniority & Experience Level (`seniority`, `expLevels`, `expYears`)**:
+   - Levels: Intern, Junior, Mid, Senior, Lead/Staff, Director.
+   - *Impact*: Strict `Junior` or `Intern` filters cut 80%+ of available tech listings because many employers post general "Software Engineer" without junior tags.
+6. **Compensation / Salary Tier (`minSalary`, `salaryTier`, `salaryOpenToAll`)**:
+   - Tiers: Open to all, Disclosed only, $100k+, $140k+, $180k+.
+   - *Impact*: 60%+ of scraped listings do not disclose public salary bands. Filtering for "$140k+" removes both low-paying jobs and unlisted salary roles.
+7. **Geographic Scope & Work Authorization (`country`, `locationQuery`, `h1b`, `excludeClearance`, `excludeCitizenOnly`)**:
+   - Scope: United States, Worldwide, specific metro, H1B sponsorship required.
+   - *Impact*: Requiring H1B sponsorship or limiting to a specific radius in non-hub cities shrinks results drastically.
+8. **Company Type & Stage (`famousMode`, `companies`, `companyStages`, `excludeStaffing`)**:
+   - Tiers: Big Tech Only (`famousMode=only`), Hide Big Tech, Startups Only, Exclude Staffing.
+   - *Impact*: `famousMode=only` restricts the pool to ~15 mega-cap companies.
+9. **Required & Excluded Skills (`skills`, `selectedSkills`, `excludedSkills`)**:
+   - AND-logic filtering across skill tokens in description and title.
+10. **Winning Resume Variant Filter (`best_profile_id` / `filterResume`)**:
+    - Limits view to jobs where a specific tailored resume won the match over other variants.
+
+---
+
+### 3. Deep Aspect 2: Match Scoring Engine (`jh/scoring.py`)
+Understanding how match scoring drives results:
+
+Scoring uses a composite 100-point model:
+- **Skill Overlap (50 pts max)**: Weighted requirement extraction (`sk.extract_weighted`) with cluster affinities (e.g., Postgres ~ MySQL grants 0.45 credit).
+- **Title Alignment (20 pts max)**: Token similarity ratio (`title_tokens`). If ratio < 0.12 and <= 1 skill matched, the score is hard-capped at 32%.
+- **Seniority Alignment (10 pts max)**: Level delta (`level_of(job)` vs `profile.years_of_experience`). A 2-level gap imposes a -12 penalty; a 3+ level gap imposes a -25 penalty.
+- **Work Mode & Geo Fit (10 pts max)**: Work mode compatibility. If a job is US-only or requires citizenship and the candidate profile lacks US residency, score is hard-capped at 38%.
+- **Freshness & Salary (5 pts + 5 pts max)**: Freshness decay (>60 days notes stale).
+- **Core Requirement Penalties**: Missing 2+ core non-adjacent technologies penalizes -22 pts.
+
+*Crucial Correlation*: When a user sets `minScore >= 70%`, a single minor gap (such as a 2-year seniority delta or a missing secondary framework) causes an otherwise great job (scoring 64–68%) to be filtered out. Relaxing `minScore` from 70% to 50% or 60% unlocks high-quality opportunities.
+
+---
+
+### 4. Deep Aspect 3: Resume Variants & Candidate Profile
+JobHunter supports multiple live resume profiles (`jh/refit.py`, `jh/resume_parser.py`):
+1. **Multi-Variant Pool**: A user may have a "Full Stack General" variant and a "Python Backend" variant.
+2. **Filtering by Variant**: When the user filters by `best_profile_id`, the system hides jobs where another variant scored higher. Relaxing to "All Resumes" restores the full breadth.
+3. **Profile Completeness Bottleneck**: If the active profile contains < 6 skills or lacks clear target titles, all calculated match scores drop into the 30–50 range. If `minScore` is active, the entire job board appears empty.
+4. **Geo & Work Mode Preference**: A profile marked "Remote Only" without target countries filters out hybrid roles within commuting distance.
+
+---
+
+### 5. Bottleneck Detection & Dynamic Relaxation Algorithm
+When `filteredJobs().length <= 5` (or when `filteredJobs().length === 0` but `totalAll > 0`), the system evaluates which active filter is responsible for the constriction:
+
+```
+Algorithm: Marginal Gain Bottleneck Resolver
+1. Input: Active filter set F, Current filtered job count N (N <= 5), Full job pool P.
+2. For each active non-default filter f in F:
+   a. Create candidate filter set F' where f is relaxed to its next broader setting:
+      - freshnessDays: 1 -> 7 (Past week), 3 -> 14, 7 -> 30, >7 -> 0 (All time)
+      - minScore: >=80 -> 60, >=70 -> 50, >=50 -> 0 (Any score)
+      - workMode: 'Remote'/'Hybrid'/'Onsite' -> 'Any'
+      - jobTypes: (filtered set) -> All Job Types
+      - salaryTier / minSalary: active -> Open to all
+      - seniority / expLevels: active -> Open to all levels
+      - famousMode: 'only' / 'startups' -> 'all'
+      - best_profile_id: specific -> 'all'
+      - country / location: specific -> Worldwide Remote
+   b. Compute simulated count N' = evaluate(P, F').
+   c. Compute marginal gain G = N' - N.
+3. Select filter f* with max(G) (highest marginal gain).
+4. Return LimitingCriterion(
+     filterKey: f*,
+     currentLabel: displayLabel(f*),
+     currentValueBadge: displayValue(f*),
+     adjustAction: prescribeAdjustment(f*),
+     recommendedValueBadge: recommendedValue(f*),
+     relaxedState: F'
+   ).
+```
+
+---
+
+### 6. Widget UI/UX Specification (Pixel-Accurate to Design)
+The widget is positioned at the bottom of the job list (`#jobList`), styled with modern typography, subtle borders, and accessible contrast:
+
+```
++-----------------------------------------------------------------------------------+
+|  (!) We couldn't find more jobs with your current preferences. Try adjusting      |
+|      the following criteria to view more jobs.                                    |
+|                                                                                   |
+|  +-----------------------------------------------------------------------------+  |
+|  |  📌 What's limiting your search:                                            |  |
+|  |     Date Posted is set to  [ Past 24 hours ]                                |  |
+|  |  -------------------------------------------------------------------------  |  |
+|  |  💡 How you may adjust:                                                     |  |
+|  |     Set the Date Posted to  [ Past week ]                                   |  |
+|  +-----------------------------------------------------------------------------+  |
+|                                                                                   |
+|                                 [ Update Now ]                                    |
++-----------------------------------------------------------------------------------+
+```
+
+- **Container**: Card with rounded corners (`16px`), background `#ffffff` (dark mode `#1e293b`), border `1px solid var(--line, #e2e8f0)`, soft shadow.
+- **Header Notice**: Emerald-green circle (`#10b981`) with white exclamation mark `!`, followed by explanatory heading text.
+- **Inner Criteria Box**: Light container (`#f8fafc` / `#0f172a`), border `1px solid #e2e8f0`.
+  - Section 1: "📌 What's limiting your search:" + Criterion name + Badge (`.badge-pill`).
+  - Divider: Subtle hairline divider.
+  - Section 2: "💡 How you may adjust:" + Recommended adjustment action + Badge.
+- **Action Button**: Centered black pill button (`#000000`, white text, `border-radius: 9999px`, font-weight: 700, padding: `10px 28px`).
+- **Interaction**: Clicking **"Update Now"** executes the single targeted relaxation, synchronizes the UI controls (dropdowns, sliders, chips), and triggers `filterAndRender(true)` without reloading the page.
+
+---
+
+### 7. Implementation Plan & File Touchpoints
+1. **Frontend Logic (`public/app.js`)**:
+   - Add `detectSearchBottleneck(jobsPool, activeFilters)`: simulates relaxations and ranks marginal gains.
+   - Add `renderSearchRelaxationWidget(bottleneck, currentCount)`: builds the responsive HTML component matching the design.
+   - Update `renderList()`: append widget at the end of the jobs list when `jobs.length <= 6` or when reaching end of filtered results where total pool was limited.
+   - Add global click handler for `[data-action="apply-search-relaxation"]`: mutates `S.filters`, updates DOM inputs/pills, and executes `filterAndRender(true)`.
+2. **Frontend Styling (`public/styles.css`)**:
+   - Add `.search-relaxation-card`, `.relaxation-notice-header`, `.relaxation-criteria-box`, `.relaxation-pill-badge`, `.btn-relaxation-update`. Supports dark/light themes.
+3. **Verification**:
+   - Test low result conditions: `freshnessDays = 1` -> suggests `Past week` and clicking "Update Now" relaxes and refreshes.
+   - Test score threshold: `minScore = 80` with low results -> suggests lowering to 60%.
+   - Test work mode: `workMode = Remote` -> suggests `Hybrid & Remote` or `Any`.
+   - Test zero jobs state: replaces generic empty text with the targeted relaxation card.

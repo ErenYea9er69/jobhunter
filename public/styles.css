@@ -10622,4 +10622,150 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   color: var(--text-3);
 }
 
+/* ==========================================================================
+   Search Relaxation Widget (Low-Result Bottleneck Explainer & Auto-Updater)
+   ========================================================================== */
+.search-relax-widget {
+  margin: 20px 0 16px;
+  padding: 22px 24px;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  animation: search-relax-in 0.25s ease-out;
+}
+
+@keyframes search-relax-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.search-relax-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.search-relax-badge-icon {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  border-radius: 50%;
+  background: #00d084;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1;
+  font-family: system-ui, -apple-system, sans-serif;
+  box-shadow: 0 2px 6px rgba(0, 208, 132, 0.35);
+}
+
+.search-relax-notice-text {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--text, #1e293b);
+  line-height: 1.45;
+}
+
+.search-relax-card {
+  background: var(--surface-2, #f8fafc);
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin: 12px 0 20px;
+}
+
+.search-relax-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.search-relax-label {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text, #0f172a);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.search-relax-value {
+  font-size: 14px;
+  color: var(--text-2, #334155);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: 2px;
+}
+
+.search-relax-pill {
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--line-strong, #cbd5e1);
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text, #0f172a);
+  display: inline-flex;
+  align-items: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.search-relax-divider {
+  height: 1px;
+  background: var(--line, #e2e8f0);
+  margin: 14px 0;
+  border: none;
+}
+
+.search-relax-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-top: 4px;
+}
+
+.btn-search-relax-update {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #000000;
+  color: #ffffff;
+  border-radius: 9999px;
+  padding: 10px 32px;
+  font-size: 14px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.btn-search-relax-update:hover {
+  background: #1e293b;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+}
+
+.btn-search-relax-update:active {
+  transform: translateY(0);
+}
+
+[data-theme="dark"] .btn-search-relax-update {
+  background: #ffffff;
+  color: #000000;
+}
+
+[data-theme="dark"] .btn-search-relax-update:hover {
+  background: #e2e8f0;
+}
+
+
 
