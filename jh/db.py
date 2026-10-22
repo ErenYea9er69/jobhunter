@@ -207,11 +207,12 @@ def classify_job(j):
 
 
 def connect():
-    conn = sqlite3.connect(config.DB_PATH, timeout=10)
+    conn = sqlite3.connect(config.DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("PRAGMA busy_timeout=8000")
     return conn
 
 
@@ -663,7 +664,7 @@ def set_active_resume_profile(profile_id):
         c.execute("UPDATE resume_profiles SET is_active = CASE WHEN id=? THEN 1 ELSE 0 END", (profile_id,))
         c.execute("INSERT OR REPLACE INTO profile (id, data, updated_at) VALUES (1, ?, ?)", (row["data_json"], now_iso()))
     active_profile = get_profile(profile_id)
-    threading.Thread(target=rescore_and_classify_stored_jobs, args=(active_profile,), daemon=True).start()
+    trigger_rescore_jobs(active_profile)
     return active_profile
 
 
@@ -701,6 +702,7 @@ def duplicate_resume_profile(profile_id, new_name=None, target_title=None, tags=
             json.dumps(data), iso_now, iso_now
         ))
 
+    trigger_rescore_jobs()
     return get_profile(new_id)
 
 
@@ -723,7 +725,7 @@ def delete_resume_profile(profile_id):
             master_row = c.execute("SELECT data_json FROM resume_profiles WHERE is_master=1").fetchone()
             if master_row:
                 c.execute("INSERT OR REPLACE INTO profile (id, data, updated_at) VALUES (1, ?, ?)", (master_row["data_json"], now_iso()))
-    threading.Thread(target=rescore_and_classify_stored_jobs, daemon=True).start()
+    trigger_rescore_jobs()
     return True
 
 
@@ -761,13 +763,58 @@ def save_tailored_variant_from_workspace(job, tailored_resume, variant_name=None
             job.get("id") or "", role, comp, iso_now, iso_now
         ))
 
+    trigger_rescore_jobs()
     return get_profile(new_id)
 
 
+_rescore_lock = threading.Lock()
+_rescore_worker_running = False
+_rescore_requested = False
+
+
+def trigger_rescore_jobs(profile=None):
+    """Trigger background job rescoring across all live profiles in a thread-safe, debounced queue."""
+    global _rescore_requested, _rescore_worker_running
+    with _rescore_lock:
+        _rescore_requested = True
+        if _rescore_worker_running:
+            return
+        _rescore_worker_running = True
+    threading.Thread(target=_rescore_worker_loop, daemon=True, name="JobRescoreWorker").start()
+
+
+def _rescore_worker_loop():
+    global _rescore_requested, _rescore_worker_running
+    while True:
+        with _rescore_lock:
+            if not _rescore_requested:
+                _rescore_worker_running = False
+                break
+            _rescore_requested = False
+        try:
+            rescore_and_classify_stored_jobs()
+        except Exception as e:
+            import logging
+            logging.getLogger("jobhunter").error("Error in rescore worker: %s", e)
+
+
+def _flush_rescore_updates(batch):
+    if not batch:
+        return
+    with session() as c:
+        c.executemany("""
+            UPDATE search_jobs
+            SET score=?, opportunity_score=?, category=?, job_type=?, seniority=?,
+                country=?, work_mode=?, best_profile_id=?, best_profile_name=?, job_json=?
+            WHERE job_key=?
+        """, batch)
+
+
 def rescore_and_classify_stored_jobs(profile=None):
-    """Re-score and re-classify all stored jobs against live resume profiles."""
+    """Re-score and re-classify all stored jobs against live resume profiles in responsive batches."""
     from .scoring import score_job_best
     from .pipeline import _rank_opportunity
+    import time
     if profile is None:
         profiles = get_live_profiles()
     elif isinstance(profile, list):
@@ -776,27 +823,35 @@ def rescore_and_classify_stored_jobs(profile=None):
         profiles = [profile]
     if not profiles or (len(profiles) == 1 and profiles[0].get("_is_empty")):
         return 0
-    updated_count = 0
+
     with session() as c:
-        rows = c.execute("SELECT job_key, job_json FROM search_jobs").fetchall()
+        rows = c.execute("SELECT job_key, job_json, category, seniority, job_type, country, work_mode FROM search_jobs").fetchall()
 
     updates = []
+    total_updated = 0
     for r in rows:
         try:
             j = json.loads(r["job_json"])
-            c_meta = classify_job(j)
+            cat = r["category"] or j.get("category")
+            sen = r["seniority"] or j.get("seniority")
+            jt = r["job_type"] or j.get("job_type")
+            cny = r["country"] or j.get("country")
+            wm = r["work_mode"] or j.get("work_mode")
+            if not (cat and sen and jt and cny and wm):
+                c_meta = classify_job(j)
+                cat, sen, jt, cny, wm = c_meta["category"], c_meta["seniority"], c_meta["job_type"], c_meta["country"], c_meta["work_mode"]
+
             scored = score_job_best(j, profiles)
             j.update(scored)
-            j["category"] = c_meta["category"]
-            j["seniority"] = c_meta["seniority"]
-            j["job_type"] = c_meta["job_type"]
-            j["country"] = c_meta["country"]
-            j["work_mode"] = c_meta["work_mode"]
+            j["category"] = cat
+            j["seniority"] = sen
+            j["job_type"] = jt
+            j["country"] = cny
+            j["work_mode"] = wm
             _rank_opportunity(j)
             updates.append((
                 j.get("score", 0), j.get("opportunity_score", 0),
-                c_meta["category"], c_meta["job_type"], c_meta["seniority"],
-                c_meta["country"], c_meta["work_mode"],
+                cat, jt, sen, cny, wm,
                 j.get("best_profile_id", ""), j.get("best_profile_name", ""),
                 json.dumps(j),
                 r["job_key"]
@@ -804,15 +859,18 @@ def rescore_and_classify_stored_jobs(profile=None):
         except Exception:
             pass
 
+        # Flush in small 80-row transactions to keep SQLite completely unlocked and yield GIL
+        if len(updates) >= 80:
+            _flush_rescore_updates(updates)
+            total_updated += len(updates)
+            updates = []
+            time.sleep(0.002)
+
     if updates:
-        with session() as c:
-            c.executemany("""
-                UPDATE search_jobs
-                SET score=?, opportunity_score=?, category=?, job_type=?, seniority=?,
-                    country=?, work_mode=?, best_profile_id=?, best_profile_name=?, job_json=?
-                WHERE job_key=?
-            """, updates)
-    return len(updates)
+        _flush_rescore_updates(updates)
+        total_updated += len(updates)
+
+    return total_updated
 
 
 def get_setting(key, default=""):
@@ -1120,8 +1178,12 @@ def query_stored_jobs(filters=None, include_all=False):
         else:
             all_rows = None
 
-    def _unpack_row(r):
+    def _unpack_row(r, compact=False):
         j = json.loads(r["job_json"])
+        if compact:
+            j["description"] = ""
+            j["qualifications"] = []
+            j["responsibilities"] = []
         if r["job_type"]:
             j["job_type"] = r["job_type"]
         if r["work_mode"]:
@@ -1139,7 +1201,7 @@ def query_stored_jobs(filters=None, include_all=False):
         return j
 
     jobs = [_unpack_row(r) for r in rows]
-    all_jobs = [_unpack_row(r) for r in all_rows] if all_rows is not None else jobs
+    all_jobs = [_unpack_row(r, compact=True) for r in all_rows] if all_rows is not None else []
     meta = get_search_meta() or {}
 
     return {

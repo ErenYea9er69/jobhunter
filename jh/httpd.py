@@ -68,8 +68,7 @@ def r_save_profile(q, body):
         raise ApiError("Profile must be an object with a skills list.")
     pid = body.get("_profile_id")
     db.save_profile(body, profile_id=pid)
-    import threading
-    threading.Thread(target=db.rescore_and_classify_stored_jobs, args=(body,), daemon=True).start()
+    db.trigger_rescore_jobs(body)
     return {"success": True, "message": "Profile saved and jobs updated.", "profile": db.get_profile(pid)}
 
 
@@ -93,8 +92,7 @@ def r_toggle_live_profile(q, body):
     is_live = body.get("is_live")
     try:
         updated = db.set_resume_profile_live(pid, is_live=is_live)
-        import threading
-        threading.Thread(target=db.rescore_and_classify_stored_jobs, daemon=True).start()
+        db.trigger_rescore_jobs()
         status_str = "Live" if updated.get("is_live") else "Paused"
         return {
             "success": True,
@@ -704,25 +702,60 @@ def _find_static_file(rel_path):
     return None
 
 
+def _is_disconnect(e):
+    if isinstance(e, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+        return True
+    if isinstance(e, OSError):
+        if getattr(e, "winerror", None) in (10053, 10054, 10058):
+            return True
+        import errno
+        if getattr(e, "errno", None) in (errno.EPIPE, errno.ECONNRESET, errno.ECONNABORTED):
+            return True
+    return False
+
+
 class Handler(SimpleHTTPRequestHandler):
     server_version = "JobHunter/" + __version__
 
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=_find_static_dir(), **kw)
 
+    def handle(self):
+        try:
+            super().handle()
+        except Exception as e:
+            if _is_disconnect(e):
+                self.close_connection = True
+                return
+            raise
+
+    def finish(self):
+        try:
+            super().finish()
+        except Exception as e:
+            if _is_disconnect(e):
+                return
+            raise
+
     def log_message(self, fmt, *args):
         log.debug("%s %s", self.address_string(), fmt % args)
 
     # -- helpers
     def _json(self, data, status=200):
-        body = json.dumps(data).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            body = json.dumps(data).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as e:
+            if _is_disconnect(e):
+                self.close_connection = True
+                return
+            raise
 
     def _host_ok(self):
         host = (self.headers.get("Host") or "").split(":")[0].lower()
@@ -796,11 +829,26 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json({"error": "Endpoint not found"}, 404)
             return self._json(fn(urllib.parse.parse_qs(parsed.query), body if isinstance(body, dict) else {}))
         except ApiError as e:
-            return self._json({"error": str(e)}, e.status)
+            try:
+                return self._json({"error": str(e)}, e.status)
+            except Exception as se:
+                if _is_disconnect(se):
+                    self.close_connection = True
+                    return False
+                raise
         except Exception as e:
+            if _is_disconnect(e):
+                self.close_connection = True
+                return False
             ref = secrets.token_hex(4)
             log.error("error %s: %s\n%s", ref, e, traceback.format_exc())
-            return self._json({"error": f"Internal error (ref {ref}). Check the server log."}, 500)
+            try:
+                return self._json({"error": f"Internal error (ref {ref}). Check the server log."}, 500)
+            except Exception as se:
+                if _is_disconnect(se):
+                    self.close_connection = True
+                    return False
+                raise
 
     def _delete(self, path):
         if path.startswith("/api/applications/"):
@@ -819,70 +867,88 @@ class Handler(SimpleHTTPRequestHandler):
 
     # -- verbs
     def do_GET(self):
-        if self._dispatch("GET") is not False:
-            return
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-
-        # Strip /static or /public prefix if rewritten
-        clean_path = path
-        if clean_path.startswith("/static/"):
-            clean_path = clean_path[len("/static"):]
-        elif clean_path.startswith("/public/"):
-            clean_path = clean_path[len("/public"):]
-
-        if clean_path in ("/", "/index.html", ""):
-            index_file = _find_static_file("index.html")
-            if index_file and os.path.isfile(index_file):
-                with open(index_file, "r", encoding="utf-8") as f:
-                    raw = f.read()
-                if 'name="jh-token"' in raw:
-                    page = re.sub(r'<meta\s+name=["\']jh-token["\'][^>]*>', f'<meta name="jh-token" content="{TOKEN}">', raw).encode()
-                else:
-                    page = raw.replace("</head>", f'<meta name="jh-token" content="{TOKEN}"></head>', 1).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(page)))
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("X-Frame-Options", "DENY")
-                self.end_headers()
-                self.wfile.write(page)
+        try:
+            if self._dispatch("GET") is not False:
                 return
+            parsed = urllib.parse.urlparse(self.path)
+            path = parsed.path
 
-        if clean_path in ("/landing", "/landing.html"):
-            landing_file = _find_static_file("landing.html")
-            if landing_file and os.path.isfile(landing_file):
-                with open(landing_file, "rb") as f:
+            # Strip /static or /public prefix if rewritten
+            clean_path = path
+            if clean_path.startswith("/static/"):
+                clean_path = clean_path[len("/static"):]
+            elif clean_path.startswith("/public/"):
+                clean_path = clean_path[len("/public"):]
+
+            if clean_path in ("/", "/index.html", ""):
+                index_file = _find_static_file("index.html")
+                if index_file and os.path.isfile(index_file):
+                    with open(index_file, "r", encoding="utf-8") as f:
+                        raw = f.read()
+                    if 'name="jh-token"' in raw:
+                        page = re.sub(r'<meta\s+name=["\']jh-token["\'][^>]*>', f'<meta name="jh-token" content="{TOKEN}">', raw).encode()
+                    else:
+                        page = raw.replace("</head>", f'<meta name="jh-token" content="{TOKEN}"></head>', 1).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(page)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("X-Frame-Options", "DENY")
+                    self.end_headers()
+                    self.wfile.write(page)
+                    return
+
+            if clean_path in ("/landing", "/landing.html"):
+                landing_file = _find_static_file("landing.html")
+                if landing_file and os.path.isfile(landing_file):
+                    with open(landing_file, "rb") as f:
+                        content = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(content)))
+                    self.send_header("Cache-Control", "no-cache, must-revalidate")
+                    self.end_headers()
+                    self.wfile.write(content)
+                    return
+
+            asset_file = _find_static_file(clean_path)
+            if asset_file and os.path.isfile(asset_file):
+                mime, _ = mimetypes.guess_type(asset_file)
+                mime = mime or "application/octet-stream"
+                with open(asset_file, "rb") as f:
                     content = f.read()
                 self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Type", mime)
                 self.send_header("Content-Length", str(len(content)))
-                self.send_header("Cache-Control", "no-cache, must-revalidate")
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
                 self.end_headers()
                 self.wfile.write(content)
                 return
 
-        asset_file = _find_static_file(clean_path)
-        if asset_file and os.path.isfile(asset_file):
-            mime, _ = mimetypes.guess_type(asset_file)
-            mime = mime or "application/octet-stream"
-            with open(asset_file, "rb") as f:
-                content = f.read()
-            self.send_response(200)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(len(content)))
-            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-            self.end_headers()
-            self.wfile.write(content)
-            return
-
-        super().do_GET()
+            super().do_GET()
+        except Exception as e:
+            if _is_disconnect(e):
+                self.close_connection = True
+                return
+            raise
 
     def do_POST(self):
-        self._dispatch("POST")
+        try:
+            self._dispatch("POST")
+        except Exception as e:
+            if _is_disconnect(e):
+                self.close_connection = True
+                return
+            raise
 
     def do_DELETE(self):
-        self._dispatch("DELETE")
+        try:
+            self._dispatch("DELETE")
+        except Exception as e:
+            if _is_disconnect(e):
+                self.close_connection = True
+                return
+            raise
 
     def do_OPTIONS(self):  # no cross-origin access is granted
         self.send_response(204)
