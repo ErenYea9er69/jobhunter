@@ -12565,6 +12565,344 @@ body.compact-mode .chip {
   }
 }
 
+/* STARTUP LOADING STATE: a calm signal that the workspace is doing real work. */
+.job-list.is-startup-loading {
+  min-height: min(560px, calc(100vh - 330px));
+}
+
+.startup-loading-state {
+  display: flex;
+  width: min(100%, 600px);
+  min-height: 430px;
+  margin: 0 auto;
+  padding: 48px 24px 40px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  text-align: center;
+}
+
+.startup-loading-visual {
+  position: relative;
+  width: 124px;
+  height: 124px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 30px;
+  background: var(--surface-2);
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.14);
+  isolation: isolate;
+}
+
+.startup-loading-visual::before,
+.startup-loading-visual::after {
+  position: absolute;
+  inset: 18px;
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 26%, transparent);
+  border-radius: 50%;
+  content: "";
+}
+
+.startup-loading-visual::after {
+  inset: 32px;
+  border-color: color-mix(in srgb, var(--brand-accent) 16%, transparent);
+}
+
+.startup-loading-orbit {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  width: 84px;
+  height: 84px;
+  border: 1px solid transparent;
+  border-top-color: var(--brand-accent);
+  border-right-color: color-mix(in srgb, var(--brand-accent) 34%, transparent);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  animation: startup-orbit 5s linear infinite;
+}
+
+.startup-loading-orbit-b {
+  width: 54px;
+  height: 54px;
+  border-top-color: color-mix(in srgb, var(--info) 82%, transparent);
+  border-left-color: color-mix(in srgb, var(--brand-accent) 30%, transparent);
+  animation-duration: 3.4s;
+  animation-direction: reverse;
+}
+
+.startup-loading-core {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 64%, transparent);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 7px color-mix(in srgb, var(--brand-accent) 8%, transparent), 0 0 24px color-mix(in srgb, var(--brand-accent) 28%, transparent);
+  transform: translate(-50%, -50%);
+  animation: startup-core-breathe 2.4s ease-in-out infinite;
+}
+
+.startup-loading-core span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand-accent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--brand-accent) 66%, transparent);
+}
+
+.startup-loading-sweep {
+  position: absolute;
+  z-index: 3;
+  left: 14px;
+  right: 14px;
+  top: 50%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--brand-accent) 72%, transparent), transparent);
+  opacity: 0.65;
+  transform: translateY(-50%);
+  animation: startup-sweep 2.8s var(--ease-in-out) infinite;
+}
+
+.startup-loading-copy {
+  max-width: 430px;
+}
+
+.startup-loading-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.startup-loading-beacon {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-accent) 12%, transparent);
+  animation: startup-beacon 1.8s ease-in-out infinite;
+}
+
+.startup-loading-title {
+  color: var(--text);
+  font-family: var(--font-title);
+  font-size: clamp(20px, 2vw, 25px);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.startup-loading-description {
+  max-width: 42ch;
+  margin: 7px auto 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.startup-loading-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: min(100%, 430px);
+  margin-top: 6px;
+}
+
+.startup-loading-step {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 550;
+  transition: color 180ms ease, opacity 180ms ease;
+}
+
+.startup-loading-step:not(:last-child)::after {
+  position: absolute;
+  left: calc(50% + 14px);
+  right: calc(-50% + 14px);
+  top: 50%;
+  height: 1px;
+  background: var(--line);
+  content: "";
+}
+
+.startup-loading-step-mark {
+  position: relative;
+  z-index: 1;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--surface-2);
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.startup-loading-step.is-current {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.startup-loading-step.is-current .startup-loading-step-mark {
+  border-color: var(--brand-accent);
+  background: var(--brand-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-accent) 12%, transparent);
+}
+
+.startup-loading-step.is-complete {
+  color: var(--brand-accent);
+}
+
+.startup-loading-step.is-complete .startup-loading-step-mark {
+  border-color: var(--brand-accent);
+  background: var(--brand-accent);
+}
+
+@keyframes startup-orbit {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes startup-core-breathe {
+  0%, 100% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--brand-accent) 8%, transparent), 0 0 20px color-mix(in srgb, var(--brand-accent) 22%, transparent); }
+  50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--brand-accent) 13%, transparent), 0 0 30px color-mix(in srgb, var(--brand-accent) 34%, transparent); }
+}
+
+@keyframes startup-sweep {
+  0%, 100% { opacity: 0.2; transform: translate(-18px, -50%); }
+  50% { opacity: 0.85; transform: translate(18px, -50%); }
+}
+
+@keyframes startup-beacon {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@media (max-width: 720px) {
+  .job-list.is-startup-loading {
+    min-height: 460px;
+  }
+
+  .startup-loading-state {
+    min-height: 390px;
+    padding: 36px 16px 28px;
+  }
+
+  .startup-loading-steps {
+    width: 100%;
+  }
+
+  .startup-loading-step {
+    flex-direction: column;
+    gap: 5px;
+    font-size: 10px;
+  }
+
+  .startup-loading-step:not(:last-child)::after {
+    left: calc(50% + 10px);
+    right: calc(-50% + 10px);
+    top: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .startup-loading-orbit,
+  .startup-loading-core,
+  .startup-loading-sweep,
+  .startup-loading-beacon {
+    animation: none;
+  }
+}
+
+/* Compact loading feedback: familiar, quiet, and easy to scan. */
+.job-list.is-startup-loading {
+  min-height: 220px;
+}
+
+.startup-loading-state {
+  width: auto;
+  min-height: 190px;
+  padding: 24px 16px;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.startup-loading-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 14px;
+}
+
+.startup-loading-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+  animation: startup-dot-pulse 1.1s ease-in-out infinite;
+}
+
+.startup-loading-dots i:nth-child(2) {
+  animation-delay: 140ms;
+}
+
+.startup-loading-dots i:nth-child(3) {
+  animation-delay: 280ms;
+}
+
+.startup-loading-label {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+@keyframes startup-dot-pulse {
+  0%, 60%, 100% {
+    opacity: 0.35;
+    transform: translateY(0) scale(0.85);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1);
+  }
+}
+
+@media (max-width: 720px) {
+  .job-list.is-startup-loading {
+    min-height: 180px;
+  }
+
+  .startup-loading-state {
+    min-height: 150px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .startup-loading-dots i {
+    animation: none;
+    opacity: 0.65;
+  }
+}
+
 
 
 

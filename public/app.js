@@ -2202,6 +2202,52 @@
     return Array.from({ length: n }, () => '<div class="skeleton"><i></i><i></i><i></i></div>').join('');
   }
 
+  const STARTUP_LOADING_STAGES = {
+    workspace: {
+      title: 'Warming up your workspace',
+      description: 'Restoring your profile, saved applications, and local preferences.'
+    },
+    cache: {
+      title: 'Reading your job cache',
+      description: 'Checking locally saved roles so your feed can appear without delay.'
+    },
+    feed: {
+      title: 'Preparing your feed',
+      description: 'Sorting your matches and getting the workspace ready.'
+    }
+  };
+
+  function renderStartupLoadingState(stage = 'workspace') {
+    const list = $('#jobList');
+    if (!list) return;
+    const copy = STARTUP_LOADING_STAGES[stage] || STARTUP_LOADING_STAGES.workspace;
+
+    list.classList.add('is-startup-loading');
+    list.innerHTML = `
+      <div class="startup-loading-state" role="status" aria-live="polite" aria-label="${esc(copy.title)}">
+        <span class="startup-loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="startup-loading-label">${esc(copy.title)}</span>
+      </div>`;
+
+    const resultsSummary = $('#resultsSummary');
+    if (resultsSummary) resultsSummary.textContent = copy.title;
+    const resultsTools = $('#resultsTools');
+    if (resultsTools) resultsTools.hidden = true;
+    const resultsMeta = $('#resultsMeta');
+    if (resultsMeta) resultsMeta.hidden = false;
+    const split = $('#searchSplit');
+    if (split) {
+      split.hidden = false;
+      split.setAttribute('aria-busy', 'true');
+    }
+  }
+
+  function updateStartupLoadingState(stage) {
+    const list = $('#jobList');
+    if (!list || !list.classList.contains('is-startup-loading')) return;
+    renderStartupLoadingState(stage);
+  }
+
   const SEARCH_TIPS = [
     {
       title: 'Why direct ATS matters',
@@ -4114,10 +4160,14 @@
 
   function renderResults(animate = false) {
     stopSearchProgressAnimation();
+    $('#jobList')?.classList.remove('is-startup-loading');
     const stage = $('#searchProgressStage');
     if (stage) stage.hidden = true;
     const split = $('#searchSplit');
-    if (split) split.hidden = false;
+    if (split) {
+      split.hidden = false;
+      split.removeAttribute('aria-busy');
+    }
     const resultsMeta = $('#resultsMeta');
     if (resultsMeta) resultsMeta.hidden = false;
     const tools = $('#resultsTools');
@@ -11299,6 +11349,7 @@
   // ------------------------------------------------------------------- init
   async function init() {
     S.openExp = new Set([0]);
+    renderStartupLoadingState('workspace');
     initTheme();
     syncFamousUi();
     setupP4FilterBar();
@@ -11317,6 +11368,7 @@
     }
     renderWsHeader();
     renderIdeas();
+    updateStartupLoadingState('cache');
 
     // Auto-search & LinkedIn Radar status polling
     setInterval(checkAutoSearchStatus, 15000);
@@ -11336,6 +11388,7 @@
     scheduleAutoReload(savedMins);
 
     // Fetch jobs from database on startup
+    updateStartupLoadingState('feed');
     await fetchJobsFromDb();
 
     route();
@@ -11347,10 +11400,14 @@
   }
 
   function renderWelcomeState() {
+    $('#jobList')?.classList.remove('is-startup-loading');
     const stage = $('#searchProgressStage');
     if (stage) stage.hidden = true;
     const split = $('#searchSplit');
-    if (split) split.hidden = false;
+    if (split) {
+      split.hidden = false;
+      split.removeAttribute('aria-busy');
+    }
     const resultsMeta = $('#resultsMeta');
     if (resultsMeta) resultsMeta.hidden = false;
     const tools = $('#resultsTools');
