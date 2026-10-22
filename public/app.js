@@ -1161,6 +1161,58 @@
         }
       });
     }
+
+    // 14. Refresh system diagnostics telemetry
+    const refreshDiagBtn = $('#btnRefreshDiagnostics');
+    if (refreshDiagBtn) {
+      refreshDiagBtn.addEventListener('click', async () => {
+        refreshDiagBtn.classList.add('is-spinning');
+        try {
+          await loadSystemInfo();
+          AudioEffects.play('success');
+          toast('Telemetry metrics refreshed');
+        } catch (e) {
+          toast('Failed to refresh telemetry: ' + e.message, 'error');
+        } finally {
+          setTimeout(() => {
+            refreshDiagBtn.classList.remove('is-spinning');
+          }, 650);
+        }
+      });
+    }
+
+    // 15. Tactile switches click feedback sound
+    $$('.tactile-switch input[type="checkbox"]').forEach(sw => {
+      sw.addEventListener('change', () => {
+        AudioEffects.play('click');
+      });
+    });
+
+    // 16. Keyboard shortcut: Press '/' or Cmd/Ctrl+K to jump to settings search
+    document.addEventListener('keydown', e => {
+      const settingsView = $('#view-settings');
+      if (!settingsView || settingsView.hidden) return;
+
+      const activeTag = document.activeElement ? document.activeElement.tagName : '';
+      const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
+
+      if ((e.key === '/' && !isInput) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k')) {
+        e.preventDefault();
+        const inp = $('#settingsFilterInput');
+        if (inp) {
+          inp.focus();
+          inp.select();
+        }
+      } else if (e.key === 'Escape' && document.activeElement === $('#settingsFilterInput')) {
+        const inp = $('#settingsFilterInput');
+        if (inp && inp.value) {
+          inp.value = '';
+          inp.dispatchEvent(new Event('input'));
+        } else if (inp) {
+          inp.blur();
+        }
+      }
+    });
   }
 
   // ---------------------------------------------------------------- profile
