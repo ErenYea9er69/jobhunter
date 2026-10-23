@@ -399,6 +399,9 @@ class HttpError(Exception):
 
 def http_get(url, headers=None, timeout=None, retries=1, max_bytes=6_000_000, data=None, method=None):
     """GET (or POST with data) with gzip support, size cap, and one polite retry on 429/5xx."""
+    parsed = urllib.parse.urlparse(url or "")
+    if parsed.scheme.lower() not in ("http", "https"):
+        raise HttpError(f"Unsupported URL scheme: '{parsed.scheme}'. Only http and https are allowed.")
     timeout = timeout or config.SOURCE_TIMEOUT_SECONDS
     hdrs = {"User-Agent": config.USER_AGENT, "Accept": "application/json, text/html;q=0.9, */*;q=0.5",
             "Accept-Encoding": "gzip"}

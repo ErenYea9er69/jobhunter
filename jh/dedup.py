@@ -35,7 +35,7 @@ def _loc_class(job):
 
 def job_key(job):
     base = f"{normalize_company(job.get('company'))}|{_title_key(job.get('title'))}"
-    return hashlib.sha1(base.encode()).hexdigest()[:16]
+    return hashlib.sha256(base.encode()).hexdigest()[:16]
 
 
 def _jaccard(a, b):

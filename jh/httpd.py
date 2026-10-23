@@ -837,6 +837,11 @@ def _find_static_dir():
 
 
 def _find_static_file(rel_path):
+    if not rel_path or "\x00" in rel_path:
+        return None
+    norm = os.path.normpath(rel_path).replace("\\", "/")
+    if norm.startswith("../") or "/../" in norm or norm == "..":
+        return None
     rel = rel_path.lstrip("/\\")
     candidates = [rel]
     if rel and not os.path.splitext(rel)[1]:
@@ -848,10 +853,15 @@ def _find_static_file(rel_path):
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public"),
     ]:
         if d and os.path.isdir(d):
+            abs_d = os.path.abspath(d)
             for cand in candidates:
-                p = os.path.join(d, cand)
-                if os.path.isfile(p):
-                    return os.path.abspath(p)
+                cand_clean = cand.lstrip("/\\")
+                p = os.path.abspath(os.path.join(abs_d, cand_clean))
+                try:
+                    if os.path.commonpath([p, abs_d]) == abs_d and os.path.isfile(p):
+                        return p
+                except (ValueError, OSError):
+                    continue
     return None
 
 
@@ -1033,6 +1043,13 @@ class Handler(SimpleHTTPRequestHandler):
             elif clean_path.startswith("/public/"):
                 clean_path = clean_path[len("/public"):]
 
+            if ".." in clean_path or "\x00" in clean_path:
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b"Not Found")
+                return
+
             if clean_path in ("/", "/index.html", ""):
                 index_file = _find_static_file("index.html")
                 if index_file and os.path.isfile(index_file):
@@ -1078,7 +1095,10 @@ class Handler(SimpleHTTPRequestHandler):
                 self.wfile.write(content)
                 return
 
-            super().do_GET()
+            self.send_response(404)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"Not Found")
         except Exception as e:
             if _is_disconnect(e):
                 self.close_connection = True

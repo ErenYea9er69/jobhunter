@@ -2,6 +2,7 @@
 import base64
 import datetime
 import io
+import os
 import re
 import shutil
 import subprocess
@@ -73,15 +74,20 @@ def _pdf_text(raw):
         pass
     exe = shutil.which("pdftotext")
     if exe:
-        with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
-            f.write(raw)
-            f.flush()
+        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+        try:
+            tmp.write(raw)
+            tmp.close()
+            out = subprocess.run([exe, "-layout", tmp.name, "-"], capture_output=True, timeout=30, check=True).stdout
+            text = out.decode("utf-8", errors="replace")
+            if text.strip():
+                return text
+        except Exception:
+            pass
+        finally:
             try:
-                out = subprocess.run([exe, "-layout", f.name, "-"], capture_output=True, timeout=30, check=True).stdout
-                text = out.decode("utf-8", errors="replace")
-                if text.strip():
-                    return text
-            except Exception:
+                os.unlink(tmp.name)
+            except OSError:
                 pass
     text = _pdf_text_builtin(raw)
     if len(text.strip()) < 40:

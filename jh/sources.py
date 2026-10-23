@@ -1733,9 +1733,10 @@ def _fetch_html_tls(url, headers=None, impersonate="chrome", timeout=8):
     """Fetch using curl_cffi for browser TLS impersonation (bypasses Cloudflare/Akamai bot walls), with fallback to http_get."""
     try:
         from curl_cffi import requests as curl_requests
-        r = curl_requests.get(url, impersonate=impersonate, headers=headers, timeout=timeout)
-        if r.status_code == 200:
-            return r.text
+        with curl_requests.Session(impersonate=impersonate) as s:
+            r = s.get(url, headers=headers, timeout=timeout)
+            if r.status_code == 200:
+                return r.text
     except Exception:
         pass
     return http_get(url, headers=headers, timeout=timeout)

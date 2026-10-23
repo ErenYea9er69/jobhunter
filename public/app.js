@@ -255,6 +255,14 @@
     return cleanText(t).replace(/\s*—\s*/g, ' - ').replace(/\s*–\s*/g, ' - ');
   }
 
+  function safeUrl(u) {
+    if (!u || typeof u !== 'string') return '#';
+    const trimmed = u.trim();
+    if (/^(?:https?:\/\/|mailto:)/i.test(trimmed)) return trimmed;
+    if (trimmed.startsWith('/') || trimmed.startsWith('#')) return trimmed;
+    return '#';
+  }
+
   async function api(url, options = {}) {
     options.headers = options.headers || {};
     if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
@@ -268,7 +276,10 @@
       const err = await res.json().catch(() => ({ error: 'Network error' }));
       throw new Error(err.error || `HTTP ${res.status}`);
     }
-    return res.json();
+    if (res.status === 204 || res.headers.get('content-length') === '0') {
+      return {};
+    }
+    return res.json().catch(() => ({}));
   }
 
   const MAX_VISIBLE_TOASTS = 3;
@@ -11159,7 +11170,8 @@
                   } else {
                     const matchedJob = displayJobs.find(item => (item.job_key || item.id) === key);
                     if (matchedJob && matchedJob.url) {
-                      window.open(matchedJob.url, '_blank', 'noopener,noreferrer');
+                      const u = safeUrl(matchedJob.url);
+                      if (u !== '#') window.open(u, '_blank', 'noopener,noreferrer');
                     }
                   }
                 }

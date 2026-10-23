@@ -719,19 +719,29 @@ def generate_bookmarklet_code(fields):
   const existingToast = document.getElementById('jh-autofill-toast');
   if (existingToast) existingToast.remove();
 
+  function esc(s) {{
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }}
+
   const toast = document.createElement('div');
   toast.id = 'jh-autofill-toast';
   toast.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483647;background:#0f172a;color:#f8fafc;padding:16px 20px;border-radius:14px;box-shadow:0 16px 36px rgba(0,0,0,0.4);font-family:system-ui,-apple-system,sans-serif;font-size:13px;font-weight:500;display:flex;flex-direction:column;gap:8px;border-left:4px solid #10b981;max-width:360px;';
+  const cleanPlatform = esc(platform);
+  const cleanCount = parseInt(filledCount, 10) || 0;
+  const itemsSummary = filledItems.length > 0 ? ('<div style="font-size:11px;color:#94a3b8;line-height:1.4;">' + filledItems.slice(0, 5).map(esc).join(' • ') + (filledItems.length > 5 ? ' + ' + (filledItems.length - 5) + ' more' : '') + '</div>') : '';
+  const pitchNote = data.cover_letter ? '<div style="font-size:11.5px;color:#cbd5e1;">✓ Tailored pitch populated in cover letter textarea</div>' : '';
+
   toast.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
       <span style="font-size:14px;font-weight:700;color:#10b981;">⚡ JobHunter Autofill</span>
-      <span style="background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:#94a3b8;">${{platform}} ATS</span>
+      <span style="background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:#94a3b8;">${{cleanPlatform}} ATS</span>
     </div>
     <div style="color:#e2e8f0;font-size:12.5px;">
-      Populated <strong>${{filledCount}}</strong> form field(s) successfully!
+      Populated <strong>${{cleanCount}}</strong> form field(s) successfully!
     </div>
-    ${{data.cover_letter ? '<div style="font-size:11.5px;color:#cbd5e1;">✓ Tailored pitch populated in cover letter textarea</div>' : ''}}
-    ${{filledItems.length > 0 ? '<div style="font-size:11px;color:#94a3b8;line-height:1.4;">' + filledItems.slice(0, 5).join(' • ') + (filledItems.length > 5 ? ' + ' + (filledItems.length - 5) + ' more' : '') + '</div>' : ''}}
+    ${{pitchNote}}
+    ${{itemsSummary}}
   `;
   document.body.appendChild(toast);
   setTimeout(() => {{ toast.style.opacity = '0'; toast.style.transition = 'opacity 0.5s'; setTimeout(() => toast.remove(), 500); }}, 5500);
