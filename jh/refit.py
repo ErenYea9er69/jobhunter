@@ -258,7 +258,13 @@ def _call_llm(system, user, cfg=None):
         raw = http_get(url, data=body, method="POST", retries=0, timeout=config.LLM_TIMEOUT_SECONDS,
                        headers={"Content-Type": "application/json"})
         data = json.loads(raw)
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+        if isinstance(data, dict) and "error" in data:
+            err_msg = data["error"].get("message") if isinstance(data["error"], dict) else str(data["error"])
+            raise RuntimeError(f"Gemini API error: {err_msg}")
+        candidates = data.get("candidates") if isinstance(data, dict) else None
+        if not candidates:
+            raise RuntimeError(f"Gemini API returned no candidates: {data}")
+        return candidates[0]["content"]["parts"][0]["text"]
 
     elif prov in ("openai", "deepseek", "groq", "mistral", "custom"):
         key = cfg.get("key", "")
@@ -302,7 +308,13 @@ def _call_llm(system, user, cfg=None):
         raw = http_get(url, data=body, method="POST", retries=0, timeout=config.LLM_TIMEOUT_SECONDS,
                        headers=headers)
         data = json.loads(raw)
-        return data["choices"][0]["message"]["content"]
+        if isinstance(data, dict) and "error" in data:
+            err_msg = data["error"].get("message") if isinstance(data["error"], dict) else str(data["error"])
+            raise RuntimeError(f"{prov.title()} API error: {err_msg}")
+        choices = data.get("choices") if isinstance(data, dict) else None
+        if not choices:
+            raise RuntimeError(f"{prov.title()} API returned no choices: {data}")
+        return choices[0]["message"]["content"]
 
     elif prov == "anthropic":
         key = cfg["key"]
@@ -318,6 +330,9 @@ def _call_llm(system, user, cfg=None):
                        headers={"Content-Type": "application/json", "x-api-key": key,
                                 "anthropic-version": "2023-06-01"})
         data = json.loads(raw)
+        if isinstance(data, dict) and "error" in data:
+            err_msg = data["error"].get("message") if isinstance(data["error"], dict) else str(data["error"])
+            raise RuntimeError(f"Anthropic API error: {err_msg}")
         return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
 
     elif prov == "ollama":
@@ -333,7 +348,10 @@ def _call_llm(system, user, cfg=None):
         body = json.dumps(ollama_payload).encode()
         raw = http_get(url, data=body, method="POST", retries=0, timeout=config.LLM_TIMEOUT_SECONDS,
                        headers={"Content-Type": "application/json"})
-        return json.loads(raw).get("response", "")
+        data = json.loads(raw)
+        if isinstance(data, dict) and "error" in data:
+            raise RuntimeError(f"Ollama API error: {data['error']}")
+        return data.get("response", "")
 
     raise RuntimeError("No LLM provider configured")
 

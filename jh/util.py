@@ -415,7 +415,15 @@ def http_get(url, headers=None, timeout=None, retries=1, max_bytes=6_000_000, da
                 if len(raw) > max_bytes:
                     raise HttpError("response too large")
                 if resp.headers.get("Content-Encoding") == "gzip":
-                    raw = gzip.GzipFile(fileobj=io.BytesIO(raw)).read()
+                    try:
+                        gz = gzip.GzipFile(fileobj=io.BytesIO(raw))
+                        raw = gz.read(max_bytes + 1)
+                        if len(raw) > max_bytes:
+                            raise HttpError("decompressed response too large")
+                    except HttpError:
+                        raise
+                    except Exception as e:
+                        raise HttpError(f"gzip decompression failed: {e}")
                 return raw.decode("utf-8", errors="replace")
         except urllib.error.HTTPError as e:
             last = HttpError(f"HTTP {e.code} from {urllib.parse.urlparse(url).netloc}")

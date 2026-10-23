@@ -39,6 +39,9 @@ def extract_text(filename, raw):
 def _docx_text(raw):
     try:
         with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            info = z.getinfo("word/document.xml")
+            if info.file_size > 10_000_000:
+                raise ParseError("The .docx document is too large to process.")
             xml = z.read("word/document.xml")
     except (zipfile.BadZipFile, KeyError):
         raise ParseError("The .docx file is damaged or not a Word document.")
@@ -102,7 +105,7 @@ def _pdf_text_builtin(raw):
     for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", raw, re.S):
         data = m.group(1)
         try:
-            data = zlib.decompress(data)
+            data = zlib.decompressobj().decompress(data, max_length=10_000_000)
         except Exception:
             pass
         if b"BT" not in data:
@@ -134,6 +137,8 @@ def decode_upload(payload):
             raw = base64.b64decode(payload["content_base64"], validate=False)
         except Exception:
             raise ParseError("The uploaded file could not be decoded.")
+        if len(raw) > 20_000_000:
+            raise ParseError("Uploaded file exceeds 20MB limit.")
         return extract_text(payload.get("filename", ""), raw)
     return payload.get("text", "") or ""
 

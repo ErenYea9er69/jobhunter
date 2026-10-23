@@ -968,15 +968,25 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({"error": "Host not allowed"}, 403)
         if not path.startswith("/api/"):
             return False
-        token_in_query = f"token={TOKEN}" in (parsed.query or "")
+        query_params = urllib.parse.parse_qs(parsed.query or "")
+        token_in_query = query_params.get("token", [""])[0] == TOKEN
         token_valid = (self.headers.get("X-JH-Token") == TOKEN) or token_in_query
         if not token_valid:
             return self._json({"error": "Missing or invalid session token. Reload the page."}, 401)
         if method == "GET" and path == "/api/search/stream":
-            return self._stream_search(urllib.parse.parse_qs(parsed.query))
+            return self._stream_search(query_params)
         body = {}
         if method in ("POST", "DELETE"):
-            n = int(self.headers.get("Content-Length") or 0)
+            cl_header = self.headers.get("Content-Length")
+            if cl_header is not None:
+                try:
+                    n = int(cl_header.strip())
+                    if n < 0:
+                        return self._json({"error": "Invalid Content-Length header"}, 400)
+                except (ValueError, TypeError):
+                    return self._json({"error": "Invalid Content-Length header"}, 400)
+            else:
+                n = 0
             if n > config.MAX_BODY_BYTES:
                 return self._json({"error": "Request body too large"}, 413)
             if n:

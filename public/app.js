@@ -258,8 +258,11 @@
   function safeUrl(u) {
     if (!u || typeof u !== 'string') return '#';
     const trimmed = u.trim();
-    if (/^(?:https?:\/\/|mailto:)/i.test(trimmed)) return trimmed;
-    if (trimmed.startsWith('/') || trimmed.startsWith('#')) return trimmed;
+    if (/[\x00-\x1f\x7f]/.test(trimmed)) return '#';
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    if (/^mailto:[a-zA-Z0-9_.+%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z0-9-.]+$/i.test(trimmed)) return trimmed;
+    if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return trimmed;
+    if (trimmed.startsWith('#')) return trimmed;
     return '#';
   }
 
@@ -4876,8 +4879,8 @@
             <button type="button" class="btn btn-secondary btn-copilot-action" id="btnDetailAutofillCopilot" data-action="open-autofill-copilot" data-key="${esc(key)}" title="Open 1-Click Application Autofill &amp; Solver side drawer">
               <svg class="i" style="width:13px;height:13px;"><use href="#i-board"/></svg><span>Autofill Copilot</span>
             </button>
-            ${apply ? `
-              <a class="btn btn-outline-apply" href="${esc(apply)}" target="_blank" rel="noopener noreferrer" title="Open official job application in a new tab">
+            ${apply && safeUrl(apply) !== '#' ? `
+              <a class="btn btn-outline-apply" href="${esc(safeUrl(apply))}" target="_blank" rel="noopener noreferrer" title="Open official job application in a new tab">
                 ${ico('arrow-up-right')}<span>Apply on ${esc(bestApplySource(j).source || 'Official Site')}</span>
               </a>
             ` : ''}
@@ -5141,14 +5144,14 @@
               </div>
             </div>
             <div class="referrals-grid">
-              <a class="referral-link-card" href="${esc(links.recruiter_url)}" target="_blank" rel="noopener noreferrer">
+              <a class="referral-link-card" href="${esc(safeUrl(links.recruiter_url))}" target="_blank" rel="noopener noreferrer">
                 <div class="referral-link-info">
                   <span class="referral-role-name">${ico('search')}Technical Recruiters</span>
                   <span class="referral-company-tag">${esc(j.company)} Talent Acquisition</span>
                 </div>
                 <span class="referral-arrow">${ico('external')}</span>
               </a>
-              <a class="referral-link-card" href="${esc(links.peer_url)}" target="_blank" rel="noopener noreferrer">
+              <a class="referral-link-card" href="${esc(safeUrl(links.peer_url))}" target="_blank" rel="noopener noreferrer">
                 <div class="referral-link-info">
                   <span class="referral-role-name">${ico('search')}Team Peers &amp; Engineers</span>
                   <span class="referral-company-tag">${esc(j.company)} Engineering</span>
@@ -5171,7 +5174,7 @@
                 <div class="contact-row">
                   <span class="contact-label">Employer Email</span>
                   <div class="contact-action-group">
-                    <a href="mailto:${esc(j.contact_email)}" class="contact-email">${ico('mail')}${esc(j.contact_email)}</a>
+                    <a href="${esc(safeUrl('mailto:' + (j.contact_email || '').trim()))}" class="contact-email">${ico('mail')}${esc(j.contact_email)}</a>
                     <button type="button" class="btn btn-xs btn-ghost" data-action="copy-text" data-text="${esc(j.contact_email)}" title="Copy email address">${ico('copy')}Copy</button>
                   </div>
                 </div>
@@ -5179,7 +5182,7 @@
               ${j.contact_website ? `
                 <div class="contact-row">
                   <span class="contact-label">Company Website</span>
-                  <a href="${esc(j.contact_website)}" target="_blank" rel="noopener noreferrer" class="contact-web-link">${esc(j.contact_website)} ${ico('external')}</a>
+                  <a href="${esc(safeUrl(j.contact_website))}" target="_blank" rel="noopener noreferrer" class="contact-web-link">${esc(j.contact_website)} ${ico('external')}</a>
                 </div>
               ` : ''}
               ${j.how_to_apply ? `
@@ -5262,7 +5265,7 @@
                 const isBest = s.url === apply;
                 return `
                   <a class="chip ${isBest ? (free ? 'chip-best-apply chip-ok' : 'chip-best-apply chip-warn') : (free ? 'chip-outline' : 'chip-warn')}"
-                     href="${esc(s.url)}" target="_blank" rel="noopener noreferrer"
+                     href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener noreferrer"
                      title="${free ? '100% Free to apply' : 'Site may require paid membership'}">
                     ${free ? (isBest ? ico('check') : '') : ico('alert')}
                     ${esc(s.source)}${direct ? ' (Official Site)' : ''}
@@ -6984,8 +6987,8 @@
           <div class="drawer-contact-name">${esc(c.name)}</div>
           <div class="drawer-contact-role">${esc(c.role || 'Team Member')}</div>
           <div class="drawer-contact-links">
-            ${c.email ? `<a href="mailto:${esc(c.email)}" class="contact-link">${ico('mail')}${esc(c.email)}</a>` : ''}
-            ${c.linkedin ? `<a href="${esc(c.linkedin)}" target="_blank" rel="noopener noreferrer" class="contact-link">${ico('external')}LinkedIn</a>` : ''}
+            ${c.email ? `<a href="${esc(safeUrl('mailto:' + (c.email || '').trim()))}" class="contact-link">${ico('mail')}${esc(c.email)}</a>` : ''}
+            ${c.linkedin ? `<a href="${esc(safeUrl(c.linkedin))}" target="_blank" rel="noopener noreferrer" class="contact-link">${ico('external')}LinkedIn</a>` : ''}
           </div>
         </div>
         <button type="button" class="drawer-contact-del" data-del-contact="${i}" title="Remove contact">&times;</button>
@@ -7229,7 +7232,7 @@
       else if (r) status = `<span class="chip ${r.matches ? 'chip-ok' : ''}">${r.matches} matching of ${r.total} open</span>`;
       else if (w.last_checked) status = `<span class="muted small">Checked ${esc(timeAgo(w.last_checked))}, ${w.active_matches_count || 0} matching</span>`;
       else status = '<span class="muted small">Not checked yet</span>';
-      const top = r && r.top && r.top.length ? `<ul class="wl-roles">${r.top.map(t => `<li><a href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">${esc(cleanTitle(t.title))}</a><span class="chip chip-info">${Math.round(t.score)}%</span></li>`).join('')}</ul>` : '';
+      const top = r && r.top && r.top.length ? `<ul class="wl-roles">${r.top.map(t => `<li><a href="${esc(safeUrl(t.url))}" target="_blank" rel="noopener noreferrer">${esc(cleanTitle(t.title))}</a><span class="chip chip-info">${Math.round(t.score)}%</span></li>`).join('')}</ul>` : '';
       return `<article class="wl-card">
         <div class="wl-name">${esc(w.company_name)}<span class="chip">${esc(w.board_type)}</span></div>
         <p class="muted small">Role keyword: ${esc(w.target_role || 'any role')}</p>

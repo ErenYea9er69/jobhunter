@@ -727,22 +727,38 @@ def generate_bookmarklet_code(fields):
   const toast = document.createElement('div');
   toast.id = 'jh-autofill-toast';
   toast.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483647;background:#0f172a;color:#f8fafc;padding:16px 20px;border-radius:14px;box-shadow:0 16px 36px rgba(0,0,0,0.4);font-family:system-ui,-apple-system,sans-serif;font-size:13px;font-weight:500;display:flex;flex-direction:column;gap:8px;border-left:4px solid #10b981;max-width:360px;';
-  const cleanPlatform = esc(platform);
-  const cleanCount = parseInt(filledCount, 10) || 0;
-  const itemsSummary = filledItems.length > 0 ? ('<div style="font-size:11px;color:#94a3b8;line-height:1.4;">' + filledItems.slice(0, 5).map(esc).join(' • ') + (filledItems.length > 5 ? ' + ' + (filledItems.length - 5) + ' more' : '') + '</div>') : '';
-  const pitchNote = data.cover_letter ? '<div style="font-size:11.5px;color:#cbd5e1;">✓ Tailored pitch populated in cover letter textarea</div>' : '';
 
-  toast.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-      <span style="font-size:14px;font-weight:700;color:#10b981;">⚡ JobHunter Autofill</span>
-      <span style="background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:#94a3b8;">${{cleanPlatform}} ATS</span>
-    </div>
-    <div style="color:#e2e8f0;font-size:12.5px;">
-      Populated <strong>${{cleanCount}}</strong> form field(s) successfully!
-    </div>
-    ${{pitchNote}}
-    ${{itemsSummary}}
-  `;
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;';
+  const titleSpan = document.createElement('span');
+  titleSpan.style.cssText = 'font-size:14px;font-weight:700;color:#10b981;';
+  titleSpan.textContent = '⚡ JobHunter Autofill';
+  const badgeSpan = document.createElement('span');
+  badgeSpan.style.cssText = 'background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:#94a3b8;';
+  badgeSpan.textContent = (platform || '') + ' ATS';
+  header.appendChild(titleSpan);
+  header.appendChild(badgeSpan);
+  toast.appendChild(header);
+
+  const countDiv = document.createElement('div');
+  countDiv.style.cssText = 'color:#e2e8f0;font-size:12.5px;';
+  countDiv.textContent = 'Populated ' + (parseInt(filledCount, 10) || 0) + ' form field(s) successfully!';
+  toast.appendChild(countDiv);
+
+  if (data.cover_letter) {{
+    const pitchDiv = document.createElement('div');
+    pitchDiv.style.cssText = 'font-size:11.5px;color:#cbd5e1;';
+    pitchDiv.textContent = '✓ Tailored pitch populated in cover letter textarea';
+    toast.appendChild(pitchDiv);
+  }}
+
+  if (filledItems && filledItems.length > 0) {{
+    const summaryDiv = document.createElement('div');
+    summaryDiv.style.cssText = 'font-size:11px;color:#94a3b8;line-height:1.4;';
+    summaryDiv.textContent = filledItems.slice(0, 5).join(' • ') + (filledItems.length > 5 ? ' + ' + (filledItems.length - 5) + ' more' : '');
+    toast.appendChild(summaryDiv);
+  }}
+
   document.body.appendChild(toast);
   setTimeout(() => {{ toast.style.opacity = '0'; toast.style.transition = 'opacity 0.5s'; setTimeout(() => toast.remove(), 500); }}, 5500);
 }})();"""
