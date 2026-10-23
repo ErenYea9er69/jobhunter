@@ -11,7 +11,7 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700;800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=4.4">
+  <link rel="stylesheet" href="styles.css?v=5.2">
   <link rel="icon" type="image/png" href="favicon.png">
   <meta name="jh-token" content="">
 </head>
@@ -853,23 +853,23 @@
         </header>
 
         <!-- Executive KPI Metrics Ribbon -->
-        <div class="app-kpi-ribbon" id="appKpiRibbon" aria-label="Pipeline metrics">
-          <div class="kpi-card" data-kpi="live">
+        <div class="app-kpi-ribbon" id="appKpiRibbon" aria-label="Pipeline metrics and quick filters">
+          <div class="kpi-card" data-kpi="live" role="button" tabindex="0" title="Filter to all active pipeline applications">
             <div class="kpi-label">Active in Pipeline</div>
             <div class="kpi-val" id="kpiActiveCount">0</div>
             <div class="kpi-sub" id="kpiActiveSub">In progress across 4 stages</div>
           </div>
-          <div class="kpi-card" data-kpi="interview">
+          <div class="kpi-card" data-kpi="interview" role="button" tabindex="0" title="Filter to interviewing applications">
             <div class="kpi-label">Interview Rate</div>
             <div class="kpi-val" id="kpiInterviewRate">0%</div>
             <div class="kpi-sub" id="kpiInterviewSub">Applied to Interview conversion</div>
           </div>
-          <div class="kpi-card" data-kpi="offer">
+          <div class="kpi-card" data-kpi="offer" role="button" tabindex="0" title="Interview to offer conversion rate">
             <div class="kpi-label">Offer Conversion</div>
             <div class="kpi-val" id="kpiOfferRate">0%</div>
             <div class="kpi-sub" id="kpiOfferSub">Interview to Offer conversion</div>
           </div>
-          <div class="kpi-card kpi-card-alert" id="kpiAlertCard" data-kpi="overdue">
+          <div class="kpi-card kpi-card-alert" id="kpiAlertCard" data-kpi="overdue" role="button" tabindex="0" title="Filter to applications requiring immediate follow-up">
             <div class="kpi-label">Follow-up Attention</div>
             <div class="kpi-val" id="kpiFollowupCount">0</div>
             <div class="kpi-sub" id="kpiFollowupSub">Overdue or due today</div>
@@ -969,11 +969,11 @@
 
       <!-- Drawer Tabs -->
       <div class="drawer-tabs" role="tablist" aria-label="Application sections">
-        <button type="button" role="tab" class="drawer-tab is-active" data-drawer-tab="overview" aria-selected="true">Overview &amp; Notes</button>
-        <button type="button" role="tab" class="drawer-tab" data-drawer-tab="tasks" aria-selected="false">Checklist &amp; Tasks <span class="tab-badge" id="drawerTaskBadge" hidden>0</span></button>
-        <button type="button" role="tab" class="drawer-tab" data-drawer-tab="contacts" aria-selected="false">Contacts &amp; Insider</button>
-        <button type="button" role="tab" class="drawer-tab" data-drawer-tab="tailored" aria-selected="false">Tailored Package</button>
-        <button type="button" role="tab" class="drawer-tab" data-drawer-tab="history" aria-selected="false">Stage Timeline</button>
+        <button type="button" role="tab" class="drawer-tab is-active" data-drawer-tab="overview" aria-selected="true">Overview</button>
+        <button type="button" role="tab" class="drawer-tab" data-drawer-tab="tasks" aria-selected="false">Tasks <span class="tab-badge" id="drawerTaskBadge" hidden>0</span></button>
+        <button type="button" role="tab" class="drawer-tab" data-drawer-tab="contacts" aria-selected="false">Contacts</button>
+        <button type="button" role="tab" class="drawer-tab" data-drawer-tab="tailored" aria-selected="false">Tailored Pack</button>
+        <button type="button" role="tab" class="drawer-tab" data-drawer-tab="history" aria-selected="false">Timeline</button>
       </div>
 
       <!-- Drawer Body Panels -->
@@ -1092,7 +1092,7 @@
         <button type="button" class="btn btn-primary" id="drawerSaveBtn">Save changes</button>
         <button type="button" class="btn btn-secondary" id="drawerTailorBtn">
           <svg class="i"><use href="#i-bolt"/></svg>
-          <span>Open in workspace</span>
+          <span>Open Resume Editor</span>
         </button>
         <button type="button" class="btn btn-ghost btn-danger" id="drawerDeleteBtn">
           <svg class="i"><use href="#i-trash"/></svg>
@@ -3472,6 +3472,6 @@
 
   <div class="toasts" id="toastContainer" role="status" aria-live="polite"></div>
 
-  <script src="app.js?v=4.9"></script>
+  <script src="app.js?v=5.2"></script>
 </body>
 </html>

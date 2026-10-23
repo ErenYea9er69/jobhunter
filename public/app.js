@@ -641,6 +641,7 @@
     document.title = `${TITLES[view] || 'JobHunter'} | JobHunter`;
     closeMenu();
     closeDetailSheet();
+    if (S.activeDrawerApp) closeAppDrawer();
     window.scrollTo(0, 0);
 
     const recBanner = $('#recommendBanner');
@@ -1611,9 +1612,12 @@
   function updateProfileLink() {
     const p = S.profile || {};
     const name = (p.name || '').trim();
-    $('#pillName').textContent = name || 'Add your resume';
-    $('#pillTitle').textContent = name ? [p.years_of_experience ? `${p.years_of_experience} yrs` : '', p.work_mode || ''].filter(Boolean).join(', ') : '';
-    $('#userAvatar').textContent = name ? name.split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase() : '?';
+    const pillName = $('#pillName');
+    if (pillName) pillName.textContent = name || 'Add your resume';
+    const pillTitle = $('#pillTitle');
+    if (pillTitle) pillTitle.textContent = name ? [p.years_of_experience ? `${p.years_of_experience} yrs` : '', p.work_mode || ''].filter(Boolean).join(', ') : '';
+    const userAvatar = $('#userAvatar');
+    if (userAvatar) userAvatar.textContent = name ? name.split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase() : '?';
   }
 
   function renderProfile() {
@@ -6398,12 +6402,35 @@
 
   function getNextStage(currentStage) {
     switch (currentStage) {
-      case 'saved': return { next: 'applied', label: 'Mark applied' };
-      case 'applied': return { next: 'interview', label: 'Interviewing' };
-      case 'interview': return { next: 'offer', label: 'Mark offer' };
+      case 'saved': return { next: 'applied', label: 'Mark Applied' };
+      case 'applied': return { next: 'interview', label: 'To Interview' };
+      case 'interview': return { next: 'offer', label: 'Got Offer' };
       case 'offer': return { next: 'rejected', label: 'Archive' };
       default: return null;
     }
+  }
+
+  function setAppFilter(filterKey) {
+    S.appFilter = filterKey;
+    const pills = $('#appFilterPills');
+    if (pills) {
+      $$('.app-pill', pills).forEach(p => {
+        const active = (p.dataset.appFilter === filterKey);
+        p.classList.toggle('is-active', active);
+        p.setAttribute('aria-pressed', String(active));
+      });
+    }
+    const kpiRibbon = $('#appKpiRibbon');
+    if (kpiRibbon) {
+      $$('.kpi-card', kpiRibbon).forEach(card => {
+        const k = card.dataset.kpi;
+        const isMatch = (filterKey === 'all' && k === 'live') ||
+                        (filterKey === 'interviewing' && k === 'interview') ||
+                        (filterKey === 'attention' && k === 'overdue');
+        card.classList.toggle('is-active-filter', isMatch);
+      });
+    }
+    renderApplicationView();
   }
 
   function getFilteredApplications() {
@@ -6476,7 +6503,10 @@
       if (kpiFollowup) kpiFollowup.textContent = attentionCount;
 
       const alertCard = $('#kpiAlertCard');
-      if (alertCard) alertCard.classList.toggle('has-alert', attentionCount > 0);
+      if (alertCard) {
+        alertCard.classList.toggle('has-alert', attentionCount > 0);
+        alertCard.classList.toggle('has-alerts', attentionCount > 0);
+      }
 
       const attentionSub = $('#kpiFollowupSub');
       if (attentionSub) {
@@ -6536,8 +6566,12 @@
       : '';
 
     const daysInStage = a.days_in_stage || 0;
-    const velocityBadge = daysInStage > 0
-      ? `<span class="kcard-badge badge-velocity" title="Days in current stage">${daysInStage}d here</span>`
+    let velocityText = '';
+    if (daysInStage > 0) {
+      velocityText = daysInStage < 1 ? '<1d in stage' : `${Math.round(daysInStage)}d in stage`;
+    }
+    const velocityBadge = velocityText
+      ? `<span class="kcard-badge badge-velocity" title="Time in current stage">${ico('clock')}${velocityText}</span>`
       : '';
 
     const followHtmlBadge = followHtml(a);
@@ -6586,14 +6620,11 @@
 
       <div class="kcard-foot">
         <div class="kcard-stage-advance">
-          ${next ? `<button type="button" class="kcard-advance-btn" data-action="app-advance" data-id="${esc(a.id)}" data-next="${next.next}" title="Advance to ${next.next}">${ico('arrow-right')}${next.label}</button>` : `<span class="kcard-archived-tag">Archived</span>`}
+          ${next ? `<button type="button" class="kcard-advance-btn" data-action="app-advance" data-id="${esc(a.id)}" data-next="${next.next}" title="Advance to ${next.next}">${ico('arrow-right')}<span>${next.label}</span></button>` : `<span class="kcard-archived-tag">${ico('check')}Archived</span>`}
         </div>
         <div class="kcard-actions">
-          <select class="kcard-stage-select" aria-label="Move stage" data-action="app-stage" data-id="${esc(a.id)}">
-            ${STAGES.map(s => `<option value="${s.key}" ${s.key === a.status ? 'selected' : ''}>${s.label}</option>`).join('')}
-          </select>
           ${a.job_data && (a.job_data.title || a.job_data.description) ? `<button type="button" class="icon-btn" data-action="app-open" data-id="${esc(a.id)}" title="Open tailored resume workspace" aria-label="Open tailored resume workspace">${ico('file')}</button>` : ''}
-          <button type="button" class="icon-btn" data-action="app-edit" data-id="${esc(a.id)}" title="Edit application" aria-label="Edit application">${ico('edit')}</button>
+          <button type="button" class="icon-btn" data-action="app-edit" data-id="${esc(a.id)}" title="Edit application details" aria-label="Edit application details">${ico('edit')}</button>
           <button type="button" class="icon-btn" data-action="app-delete" data-id="${esc(a.id)}" title="Delete application" aria-label="Delete application">${ico('trash')}</button>
         </div>
       </div>
@@ -6661,8 +6692,14 @@
       const items = filtered.filter(a => (a.status || 'saved') === st.key);
       return `<section class="col" data-stage="${st.key}" aria-label="${st.label}">
         <div class="col-head">
-          <span class="col-title">${st.label}</span>
-          <span class="count">${items.length}</span>
+          <div class="col-head-left">
+            <span class="col-indicator-dot"></span>
+            <span class="col-title">${st.label}</span>
+            <span class="count">${items.length}</span>
+          </div>
+          <button type="button" class="col-btn-add" data-action="app-add-stage" data-stage="${st.key}" title="Add application to ${st.label}" aria-label="Add application to ${st.label}">
+            ${ico('plus')}
+          </button>
         </div>
         <div class="col-body">${items.length ? items.map(renderCard).join('') : `<div class="col-empty">No ${st.label.toLowerCase()} roles</div>`}</div>
       </section>`;
@@ -6863,6 +6900,7 @@
         drawer.classList.add('is-open');
         overlay.classList.add('is-open');
       });
+      document.documentElement.classList.add('drawer-no-scroll');
       document.body.classList.add('drawer-no-scroll');
     }
   }
@@ -6879,6 +6917,7 @@
       overlay.classList.remove('is-open');
       setTimeout(() => { overlay.hidden = true; }, 260);
     }
+    document.documentElement.classList.remove('drawer-no-scroll');
     document.body.classList.remove('drawer-no-scroll');
     S.activeDrawerApp = null;
   }
@@ -7140,7 +7179,7 @@
   }
 
   let editingApp = null;
-  function openAppDialog(app) {
+  function openAppDialog(app, defaultStage = 'applied') {
     editingApp = app || null;
     $('#appDialogTitle').textContent = app ? 'Edit application' : 'Add application';
     $('#appDialogSubmit').textContent = 'Save application';
@@ -7148,7 +7187,7 @@
     $('#modalTitle').value = app ? app.title : '';
     $('#modalLocation').value = app ? (app.location || 'Remote') : 'Remote';
     $('#modalSalary').value = app ? (app.salary || '') : '';
-    $('#modalStatus').value = app ? (app.status || 'applied') : 'applied';
+    $('#modalStatus').value = app ? (app.status || defaultStage) : defaultStage;
     $('#modalFollowUp').value = app ? (app.follow_up_date || '') : isoDay(3);
     $('#modalPriority').value = app ? (app.priority || 'medium') : 'medium';
     $('#modalUrl').value = app ? (app.url || (app.job_data && app.job_data.url) || '') : '';
@@ -7729,6 +7768,7 @@
     'cover-save': () => saveCoverLetter(),
     // applications
     'app-add': () => openAppDialog(null),
+    'app-add-stage': el => openAppDialog(null, el.dataset.stage || 'applied'),
     'app-edit': el => openAppDialog(S.applications.find(a => a.id === el.dataset.id)),
     'app-delete': el => deleteApp(el.dataset.id),
     'app-open': el => { const a = S.applications.find(x => x.id === el.dataset.id); if (a) openWorkspace(a.job_data || a, 'resume', 'applications'); },
@@ -11339,13 +11379,33 @@
       pills.addEventListener('click', e => {
         const btn = e.target.closest('[data-app-filter]');
         if (!btn) return;
-        S.appFilter = btn.dataset.appFilter;
-        $$('.app-pill', pills).forEach(p => {
-          const active = (p === btn);
-          p.classList.toggle('is-active', active);
-          p.setAttribute('aria-pressed', String(active));
-        });
-        renderApplicationView();
+        setAppFilter(btn.dataset.appFilter);
+      });
+    }
+
+    // Interactive KPI Ribbon filters
+    const kpiRibbon = $('#appKpiRibbon');
+    if (kpiRibbon) {
+      kpiRibbon.addEventListener('click', e => {
+        const card = e.target.closest('[data-kpi]');
+        if (!card) return;
+        const kpi = card.dataset.kpi;
+        if (kpi === 'live') {
+          setAppFilter('all');
+        } else if (kpi === 'interview') {
+          setAppFilter('interviewing');
+        } else if (kpi === 'overdue') {
+          setAppFilter('attention');
+        }
+      });
+      kpiRibbon.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          const card = e.target.closest('[data-kpi]');
+          if (card) {
+            e.preventDefault();
+            card.click();
+          }
+        }
       });
     }
 
@@ -11367,9 +11427,20 @@
       });
     }
 
-    // Drawer close handlers
+    // Drawer close handlers & scroll leakage prevention
     const overlay = $('#appDrawerOverlay');
-    if (overlay) overlay.addEventListener('click', closeAppDrawer);
+    if (overlay) {
+      overlay.addEventListener('click', closeAppDrawer);
+      overlay.addEventListener('wheel', e => e.preventDefault(), { passive: false });
+      overlay.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+    }
+    const drawer = $('#appDrawer');
+    if (drawer) {
+      drawer.addEventListener('wheel', e => {
+        const scrollable = e.target.closest('.drawer-content, .drawer-tabs, .drawer-stage-pills');
+        if (!scrollable) e.preventDefault();
+      }, { passive: false });
+    }
     const closeBtn = $('#drawerCloseBtn');
     if (closeBtn) closeBtn.addEventListener('click', closeAppDrawer);
     document.addEventListener('keydown', e => {
