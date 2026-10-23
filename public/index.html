@@ -1101,292 +1101,457 @@
       </div>
     </aside>
 
-    <!-- ================= RESUME ================= -->
+    <!-- ================= RESUME & CAREER HUB ================= -->
     <section class="view" id="view-resume" aria-labelledby="resumeTitle" hidden>
-      <div class="container container-narrow">
-        <header class="page-head">
-          <div>
-            <h1 class="page-title" id="resumeTitle">Resume &amp; Career Hub</h1>
-            <p class="page-sub">Master work history, targeted variants, and ATS readiness. Switch active profiles to instantly recalculate match scores.</p>
+      <div class="container settings-hub resume-hub">
+
+        <!-- Resume Hub Header (Mirrors Settings Header) -->
+        <header class="settings-head resume-head">
+          <div class="settings-badge-title">
+            <span class="settings-icon-bubble" aria-hidden="true">
+              <svg class="i"><use href="#i-file"/></svg>
+            </span>
+            <div>
+              <h1 class="page-title" id="resumeTitle">Resume &amp; Career Hub</h1>
+              <p class="page-sub">Master work history, targeted variants, and ATS readiness. Switch active profiles to instantly recalculate match scores.</p>
+            </div>
+          </div>
+
+          <!-- Quick Search Filter (Matches Settings ⌘K filter) -->
+          <div class="settings-filter-wrap">
+            <svg class="settings-search-ico" aria-hidden="true"><use href="#i-search"/></svg>
+            <input type="search" id="resumeFilterInput" class="settings-filter-input" placeholder="Search resume &amp; career sections..." autocomplete="off" aria-label="Search resume sections">
+            <kbd class="settings-search-kbd">⌘K</kbd>
+            <button type="button" class="settings-clear-btn" id="resumeFilterClear" hidden aria-label="Clear filter">&times;</button>
           </div>
         </header>
 
-        <!-- Multi-Resume Variants & Library Hub -->
-        <section class="card resume-library-card" id="resumeLibraryCard" aria-labelledby="resumeLibraryTitle">
-          <div class="library-header">
-            <div>
-              <div class="library-badge-row">
-                <span class="chip chip-ok" id="activeProfileBeacon"><span class="beacon-dot"></span><span id="activeProfileBeaconText">Active in Editor</span></span>
-                <span class="chip chip-live-pool" id="livePoolCounterChip" title="Resumes currently participating in the live matching pool. Every job is scored against all live resumes, and only the highest match score is displayed."><span class="beacon-dot beacon-live-pulse"></span><span id="livePoolBeaconText">Live Pool: <strong id="livePoolCount">1</strong> of <span id="totalVariantsCount">1</span> active</span></span>
-                <span class="muted" id="activeProfileLastSaved">Updated today</span>
-              </div>
-              <h2 class="card-title" id="resumeLibraryTitle">Resume Library &amp; Multi-Match Pool</h2>
-              <p class="muted">Store your master profile and specialized resume variants. Toggle variants as <strong>Live</strong> to test them against incoming jobs (the highest match score wins), or <strong>Pause</strong> variants to temporarily ignore them.</p>
-            </div>
-            <div class="library-actions">
-              <button type="button" class="btn btn-secondary btn-sm" id="btnNewVariant" data-action="profile-new-variant">
-                <svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>
-                <span>New Variant</span>
-              </button>
-              <button type="button" class="btn btn-secondary btn-sm" id="btnDuplicateVariant" data-action="profile-duplicate-variant">
-                <svg class="i" aria-hidden="true"><use href="#i-copy"/></svg>
-                <span>Duplicate Active</span>
-              </button>
-              <button type="button" class="btn btn-ghost btn-sm" id="btnExportProfile" data-action="profile-export-menu">
-                <svg class="i" aria-hidden="true"><use href="#i-download"/></svg>
-                <span>Export</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Dynamic Variant Selector Strip -->
-          <div class="variant-pill-strip" id="variantPillStrip" role="tablist" aria-label="Resume Variants"></div>
-
-          <!-- Active Variant Metadata Bar -->
-          <div class="variant-meta-bar" id="variantMetaBar">
-            <div class="variant-meta-info">
-              <div class="variant-meta-title-row">
-                <strong id="variantActiveName">Master Resume</strong>
-                <span class="chip-variant-type" id="variantActiveType">Master Career Base</span>
-              </div>
-              <div class="variant-meta-tags" id="variantActiveTags"></div>
-            </div>
-            <div class="variant-meta-actions">
-              <button type="button" class="btn btn-ghost btn-sm" id="btnRenameVariant" data-action="profile-rename-variant" title="Rename variant">
-                <svg class="i" aria-hidden="true"><use href="#i-edit"/></svg>
-                <span>Rename</span>
-              </button>
-              <button type="button" class="btn btn-quiet-danger btn-sm" id="btnDeleteVariant" data-action="profile-delete-variant" title="Delete variant" hidden>
-                <svg class="i" aria-hidden="true"><use href="#i-x"/></svg>
-                <span>Delete</span>
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- Live ATS Readiness & Keyword Health Meter -->
-        <section class="card ats-health-card" id="atsHealthCard" aria-labelledby="atsHealthTitle">
-          <div class="ats-health-header">
-            <div class="ats-score-badge-box">
-              <div class="score-ring ats-meter-ring" id="atsAuditScoreRing">
-                <svg viewBox="0 0 36 36" class="circular-chart">
-                  <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
-                  <path class="circle score-high" id="atsAuditScorePath" stroke-dasharray="90, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
-                  <text x="18" y="20.35" class="percentage" id="atsAuditScoreText">90%</text>
-                </svg>
-              </div>
-              <div>
-                <div class="ats-health-title-row">
-                  <h2 class="card-title" id="atsHealthTitle">ATS Optimization &amp; Readiness</h2>
-                  <span class="chip chip-ok" id="atsGradeBadge">A+ (ATS Ready)</span>
-                </div>
-                <p class="muted">Scored against 15+ automated Applicant Tracking System rules: keyword density, hard skills ontology, contact parsing, and metric quantification.</p>
-              </div>
-            </div>
-            <button type="button" class="btn btn-secondary btn-sm" id="btnReauditAts" data-action="profile-reaudit">
-              <svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>
-              <span>Audit Now</span>
-            </button>
-          </div>
-
-          <!-- 4 Core Metric Ribbons -->
-          <div class="ats-metrics-grid">
-            <div class="ats-metric-tile">
-              <div class="tile-label">Quantified Impact</div>
-              <div class="tile-val" id="atsQuantVal">0%</div>
-              <div class="tile-sub" id="atsQuantSub">Bullets with numbers/metrics</div>
-            </div>
-            <div class="ats-metric-tile">
-              <div class="tile-label">Skill Breadth</div>
-              <div class="tile-val" id="atsSkillsVal">0</div>
-              <div class="tile-sub" id="atsSkillsSub">Across 0 technical categories</div>
-            </div>
-            <div class="ats-metric-tile">
-              <div class="tile-label">Executive Headline</div>
-              <div class="tile-val" id="atsHeadlineVal">Verified</div>
-              <div class="tile-sub" id="atsHeadlineSub">Target role &amp; summary</div>
-            </div>
-            <div class="ats-metric-tile">
-              <div class="tile-label">Contact Parsing</div>
-              <div class="tile-val" id="atsContactVal">Complete</div>
-              <div class="tile-sub" id="atsContactSub">Email, phone, links</div>
-            </div>
-          </div>
-
-          <!-- Expandable Audit Details & Tips -->
-          <details class="ats-audit-details" id="atsAuditDetails">
-            <summary class="ats-details-summary">
-              <span>View detailed ATS checks &amp; recommendations</span>
-              <svg class="i chevron-icon" aria-hidden="true"><use href="#i-chevron"/></svg>
-            </summary>
-            <div class="ats-checks-list" id="atsChecksList"></div>
-            <div class="ats-tips-box" id="atsTipsBox"></div>
-          </details>
-        </section>
-
-        <div class="card intake" id="intakeCard">
-          <div class="intake-head">
-            <div>
-              <h2 class="card-title" id="intakeTitle">Start with your resume</h2>
-              <p class="muted" id="intakeSub">Upload a PDF, Word, text, or Markdown file. The app reads it into the fields below.</p>
-            </div>
-          </div>
-          <div class="dropzone" id="dropzone">
-            <svg class="i i-lg" aria-hidden="true"><use href="#i-upload"/></svg>
-            <div>
-              <strong>Drop your resume here</strong>
-              <span class="muted">PDF, DOCX, TXT, or MD, up to 8 MB</span>
-            </div>
-            <label class="btn btn-secondary">
-              Choose file
-              <input type="file" id="resumeFileInput" accept=".pdf,.doc,.docx,.txt,.md,.json" class="sr-only">
-            </label>
-          </div>
-          <details class="paste-box">
-            <summary>Paste resume text instead</summary>
-            <textarea id="rawResumePaste" rows="6" placeholder="Paste your full resume text here" aria-label="Resume text"></textarea>
-            <button type="button" class="btn btn-secondary btn-sm" data-action="parse-paste">Read pasted text</button>
-          </details>
+        <!-- No search results notification inside resume hub -->
+        <div id="resumeNoResults" class="card settings-empty" hidden>
+          <p class="muted">No resume sections found matching your search. Try another keyword or clear the search.</p>
         </div>
 
-        <form class="profile-form" id="profileForm" autocomplete="off">
-          <section class="card" aria-labelledby="basicsTitle">
-            <h2 class="card-title" id="basicsTitle">Basics</h2>
-            <div class="form-grid">
-              <div class="form-field"><label for="profName">Full name</label><input type="text" id="profName"></div>
-              <div class="form-field"><label for="profTitle">Target job title</label><input type="text" id="profTitle"></div>
-              <div class="form-field"><label for="profExp">Years of experience</label><input type="number" id="profExp" min="0" max="60"></div>
-              <div class="form-field"><label for="profWorkMode">Work mode</label>
-                <select id="profWorkMode"><option value="Remote">Remote</option><option value="Hybrid">Hybrid</option><option value="Onsite">On-site</option></select>
-              </div>
-              <div class="form-field"><label for="profEmail">Email</label><input type="email" id="profEmail"></div>
-              <div class="form-field"><label for="profPhone">Phone</label><input type="text" id="profPhone"></div>
-              <div class="form-field span-2"><label for="profLocation">Location</label><input type="text" id="profLocation"></div>
-              <div class="form-field"><label for="profLinkedin">LinkedIn</label><input type="text" id="profLinkedin"></div>
-              <div class="form-field"><label for="profGithub">GitHub or portfolio</label><input type="text" id="profGithub"></div>
-            </div>
-          </section>
+        <div class="settings-layout">
+          <!-- Sticky Navigation Rail (Mirrors Settings Rail) -->
+          <aside class="settings-rail" aria-label="Resume navigation">
+            <p class="settings-rail-label">Career sections</p>
+            <nav class="settings-pill-nav" id="resumePillNav" aria-label="Resume categories" role="tablist">
+              <button type="button" class="settings-tab-btn active" data-tab="variants" role="tab" aria-selected="true" aria-controls="group-variants">
+                <svg class="i" aria-hidden="true"><use href="#i-copy"/></svg>
+                <span>Variants &amp; pool</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="ats" role="tab" aria-selected="false" aria-controls="group-ats">
+                <svg class="i" aria-hidden="true"><use href="#i-sparkles"/></svg>
+                <span>ATS readiness</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="basics" role="tab" aria-selected="false" aria-controls="group-basics">
+                <svg class="i" aria-hidden="true"><use href="#i-user"/></svg>
+                <span>Profile &amp; basics</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="skills" role="tab" aria-selected="false" aria-controls="group-skills">
+                <svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>
+                <span>Competencies</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="experience" role="tab" aria-selected="false" aria-controls="group-experience">
+                <svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>
+                <span>Work experience</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="education" role="tab" aria-selected="false" aria-controls="group-education">
+                <svg class="i" aria-hidden="true"><use href="#i-star"/></svg>
+                <span>Education</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="preferences" role="tab" aria-selected="false" aria-controls="group-preferences">
+                <svg class="i" aria-hidden="true"><use href="#i-heart"/></svg>
+                <span>Dream job &amp; fit</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="autosearch" role="tab" aria-selected="false" aria-controls="group-autosearch">
+                <svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>
+                <span>Auto search</span>
+              </button>
+              <button type="button" class="settings-tab-btn" data-tab="intake" role="tab" aria-selected="false" aria-controls="group-intake">
+                <svg class="i" aria-hidden="true"><use href="#i-upload"/></svg>
+                <span>Import &amp; intake</span>
+              </button>
+            </nav>
+          </aside>
 
-          <section class="card" id="autoSearchCard" aria-labelledby="autoSearchTitle">
-            <div class="card-head">
-              <div>
-                <h2 class="card-title" id="autoSearchTitle"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>Background Auto Search Session</h2>
-                <p class="muted">Schedule automatic background job scans based on your profile. New jobs are staged until you click Refresh.</p>
-              </div>
-              <span class="chip chip-ok" id="autoSearchStatusBadge">Auto Active</span>
-            </div>
-            <div class="form-grid">
-              <div class="form-field span-2">
-                <label for="autoSearchIntervalSelect">Scan Frequency</label>
-                <select id="autoSearchIntervalSelect">
-                  <option value="5" selected>Every 5 hours (Recommended)</option>
-                  <option value="24">Every 24 hours (Daily)</option>
-                  <option value="168">Every 1 week</option>
-                  <option value="1">Every 1 hour (Fast check)</option>
-                  <option value="custom">Custom interval...</option>
-                  <option value="0">Never (Manual only)</option>
-                </select>
-                <small class="muted">Runs silently in background and stages newly found jobs.</small>
-              </div>
-              <div class="form-field span-2" id="autoSearchCustomField" hidden>
-                <label for="autoSearchCustomHours">Custom Interval (Hours)</label>
-                <input type="number" id="autoSearchCustomHours" min="0.5" max="720" step="0.5" placeholder="Enter hours, e.g. 12">
-              </div>
-              <div class="form-field span-2">
-                <div class="auto-search-status-bar">
-                  <div class="auto-search-meta">
-                    <div><span>Last session: </span><strong id="autoSearchLastRunText">Never</strong></div>
-                    <div><span>Next session: </span><strong id="autoSearchNextRunText">In 5 hours</strong></div>
-                    <div><span>Pending discoveries: </span><strong id="autoSearchPendingText">0 new jobs staged</strong></div>
+          <!-- Scrollable Content Pane with Numbered Groups (Mirrors Settings Content) -->
+          <div class="settings-content" id="resumeContent" role="region" aria-label="Resume sections">
+            <form class="profile-form" id="profileForm" autocomplete="off">
+
+              <!-- 1. VARIANTS & MULTI-MATCH POOL -->
+              <div class="settings-group" data-group="variants" id="group-variants" aria-labelledby="resumeGroupVariantsTitle">
+                <div class="settings-group-header">
+                  <h2 class="settings-group-title" id="resumeGroupVariantsTitle"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg>Variants &amp; multi-match pool</h2>
+                  <p class="settings-group-sub">Manage your master base and role-targeted resume variants. Active variants participate in live job scoring.</p>
+                </div>
+
+                <section class="card settings-card resume-library-card" id="resumeLibraryCard" data-keywords="variants library master target resume pool switch duplicate export rename" aria-labelledby="resumeLibraryTitle">
+                  <div class="library-header">
+                    <div>
+                      <div class="library-badge-row">
+                        <span class="chip chip-ok" id="activeProfileBeacon"><span class="beacon-dot"></span><span id="activeProfileBeaconText">Active in Editor</span></span>
+                        <span class="chip chip-live-pool" id="livePoolCounterChip" title="Resumes currently participating in the live matching pool. Every job is scored against all live resumes, and only the highest match score is displayed."><span class="beacon-dot beacon-live-pulse"></span><span id="livePoolBeaconText">Live Pool: <strong id="livePoolCount">1</strong> of <span id="totalVariantsCount">1</span> active</span></span>
+                        <span class="muted" id="activeProfileLastSaved">Updated today</span>
+                      </div>
+                      <h3 class="card-title" id="resumeLibraryTitle">Resume Library &amp; Multi-Match Pool</h3>
+                      <p class="muted">Store your master profile and specialized resume variants. Toggle variants as <strong>Live</strong> to test them against incoming jobs (the highest match score wins), or <strong>Pause</strong> variants to temporarily ignore them.</p>
+                    </div>
+                    <div class="library-actions">
+                      <button type="button" class="btn btn-secondary btn-sm" id="btnNewVariant" data-action="profile-new-variant">
+                        <svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>
+                        <span>New Variant</span>
+                      </button>
+                      <button type="button" class="btn btn-secondary btn-sm" id="btnDuplicateVariant" data-action="profile-duplicate-variant">
+                        <svg class="i" aria-hidden="true"><use href="#i-copy"/></svg>
+                        <span>Duplicate Active</span>
+                      </button>
+                      <button type="button" class="btn btn-ghost btn-sm" id="btnExportProfile" data-action="profile-export-menu">
+                        <svg class="i" aria-hidden="true"><use href="#i-download"/></svg>
+                        <span>Export</span>
+                      </button>
+                    </div>
                   </div>
-                  <button type="button" class="btn btn-secondary btn-sm" id="btnTriggerAutoSearch">
-                    <svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>
-                    <span>Run session now</span>
-                  </button>
+
+                  <!-- Dynamic Variant Selector Strip -->
+                  <div class="variant-pill-strip" id="variantPillStrip" role="tablist" aria-label="Resume Variants"></div>
+
+                  <!-- Active Variant Metadata Bar -->
+                  <div class="variant-meta-bar" id="variantMetaBar">
+                    <div class="variant-meta-info">
+                      <div class="variant-meta-title-row">
+                        <strong id="variantActiveName">Master Resume</strong>
+                        <span class="chip-variant-type" id="variantActiveType">Master Career Base</span>
+                      </div>
+                      <div class="variant-meta-tags" id="variantActiveTags"></div>
+                    </div>
+                    <div class="variant-meta-actions">
+                      <button type="button" class="btn btn-ghost btn-sm" id="btnRenameVariant" data-action="profile-rename-variant" title="Rename variant">
+                        <svg class="i" aria-hidden="true"><use href="#i-edit"/></svg>
+                        <span>Rename</span>
+                      </button>
+                      <button type="button" class="btn btn-quiet-danger btn-sm" id="btnDeleteVariant" data-action="profile-delete-variant" title="Delete variant" hidden>
+                        <svg class="i" aria-hidden="true"><use href="#i-x"/></svg>
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <!-- 2. ATS OPTIMIZATION & READINESS -->
+              <div class="settings-group" data-group="ats" id="group-ats" aria-labelledby="resumeGroupAtsTitle">
+                <div class="settings-group-header">
+                  <h2 class="settings-group-title" id="resumeGroupAtsTitle"><svg class="i" aria-hidden="true"><use href="#i-sparkles"/></svg>ATS optimization &amp; readiness</h2>
+                  <p class="settings-group-sub">Automated audit against 15+ Applicant Tracking System compliance heuristics and keyword thresholds.</p>
+                </div>
+
+                <section class="card settings-card ats-health-card" id="atsHealthCard" data-keywords="ats audit readiness score grade health keywords quantified impact metrics contact test" aria-labelledby="atsHealthTitle">
+                  <div class="ats-health-header">
+                    <div class="ats-score-badge-box">
+                      <div class="score-ring ats-meter-ring" id="atsAuditScoreRing">
+                        <svg viewBox="0 0 36 36" class="circular-chart">
+                          <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                          <path class="circle score-high" id="atsAuditScorePath" stroke-dasharray="90, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                          <text x="18" y="20.35" class="percentage" id="atsAuditScoreText">90%</text>
+                        </svg>
+                      </div>
+                      <div>
+                        <div class="ats-health-title-row">
+                          <h3 class="card-title" id="atsHealthTitle">ATS Optimization &amp; Readiness</h3>
+                          <span class="chip chip-ok" id="atsGradeBadge">A+ (ATS Ready)</span>
+                        </div>
+                        <p class="muted">Scored against 15+ automated Applicant Tracking System rules: keyword density, hard skills ontology, contact parsing, and metric quantification.</p>
+                      </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnReauditAts" data-action="profile-reaudit">
+                      <svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>
+                      <span>Audit Now</span>
+                    </button>
+                  </div>
+
+                  <!-- 4 Core Metric Ribbons -->
+                  <div class="ats-metrics-grid">
+                    <div class="ats-metric-tile">
+                      <div class="tile-label">Quantified Impact</div>
+                      <div class="tile-val" id="atsQuantVal">0%</div>
+                      <div class="tile-sub" id="atsQuantSub">Bullets with numbers/metrics</div>
+                    </div>
+                    <div class="ats-metric-tile">
+                      <div class="tile-label">Skill Breadth</div>
+                      <div class="tile-val" id="atsSkillsVal">0</div>
+                      <div class="tile-sub" id="atsSkillsSub">Across 0 technical categories</div>
+                    </div>
+                    <div class="ats-metric-tile">
+                      <div class="tile-label">Executive Headline</div>
+                      <div class="tile-val" id="atsHeadlineVal">Verified</div>
+                      <div class="tile-sub" id="atsHeadlineSub">Target role &amp; summary</div>
+                    </div>
+                    <div class="ats-metric-tile">
+                      <div class="tile-label">Contact Parsing</div>
+                      <div class="tile-val" id="atsContactVal">Complete</div>
+                      <div class="tile-sub" id="atsContactSub">Email, phone, links</div>
+                    </div>
+                  </div>
+
+                  <!-- Expandable Audit Details & Tips -->
+                  <details class="ats-audit-details" id="atsAuditDetails">
+                    <summary class="ats-details-summary">
+                      <span>View detailed ATS checks &amp; recommendations</span>
+                      <svg class="i chevron-icon" aria-hidden="true"><use href="#i-chevron"/></svg>
+                    </summary>
+                    <div class="ats-checks-list" id="atsChecksList"></div>
+                    <div class="ats-tips-box" id="atsTipsBox"></div>
+                  </details>
+                </section>
+              </div>
+
+              <!-- 3. PROFILE IDENTITY & BASICS -->
+              <div class="settings-group" data-group="basics" id="group-basics" aria-labelledby="resumeGroupBasicsTitle">
+                <div class="settings-group-header">
+                  <h2 class="settings-group-title" id="resumeGroupBasicsTitle"><svg class="i" aria-hidden="true"><use href="#i-user"/></svg>Profile identity &amp; contact</h2>
+                  <p class="settings-group-sub">Candidate headline, experience level, contact methods, and professional summary statement.</p>
+                </div>
+
+                <section class="card settings-card" data-keywords="name title experience work mode email phone location linkedin github portfolio contact basics headline" aria-labelledby="basicsTitle">
+                  <div class="card-head">
+                    <div>
+                      <h3 class="card-title" id="basicsTitle"><svg class="i" aria-hidden="true"><use href="#i-user"/></svg>Contact coordinates &amp; headline</h3>
+                      <p class="muted">Primary identity information parsed by recruiters and algorithmic matching engines.</p>
+                    </div>
+                  </div>
+                  <div class="form-grid">
+                    <div class="form-field"><label for="profName">Full name</label><input type="text" id="profName" placeholder="e.g. Alex Morgan"></div>
+                    <div class="form-field"><label for="profTitle">Target job title</label><input type="text" id="profTitle" placeholder="e.g. Senior Full Stack Engineer"></div>
+                    <div class="form-field"><label for="profExp">Years of experience</label><input type="number" id="profExp" min="0" max="60" placeholder="e.g. 6"></div>
+                    <div class="form-field"><label for="profWorkMode">Work mode</label>
+                      <select id="profWorkMode"><option value="Remote">Remote</option><option value="Hybrid">Hybrid</option><option value="Onsite">On-site</option></select>
+                    </div>
+                    <div class="form-field"><label for="profEmail">Email</label><input type="email" id="profEmail" placeholder="e.g. alex@example.com"></div>
+                    <div class="form-field"><label for="profPhone">Phone</label><input type="text" id="profPhone" placeholder="e.g. +1 (555) 019-2834"></div>
+                    <div class="form-field span-2"><label for="profLocation">Location</label><input type="text" id="profLocation" placeholder="e.g. San Francisco, CA or Remote (US)"></div>
+                    <div class="form-field"><label for="profLinkedin">LinkedIn</label><input type="text" id="profLinkedin" placeholder="e.g. linkedin.com/in/alexmorgan"></div>
+                    <div class="form-field"><label for="profGithub">GitHub or portfolio</label><input type="text" id="profGithub" placeholder="e.g. github.com/alexmorgan"></div>
+                  </div>
+                </section>
+
+                <section class="card settings-card" data-keywords="summary professional bio statement about headline story" aria-labelledby="summaryTitle">
+                  <div class="card-head">
+                    <div>
+                      <h3 class="card-title" id="summaryTitle"><svg class="i" aria-hidden="true"><use href="#i-file"/></svg>Executive summary</h3>
+                      <p class="muted">High-level positioning statement summarizing your core competencies, domain focus, and career impact.</p>
+                    </div>
+                  </div>
+                  <div class="form-field">
+                    <label for="profSummary" class="sr-only">Professional summary</label>
+                    <textarea id="profSummary" rows="4" placeholder="Briefly describe your background, technical depth, and standout career achievements..."></textarea>
+                  </div>
+                </section>
+              </div>
+
+              <!-- 4. CORE COMPETENCIES & SKILLS -->
+              <div class="settings-group" data-group="skills" id="group-skills" aria-labelledby="resumeGroupSkillsTitle">
+                <div class="settings-group-header">
+                  <h2 class="settings-group-title" id="resumeGroupSkillsTitle"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>Core competencies &amp; skills</h2>
+                  <p class="settings-group-sub">Technical proficiencies, frameworks, tools, and methodologies scored against job requirements.</p>
+                </div>
+
+                <section class="card settings-card" data-keywords="skills competencies tools languages frameworks technologies tech stack keywords" aria-labelledby="skillsTitle">
+                  <div class="card-head">
+                    <div>
+                      <h3 class="card-title" id="skillsTitle"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>Technical skills ontology</h3>
+                      <p class="muted">Specific proficiencies evaluated by the matching engine. Press Enter or click Add to attach new tags.</p>
+                    </div>
+                  </div>
+                  <div class="tags" id="profileSkillsTags"></div>
+                  <div class="add-row">
+                    <label for="newSkill" class="sr-only">Add competency</label>
+                    <input type="text" id="newSkill" placeholder="Add competency (e.g. TypeScript, React, PostgreSQL), then press Enter">
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="skill-add">
+                      <svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>
+                      <span>Add</span>
+                    </button>
+                  </div>
+                </section>
+              </div>
+
+              <!-- 5. WORK EXPERIENCE & HISTORY -->
+              <div class="settings-group" data-group="experience" id="group-experience" aria-labelledby="resumeGroupExpTitle">
+                <div class="settings-group-header">
+                  <h2 class="settings-group-title" id="resumeGroupExpTitle"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>Work experience &amp; history</h2>
+                  <p class="settings-group-sub">Chronological roles and quantified bullet points. The tailoring editor refines these without inventing facts.</p>
+                </div>
+
+                <section class="card settings-card" data-keywords="experience work history roles jobs positions bullets company title dates impact" aria-labelledby="expTitle">
+                  <div class="card-head">
+                    <div>
+                      <h3 class="card-title" id="expTitle"><svg class="i" aria-hidden="true"><use href="#i-building"/></svg>Position history</h3>
+                      <p class="muted">Add each role with dates, location, and quantifiable impact bullets.</p>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="exp-add">
+                      <svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>
+                      <span>Add position</span>
+                    </button>
+                  </div>
+                  <div class="stack" id="profileExperienceList"></div>
+                </section>
+              </div>
+
+              <!-- 6. EDUCATION & CREDENTIALS -->
+              <div class="settings-group" data-group="education" id="group-education" aria-labelledby="resumeGroupEduTitle">
+                <div class="settings-group-header">
+                  <h2 class="settings-group-title" id="resumeGroupEduTitle"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg>Education &amp; credentials</h2>
+                  <p class="settings-group-sub">Degrees, university institutions, certifications, and graduation timelines.</p>
+                </div>
+
+                <section class="card settings-card" data-keywords="education university college degree school credentials certification academic" aria-labelledby="eduTitle">
+                  <div class="card-head">
+                    <div>
+                      <h3 class="card-title" id="eduTitle"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg>Academic credentials</h3>
+                      <p class="muted">List your degrees, institutions, and graduation timelines.</p>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="edu-add">
+                      <svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>
+                      <span>Add education</span>
+                    </button>
+                  </div>
+                  <div class="stack" id="profileEducationList"></div>
+                </section>
+              </div>
+
+              <!-- 7. DREAM JOB & CAREER PREFERENCES -->
+              <div class="settings-group" data-group="preferences" id="group-preferences" aria-labelledby="resumeGroupPreferencesTitle">
+                <div class="settings-group-header">
+                  <h2 class="settings-group-title" id="resumeGroupPreferencesTitle"><svg class="i" aria-hidden="true"><use href="#i-heart"/></svg>Dream job &amp; career preferences</h2>
+                  <p class="settings-group-sub">Set your target compensation, preferred contract types, wishlist companies, and dealbreakers.</p>
+                </div>
+
+                <section class="card settings-card" id="dreamJobCard" data-keywords="salary compensation dream companies role job type contract dealbreakers excluded fit wishlist" aria-labelledby="dreamJobTitle">
+                  <div class="card-head">
+                    <div>
+                      <h3 class="card-title" id="dreamJobTitle"><svg class="i" aria-hidden="true"><use href="#i-heart"/></svg>Career criteria &amp; wishlist</h3>
+                      <p class="muted">Fine-tune matching priorities, target compensation, and excluded criteria.</p>
+                    </div>
+                  </div>
+                  <div class="form-grid">
+                    <div class="form-field">
+                      <label for="profMinSalary">Minimum target salary ($/yr or $/hr)</label>
+                      <input type="number" id="profMinSalary" placeholder="e.g. 100000 or 50" min="0" step="500">
+                      <small class="muted">Used to score compensation fit and flag underpaying jobs.</small>
+                    </div>
+                    <div class="form-field">
+                      <label for="profJobType">Preferred job types</label>
+                      <select id="profJobType">
+                        <option value="Any">Any job type</option>
+                        <option value="Full-time">Full-time only</option>
+                        <option value="Contract">Contract / Freelance only</option>
+                        <option value="Full-time, Contract">Both Full-time &amp; Contract</option>
+                      </select>
+                      <small class="muted">Aligns with extracted contract tags (Contract, CDI, etc.).</small>
+                    </div>
+                    <div class="form-field span-2">
+                      <label for="profDreamCompanies">Dream companies &amp; Wishlist employers</label>
+                      <input type="text" id="profDreamCompanies" placeholder="e.g. OpenAI, Stripe, Vercel, Supabase (comma-separated)">
+                      <small class="muted">Jobs at these companies receive a score boost and prominent wishlist badge.</small>
+                    </div>
+                    <div class="form-field span-2">
+                      <label for="profDreamRole">Ideal role &amp; what you want next</label>
+                      <textarea id="profDreamRole" rows="2" placeholder="Describe your dream technical focus (e.g. Full-Stack or Backend role building scalable Next.js/React applications, cloud APIs on AWS, and AI systems)."></textarea>
+                    </div>
+                    <div class="form-field span-2">
+                      <label for="profExcludedKeywords">Dealbreakers &amp; Excluded keywords</label>
+                      <input type="text" id="profExcludedKeywords" placeholder="e.g. WordPress, PHP, On-call rotation, Security clearance (comma-separated)">
+                      <small class="muted">Postings mentioning these keywords are filtered or marked as low-fit.</small>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <!-- 8. BACKGROUND AUTO-SEARCH RADAR -->
+              <div class="settings-group" data-group="autosearch" id="group-autosearch" aria-labelledby="resumeGroupAutoSearchTitle">
+                <div class="settings-group-header">
+                  <h2 class="settings-group-title" id="resumeGroupAutoSearchTitle"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>Background auto-search radar</h2>
+                  <p class="settings-group-sub">Schedule automatic background job scans based on your profile. New jobs are staged until you click Refresh.</p>
+                </div>
+
+                <section class="card settings-card" id="autoSearchCard" data-keywords="auto search background scan frequency radar interval stage automated query" aria-labelledby="autoSearchTitle">
+                  <div class="card-head">
+                    <div>
+                      <h3 class="card-title" id="autoSearchTitle"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>Background Job Radar</h3>
+                      <p class="muted">Schedule automatic background job scans based on your profile. New jobs are staged until you click Refresh.</p>
+                    </div>
+                    <span class="chip chip-ok" id="autoSearchStatusBadge">Auto Active</span>
+                  </div>
+                  <div class="form-grid">
+                    <div class="form-field span-2">
+                      <label for="autoSearchIntervalSelect">Scan Frequency</label>
+                      <select id="autoSearchIntervalSelect">
+                        <option value="5" selected>Every 5 hours (Recommended)</option>
+                        <option value="24">Every 24 hours (Daily)</option>
+                        <option value="168">Every 1 week</option>
+                        <option value="1">Every 1 hour (Fast check)</option>
+                        <option value="custom">Custom interval...</option>
+                        <option value="0">Never (Manual only)</option>
+                      </select>
+                      <small class="muted">Runs silently in background and stages newly found jobs.</small>
+                    </div>
+                    <div class="form-field span-2" id="autoSearchCustomField" hidden>
+                      <label for="autoSearchCustomHours">Custom Interval (Hours)</label>
+                      <input type="number" id="autoSearchCustomHours" min="0.5" max="720" step="0.5" placeholder="Enter hours, e.g. 12">
+                    </div>
+                    <div class="form-field span-2">
+                      <div class="auto-search-status-bar">
+                        <div class="auto-search-meta">
+                          <div><span>Last scan: </span><strong id="autoSearchLastRunText">Never</strong></div>
+                          <div><span>Next scan: </span><strong id="autoSearchNextRunText">In 5 hours</strong></div>
+                          <div><span>Pending discoveries: </span><strong id="autoSearchPendingText">0 new jobs staged</strong></div>
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" id="btnTriggerAutoSearch">
+                          <svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>
+                          <span>Run search now</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <!-- 9. IMPORT & DOCUMENT INTAKE -->
+              <div class="settings-group" data-group="intake" id="group-intake" aria-labelledby="resumeGroupIntakeTitle">
+                <div class="settings-group-header">
+                  <h2 class="settings-group-title" id="resumeGroupIntakeTitle"><svg class="i" aria-hidden="true"><use href="#i-upload"/></svg>Resume import &amp; intake</h2>
+                  <p class="settings-group-sub">Upload an existing resume document or paste raw text. The parser maps content directly into profile fields.</p>
+                </div>
+
+                <div class="card settings-card intake" id="intakeCard" data-keywords="upload parse import resume pdf docx txt text paste dropzone intake file">
+                  <div class="intake-head">
+                    <div>
+                      <h3 class="card-title" id="intakeTitle">Start with your resume</h3>
+                      <p class="muted" id="intakeSub">Upload a PDF, Word, text, or Markdown file. The app reads it into the fields above. Nothing changes until you save.</p>
+                    </div>
+                  </div>
+                  <div class="dropzone" id="dropzone">
+                    <svg class="i i-lg" aria-hidden="true"><use href="#i-upload"/></svg>
+                    <div>
+                      <strong>Drop your resume here</strong>
+                      <span class="muted">PDF, DOCX, TXT, or MD, up to 8 MB</span>
+                    </div>
+                    <label class="btn btn-secondary">
+                      Choose file
+                      <input type="file" id="resumeFileInput" accept=".pdf,.doc,.docx,.txt,.md,.json" class="sr-only">
+                    </label>
+                  </div>
+                  <details class="paste-box">
+                    <summary>Paste resume text instead</summary>
+                    <textarea id="rawResumePaste" rows="6" placeholder="Paste your full resume text here" aria-label="Resume text"></textarea>
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="parse-paste">Read pasted text</button>
+                  </details>
                 </div>
               </div>
-            </div>
-          </section>
 
-          <section class="card" aria-labelledby="dreamJobTitle">
-            <div class="card-head">
-              <div>
-                <h2 class="card-title" id="dreamJobTitle"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg>Dream job &amp; Career preferences</h2>
-                <p class="muted">Set your target compensation, preferred contract types, wishlist companies, and dealbreakers.</p>
-              </div>
-            </div>
-            <div class="form-grid">
-              <div class="form-field">
-                <label for="profMinSalary">Minimum target salary ($/yr or $/hr)</label>
-                <input type="number" id="profMinSalary" placeholder="e.g. 100000 or 50" min="0" step="500">
-                <small class="muted">Used to score compensation fit and flag underpaying jobs.</small>
-              </div>
-              <div class="form-field">
-                <label for="profJobType">Preferred job types</label>
-                <select id="profJobType">
-                  <option value="Any">Any job type</option>
-                  <option value="Full-time">Full-time only</option>
-                  <option value="Contract">Contract / Freelance only</option>
-                  <option value="Full-time, Contract">Both Full-time &amp; Contract</option>
-                </select>
-                <small class="muted">Aligns with extracted contract tags (Contract, CDI, etc.).</small>
-              </div>
-              <div class="form-field span-2">
-                <label for="profDreamCompanies">Dream companies &amp; Wishlist employers</label>
-                <input type="text" id="profDreamCompanies" placeholder="e.g. OpenAI, Stripe, Vercel, Supabase, JSS Digital Design (comma-separated)">
-                <small class="muted">Jobs at these companies receive a score boost and prominent wishlist badge.</small>
-              </div>
-              <div class="form-field span-2">
-                <label for="profDreamRole">Ideal role &amp; what you want next</label>
-                <textarea id="profDreamRole" rows="2" placeholder="Describe your dream technical focus (e.g. Full-Stack or Backend role building scalable Next.js/React applications, cloud APIs on AWS, and AI systems)."></textarea>
-              </div>
-              <div class="form-field span-2">
-                <label for="profExcludedKeywords">Dealbreakers &amp; Excluded keywords</label>
-                <input type="text" id="profExcludedKeywords" placeholder="e.g. WordPress, PHP, On-call rotation, Security clearance (comma-separated)">
-                <small class="muted">Postings mentioning these keywords are filtered or marked as low-fit.</small>
-              </div>
-            </div>
-          </section>
-
-          <section class="card" aria-labelledby="summaryTitle">
-            <h2 class="card-title" id="summaryTitle">Summary</h2>
-            <div class="form-field"><label for="profSummary" class="sr-only">Professional summary</label><textarea id="profSummary" rows="4"></textarea></div>
-          </section>
-
-          <section class="card" aria-labelledby="skillsTitle">
-            <div class="card-head">
-              <div>
-                <h2 class="card-title" id="skillsTitle">Core competencies</h2>
-                <p class="muted">Technical proficiencies evaluated against role requirements.</p>
-              </div>
-            </div>
-            <div class="tags" id="profileSkillsTags"></div>
-            <div class="add-row">
-              <label for="newSkill" class="sr-only">Add competency</label>
-              <input type="text" id="newSkill" placeholder="Add competency, then press Enter">
-              <button type="button" class="btn btn-secondary btn-sm" data-action="skill-add">Add</button>
-            </div>
-          </section>
-
-          <section class="card" aria-labelledby="expTitle">
-            <div class="card-head">
-              <div>
-                <h2 class="card-title" id="expTitle">Experience</h2>
-                <p class="muted">The tailoring tool rewrites these bullets to echo each posting. It never adds new facts.</p>
-              </div>
-              <button type="button" class="btn btn-secondary btn-sm" data-action="exp-add"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Add position</button>
-            </div>
-            <div class="stack" id="profileExperienceList"></div>
-          </section>
-
-          <section class="card" aria-labelledby="eduTitle">
-            <div class="card-head">
-              <h2 class="card-title" id="eduTitle">Education</h2>
-              <button type="button" class="btn btn-secondary btn-sm" data-action="edu-add"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Add education</button>
-            </div>
-            <div class="stack" id="profileEducationList"></div>
-          </section>
-        </form>
+            </form>
+          </div>
+        </div>
       </div>
 
       <div class="savebar" id="saveBar" hidden>

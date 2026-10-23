@@ -12401,9 +12401,10 @@ body.compact-mode .chip {
   color: #059669;
 }
 
-/* DESKTOP SETTINGS READING LAYOUT (min-width: 901px) */
+/* DESKTOP SETTINGS & RESUME READING LAYOUT (min-width: 901px) */
 @media (min-width: 901px) {
-  #view-settings {
+  #view-settings,
+  #view-resume {
     height: 100vh;
     max-height: 100vh;
     overflow: hidden;
@@ -12411,7 +12412,8 @@ body.compact-mode .chip {
     box-sizing: border-box;
   }
 
-  #view-settings .settings-hub {
+  #view-settings .settings-hub,
+  #view-resume .settings-hub {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -12424,12 +12426,14 @@ body.compact-mode .chip {
     overflow: hidden;
   }
 
-  #view-settings .settings-head {
+  #view-settings .settings-head,
+  #view-resume .settings-head {
     flex: 0 0 auto;
     margin-bottom: 20px;
   }
 
-  #view-settings .settings-layout {
+  #view-settings .settings-layout,
+  #view-resume .settings-layout {
     flex: 1 1 0%;
     min-height: 0;
     height: 100%;
@@ -12440,7 +12444,8 @@ body.compact-mode .chip {
     overflow: hidden;
   }
 
-  #view-settings .settings-rail {
+  #view-settings .settings-rail,
+  #view-resume .settings-rail {
     align-self: start;
     width: 236px;
     max-height: 100%;
@@ -12449,11 +12454,13 @@ body.compact-mode .chip {
     padding-bottom: 24px;
   }
 
-  #view-settings .settings-rail::-webkit-scrollbar {
+  #view-settings .settings-rail::-webkit-scrollbar,
+  #view-resume .settings-rail::-webkit-scrollbar {
     display: none;
   }
 
-  #view-settings .settings-content {
+  #view-settings .settings-content,
+  #view-resume .settings-content {
     flex: 1 1 auto;
     min-height: 0;
     height: 100%;
@@ -12461,63 +12468,101 @@ body.compact-mode .chip {
     position: relative;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 2px 28px 24px 4px;
+    padding: 2px 28px 100px 4px;
     scroll-behavior: smooth;
     scrollbar-gutter: stable;
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
   }
 
-  #view-settings .settings-group:last-child {
+  #view-settings .settings-group:last-child,
+  #view-resume .settings-group:last-child {
     margin-bottom: 0;
   }
 
-  #view-settings .settings-content::-webkit-scrollbar {
+  #view-settings .settings-content::-webkit-scrollbar,
+  #view-resume .settings-content::-webkit-scrollbar {
     width: 7px;
   }
-  #view-settings .settings-content::-webkit-scrollbar-track {
+  #view-settings .settings-content::-webkit-scrollbar-track,
+  #view-resume .settings-content::-webkit-scrollbar-track {
     background: transparent;
   }
-  #view-settings .settings-content::-webkit-scrollbar-thumb {
+  #view-settings .settings-content::-webkit-scrollbar-thumb,
+  #view-resume .settings-content::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.16);
     border-radius: 9999px;
   }
-  #view-settings .settings-content::-webkit-scrollbar-thumb:hover {
+  #view-settings .settings-content::-webkit-scrollbar-thumb:hover,
+  #view-resume .settings-content::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.28);
   }
 
-  :root:not([data-theme="dark"]) #view-settings .settings-content {
+  :root:not([data-theme="dark"]) #view-settings .settings-content,
+  :root:not([data-theme="dark"]) #view-resume .settings-content {
     scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
   }
-  :root:not([data-theme="dark"]) #view-settings .settings-content::-webkit-scrollbar-thumb {
+  :root:not([data-theme="dark"]) #view-settings .settings-content::-webkit-scrollbar-thumb,
+  :root:not([data-theme="dark"]) #view-resume .settings-content::-webkit-scrollbar-thumb {
     background: rgba(0, 0, 0, 0.16);
   }
-  :root:not([data-theme="dark"]) #view-settings .settings-content::-webkit-scrollbar-thumb:hover {
+  :root:not([data-theme="dark"]) #view-settings .settings-content::-webkit-scrollbar-thumb:hover,
+  :root:not([data-theme="dark"]) #view-resume .settings-content::-webkit-scrollbar-thumb:hover {
     background: rgba(0, 0, 0, 0.28);
   }
+
+  #view-resume .savebar-inner {
+    max-width: 1440px;
+    padding: 12px 36px;
+  }
+}
+
+/* Specific Resume Hub Styling & Refinements */
+#view-resume .resume-library-card,
+#view-resume .ats-health-card,
+#view-resume .intake {
+  margin-bottom: 0;
+}
+
+#view-resume .profile-form {
+  margin: 0;
+  padding: 0;
+}
+
+#view-resume .profile-form .settings-card + .settings-card {
+  margin-top: 18px;
+}
+
+#view-resume .savebar {
+  z-index: 60;
+  backdrop-filter: blur(16px) saturate(140%);
 }
 
 /* Mobile Responsive Adjustments (<= 900px) */
 @media (max-width: 900px) {
-  #view-settings {
+  #view-settings,
+  #view-resume {
     height: auto;
     overflow: visible;
   }
 
-  #view-settings .settings-hub {
+  #view-settings .settings-hub,
+  #view-resume .settings-hub {
     height: auto;
     min-height: 0;
     padding-bottom: 96px;
     overflow: visible;
   }
 
-  #view-settings .settings-layout {
+  #view-settings .settings-layout,
+  #view-resume .settings-layout {
     display: block;
     height: auto;
     overflow: visible;
   }
 
-  #view-settings .settings-rail {
+  #view-settings .settings-rail,
+  #view-resume .settings-rail {
     position: sticky;
     top: 8px;
     z-index: 5;
@@ -12527,11 +12572,13 @@ body.compact-mode .chip {
     width: 100%;
   }
 
-  #view-settings .settings-rail-label {
+  #view-settings .settings-rail-label,
+  #view-resume .settings-rail-label {
     margin-left: 2px;
   }
 
-  #view-settings .settings-pill-nav {
+  #view-settings .settings-pill-nav,
+  #view-resume .settings-pill-nav {
     flex-direction: row;
     align-items: center;
     gap: 4px;
@@ -12540,11 +12587,13 @@ body.compact-mode .chip {
     scrollbar-width: none;
   }
 
-  #view-settings .settings-pill-nav::-webkit-scrollbar {
+  #view-settings .settings-pill-nav::-webkit-scrollbar,
+  #view-resume .settings-pill-nav::-webkit-scrollbar {
     display: none;
   }
 
-  #view-settings .settings-tab-btn {
+  #view-settings .settings-tab-btn,
+  #view-resume .settings-tab-btn {
     width: auto;
     min-width: max-content;
     border-left: 0;
@@ -12552,15 +12601,17 @@ body.compact-mode .chip {
     border-radius: 8px 8px 0 0;
   }
 
-  #view-settings .settings-tab-btn.active {
+  #view-settings .settings-tab-btn.active,
+  #view-resume .settings-tab-btn.active {
     border-bottom-color: var(--brand-accent);
   }
 
-  #view-settings .settings-content {
+  #view-settings .settings-content,
+  #view-resume .settings-content {
     height: auto;
     overflow: visible;
     padding-right: 0;
-    padding-bottom: 40px;
+    padding-bottom: 80px;
     scroll-behavior: auto;
   }
 }

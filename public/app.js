@@ -654,7 +654,7 @@
       else fetchJobsFromDb();
     }
     if (view === 'job') { S.ws.tab = ['strategy', 'resume', 'ats', 'gaps', 'cover', 'prep'].includes(sub) ? sub : 'strategy'; renderWsHeader(); renderWsTab(); }
-    if (view === 'resume') { loadProfilesList(); runAtsAudit(); }
+    if (view === 'resume') { loadProfilesList(); runAtsAudit(); setupResumeScrollSpy(); if (sub) switchResumeTab(sub, { scroll: true }); else syncResumeScrollSpy(); }
     if (view === 'applications') loadApplications();
     if (view === 'companies') loadWatchlist();
     if (view === 'digest') loadDigest();
@@ -936,6 +936,116 @@
     scheduleSettingsScrollSpy();
   }
 
+  // ------------------------------------------------------------ resume hub
+  function setResumeActiveTab(tab) {
+    $$('#resumePillNav .settings-tab-btn').forEach(btn => {
+      const isActive = btn.dataset.tab === tab;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', String(isActive));
+      btn.tabIndex = isActive ? 0 : -1;
+    });
+  }
+
+  function syncResumeScrollSpy() {
+    const content = $('#resumeContent');
+    if (!content) return;
+    const groups = $$('.settings-group', content).filter(group => !group.classList.contains('is-hidden'));
+    if (!groups.length) return;
+
+    const atBottom = (content.scrollHeight - content.scrollTop - content.clientHeight) < 56;
+    if (atBottom) {
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup) {
+        setResumeActiveTab(lastGroup.dataset.group);
+        return;
+      }
+    }
+
+    const contentRect = content.getBoundingClientRect();
+    const marker = contentRect.top + Math.min(150, Math.max(64, contentRect.height * 0.20));
+    let activeGroup = groups[0];
+    for (let i = 0; i < groups.length; i++) {
+      const group = groups[i];
+      const rect = group.getBoundingClientRect();
+      if (rect.top <= marker) {
+        activeGroup = group;
+      } else {
+        break;
+      }
+    }
+    setResumeActiveTab(activeGroup.dataset.group);
+  }
+
+  function scheduleResumeScrollSpy() {
+    if (scrollToResumeGroup.isScrolling) return;
+    if (scheduleResumeScrollSpy.frame) return;
+    scheduleResumeScrollSpy.frame = requestAnimationFrame(() => {
+      scheduleResumeScrollSpy.frame = 0;
+      syncResumeScrollSpy();
+    });
+  }
+
+  function scrollToResumeGroup(tab) {
+    const content = $('#resumeContent');
+    const target = content && $(`#group-${tab}`, content);
+    if (!content || !target) return;
+
+    scrollToResumeGroup.isScrolling = true;
+    clearTimeout(scrollToResumeGroup.timer);
+
+    setResumeActiveTab(tab);
+
+    const contentRect = content.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const targetScrollTop = content.scrollTop + (targetRect.top - contentRect.top) - 10;
+
+    content.scrollTo({
+      top: Math.max(0, targetScrollTop),
+      behavior: 'smooth'
+    });
+
+    scrollToResumeGroup.timer = setTimeout(() => {
+      scrollToResumeGroup.isScrolling = false;
+      syncResumeScrollSpy();
+    }, 450);
+  }
+
+  function setupResumeScrollSpy() {
+    const content = $('#resumeContent');
+    if (!content || content.dataset.scrollSpyReady === 'true') return;
+    content.dataset.scrollSpyReady = 'true';
+    content.addEventListener('scroll', scheduleResumeScrollSpy, { passive: true });
+    window.addEventListener('resize', scheduleResumeScrollSpy, { passive: true });
+
+    const viewResume = $('#view-resume');
+    if (viewResume && !viewResume.dataset.wheelBound) {
+      viewResume.dataset.wheelBound = 'true';
+      viewResume.addEventListener('wheel', e => {
+        if (content.contains(e.target)) return;
+        content.scrollTop += e.deltaY;
+      }, { passive: true });
+    }
+
+    scheduleResumeScrollSpy();
+  }
+
+  function switchResumeTab(tab, options = {}) {
+    const selectedTab = (!tab || tab === 'all') ? 'variants' : tab;
+    setResumeActiveTab(selectedTab);
+
+    const groups = $$('#resumeContent .settings-group');
+    groups.forEach(g => {
+      g.classList.remove('is-hidden');
+      g.setAttribute('aria-hidden', 'false');
+    });
+
+    setupResumeScrollSpy();
+    if (options.scroll !== false) {
+      scrollToResumeGroup(selectedTab);
+    }
+    scheduleResumeScrollSpy();
+  }
+
   function syncSettingsInputs() {
     const s = S.aiSettings || {};
 
@@ -1188,14 +1298,14 @@
       searchInput.addEventListener('input', () => {
         const q = searchInput.value.toLowerCase().trim();
         if (clearBtn) clearBtn.hidden = !q;
-        const cards = $$('.settings-card');
-        const groups = $$('.settings-group');
+        const cards = $$('#settingsContent .settings-card');
+        const groups = $$('#settingsContent .settings-group');
 
         if (!q) {
           cards.forEach(c => c.classList.remove('is-filtered-out'));
           groups.forEach(g => g.classList.remove('is-hidden'));
           if (noResults) noResults.hidden = true;
-          const activeBtn = $('.settings-tab-btn.active');
+          const activeBtn = $('#settingsPillNav .settings-tab-btn.active');
           if (activeBtn) switchSettingsTab(activeBtn.dataset.tab);
           return;
         }
@@ -1224,6 +1334,77 @@
           searchInput.value = '';
           searchInput.dispatchEvent(new Event('input'));
           searchInput.focus();
+        });
+      }
+    }
+
+    // 8b. Resume Hub Rail Navigation & Keyword Search
+    const resumePillNav = $('#resumePillNav');
+    if (resumePillNav) {
+      resumePillNav.addEventListener('click', e => {
+        const b = e.target.closest('[data-tab]');
+        if (!b) return;
+        const tab = b.dataset.tab;
+        switchResumeTab(tab, { scroll: true });
+        try {
+          history.replaceState(null, '', `#/resume${tab ? '/' + tab : ''}`);
+        } catch (_) {}
+      });
+      resumePillNav.addEventListener('keydown', e => {
+        const tabs = $$('.settings-tab-btn', resumePillNav);
+        const current = tabs.indexOf(document.activeElement);
+        if (current < 0 || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+        e.preventDefault();
+        const direction = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -1 : 1;
+        const nextIndex = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (current + direction + tabs.length) % tabs.length;
+        tabs[nextIndex].focus();
+        tabs[nextIndex].click();
+      });
+    }
+
+    const resumeSearchInput = $('#resumeFilterInput');
+    const resumeClearBtn = $('#resumeFilterClear');
+    const resumeNoResults = $('#resumeNoResults');
+    if (resumeSearchInput) {
+      resumeSearchInput.addEventListener('input', () => {
+        const q = resumeSearchInput.value.toLowerCase().trim();
+        if (resumeClearBtn) resumeClearBtn.hidden = !q;
+        const cards = $$('#resumeContent .settings-card');
+        const groups = $$('#resumeContent .settings-group');
+
+        if (!q) {
+          cards.forEach(c => c.classList.remove('is-filtered-out'));
+          groups.forEach(g => g.classList.remove('is-hidden'));
+          if (resumeNoResults) resumeNoResults.hidden = true;
+          const activeBtn = $('#resumePillNav .settings-tab-btn.active');
+          if (activeBtn) switchResumeTab(activeBtn.dataset.tab);
+          return;
+        }
+
+        groups.forEach(g => g.classList.remove('is-hidden'));
+        let visibleCount = 0;
+        cards.forEach(card => {
+          const kw = (card.dataset.keywords || '').toLowerCase();
+          const txt = (card.textContent || '').toLowerCase();
+          const match = kw.includes(q) || txt.includes(q);
+          card.classList.toggle('is-filtered-out', !match);
+          if (match) visibleCount++;
+        });
+
+        groups.forEach(g => {
+          const hasVisible = $$('.settings-card:not(.is-filtered-out)', g).length > 0;
+          g.classList.toggle('is-hidden', !hasVisible);
+        });
+
+        if (resumeNoResults) resumeNoResults.hidden = visibleCount > 0;
+        scheduleResumeScrollSpy();
+      });
+
+      if (resumeClearBtn) {
+        resumeClearBtn.addEventListener('click', () => {
+          resumeSearchInput.value = '';
+          resumeSearchInput.dispatchEvent(new Event('input'));
+          resumeSearchInput.focus();
         });
       }
     }
@@ -1362,20 +1543,24 @@
     // 16. Keyboard shortcut: Press '/' or Cmd/Ctrl+K to jump to settings search
     document.addEventListener('keydown', e => {
       const settingsView = $('#view-settings');
-      if (!settingsView || settingsView.hidden) return;
+      const resumeView = $('#view-resume');
+      const inSettings = settingsView && !settingsView.hidden;
+      const inResume = resumeView && !resumeView.hidden;
+      if (!inSettings && !inResume) return;
 
       const activeTag = document.activeElement ? document.activeElement.tagName : '';
       const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
+      const targetInputId = inSettings ? 'settingsFilterInput' : 'resumeFilterInput';
 
       if ((e.key === '/' && !isInput) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k')) {
         e.preventDefault();
-        const inp = $('#settingsFilterInput');
+        const inp = $(`#${targetInputId}`);
         if (inp) {
           inp.focus();
           inp.select();
         }
-      } else if (e.key === 'Escape' && document.activeElement === $('#settingsFilterInput')) {
-        const inp = $('#settingsFilterInput');
+      } else if (e.key === 'Escape' && document.activeElement === $(`#${targetInputId}`)) {
+        const inp = $(`#${targetInputId}`);
         if (inp && inp.value) {
           inp.value = '';
           inp.dispatchEvent(new Event('input'));
@@ -1452,13 +1637,10 @@
 
     renderSkills(); renderExperience(); renderEducation();
 
-    const card = $('#intakeCard'), form = $('#profileForm');
     if (S.profileEmpty) {
-      form.before(card); card.style.marginTop = '';
       $('#intakeTitle').textContent = 'Start with your resume';
       $('#intakeSub').textContent = 'Upload a PDF, Word, text, or Markdown file. The app reads it into the fields below.';
     } else {
-      form.after(card); card.style.marginTop = '16px';
       $('#intakeTitle').textContent = 'Replace from a new file';
       $('#intakeSub').textContent = 'Upload a new resume to refill the fields above. Nothing changes until you save.';
     }
@@ -2152,7 +2334,7 @@
     const miss = (res.parse_report && res.parse_report.needs_review) || [];
     markDirty(miss.length ? `Check these fields, then save: ${miss.join(', ')}.` : 'Review the fields, then save your profile.');
     toast(`Read ${label}. Review the fields, then save.`);
-    $('#profileForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    scrollToResumeGroup('basics');
   }
 
   async function parsePasted() {
