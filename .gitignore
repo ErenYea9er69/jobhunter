@@ -32,6 +32,7 @@ data/digests/
 build/
 dist/
 *.spec
+.pytest_cache/
 
 # Environments and Secrets
 .env
