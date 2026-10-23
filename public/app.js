@@ -4583,19 +4583,6 @@
         ${j.is_sample ? '<span class="meta-pill meta-sample">Sample</span>' : ''}
         ${jobSources(j).length > 1 ? `<span class="meta-pill meta-sources">${jobSources(j).length} sites</span>` : ''}
       </div>
-      <div class="job-card-quick-actions" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);">
-        <span class="chip-easy-apply" style="font-size:11px;font-weight:700;color:#10b981;display:inline-flex;align-items:center;gap:3px;">
-          <span>⚡ Easy Apply & Autofill Ready</span>
-        </span>
-        <div style="display:flex;gap:6px;">
-          <span class="btn-autofill-copilot-card" role="button" tabindex="0" data-action="open-autofill-copilot" data-key="${esc(key)}" title="Open 1-Click Autofill Copilot for this job">
-            <span>⚡ Autofill</span>
-          </span>
-          <span class="btn-easy-apply-card" role="button" tabindex="0" data-action="easy-apply-now" data-key="${esc(key)}" title="1-Click Apply: Tailors resume, writes cover pitch, logs application">
-            <span>1-Click Apply</span>
-          </span>
-        </div>
-      </div>
     </button>`;
   }
 
@@ -4872,24 +4859,25 @@
 
         <div class="detail-actions-bar">
           <div class="detail-actions-main">
-            <button type="button" class="btn btn-primary" id="btnDetailEasyApply" data-action="easy-apply-now" data-key="${esc(key)}" style="background:#10b981;border-color:#10b981;color:#ffffff;" title="Apply in 1 Click: Auto-tailors resume, drafts customized pitch, logs application with 7-day follow-up">
+            <button type="button" class="btn btn-primary btn-easy-apply" id="btnDetailEasyApply" data-action="easy-apply-now" data-key="${esc(key)}" style="background:#10b981;border-color:#10b981;color:#ffffff;" title="Apply in 1 Click: Auto-tailors resume, drafts customized pitch, logs application with 7-day follow-up">
               <span>⚡ 1-Click Apply</span>
             </button>
-            <button type="button" class="btn btn-secondary" id="btnDetailAutofillCopilot" data-action="open-autofill-copilot" data-key="${esc(key)}" title="Open 1-Click Application Autofill Copilot: Injects grounded fields into Greenhouse, Lever, Ashby, Workday">
-              <span>⚡ Autofill Copilot</span>
+            <button type="button" class="btn btn-secondary btn-copilot-action" id="btnDetailAutofillCopilot" data-action="open-autofill-copilot" data-key="${esc(key)}" title="Open 1-Click Application Autofill &amp; Solver side drawer">
+              <svg class="i" style="width:13px;height:13px;"><use href="#i-board"/></svg><span>Autofill Copilot</span>
             </button>
             ${apply ? `
-              <a class="btn btn-apply-primary" href="${esc(apply)}" target="_blank" rel="noopener noreferrer">
+              <a class="btn btn-outline-apply" href="${esc(apply)}" target="_blank" rel="noopener noreferrer" title="Open official job application in a new tab">
                 ${ico('arrow-up-right')}<span>Apply on ${esc(bestApplySource(j).source || 'Official Site')}</span>
               </a>
             ` : ''}
-            <button type="button" class="btn btn-primary btn-copilot" data-action="job-strategy">
+            <div class="detail-action-divider" role="separator" aria-orientation="vertical"></div>
+            <button type="button" class="btn btn-secondary" data-action="job-strategy" title="AI match breakdown, talking points &amp; interview angles">
               ${ico('bolt')}<span>AI Strategy</span>
             </button>
-            <button type="button" class="btn btn-secondary" data-action="job-tailor">
+            <button type="button" class="btn btn-secondary" data-action="job-tailor" title="Tailor resume bullets specifically for this job description">
               ${ico('file')}<span>Tailor resume</span>
             </button>
-            <button type="button" class="btn btn-secondary ${saved ? 'is-saved' : ''}" data-action="job-save" ${saved ? 'disabled' : ''}>
+            <button type="button" class="btn btn-secondary ${saved ? 'is-saved' : ''}" data-action="job-save" ${saved ? 'disabled' : ''} title="${saved ? 'Already saved' : 'Save job'}">
               ${ico(saved ? 'bookmark-fill' : 'bookmark')}<span>${saved ? 'Saved' : 'Save'}</span>
             </button>
             <button type="button" class="btn ${saved && saved.status === 'applied' ? 'btn-applied' : 'btn-outline-success'}" data-action="mark-applied">
@@ -4897,30 +4885,21 @@
             </button>
           </div>
           <div class="detail-actions-sub">
-            <button type="button" class="btn btn-ghost btn-sm" data-action="job-hunt" title="Tailor your resume, write a cover letter and prep notes, then save it all to Applications">
-              ${ico('sparkles')}<span>Prepare everything</span>
-            </button>
-            ${!j.enriched ? `
-              <span class="sub-action-sep">•</span>
-              <button type="button" class="btn btn-ghost btn-sm" data-action="job-enrich-now" title="Fetch complete details from original posting">
-                ${ico('refresh')}<span>Enrich</span>
+            <span class="detail-action-summary-hint">
+              <span class="hint-bullet">⚡</span>
+              <span>1-Click Apply auto-tailors your resume, drafts a custom cover pitch, and tracks in your pipeline.</span>
+            </span>
+            <div class="detail-sub-links">
+              <button type="button" class="btn btn-ghost btn-xs" data-action="job-hunt" title="Tailor your resume, write a cover letter and prep notes, then save it all to Applications">
+                ${ico('sparkles')}<span>Prepare everything</span>
               </button>
-            ` : ''}
-          </div>
-        </div>
-
-        <div class="detail-easy-apply-banner">
-          <div class="detail-easy-apply-info">
-            <h4><span>⚡ 1-Click Application Autofill & Easy Apply</span></h4>
-            <p>Save ~15 min per application. Automatically injects your grounded profile, LinkedIn, and tailored pitch directly into the ATS application form.</p>
-          </div>
-          <div class="detail-easy-apply-btns">
-            <button type="button" class="btn btn-secondary btn-sm" id="btnBannerAutofillCopilot" data-action="open-autofill-copilot" data-key="${esc(key)}">
-              <span>⚡ Autofill Copilot</span>
-            </button>
-            <button type="button" class="btn btn-primary btn-sm" id="btnBannerEasyApply" data-action="easy-apply-now" data-key="${esc(key)}" style="background:#10b981;border-color:#10b981;color:#fff;">
-              <span>⚡ 1-Click Apply Now</span>
-            </button>
+              ${!j.enriched ? `
+                <span class="sub-action-sep">•</span>
+                <button type="button" class="btn btn-ghost btn-xs" data-action="job-enrich-now" title="Fetch complete details from original posting">
+                  ${ico('refresh')}<span>Enrich</span>
+                </button>
+              ` : ''}
+            </div>
           </div>
         </div>
 
@@ -7804,17 +7783,77 @@
     'dialog-close': el => { const d = el.closest('dialog'); if (d) d.close(); }
   };
 
+  function closeAutofillCopilot() {
+    const drawer = $('#autofillModal');
+    if (!drawer) return;
+    drawer.classList.remove('is-open');
+    drawer.setAttribute('aria-hidden', 'true');
+    setTimeout(() => {
+      drawer.hidden = true;
+      drawer.setAttribute('hidden', '');
+      drawer.style.display = 'none';
+    }, 280);
+  }
+
   // ------------------------------------------------------------------ ⚡ Autofill & Easy Apply Copilot
+  function getLocalAutofillFallback(profile, job) {
+    const p = profile || {};
+    const name = (p.name || 'Candidate').trim();
+    const parts = name.split(/\s+/);
+    const firstName = parts[0] || '';
+    const lastName = parts.slice(1).join(' ') || '';
+    const loc = p.location || '';
+    const locParts = loc.split(',').map(s => s.trim()).filter(Boolean);
+    const city = locParts[0] || loc || '';
+    const country = locParts.length > 1 ? locParts[locParts.length - 1] : 'United States';
+    const role = p.target_title || (p.target_roles && p.target_roles[0]) || (job ? cleanTitle(job.title) : 'Professional');
+    const exp = (p.experience && p.experience[0]) || {};
+    const edu = (p.education && p.education[0]) || {};
+
+    return {
+      full_name: name,
+      first_name: firstName,
+      last_name: lastName,
+      email: p.email || '',
+      phone: p.phone || '',
+      location: loc,
+      city: city,
+      country: country,
+      linkedin_url: p.linkedin || '',
+      github_url: p.github || '',
+      portfolio_url: p.portfolio || p.website || '',
+      current_role: exp.title || role,
+      current_company: exp.company || 'Confidential',
+      desired_salary: p.min_salary ? `$${Number(p.min_salary).toLocaleString()} / year` : 'Competitive / Flexible',
+      notice_period: p.notice_period || '2 weeks',
+      work_authorization: p.work_authorization || 'Authorized to work',
+      visa_sponsorship: p.visa_sponsorship ? 'Yes' : 'No',
+      degree: edu.degree || 'Bachelor of Science',
+      institution: edu.school || edu.institution || 'University',
+      skills_csv: (p.skills || []).slice(0, 8).join(', '),
+      cover_pitch: `I am writing to express my strong enthusiasm for the ${job ? cleanTitle(job.title) : 'role'} at ${job ? job.company : 'your team'}. With demonstrated experience in ${role} and technical depth across ${(p.skills || ['modern systems']).slice(0, 3).join(', ')}, I am excited to contribute immediately to your goals.`,
+      cover_letter: p.cover_letter || '',
+      summary: p.summary || '',
+      detected_platform: 'standard'
+    };
+  }
+
   // ------------------------------------------------------------------ ⚡ Autofill & Easy Apply Copilot
   async function openAutofillCopilot(job) {
     if (!job) return;
     S.activeAutofillJob = job;
-    const modal = $('#autofillModal');
-    if (!modal) return;
+    const drawer = $('#autofillModal');
+    if (!drawer) return;
 
-    modal.hidden = false;
-    modal.removeAttribute('hidden');
-    modal.style.display = 'flex';
+    drawer.hidden = false;
+    drawer.removeAttribute('hidden');
+    drawer.setAttribute('aria-hidden', 'false');
+    drawer.style.display = 'flex';
+    requestAnimationFrame(() => {
+      drawer.classList.add('is-open');
+    });
+    const scrollBody = $('.jh-drawer-scroll-body', drawer) || $('.jh-modal-body', drawer);
+    if (scrollBody) scrollBody.scrollTop = 0;
     const title = $('#afModalTitle');
     const sub = $('#afModalSubtitle');
     const badge = $('#afPlatformBadge');
@@ -7841,6 +7880,10 @@
     // Reset platform selector to auto
     const platSel = $('#afPlatformSelect');
     if (platSel) platSel.value = 'auto';
+
+    // Immediately render local profile fallback so Tabs 2 and 4 are interactive without delay
+    S.autofillPayload = getLocalAutofillFallback(S.profile, job);
+    updateSelectedPlatformView('auto');
 
     try {
       const res = await api('/api/autofill/payload', {
@@ -7905,10 +7948,11 @@
     // 2. Update Mandatory Rules List
     const mandList = $('#afReqMandatoryList');
     if (mandList) {
-      const rules = pInfo.mandatory_rules || [
-        'Full Name or Discrete First/Last Name',
-        'Email Address & Valid Phone Number',
-        'Resume Attachment / Text'
+      const rules = (pInfo && Array.isArray(pInfo.mandatory_rules) && pInfo.mandatory_rules.length) ? pInfo.mandatory_rules : [
+        'Full Legal Name or Discrete First/Last Name',
+        'Email Address & Valid Contact Phone Number',
+        'Resume Document / File Attachment',
+        'LinkedIn Profile URL'
       ];
       mandList.innerHTML = rules.map(r => `<li>${esc(r)}</li>`).join('');
     }
@@ -7942,6 +7986,9 @@
 
     activeKey = activeKey || p.detected_platform || 'standard';
 
+    const locStr = [p.city, p.country].filter(Boolean).join(', ') || p.location || '';
+    const eduStr = [p.degree, p.institution].filter(Boolean).join(' @ ') || '';
+
     const categories = [
       {
         title: '👤 Personal Contact & Identity',
@@ -7951,7 +7998,7 @@
           { k: 'Last Name', v: p.last_name, siteNote: activeKey === 'greenhouse' ? 'Greenhouse: #last_name' : activeKey === 'workday' ? 'Workday: legalName' : '' },
           { k: 'Email', v: p.email, siteNote: 'All ATSs' },
           { k: 'Phone', v: p.phone, siteNote: activeKey === 'jobvite' ? 'Jobvite: cellPhone' : 'All ATSs' },
-          { k: 'Location / City', v: `${p.city}, ${p.country}`, siteNote: activeKey === 'workday' ? 'Workday: addressSection' : '' }
+          { k: 'Location / City', v: locStr, siteNote: activeKey === 'workday' ? 'Workday: addressSection' : '' }
         ]
       },
       {
@@ -7971,7 +8018,7 @@
           { k: 'Notice Period', v: p.notice_period, siteNote: 'Availability' },
           { k: 'Work Authorization', v: p.work_authorization, siteNote: activeKey === 'workday' ? 'Workday Radio: Yes' : 'Legal Auth' },
           { k: 'Visa Sponsorship', v: p.visa_sponsorship, siteNote: 'Radio: No' },
-          { k: 'Education', v: `${p.degree} @ ${p.institution}`, siteNote: 'Degree' },
+          { k: 'Education', v: eduStr, siteNote: 'Degree' },
           { k: 'Top Core Skills', v: p.skills_csv, siteNote: 'Skills' }
         ]
       },
@@ -7987,21 +8034,25 @@
 
     let html = '';
     categories.forEach(cat => {
-      html += `<div class="af-field-category-title">${esc(cat.title)}</div>`;
-      cat.fields.forEach(c => {
-        html += `
-          <div class="af-field-tile${c.full ? ' af-tile-full' : ''}" data-copy-val="${esc(c.v || '')}" style="${c.full ? 'grid-column: 1 / -1;' : ''}">
-            <div class="af-field-tile-head">
-              <span class="af-tile-k">
-                ${esc(c.k)}
-                ${c.siteNote ? `<span class="af-field-site-tag">${esc(c.siteNote)}</span>` : ''}
-              </span>
-              <span class="af-tile-copy-icon">${ico('copy')}</span>
-            </div>
-            <div class="af-tile-v" style="${c.full ? 'white-space: pre-wrap; max-height: 85px; overflow-y: auto; font-weight: normal; font-size: 12.5px; line-height: 1.5;' : ''}">${esc(c.v || '—')}</div>
+      html += `
+        <div class="af-category-section">
+          <div class="af-field-category-title">${esc(cat.title)}</div>
+          <div class="af-fields-grid">
+            ${cat.fields.map(c => `
+              <div class="af-field-tile${c.full ? ' af-tile-full' : ''}${!c.v ? ' is-empty' : ''}" data-field-name="${esc(c.k)}" data-copy-val="${esc(c.v || '')}" style="${c.full ? 'grid-column: 1 / -1;' : ''}">
+                <div class="af-field-tile-head">
+                  <span class="af-tile-k">
+                    ${esc(c.k)}
+                    ${c.siteNote ? `<span class="af-field-site-tag">${esc(c.siteNote)}</span>` : ''}
+                  </span>
+                  <span class="af-tile-copy-icon">${c.v ? ico('copy') : ''}</span>
+                </div>
+                <div class="af-tile-v" style="${c.full ? 'white-space: pre-wrap; max-height: 85px; overflow-y: auto; font-weight: normal; font-size: 12.5px; line-height: 1.5;' : ''}">${esc(c.v || 'Not provided in resume')}</div>
+              </div>
+            `).join('')}
           </div>
-        `;
-      });
+        </div>
+      `;
     });
 
     container.innerHTML = html;
@@ -8009,7 +8060,11 @@
     $$('.af-field-tile', container).forEach(tile => {
       tile.addEventListener('click', async () => {
         const val = tile.dataset.copyVal;
-        if (!val) return;
+        const name = tile.dataset.fieldName || 'Field';
+        if (!val) {
+          toast(`"${name}" is not set in your resume. You can update it in Resume Settings.`, 'info');
+          return;
+        }
         try {
           await navigator.clipboard.writeText(val);
           tile.classList.add('is-copied');
@@ -8029,8 +8084,16 @@
 
   function renderAutofillRequirements(info) {
     const list = $('#afReqChecklist');
-    if (!list || !info) return;
-    const reqs = info.key_requirements || [];
+    if (!list) return;
+    const reqs = (info && Array.isArray(info.key_requirements) && info.key_requirements.length) ? info.key_requirements : [
+      { label: 'Candidate Legal Name', selector: 'name, first_name, last_name', notes: 'Greenhouse/Lever standard name fields', status: 'Ready', required: true },
+      { label: 'Email Address & Phone', selector: 'email, phone, tel', notes: 'Direct recruiter communication channel', status: 'Ready', required: true },
+      { label: 'Resume / CV Document', selector: 'resume, file, attachment', notes: 'Formatted for ATS parsing and keyword extraction', status: 'Ready', required: true },
+      { label: 'LinkedIn Profile URL', selector: 'urls[LinkedIn], linkedin', notes: 'Verified candidate professional history', status: 'Ready', required: true },
+      { label: 'Tailored Pitch / Cover Note', selector: 'cover_letter, comments, notes', notes: 'Auto-customized to role description and requirements', status: 'Ready', required: false },
+      { label: 'Work Authorization & Notice', selector: 'work_authorization, notice_period', notes: 'Legal work status and target start timeline', status: 'Ready', required: true }
+    ];
+
     list.innerHTML = reqs.map(r => {
       const isMand = r.required !== false;
       return `
@@ -8130,7 +8193,11 @@
     if (bd) bd.addEventListener('click', closeDetailSheet);
 
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { closeMenu(); closeDetailSheet(); }
+      if (e.key === 'Escape') {
+        closeMenu();
+        closeDetailSheet();
+        closeAutofillCopilot();
+      }
     });
     window.addEventListener('hashchange', route);
     window.addEventListener('beforeunload', e => { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
@@ -8980,18 +9047,19 @@
 
     const modalAf = $('#autofillModal');
     if (modalAf) {
-      const closeModal = () => {
-        modalAf.hidden = true;
-        modalAf.setAttribute('hidden', '');
-        modalAf.style.display = 'none';
-      };
       modalAf.addEventListener('click', e => {
-        if (e.target.id === 'autofillModal') closeModal();
+        if (e.target.id === 'autofillModal' || e.target.id === 'afDrawerAutofillBackdrop') closeAutofillCopilot();
       });
       const btnCloseTop = $('#afModalCloseBtn');
-      if (btnCloseTop) btnCloseTop.addEventListener('click', closeModal);
+      if (btnCloseTop) btnCloseTop.addEventListener('click', closeAutofillCopilot);
       const btnCloseBtm = $('#afModalBottomClose');
-      if (btnCloseBtm) btnCloseBtm.addEventListener('click', closeModal);
+      if (btnCloseBtm) btnCloseBtm.addEventListener('click', closeAutofillCopilot);
+      const btnDrawerApply = $('#afBtnEasyApplyInDrawer');
+      if (btnDrawerApply) {
+        btnDrawerApply.addEventListener('click', async () => {
+          if (S.activeAutofillJob) await executeEasyApply(S.activeAutofillJob);
+        });
+      }
 
       // Tab switching
       $$('.jh-tab-btn', modalAf).forEach(btn => {

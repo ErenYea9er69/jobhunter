@@ -4775,7 +4775,7 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
 .danger-zone { display: flex; justify-content: space-between; align-items: center; gap: 20px; border-color: var(--danger); }
 
 /* 11. Dialogs and toasts --------------------------------------------------- */
-.dialog { border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--surface); color: var(--text); padding: 22px 24px; width: min(640px, calc(100vw - 32px)); box-shadow: var(--shadow); }
+.dialog { border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--surface); color: var(--text); padding: 22px 24px; width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; box-shadow: var(--shadow); }
 .dialog-sm { width: min(460px, calc(100vw - 32px)); }
 .dialog::backdrop { background: var(--scrim); }
 .dialog-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
@@ -9951,6 +9951,124 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   display: none !important;
 }
 
+/* ==========================================================================
+   ⚡ 1-Click Application Autofill & Easy Apply Side Drawer
+   ========================================================================== */
+.jh-autofill-drawer.af-drawer-overlay {
+  z-index: 100000;
+}
+
+.jh-autofill-drawer .af-drawer-panel,
+.jh-autofill-drawer-panel {
+  width: 840px;
+  max-width: 95vw;
+  height: 100vh;
+  max-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.jh-autofill-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  flex-shrink: 0 !important;
+}
+
+:root[data-theme="dark"] .jh-autofill-drawer-header {
+  background: #121215;
+  border-bottom-color: #26262D;
+}
+
+.jh-autofill-drawer .af-platform-bar {
+  flex-shrink: 0 !important;
+}
+
+.jh-autofill-drawer .jh-modal-tabs {
+  flex-shrink: 0 !important;
+  min-height: 48px !important;
+  height: 48px !important;
+  display: flex !important;
+  align-items: stretch !important;
+  padding: 0 24px !important;
+  gap: 6px !important;
+  background: var(--surface) !important;
+  border-bottom: 1px solid var(--line) !important;
+  overflow-x: auto !important;
+  box-sizing: border-box !important;
+}
+
+.jh-autofill-drawer .jh-tab-btn {
+  height: 48px !important;
+  padding: 0 16px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: var(--text-2) !important;
+  background: transparent !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.jh-autofill-drawer .jh-tab-btn:hover {
+  color: var(--text-1) !important;
+  background: rgba(0, 0, 0, 0.03) !important;
+}
+
+.jh-autofill-drawer .jh-tab-btn.is-active {
+  color: #10b981 !important;
+  border-bottom-color: #10b981 !important;
+  font-weight: 700 !important;
+}
+
+:root[data-theme="dark"] .jh-autofill-drawer .jh-modal-tabs {
+  background: #141419 !important;
+  border-bottom-color: #26262D !important;
+}
+
+:root[data-theme="dark"] .jh-autofill-drawer .jh-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+:root[data-theme="dark"] .jh-autofill-drawer .jh-tab-btn.is-active {
+  color: #34d399 !important;
+  border-bottom-color: #34d399 !important;
+}
+
+.jh-drawer-scroll-body,
+.jh-autofill-drawer .jh-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  overflow-y: auto;
+  padding: 24px 28px 60px;
+  overscroll-behavior: contain;
+}
+
+.jh-drawer-footer {
+  padding: 14px 24px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface);
+  flex-shrink: 0 !important;
+}
+
+:root[data-theme="dark"] .jh-drawer-footer {
+  background: #121215;
+  border-top-color: #26262D;
+}
+
 .jh-autofill-modal {
   width: 100%;
   max-width: 820px;
@@ -10411,6 +10529,32 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   white-space: pre-wrap;
 }
 
+.af-category-section {
+  margin-bottom: 24px;
+}
+
+.af-field-category-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-1);
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.af-field-tile.is-empty {
+  opacity: 0.65;
+  border-style: dashed;
+}
+
+.af-field-tile.is-empty:hover {
+  opacity: 0.95;
+  border-color: var(--accent, #6366f1);
+}
+
 .af-req-card {
   padding: 20px;
   border-radius: 12px;
@@ -10422,7 +10566,7 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .af-req-platform-icon {
@@ -10450,6 +10594,67 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   margin: 0;
 }
 
+.af-style-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--accent, #6366f1);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.af-mandatory-box {
+  margin: 14px 0;
+  padding: 12px 14px;
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.af-mandatory-head {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #d97706;
+  margin-bottom: 6px;
+}
+
+.af-mandatory-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-1);
+  line-height: 1.6;
+}
+
+.af-style-details-box {
+  margin: 14px 0 18px;
+  padding: 12px 14px;
+  background: var(--surface-2, rgba(0, 0, 0, 0.02));
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.af-style-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12.5px;
+}
+
+.af-style-k {
+  color: var(--text-2);
+  font-weight: 550;
+}
+
+.af-style-v {
+  color: var(--text-1);
+  font-weight: 650;
+}
+
 .af-checklist {
   display: flex;
   flex-direction: column;
@@ -10460,9 +10665,33 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 12px 14px;
   border-radius: 8px;
   background: var(--surface-2, rgba(0, 0, 0, 0.02));
+  border: 1px solid var(--line);
+}
+
+.af-req-badge-mandatory {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.af-req-badge-optional {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(100, 116, 139, 0.12);
+  color: var(--text-3);
   border: 1px solid var(--line);
 }
 
@@ -10587,6 +10816,83 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+/* Detail Actions Clean Layout */
+.detail-action-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+  margin: 0 4px;
+  align-self: center;
+}
+
+:root[data-theme="dark"] .detail-action-divider {
+  background: #2a2a35;
+}
+
+.detail-action-summary-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.detail-action-summary-hint .hint-bullet {
+  color: #10b981;
+  font-weight: 700;
+}
+
+.detail-sub-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-copilot-action {
+  border-color: rgba(99, 102, 241, 0.4) !important;
+  color: #6366f1 !important;
+}
+
+.btn-copilot-action:hover {
+  background: rgba(99, 102, 241, 0.1) !important;
+  border-color: #6366f1 !important;
+}
+
+:root[data-theme="dark"] .btn-copilot-action {
+  color: #818cf8 !important;
+  border-color: rgba(129, 140, 248, 0.4) !important;
+}
+
+:root[data-theme="dark"] .btn-copilot-action:hover {
+  background: rgba(99, 102, 241, 0.15) !important;
+  border-color: #818cf8 !important;
+}
+
+.btn-outline-apply {
+  background: transparent !important;
+  color: var(--text-1) !important;
+  border: 1px solid var(--line-strong) !important;
+  text-decoration: none !important;
+}
+
+.btn-outline-apply:hover {
+  background: var(--surface-2) !important;
+  border-color: var(--text-2) !important;
+}
+
+.meta-pill.meta-autofill-ready {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] .meta-pill.meta-autofill-ready {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.35);
 }
 
 /* ⚡ Platform Intelligence Switcher & Readiness Bar */

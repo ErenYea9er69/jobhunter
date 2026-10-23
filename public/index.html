@@ -3245,21 +3245,31 @@
     </aside>
   </div>
 
-  <!-- ⚡ 1-Click Application Autofill & Easy Apply Copilot Modal -->
-  <div id="autofillModal" class="jh-modal-backdrop" hidden>
-    <div class="jh-modal-window jh-autofill-modal" role="dialog" aria-modal="true" aria-labelledby="afModalTitle">
-      <div class="jh-modal-header">
-        <div class="jh-modal-title-wrap">
-          <div class="jh-modal-badge-row">
-            <span class="jh-chip jh-chip-accent">⚡ 1-Click Autofill Copilot</span>
-            <span class="jh-chip jh-chip-platform" id="afPlatformBadge">Detecting ATS...</span>
-            <span class="jh-chip jh-chip-grounded">✓ 100% Grounded</span>
+  <!-- ⚡ 1-Click Application Autofill & Easy Apply Copilot Slide-Over Side Drawer -->
+  <div id="autofillModal" class="af-drawer-overlay jh-autofill-drawer" hidden aria-hidden="true">
+    <div class="af-drawer-backdrop" id="afDrawerAutofillBackdrop"></div>
+    <aside class="af-drawer-panel jh-autofill-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="afModalTitle">
+      <header class="af-drawer-header jh-autofill-drawer-header">
+        <div class="af-header-left">
+          <button type="button" class="af-btn-collapse" id="afModalCloseBtn" aria-label="Close Autofill Drawer">
+            <svg class="af-chevron-icon" viewBox="0 0 20 20" fill="none"><path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div>
+            <div class="jh-modal-badge-row" style="margin-bottom:4px;">
+              <span class="jh-chip jh-chip-accent">⚡ 1-Click Autofill Copilot</span>
+              <span class="jh-chip jh-chip-platform" id="afPlatformBadge">Detecting ATS...</span>
+              <span class="jh-chip jh-chip-grounded">✓ 100% Grounded</span>
+            </div>
+            <h2 class="af-header-title" id="afModalTitle" style="font-size:18px;margin:0;">1-Click Application Autofill</h2>
+            <p class="jh-modal-subtitle" id="afModalSubtitle" style="font-size:12px;color:var(--text-2);margin:2px 0 0;">Save 15 min per application. Automatically maps ATS fields, handles controlled inputs, and inserts tailored responses.</p>
           </div>
-          <h2 class="jh-modal-title" id="afModalTitle">1-Click Application Autofill</h2>
-          <p class="jh-modal-subtitle" id="afModalSubtitle">Save 15 min per application. Automatically maps ATS fields, handles controlled inputs, and inserts tailored responses.</p>
         </div>
-        <button type="button" class="jh-modal-close-btn" id="afModalCloseBtn" aria-label="Close modal">&times;</button>
-      </div>
+        <div class="af-header-right" style="display:flex;align-items:center;gap:8px;">
+          <button type="button" class="af-btn-confirm" id="afBtnEasyApplyInDrawer">
+            <span>⚡ Apply &amp; Track</span>
+          </button>
+        </div>
+      </header>
 
       <!-- ATS Platform Intelligence & Manual Switcher Bar -->
       <div class="af-platform-bar" id="afPlatformBar">
@@ -3306,7 +3316,7 @@
         </button>
       </div>
 
-      <div class="jh-modal-body">
+      <div class="jh-modal-body jh-drawer-scroll-body" style="flex:1 1 auto;min-height:0;overflow-y:auto;padding:24px 28px;overscroll-behavior:contain;">
         <!-- TAB 1: Bookmarklet -->
         <div class="jh-tab-pane is-active" id="afPaneBookmarklet">
           <div class="af-hero-card">
@@ -3346,7 +3356,7 @@
             </div>
             <div class="af-feature-card">
               <span class="af-feat-icon">🛡️</span>
-              <h4>EEO & Disclosures</h4>
+              <h4>EEO &amp; Disclosures</h4>
               <p>Selects "Decline to self-identify" / "Prefer not to say" on demographic surveys and answers work authorization "Yes".</p>
             </div>
           </div>
@@ -3357,7 +3367,7 @@
           <div class="af-section-intro">
             <p>Click any card to copy the value directly into your clipboard with instant formatting.</p>
           </div>
-          <div class="af-fields-grid" id="afFieldsContainer">
+          <div class="af-fields-container" id="afFieldsContainer">
             <!-- Dynamically populated -->
           </div>
         </div>
@@ -3376,7 +3386,7 @@
                 <span class="af-presets-title">Quick Presets:</span>
                 <button type="button" class="af-preset-btn" data-preset="why_us">Why This Company?</button>
                 <button type="button" class="af-preset-btn" data-preset="accomplishment">Greatest Accomplishment</button>
-                <button type="button" class="af-preset-btn" data-preset="salary">Salary & Notice</button>
+                <button type="button" class="af-preset-btn" data-preset="salary">Salary &amp; Notice</button>
                 <button type="button" class="af-preset-btn" data-preset="tech_stack">Stack Experience</button>
               </div>
 
@@ -3384,7 +3394,7 @@
                 <div class="af-tone-picker">
                   <label for="afSolverTone">Tone:</label>
                   <select id="afSolverTone" class="af-tone-select">
-                    <option value="direct" selected>Direct & Confident</option>
+                    <option value="direct" selected>Direct &amp; Confident</option>
                     <option value="technical">Technical Rigor</option>
                     <option value="storyteller">Impact / Narrative</option>
                     <option value="concise">Ultra-Concise</option>
@@ -3430,7 +3440,7 @@
             <!-- Mandatory Rules Highlight Box -->
             <div class="af-mandatory-box" id="afReqMandatoryBox">
               <div class="af-mandatory-head">
-                <span>⚠️ Site-Mandated Rules & Constraints:</span>
+                <span>⚠️ Site-Mandated Rules &amp; Constraints:</span>
               </div>
               <ul class="af-mandatory-list" id="afReqMandatoryList">
                 <!-- Dynamically populated -->
@@ -3453,7 +3463,7 @@
               </div>
             </div>
 
-            <h5 style="margin:18px 0 10px;font-size:13px;font-weight:700;color:var(--text-1);">Detailed Field Requirements & Readiness:</h5>
+            <h5 style="margin:18px 0 10px;font-size:13px;font-weight:700;color:var(--text-1);">Detailed Field Requirements &amp; Readiness:</h5>
             <div class="af-checklist" id="afReqChecklist">
               <!-- Rendered dynamically -->
             </div>
@@ -3461,17 +3471,17 @@
         </div>
       </div>
       
-      <div class="jh-modal-footer">
-        <button type="button" class="btn btn-secondary" id="afModalBottomClose">Close</button>
-        <button type="button" class="btn btn-primary" id="afBtnEasyApplyInModal">
-          <span>⚡ Easy Apply & Save to Tracker</span>
+      <footer class="jh-drawer-footer" style="padding:14px 24px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;background:var(--surface);flex-shrink:0;">
+        <button type="button" class="btn btn-secondary" id="afModalBottomClose">Close Drawer</button>
+        <button type="button" class="btn btn-primary" id="afBtnEasyApplyInModal" style="background:#10b981;border-color:#10b981;color:#fff;">
+          <span>⚡ 1-Click Apply &amp; Save to Tracker</span>
         </button>
-      </div>
-    </div>
+      </footer>
+    </aside>
   </div>
 
   <div class="toasts" id="toastContainer" role="status" aria-live="polite"></div>
 
-  <script src="app.js?v=5.2"></script>
+  <script src="app.js?v=5.3"></script>
 </body>
 </html>
