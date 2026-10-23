@@ -739,15 +739,16 @@ def generate_bookmarklet_code(fields):
     return script
 
 
-SCREENING_SOLVER_PROMPT = """You are a candid, elite career advocate writing answers to job application screening questions.
-Write a clear, concise, and persuasive response (60-120 words) for the candidate.
+SCREENING_SOLVER_PROMPT = """You are an expert technical career advocate and hiring consultant (2026/2027 standard).
+You write authentic, high-signal, and strictly grounded answers (60-120 words) to job application screening questions.
 
-CRITICAL TRUTH & GROUNDING CONSTRAINTS:
-1. Ground every claim, technology, and metric STRICTLY on the candidate's verified profile facts.
-2. DO NOT fabricate any employer, date, degree, numerical metric, or technology not found in the profile.
-3. If the question asks about a technology not present in the candidate's profile, be transparent and state the architectural foundation or conceptual familiarity honestly.
-4. Tone: Confident, articulate, professional, and directly addressing the employer's operational context.
-5. Return clean raw text without quotes, markdown headers, or placeholders.
+CRITICAL TRUTH & RECRUITER 2026/2027 CONSTRAINTS:
+1. Ground every claim, technology, and metric STRICTLY on the candidate's verified profile facts. Zero hallucinations.
+2. Individual Ownership: Highlight what the candidate personally designed, built, or delivered. Avoid vague "we" statements.
+3. STAR-L Structure: Situation, Task, Action, Result, Learning in 2-4 punchy sentences.
+4. Anti-AI Slop: Strictly avoid generic filler phrases ("fast-paced environment", "passionate problem solver", "testament to").
+5. Transparent Gaps: If asked about an unlisted technology, state foundational familiarity or parallel architectural experience honestly.
+6. Clean Text Output: Return pure plain text only. Do NOT use markdown asterisks (**), headers (#), quotation marks (""), or bullet characters.
 """
 
 
@@ -805,6 +806,18 @@ def solve_screening_question(question, profile, job=None, max_words=120, tone="d
     # Attempt real LLM generation if available
     cfg = refit.get_active_ai_config()
     if refit.llm_available():
+        import pathlib
+        prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "screening_question_solver.md"
+        system_prompt = SCREENING_SOLVER_PROMPT
+        try:
+            if prompt_path.exists():
+                text_content = prompt_path.read_text(encoding="utf-8")
+                m = re.search(r"```markdown\n(.*?)\n```", text_content, re.S)
+                if m:
+                    system_prompt = m.group(1)
+        except Exception:
+            pass
+
         user_prompt = json.dumps({
             "question": question,
             "job_posting": {
@@ -825,8 +838,16 @@ def solve_screening_question(question, profile, job=None, max_words=120, tone="d
             }
         }, indent=2)
         try:
-            raw_res = refit._call_llm(SCREENING_SOLVER_PROMPT, user_prompt, cfg)
-            cleaned = clean_text(raw_res).strip()
+            raw_res = refit._call_llm(system_prompt, user_prompt, cfg)
+            parsed_json = refit._parse_json_llm_response(raw_res)
+            if isinstance(parsed_json, dict) and "answer" in parsed_json:
+                cleaned = clean_text(str(parsed_json["answer"])).strip()
+            else:
+                cleaned = clean_text(raw_res).strip()
+            # Clean enclosing quotes or markdown symbols that could break form inputs
+            cleaned = re.sub(r"^\s*[\"']+|[\"']+\s*$", "", cleaned).strip()
+            cleaned = re.sub(r"[*#_`]", "", cleaned).strip()
+
             # Verify no hallucinations against candidate profile
             check = refit.ungrounded(profile, cleaned.replace(title, "").replace(company, ""))
             if not check["skills"] and not check["numbers"]:

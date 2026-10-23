@@ -8,8 +8,14 @@ POWER_VERBS = {
     "designed", "deployed", "developed", "built", "mentored", "implemented", "reduced", "increased", "launched", "created",
     "improved", "migrated", "delivered", "managed", "drove", "established", "analyzed", "negotiated", "trained", "wrote",
     "owned", "shipped", "cut", "raised", "grew", "coordinated", "introduced", "set", "tuned", "added", "maintained",
+    "decoupled", "benchmarked", "containerized", "fine-tuned", "instrumented", "profiled", "hardened", "isolated",
+    "standardized", "provisioned", "configured", "modularized", "centralized", "parallelized", "cached", "secured", "transformed",
 }
-METRIC = re.compile(r"\d+[\d,.]*\s?%|\$\s?\d|\b\d{2,}[\d,]*\b|\b\d+x\b|\b\d+\+?\s*(?:users|clients|engineers|teams|days|hours|customers|requests|people|patients|accounts)\b", re.I)
+METRIC = re.compile(
+    r"\d+[\d,.]*\s?%|\$\s?\d|\b\d{2,}[\d,]*\b|\b\d+x\b|"
+    r"\b\d+[\d,.]*\s?(?:ms|s|sec|seconds|min|minutes|hours|days|weeks|months|tps|rps|qps|sla|slo|uptime|p95|p99|gb|tb|pb|mb|nodes|pods|clusters|instances|services|apis|events|queries|records|commits|deployments|prs|users|clients|engineers|teams|customers|requests|people|patients|accounts|arr|mrr)\b",
+    re.I
+)
 
 
 def _resume_text(r):

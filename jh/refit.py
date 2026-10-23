@@ -218,17 +218,42 @@ def llm_available():
     return get_active_ai_config()["provider"] in ("gemini", "openai", "anthropic", "deepseek", "groq", "mistral", "ollama", "custom")
 
 
+def _parse_json_llm_response(raw_text):
+    """Robustly parse JSON from LLM outputs, stripping XML analysis tags, reasoning blocks, and markdown backticks."""
+    if not raw_text or not isinstance(raw_text, str):
+        return None
+    # Strip <analysis>...</analysis> or reasoning blocks
+    cleaned = re.sub(r"<analysis>.*?</analysis>", "", raw_text, flags=re.S).strip()
+    # Strip markdown ```json ... ``` blocks
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.MULTILINE).strip()
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
+    m = re.search(r"\{.*\}", cleaned, re.S)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:
+            pass
+    return None
+
+
 def _call_llm(system, user, cfg=None):
     cfg = cfg or get_active_ai_config()
     prov = cfg.get("provider", "deterministic")
+    is_json_task = "json" in system.lower() or "json" in user.lower()
 
     if prov == "gemini":
         key = cfg["key"]
         model = cfg["model"] or "gemini-2.5-flash"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+        gen_config = {"temperature": 0.2, "maxOutputTokens": 3000}
+        if is_json_task:
+            gen_config["responseMimeType"] = "application/json"
         body = json.dumps({
             "contents": [{"role": "user", "parts": [{"text": f"{system}\n\nTask:\n{user}"}]}],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 3000}
+            "generationConfig": gen_config
         }).encode()
         raw = http_get(url, data=body, method="POST", retries=0, timeout=config.LLM_TIMEOUT_SECONDS,
                        headers={"Content-Type": "application/json"})
@@ -264,12 +289,16 @@ def _call_llm(system, user, cfg=None):
         if key:
             headers["Authorization"] = f"Bearer {key}"
 
-        body = json.dumps({
+        payload = {
             "model": model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             "temperature": 0.2,
             "max_tokens": 3000
-        }).encode()
+        }
+        if is_json_task and prov in ("openai", "deepseek", "groq"):
+            payload["response_format"] = {"type": "json_object"}
+
+        body = json.dumps(payload).encode()
         raw = http_get(url, data=body, method="POST", retries=0, timeout=config.LLM_TIMEOUT_SECONDS,
                        headers=headers)
         data = json.loads(raw)
@@ -294,11 +323,14 @@ def _call_llm(system, user, cfg=None):
     elif prov == "ollama":
         ep = (cfg.get("endpoint") or "http://127.0.0.1:11434").rstrip("/")
         url = f"{ep}/api/generate"
-        body = json.dumps({
+        ollama_payload = {
             "model": cfg["model"] or "llama3.3",
             "prompt": f"{system}\n\n{user}",
             "stream": False
-        }).encode()
+        }
+        if is_json_task:
+            ollama_payload["format"] = "json"
+        body = json.dumps(ollama_payload).encode()
         raw = http_get(url, data=body, method="POST", retries=0, timeout=config.LLM_TIMEOUT_SECONDS,
                        headers={"Content-Type": "application/json"})
         return json.loads(raw).get("response", "")
@@ -306,22 +338,31 @@ def _call_llm(system, user, cfg=None):
     raise RuntimeError("No LLM provider configured")
 
 
-LLM_SYSTEM = ("You edit resumes. Use ONLY facts present in the resume JSON. Never add a number, skill, tool, employer, title, "
-              "or claim that the resume does not state. You may reword, reorder, and mirror the job posting's terminology for "
-              "skills the candidate already has. Reply with JSON only: {\"summary\": str, \"bullets\": {\"<role_index>.<bullet_index>\": str}}.")
+LLM_SYSTEM = (
+    "You are an elite technical recruiter and resume strategist (2026/2027 standard). "
+    "You edit resumes for high-impact 6-second recruiter scans and ATS alignment. "
+    "CRITICAL RULES:\n"
+    "1. Strict Grounding: Use ONLY facts present in the resume. Never add numbers, skills, tools, employers, titles, or unearned credentials.\n"
+    "2. Anti-AI Slop: Strictly ban 'spearheaded', 'leveraged', 'synergized', 'passionate developer', 'fast-paced environment'. "
+    "Use strong engineering verbs: Architected, Engineered, Decoupled, Benchmarked, Automated, Scaled, Shipped.\n"
+    "3. Google X-Y-Z Formula: 'Accomplished [X], as measured by [Y], by doing [Z]' with verified metrics.\n"
+    "Reply with JSON only matching: {\"summary\": str, \"bullets\": {\"<role_index>.<bullet_index>\": str}}."
+)
 
 COVER_PITCH_LLM_SYSTEM = (
-    "You are an elite executive career strategist and engineering hiring advisor. "
-    "You write concise, high-converting personalized pitches and cover letters for top tech candidates. "
+    "You are an elite executive career strategist and engineering hiring advisor (2026/2027 standard). "
+    "You write concise, high-converting personalized pitches and cover letters (150-240 words max) for top tech candidates. "
     "You hate corporate fluff, cliché phrases, and generic templates. Every pitch you write feels thoughtful, "
     "deeply knowledgeable about the company's product, and grounded strictly in verified candidate facts.\n\n"
     "CRITICAL RULES:\n"
     "1. Grounding: Every single number, metric, project, and skill MUST originate strictly from the candidate's verified profile. "
     "NEVER invent or extrapolate unearned skills, metrics, credentials, or employers.\n"
-    "2. Hook: Open with the role, company name, and a compelling 1-2 sentence hook tailored to the specified pitch_angle and tone.\n"
-    "3. Value Pillars: Pick 2-3 verified achievements that directly answer the posting's core requirements.\n"
-    "4. Transparent Learning Bridge: If the job requires a skill the candidate lacks, acknowledge it honestly and highlight parallel foundational mastery without claiming proficiency.\n"
-    "5. Output JSON schema ONLY: {\n"
+    "2. Anti-AI Slop: Never open with 'I am writing to apply for...'. Ban clichés like 'fast-paced environment', 'testament to', 'dynamic team player'.\n"
+    "3. Hook: Open with the role, company name, and a compelling 1-2 sentence hook connecting candidate expertise to company mission.\n"
+    "4. Value Pillars: Pick 2-3 verified achievements that directly answer the posting's core requirements.\n"
+    "5. Transparent Learning Bridge: If the job requires a skill the candidate lacks, acknowledge it honestly and highlight parallel foundational mastery without claiming proficiency.\n"
+    "6. Low-Friction Close: Propose a focused 15-minute conversation.\n"
+    "7. Output JSON schema ONLY: {\n"
     "  \"pitch_hook\": str,\n"
     "  \"value_pillars\": [{\"theme\": str, \"proof_point\": str, \"quantified\": bool}],\n"
     "  \"why_company\": str,\n"
@@ -371,7 +412,9 @@ def refit_llm(job, profile, llm=None):
                                          for e in profile.get("experience", [])]}}
     try:
         out = llm(LLM_SYSTEM, json.dumps(payload))
-        out = json.loads(re.search(r"\{.*\}", out, re.S).group(0))
+        out = _parse_json_llm_response(out)
+        if not out:
+            raise ValueError("No valid JSON extracted from LLM response")
     except Exception:
         return base, diffs, matched, "deterministic (LLM unavailable)"
 
@@ -524,9 +567,8 @@ def generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=N
         }
         try:
             raw_out = llm(system_prompt, json.dumps(payload))
-            json_match = re.search(r"\{.*\}", raw_out, re.S)
-            if json_match:
-                parsed = json.loads(json_match.group(0))
+            parsed = _parse_json_llm_response(raw_out)
+            if parsed and isinstance(parsed, dict):
                 llm_hook = (parsed.get("executive_hook") or parsed.get("tailored_summary") or "").strip()
                 if llm_hook and is_grounded(profile, llm_hook):
                     full_tailored_sum = llm_hook
@@ -536,7 +578,15 @@ def generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=N
                 elif llm_hook:
                     rejected_count += 1
 
-                for key, btext in (parsed.get("bullets") or {}).items():
+                # 1. Process indexed bullets dict: {"0.0": "bullet..."}
+                bullets_dict = parsed.get("bullets") or {}
+                # 2. Fallback to list-based tailored_experience if bullets dict was not supplied
+                if not bullets_dict and isinstance(parsed.get("tailored_experience"), list):
+                    for xi, exp_obj in enumerate(parsed["tailored_experience"]):
+                        for bi, btext in enumerate(exp_obj.get("bullets", [])):
+                            bullets_dict[f"{xi}.{bi}"] = btext
+
+                for key, btext in bullets_dict.items():
                     try:
                         xi, bi = (int(p) for p in key.split("."))
                         orig = profile["experience"][xi]["bullets"][bi]
@@ -978,6 +1028,18 @@ def generate_cover_pitch(job, profile, tone="direct", angle="direct_impact", sel
     llm_applied = False
 
     if should_use_llm:
+        import pathlib
+        prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "cover_letter_pitch.md"
+        system_prompt = COVER_PITCH_LLM_SYSTEM
+        try:
+            if prompt_path.exists():
+                text_content = prompt_path.read_text(encoding="utf-8")
+                m = re.search(r"```markdown\n(.*?)\n```", text_content, re.S)
+                if m:
+                    system_prompt = m.group(1)
+        except Exception:
+            pass
+
         try:
             prompt_payload = {
                 "pitch_angle": angle,
@@ -999,9 +1061,10 @@ def generate_cover_pitch(job, profile, tone="direct", angle="direct_impact", sel
                 "value_pillars": [p["proof_point"] for p in value_pillars],
                 "honest_skill_gaps": gaps[:2]
             }
-            raw_out = llm(COVER_PITCH_LLM_SYSTEM, json.dumps(prompt_payload, indent=2))
-            clean_out = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_out.strip(), flags=re.MULTILINE).strip()
-            parsed = json.loads(clean_out)
+            raw_out = llm(system_prompt, json.dumps(prompt_payload, indent=2))
+            parsed = _parse_json_llm_response(raw_out)
+            if not parsed or not isinstance(parsed, dict):
+                raise ValueError("Could not parse JSON from cover pitch LLM response")
 
             llm_full = (parsed.get("full_text") or "").strip()
             llm_hook = (parsed.get("pitch_hook") or "").strip()
