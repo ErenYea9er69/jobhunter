@@ -132,6 +132,301 @@ def prepare_application(job, profile):
             "next_step": "Review the package, submit on the employer's page, then move the card to Applied."}
 
 
+def generate_application_follow_up(app_id, action_type="status_check_5days", notes="", profile=None, use_llm=None, llm_caller=None):
+    """Generate high-leverage follow-up communications: status ping, post-interview thank you, or offer negotiation script."""
+    with db.session() as c:
+        row = c.execute("SELECT * FROM applications WHERE id=?", (app_id,)).fetchone()
+    if not row:
+        raise ValueError(f"Application {app_id} not found.")
+
+    company = row["company"] or "the company"
+    title = row["title"] or "the role"
+    stage = row["status"]
+    applied_date = row["created_at"][:10] if row["created_at"] else ""
+    salary_offered = row["salary"] or ""
+
+    if not profile:
+        profile = db.get_profile()
+
+    cand_name = profile.get("name") or "Candidate"
+    cand_role = (profile.get("experience") or [{}])[0].get("role") or profile.get("target_title") or "Software Engineer"
+    skills = profile.get("skills", [])
+    key_skill = skills[0] if skills else "modern architecture"
+
+    # Normalize action_type
+    at = (action_type or "").lower()
+    if "interview" in at or "thank" in at:
+        norm_type = "post_interview_thank_you"
+    elif "offer" in at or "negotiat" in at:
+        norm_type = "offer_negotiation"
+    else:
+        norm_type = "status_check_5days"
+
+    # Deterministic fallback templates
+    if norm_type == "post_interview_thank_you":
+        subject = f"Thank you — {title} interview ({cand_name})"
+        body = (
+            f"Dear {company} Team,\n\n"
+            f"Thank you for taking the time to speak with me today about the {title} position. "
+            f"I truly enjoyed our discussion regarding the team's engineering priorities and architectural goals.\n\n"
+            f"Our conversation reinforced my excitement about the opportunity. With my experience in {key_skill}, "
+            f"I am confident I can contribute meaningfully from day one.\n\n"
+            f"Please let me know if there are any additional details or code samples I can provide as you proceed.\n\n"
+            f"Best regards,\n{cand_name}"
+        )
+        timing = "Within 24 hours of the interview"
+        strategy = "Reinforces technical conversation and highlights immediate contribution."
+    elif norm_type == "offer_negotiation":
+        subject = f"{title} Offer — Discussion & Alignment ({cand_name})"
+        target_sal = profile.get("target_salary") or "market rate"
+        body = (
+            f"Dear {company} Team,\n\n"
+            f"Thank you very much for extending the offer for the {title} role. "
+            f"I am genuinely thrilled about the team's mission and the impact of the work ahead.\n\n"
+            f"Given my verified track record in {key_skill} and the scope of responsibilities, "
+            f"I would like to discuss whether we can align closer to {target_sal} in base compensation. "
+            f"I am fully committed to making this partnership a mutual success and remain flexible on structuring total compensation.\n\n"
+            f"Could we schedule a brief call this week to finalize details?\n\n"
+            f"Best regards,\n{cand_name}"
+        )
+        timing = "Within 48 hours of receiving written offer"
+        strategy = "Gracious, value-anchored counter-proposal that maintains collaboration."
+    else:
+        subject = f"Following up on {title} application at {company} — {cand_name}"
+        body = (
+            f"Dear {company} Hiring Team,\n\n"
+            f"I submitted my application for the {title} position last week and wanted to reiterate my strong interest in joining {company}.\n\n"
+            f"Given my hands-on background in {key_skill}, I believe my skillset aligns well with the team's technical focus. "
+            f"I would welcome the opportunity to connect for an introductory conversation when your schedule permits.\n\n"
+            f"Thank you for your time and consideration.\n\n"
+            f"Best regards,\n{cand_name}"
+        )
+        timing = "Tuesday or Thursday morning (9:00 AM local time)"
+        strategy = "Confident 5-day touchpoint reaffirming fit without sounding demanding."
+
+    fallback_result = {
+        "ok": True,
+        "application_id": app_id,
+        "action_type": norm_type,
+        "subject_line": subject,
+        "body": body,
+        "strategy_notes": strategy,
+        "recommended_send_timing": timing,
+        "used_llm": False,
+        "provider": "deterministic"
+    }
+
+    ai_cfg = refit.get_active_ai_config()
+    should_use_llm = (use_llm is True) or (use_llm is None and ai_cfg.get("provider") != "deterministic")
+    caller = llm_caller or refit._call_llm
+
+    if should_use_llm:
+        import pathlib, re
+        from . import config
+        prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "application_follow_up.md"
+        system_prompt = (
+            "You are an executive career strategist and negotiation consultant. "
+            "Generate a strategic, professional follow-up communication based on the application stage. "
+            "Return valid JSON only matching the schema."
+        )
+        try:
+            if prompt_path.exists():
+                text_content = prompt_path.read_text(encoding="utf-8")
+                m = re.search(r"```markdown\n(.*?)\n```", text_content, re.S)
+                if m:
+                    system_prompt = m.group(1).strip()
+        except Exception:
+            pass
+
+        try:
+            prompt_payload = {
+                "application": {
+                    "company": company,
+                    "role": title,
+                    "stage": stage,
+                    "applied_date": applied_date,
+                    "notes": notes or row["notes"] or "",
+                    "offered_salary": salary_offered
+                },
+                "candidate_source": {
+                    "name": cand_name,
+                    "target_title": cand_role,
+                    "skills": skills[:15]
+                },
+                "follow_up_type": norm_type
+            }
+            raw_resp = caller(system_prompt, json.dumps(prompt_payload))
+            parsed = refit._parse_json_llm_response(raw_resp)
+            if parsed and isinstance(parsed, dict) and "body" in parsed:
+                return {
+                    "ok": True,
+                    "application_id": app_id,
+                    "action_type": parsed.get("action_type") or norm_type,
+                    "subject_line": parsed.get("subject_line") or subject,
+                    "body": parsed.get("body") or body,
+                    "strategy_notes": parsed.get("strategy_notes") or strategy,
+                    "recommended_send_timing": parsed.get("recommended_send_timing") or timing,
+                    "used_llm": True,
+                    "provider": ai_cfg.get("provider", "llm"),
+                    "model": ai_cfg.get("model", "")
+                }
+        except Exception:
+            pass
+
+    return fallback_result
+
+
+def get_stale_applications_alerts(threshold_days=5):
+    """Scan all applications and return actionable alerts for follow-ups, post-interview thank-yous, and overdue items."""
+    apps = list_applications()
+    alerts = []
+    today_iso = datetime.date.today().isoformat()
+
+    for a in apps:
+        status = a.get("status")
+        days = a.get("days_in_stage", 0)
+        fu = a.get("follow_up_date") or ""
+        overdue = a.get("overdue", False)
+
+        if status == "applied":
+            if days >= threshold_days or overdue or (fu and fu <= today_iso):
+                urgency = "high" if (days >= 10 or overdue) else "medium"
+                alerts.append({
+                    "id": f"alert-{a['id']}",
+                    "application_id": a["id"],
+                    "company": a["company"],
+                    "title": a["title"],
+                    "status": status,
+                    "days_in_stage": days,
+                    "alert_type": "status_check",
+                    "action_type": "status_check_5days",
+                    "urgency": urgency,
+                    "headline": f"Follow-up due for {a['company']} ({int(days)}d in stage)",
+                    "recommendation": f"Send a polite 5-day check-in reaffirming your fit for {a['title']}."
+                })
+        elif status == "interview":
+            if days >= 1:
+                alerts.append({
+                    "id": f"alert-{a['id']}",
+                    "application_id": a["id"],
+                    "company": a["company"],
+                    "title": a["title"],
+                    "status": status,
+                    "days_in_stage": days,
+                    "alert_type": "interview_thank_you",
+                    "action_type": "post_interview_thank_you",
+                    "urgency": "high" if days <= 2 else "medium",
+                    "headline": f"Send interview thank-you note to {a['company']}",
+                    "recommendation": "Reinforce technical discussion points and confirm your enthusiasm."
+                })
+        elif status == "offer":
+            alerts.append({
+                "id": f"alert-{a['id']}",
+                "application_id": a["id"],
+                "company": a["company"],
+                "title": a["title"],
+                "status": status,
+                "days_in_stage": days,
+                "alert_type": "offer_decision",
+                "action_type": "offer_negotiation",
+                "urgency": "urgent",
+                "headline": f"Active offer from {a['company']}",
+                "recommendation": "Review compensation terms or generate a strategic negotiation counter-proposal."
+            })
+
+    priority_order = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
+    alerts.sort(key=lambda x: priority_order.get(x["urgency"], 4))
+
+    return {
+        "ok": True,
+        "alerts": alerts,
+        "count": len(alerts),
+        "threshold_days": threshold_days
+    }
+
+
+def generate_one_click_bundle(job, profile=None, use_llm=None):
+    """High-velocity 1-Click Application Bundle: tailored resume, role pitch, outreach note, interview prep, and pre-filled screening answers."""
+    t0 = time.time()
+    from . import autofill
+    if not profile:
+        profile = db.get_profile()
+
+    # 1. Tailored Resume & 6-Second Audit
+    ref = refit.generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=use_llm)
+    tailored = ref["tailored_resume"]
+    before_ats = ats.compute_ats_audit(profile, job)
+    after_ats = ats.compute_ats_audit(tailored, job)
+
+    # 2. Targeted Role Pitch
+    pitch = refit.generate_cover_pitch(job, profile, angle="startup_velocity", use_llm=use_llm)
+
+    # 3. Recruiter Outreach Package
+    outreach = refit.generate_recruiter_outreach(job, profile, message_type="all", use_llm=use_llm)
+
+    # 4. Role-Specific Interview Prep Copilot
+    prep = refit.generate_interview_prep(job, profile, use_llm=use_llm)
+
+    # 5. Top 3 Screening Questions Auto-Solved
+    standard_questions = [
+        "Why are you interested in this role and what makes you a strong fit?",
+        "Describe your production experience with the core technical stack required for this position.",
+        "Tell us about a challenging technical problem you solved and the measurable impact it had."
+    ]
+    screening_answers = []
+    for q in standard_questions:
+        ans = autofill.solve_screening_question(q, job, profile, use_llm=use_llm)
+        screening_answers.append({
+            "question": q,
+            "answer": ans.get("answer", ""),
+            "grounded": ans.get("grounded", True)
+        })
+
+    # 6. Save or stage in application tracker
+    app_id = f"app-bundle-{int(time.time() * 1000)}"
+    company = job.get("company") or "Unknown"
+    title = job.get("title") or "Untitled role"
+    boost = max(after_ats["ats_score"] - before_ats["ats_score"], 0)
+
+    upsert_application({
+        "id": app_id,
+        "job_id": job.get("id"),
+        "company": company,
+        "title": title,
+        "location": job.get("location", ""),
+        "salary": job.get("salary", ""),
+        "status": "saved",
+        "notes": f"1-Click Bundle generated. ATS score {before_ats['ats_score']} -> {after_ats['ats_score']} (+{boost}). Outreach and screening ready.",
+        "sources": job.get("sources") or [{"source": job.get("source"), "url": job.get("url")}],
+        "job_data": job,
+        "tailored_resume": tailored,
+        "cover_letter": pitch.get("letter", "")
+    })
+
+    return {
+        "ok": True,
+        "success": True,
+        "app_id": app_id,
+        "job_id": job.get("id"),
+        "company": company,
+        "title": title,
+        "tailored_resume": tailored,
+        "refinement": ref,
+        "executive_hook": ref.get("executive_hook", ""),
+        "role_pitch": pitch,
+        "cover_letter": pitch.get("letter", ""),
+        "recruiter_outreach": outreach,
+        "interview_prep": prep,
+        "screening_answers": screening_answers,
+        "ats_audit": after_ats,
+        "before_ats": before_ats,
+        "after_ats": after_ats,
+        "ats_boost": boost,
+        "speed_ms": int((time.time() - t0) * 1000),
+        "next_step": "1-Click bundle prepared! Review tailored assets and submit directly on company site."
+    }
+
+
 # ---------------------------------------------------------------- watchlist
 
 def list_watchlist():

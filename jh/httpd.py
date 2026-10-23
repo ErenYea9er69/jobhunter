@@ -380,8 +380,33 @@ def r_cover(q, body):
 
 
 @route("POST", "/api/interview-prep")
+@route("POST", "/api/interview-prep/generate")
 def r_prep(q, body):
-    return refit.generate_interview_prep(_job(body), _need_profile())
+    use_llm = body.get("use_llm")
+    return refit.generate_interview_prep(_job(body), _need_profile(), use_llm=use_llm)
+
+
+@route("POST", "/api/interview-prep/evaluate")
+def r_prep_evaluate(q, body):
+    question = (body.get("question") or "").strip()
+    answer = (body.get("answer") or body.get("candidate_answer") or "").strip()
+    if not question or not answer:
+        raise ApiError("question and answer are required.")
+    job = body.get("job")
+    profile = body.get("profile") or db.get_profile()
+    topic = body.get("topic")
+    use_llm = body.get("use_llm")
+    return refit.evaluate_mock_interview_answer(question, answer, job=job, profile=profile, topic=topic, use_llm=use_llm)
+
+
+@route("POST", "/api/outreach/generate")
+def r_outreach_generate(q, body):
+    job = _job(body)
+    profile = body.get("profile") or _need_profile()
+    msg_type = body.get("message_type") or "all"
+    hook = body.get("custom_hook") or ""
+    use_llm = body.get("use_llm")
+    return refit.generate_recruiter_outreach(job, profile, message_type=msg_type, custom_hook=hook, use_llm=use_llm)
 
 
 @route("POST", "/api/ats-audit")
@@ -498,6 +523,50 @@ def r_save_app(q, body):
         return {"success": True, "id": tracker.upsert_application(body)}
     except ValueError as e:
         raise ApiError(str(e))
+
+
+@route("POST", "/api/applications/follow-up")
+def r_app_follow_up(q, body):
+    app_id = body.get("id") or body.get("app_id") or body.get("application_id")
+    if not app_id:
+        raise ApiError("app_id is required.")
+    action_type = body.get("action_type") or "status_check_5days"
+    notes = body.get("notes") or ""
+    profile = body.get("profile") or db.get_profile()
+    use_llm = body.get("use_llm")
+    try:
+        return tracker.generate_application_follow_up(app_id, action_type=action_type, notes=notes, profile=profile, use_llm=use_llm)
+    except ValueError as e:
+        raise ApiError(str(e), 404)
+
+
+@route("GET", "/api/applications/alerts")
+def r_app_alerts(q, body):
+    th = 5
+    if q and q.get("threshold_days"):
+        try:
+            th = int(q["threshold_days"][0])
+        except Exception:
+            pass
+    return tracker.get_stale_applications_alerts(threshold_days=th)
+
+
+@route("POST", "/api/career/skill-roadmap")
+def r_skill_roadmap(q, body):
+    profile = body.get("profile") or _need_profile()
+    target_title = body.get("target_title")
+    market_skills = body.get("market_skills")
+    use_llm = body.get("use_llm")
+    return refit.generate_skill_roadmap(profile, target_title=target_title, market_skills=market_skills, use_llm=use_llm)
+
+
+@route("POST", "/api/jobs/apply-bundle")
+def r_apply_bundle(q, body):
+    job = _job(body)
+    profile = body.get("profile") or _need_profile()
+    use_llm = body.get("use_llm")
+    return tracker.generate_one_click_bundle(job, profile=profile, use_llm=use_llm)
+
 
 
 @route("GET", "/api/stats")

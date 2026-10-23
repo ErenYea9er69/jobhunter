@@ -1175,7 +1175,7 @@ BEHAVIORAL = [
 ]
 
 
-def generate_interview_prep(job, profile):
+def generate_interview_prep(job, profile, use_llm=None, llm_caller=None):
     wanted, text = _wanted(job)
     wanted.pop("__words__", None)
     cand = set(profile.get("skills", []))
@@ -1201,8 +1201,412 @@ def generate_interview_prep(job, profile):
     if re.search(r"remote|distributed|async", text, re.I):
         asks.append("How does the team handle time zones and handoffs?")
     asks.append("What is the hardest problem the team is working on right now?")
-    return {"role": title, "company": company, "behavioral_questions": beh, "technical_deep_dives": tech,
-            "gap_talking_points": gaps, "questions_to_ask_interviewer": asks}
+
+    fallback_result = {
+        "role": title,
+        "company": company,
+        "interview_focus_areas": [s for s in matched[:3]] or ["System Architecture", "Scalability"],
+        "behavioral_questions": beh,
+        "behavioral_scenarios": beh,
+        "technical_deep_dives": tech,
+        "gap_talking_points": gaps,
+        "questions_to_ask_interviewer": asks,
+        "used_llm": False,
+        "provider": "deterministic"
+    }
+
+    ai_cfg = get_active_ai_config()
+    should_use_llm = (use_llm is True) or (use_llm is None and ai_cfg.get("provider") != "deterministic")
+    caller = llm_caller or _call_llm
+
+    if should_use_llm:
+        import pathlib
+        prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "interview_prep_copilot.md"
+        system_prompt = (
+            "You are a Principal Engineering Director and Senior Technical Hiring Manager. "
+            "Generate a role-specific interview preparation blueprint for the candidate. Return valid JSON only."
+        )
+        try:
+            if prompt_path.exists():
+                text_content = prompt_path.read_text(encoding="utf-8")
+                m = re.search(r"```markdown\n(.*?)\n```", text_content, re.S)
+                if m:
+                    system_prompt = m.group(1).strip()
+        except Exception:
+            pass
+
+        try:
+            prompt_payload = {
+                "job_post": {
+                    "title": title,
+                    "company": company,
+                    "description": (job.get("description") or "")[:2500],
+                    "required_skills": list(wanted.keys())[:10]
+                },
+                "candidate_source": {
+                    "name": profile.get("name", ""),
+                    "target_title": profile.get("target_title", ""),
+                    "skills": sorted(list(cand))[:25],
+                    "experience": profile.get("experience", [])[:3]
+                }
+            }
+            raw_resp = caller(system_prompt, json.dumps(prompt_payload))
+            parsed = _parse_json_llm_response(raw_resp)
+            if parsed and isinstance(parsed, dict):
+                return {
+                    "role": parsed.get("role") or title,
+                    "company": parsed.get("company") or company,
+                    "interview_focus_areas": parsed.get("interview_focus_areas") or fallback_result["interview_focus_areas"],
+                    "technical_deep_dives": parsed.get("technical_deep_dives") or tech,
+                    "behavioral_scenarios": parsed.get("behavioral_scenarios") or beh,
+                    "behavioral_questions": beh,
+                    "gap_talking_points": parsed.get("gap_talking_points") or gaps,
+                    "questions_to_ask_interviewer": parsed.get("questions_to_ask_interviewer") or asks,
+                    "used_llm": True,
+                    "provider": ai_cfg.get("provider", "llm"),
+                    "model": ai_cfg.get("model", "")
+                }
+        except Exception:
+            pass
+
+    return fallback_result
+
+
+def evaluate_mock_interview_answer(question, candidate_answer, job=None, profile=None, topic=None, use_llm=None, llm_caller=None):
+    """Evaluate candidate's mock interview practice response on clarity, technical rigor, metrics, and STAR-L structure."""
+    ai_cfg = get_active_ai_config()
+    should_use_llm = (use_llm is True) or (use_llm is None and ai_cfg.get("provider") != "deterministic")
+    caller = llm_caller or _call_llm
+
+    # Deterministic baseline analysis
+    words = candidate_answer.strip().split()
+    word_count = len(words)
+    has_metrics = bool(NUM_RE.search(candidate_answer))
+    i_count = len(re.findall(r"\b(I|my|mine|I've|I'd|I'll)\b", candidate_answer))
+    we_count = len(re.findall(r"\b(we|our|us|team)\b", candidate_answer, re.I))
+    star_words = len(re.findall(r"\b(situation|task|action|result|impact|improved|reduced|increased|migrated|architected|built|led|optimized)\b", candidate_answer, re.I))
+
+    ownership_score = min(max(int((i_count / max(i_count + we_count, 1)) * 100), 55), 98) if (i_count + we_count) else 75
+    quant_score = 92 if has_metrics else 62
+    depth_score = min(max(60 + min(word_count // 3, 30), 50), 95)
+    structure_score = min(max(55 + (star_words * 6), 55), 95)
+    overall = int((ownership_score * 0.25) + (quant_score * 0.25) + (depth_score * 0.25) + (structure_score * 0.25))
+
+    strengths = []
+    improvements = []
+    if has_metrics:
+        strengths.append("Cites quantifiable impact or production metrics.")
+    else:
+        improvements.append("Quantify results with real scale, latency, throughput, or business metrics.")
+    if i_count >= we_count and i_count > 0:
+        strengths.append("Demonstrates direct personal ownership rather than deflecting to team efforts.")
+    else:
+        improvements.append("Use first-person active verbs ('I designed', 'I shipped') to emphasize your personal contribution.")
+    if star_words >= 3:
+        strengths.append("Follows structured STAR narrative (action taken, measurable outcome).")
+    else:
+        improvements.append("Structure your answer with STAR-L: Situation, Task, Action taken, Result, and Key Learning.")
+
+    verdict = "Strong Contender" if overall >= 85 else ("Solid Foundation" if overall >= 72 else "Needs Refinement")
+
+    fallback_eval = {
+        "ok": True,
+        "question": question,
+        "overall_score": overall,
+        "verdict": verdict,
+        "strengths": strengths or ["Clear and relevant discussion of the topic."],
+        "areas_for_improvement": improvements or ["Continue practicing concise delivery under 2 minutes."],
+        "red_flags": [] if has_metrics and i_count > 0 else (["Lacks concrete metrics to validate scale."] if not has_metrics else []),
+        "rubric_scores": {
+            "ownership": ownership_score,
+            "technical_depth": depth_score,
+            "quantified_impact": quant_score,
+            "structure": structure_score
+        },
+        "refined_answer_suggestion": (
+            f"In my previous work addressing {topic or 'this challenge'}, I recognized the bottleneck and took ownership. "
+            f"Specifically, I implemented the core solution, resulting in measurable improvements. "
+            f"Through this, I validated the importance of resilient architecture."
+        ),
+        "used_llm": False,
+        "provider": "deterministic"
+    }
+
+    if should_use_llm and candidate_answer.strip():
+        import pathlib
+        prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "mock_interview_evaluator.md"
+        system_prompt = (
+            "You are an expert technical interview coach. Evaluate the candidate's interview answer. "
+            "Return valid JSON only matching the schema."
+        )
+        try:
+            if prompt_path.exists():
+                text_content = prompt_path.read_text(encoding="utf-8")
+                m = re.search(r"```markdown\n(.*?)\n```", text_content, re.S)
+                if m:
+                    system_prompt = m.group(1).strip()
+        except Exception:
+            pass
+
+        try:
+            prompt_payload = {
+                "question": question,
+                "candidate_answer": candidate_answer,
+                "job_post": f"{(job or {}).get('title', '')} at {(job or {}).get('company', '')}",
+                "candidate_source": {
+                    "skills": (profile or {}).get("skills", [])[:20],
+                    "experience": (profile or {}).get("experience", [])[:2]
+                }
+            }
+            raw_resp = caller(system_prompt, json.dumps(prompt_payload))
+            parsed = _parse_json_llm_response(raw_resp)
+            if parsed and isinstance(parsed, dict) and "overall_score" in parsed:
+                return {
+                    "ok": True,
+                    "question": question,
+                    "overall_score": parsed.get("overall_score", overall),
+                    "verdict": parsed.get("verdict") or verdict,
+                    "strengths": parsed.get("strengths") or fallback_eval["strengths"],
+                    "areas_for_improvement": parsed.get("areas_for_improvement") or fallback_eval["areas_for_improvement"],
+                    "red_flags": parsed.get("red_flags", []),
+                    "rubric_scores": parsed.get("rubric_scores") or fallback_eval["rubric_scores"],
+                    "refined_answer_suggestion": parsed.get("refined_answer_suggestion") or fallback_eval["refined_answer_suggestion"],
+                    "used_llm": True,
+                    "provider": ai_cfg.get("provider", "llm"),
+                    "model": ai_cfg.get("model", "")
+                }
+        except Exception:
+            pass
+
+    return fallback_eval
+
+
+def generate_recruiter_outreach(job, profile, message_type="all", custom_hook="", use_llm=None, llm_caller=None):
+    """Generate high-converting recruiter outreach messages: <300 char LinkedIn note, hiring manager InMail, and peer referral."""
+    company = job.get("company") or "the company"
+    title = job.get("title") or "Software Engineer"
+    cand_name = profile.get("name") or "Candidate"
+    cand_role = (profile.get("experience") or [{}])[0].get("role") or profile.get("target_title") or "Software Engineer"
+
+    wanted, _ = _wanted(job)
+    wanted_skills = [k for k in wanted if k != "__words__"]
+    cand_skills = list(profile.get("skills", []))
+    cand_set = set(cand_skills)
+    matched = [s for s in wanted_skills if s in cand_set]
+    key_skill = matched[0] if matched else (cand_skills[0] if cand_skills else "distributed systems")
+    top_two = ", ".join(matched[:2]) if len(matched) >= 2 else key_skill
+
+    # Find best quantified bullet
+    best_bullet_text, _ = _best_bullet(job, profile)
+    best_proof = best_bullet_text or f"built high-reliability solutions using {key_skill}"
+
+    # LinkedIn note under 295 chars
+    linkedin_note = (
+        f"Hi — I'm a {cand_role} specializing in {top_two}. "
+        f"Saw your {title} opening at {company} and would love to connect and follow {company}'s engineering work!"
+    )
+    if len(linkedin_note) > 295:
+        linkedin_note = f"Hi — I'm a {cand_role} specializing in {key_skill}. Saw your {title} opening at {company} and would love to connect!"
+
+    hm_inmail = {
+        "subject_line": f"{title} @ {company} — {cand_role} ({top_two})",
+        "body": (
+            f"Hi Hiring Team,\n\n"
+            f"I noticed {company}'s opening for a {title} working with {top_two}.\n\n"
+            f"In my recent work, I {_first_person(best_proof)}.\n\n"
+            f"I would welcome a brief 10-minute conversation to learn more about your technical roadmap and discuss how my background can deliver immediate impact.\n\n"
+            f"Best regards,\n{cand_name}"
+        )
+    }
+
+    peer_referral = {
+        "subject_line": f"Quick question about engineering at {company}",
+        "body": (
+            f"Hi there,\n\n"
+            f"I came across your profile while researching {company}'s engineering team for the {title} opening.\n\n"
+            f"As a {cand_role} experienced in {top_two}, I'm preparing an application and would love to hear your perspective on the team culture, or request a referral if you feel there's a strong fit.\n\n"
+            f"Thanks for your time!\n{cand_name}"
+        )
+    }
+
+    fallback_result = {
+        "ok": True,
+        "target_company": company,
+        "target_role": title,
+        "linkedin_connection_note": linkedin_note,
+        "linkedin_connection_chars": len(linkedin_note),
+        "hiring_manager_inmail": hm_inmail,
+        "peer_referral_request": peer_referral,
+        "key_proof_point_used": best_proof,
+        "used_llm": False,
+        "provider": "deterministic"
+    }
+
+    ai_cfg = get_active_ai_config()
+    should_use_llm = (use_llm is True) or (use_llm is None and ai_cfg.get("provider") != "deterministic")
+    caller = llm_caller or _call_llm
+
+    if should_use_llm:
+        import pathlib
+        prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "recruiter_outreach.md"
+        system_prompt = (
+            "You are an executive talent agent. Generate 3 tailored outreach messages for the candidate. "
+            "linkedin_connection_note MUST be strictly under 295 chars. Return valid JSON only."
+        )
+        try:
+            if prompt_path.exists():
+                text_content = prompt_path.read_text(encoding="utf-8")
+                m = re.search(r"```markdown\n(.*?)\n```", text_content, re.S)
+                if m:
+                    system_prompt = m.group(1).strip()
+        except Exception:
+            pass
+
+        try:
+            prompt_payload = {
+                "job_post": {
+                    "title": title,
+                    "company": company,
+                    "description": (job.get("description") or "")[:2000],
+                    "required_skills": matched[:8]
+                },
+                "candidate_source": {
+                    "name": cand_name,
+                    "target_title": cand_role,
+                    "skills": cand_skills[:15],
+                    "standout_bullet": best_proof
+                },
+                "custom_hook": custom_hook
+            }
+            raw_resp = caller(system_prompt, json.dumps(prompt_payload))
+            parsed = _parse_json_llm_response(raw_resp)
+            if parsed and isinstance(parsed, dict) and "linkedin_connection_note" in parsed:
+                li_text = parsed.get("linkedin_connection_note", "")
+                if len(li_text) > 295:
+                    li_text = li_text[:292] + "..."
+                return {
+                    "ok": True,
+                    "target_company": parsed.get("target_company") or company,
+                    "target_role": parsed.get("target_role") or title,
+                    "linkedin_connection_note": li_text,
+                    "linkedin_connection_chars": len(li_text),
+                    "hiring_manager_inmail": parsed.get("hiring_manager_inmail") or hm_inmail,
+                    "peer_referral_request": parsed.get("peer_referral_request") or peer_referral,
+                    "key_proof_point_used": parsed.get("key_proof_point_used") or best_proof,
+                    "used_llm": True,
+                    "provider": ai_cfg.get("provider", "llm"),
+                    "model": ai_cfg.get("model", "")
+                }
+        except Exception:
+            pass
+
+    return fallback_result
+
+
+def generate_skill_roadmap(profile, target_title=None, market_skills=None, use_llm=None, llm_caller=None):
+    """Generate high-ROI technical upskilling roadmap: top missing skills, 2-week hands-on micro-project, and interview bridge talking points."""
+    target_role = target_title or profile.get("target_title") or (profile.get("experience") or [{}])[0].get("role") or "Senior Software Engineer"
+    cand_skills = set(profile.get("skills", []))
+
+    missing = []
+    if market_skills and isinstance(market_skills, list):
+        missing = [s for s in market_skills if s.lower() not in {c.lower() for c in cand_skills}]
+    else:
+        for cluster_name, skills in sk.CLUSTERS.items():
+            overlap = skills & cand_skills
+            if overlap:
+                cluster_missing = sorted(list(skills - cand_skills))
+                missing.extend(cluster_missing[:2])
+
+    if not missing:
+        missing = ["Kubernetes", "Kafka", "Distributed Caching", "System Architecture"]
+
+    top_missing = missing[:3]
+    tech_stack_str = ", ".join(top_missing[:2])
+
+    fallback_result = {
+        "ok": True,
+        "target_title": target_role,
+        "top_missing_skills": [
+            {
+                "skill": s,
+                "market_demand_level": "High",
+                "why_important": f"Critical infrastructure capability frequently required for {target_role} roles."
+            } for s in top_missing
+        ],
+        "fast_track_project": {
+            "project_title": f"Distributed Event-Driven Service with {tech_stack_str}",
+            "architecture_summary": f"A production-ready microservice demonstrating asynchronous event ingestion, caching, and rate limiting using {tech_stack_str}.",
+            "deliverables": [
+                f"Containerized service running with {top_missing[0]} configuration and health checks",
+                f"Automated integration test suite verifying end-to-end throughput and fault tolerance",
+                "Benchmark report showcasing p99 latency under simulated load"
+            ],
+            "time_to_complete_days": 14
+        },
+        "interview_bridge_script": (
+            f"While I have primarily used {', '.join(sorted(list(cand_skills))[:2])} in production, "
+            f"the architectural fundamentals map directly to {top_missing[0]}. "
+            f"I recently implemented an end-to-end prototype with {top_missing[0]} to validate its trade-offs and operational model."
+        ),
+        "recommended_learning_resources": [
+            {"topic": s, "focus_area": f"Production architecture, failure modes, and benchmarking for {s}"}
+            for s in top_missing
+        ],
+        "used_llm": False,
+        "provider": "deterministic"
+    }
+
+    ai_cfg = get_active_ai_config()
+    should_use_llm = (use_llm is True) or (use_llm is None and ai_cfg.get("provider") != "deterministic")
+    caller = llm_caller or _call_llm
+
+    if should_use_llm:
+        import pathlib
+        prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "career_skill_roadmap.md"
+        system_prompt = (
+            "You are a Staff Software Architect and Career Coach. Generate a strategic 2-week upskilling roadmap. "
+            "Return valid JSON only matching the schema."
+        )
+        try:
+            if prompt_path.exists():
+                text_content = prompt_path.read_text(encoding="utf-8")
+                m = re.search(r"```markdown\n(.*?)\n```", text_content, re.S)
+                if m:
+                    system_prompt = m.group(1).strip()
+        except Exception:
+            pass
+
+        try:
+            prompt_payload = {
+                "candidate_source": {
+                    "target_title": target_role,
+                    "skills": sorted(list(cand_skills))[:25],
+                    "experience": profile.get("experience", [])[:2]
+                },
+                "market_requirements": {
+                    "target_title": target_role,
+                    "demanded_skills": top_missing
+                }
+            }
+            raw_resp = caller(system_prompt, json.dumps(prompt_payload))
+            parsed = _parse_json_llm_response(raw_resp)
+            if parsed and isinstance(parsed, dict) and "fast_track_project" in parsed:
+                return {
+                    "ok": True,
+                    "target_title": parsed.get("target_title") or target_role,
+                    "top_missing_skills": parsed.get("top_missing_skills") or fallback_result["top_missing_skills"],
+                    "fast_track_project": parsed.get("fast_track_project") or fallback_result["fast_track_project"],
+                    "interview_bridge_script": parsed.get("interview_bridge_script") or fallback_result["interview_bridge_script"],
+                    "recommended_learning_resources": parsed.get("recommended_learning_resources") or fallback_result["recommended_learning_resources"],
+                    "used_llm": True,
+                    "provider": ai_cfg.get("provider", "llm"),
+                    "model": ai_cfg.get("model", "")
+                }
+        except Exception:
+            pass
+
+    return fallback_result
 
 
 # ------------------------------------------------------------ ats intelligence & variant comparison

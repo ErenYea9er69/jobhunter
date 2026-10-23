@@ -752,8 +752,11 @@ CRITICAL TRUTH & RECRUITER 2026/2027 CONSTRAINTS:
 """
 
 
-def solve_screening_question(question, profile, job=None, max_words=120, tone="direct"):
+def solve_screening_question(question, profile, job=None, max_words=120, tone="direct", use_llm=None, llm_caller=None):
     """Synthesize a grounded, personalized answer to any job application screening question."""
+    if isinstance(profile, dict) and isinstance(job, dict):
+        if ("company" in profile or "title" in profile) and ("skills" in job or "experience" in job):
+            profile, job = job, profile
     job = job or {}
     company = job.get("company") or "the company"
     title = job.get("title") or "the role"
@@ -803,9 +806,10 @@ def solve_screening_question(question, profile, job=None, max_words=120, tone="d
             f"My approach centers on disciplined problem-solving, clean maintainable code, and pragmatic alignment with core business outcomes."
         )
 
-    # Attempt real LLM generation if available
     cfg = refit.get_active_ai_config()
-    if refit.llm_available():
+    should_use_llm = (use_llm is True) or (use_llm is None and refit.llm_available())
+    caller = llm_caller or refit._call_llm
+    if should_use_llm:
         import pathlib
         prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "screening_question_solver.md"
         system_prompt = SCREENING_SOLVER_PROMPT
@@ -838,7 +842,7 @@ def solve_screening_question(question, profile, job=None, max_words=120, tone="d
             }
         }, indent=2)
         try:
-            raw_res = refit._call_llm(system_prompt, user_prompt, cfg)
+            raw_res = caller(system_prompt, user_prompt)
             parsed_json = refit._parse_json_llm_response(raw_res)
             if isinstance(parsed_json, dict) and "answer" in parsed_json:
                 cleaned = clean_text(str(parsed_json["answer"])).strip()
