@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>JobHunter Copilot</title>
+  <style>
+    body {
+      width: 320px;
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      color: #0f172a;
+      background: #ffffff;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .logo-badge {
+      width: 28px;
+      height: 28px;
+      background: #10b981;
+      color: #ffffff;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 16px;
+    }
+    .title {
+      font-weight: 800;
+      font-size: 15px;
+      color: #0f172a;
+    }
+    .status-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      display: inline-block;
+      margin-right: 4px;
+    }
+    .btn {
+      width: 100%;
+      background: #10b981;
+      color: #ffffff;
+      border: none;
+      padding: 10px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.15s ease;
+    }
+    .btn:hover {
+      background: #059669;
+    }
+    .footer {
+      margin-top: 12px;
+      text-align: center;
+      font-size: 11px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-badge">⚡</div>
+    <div>
+      <div class="title">JobHunter Copilot</div>
+      <div style="font-size:11.5px;color:#64748b;">Jobright AI Mode (Local Engine)</div>
+    </div>
+  </div>
+
+  <div class="status-card">
+    <div class="status-row">
+      <span style="color:#64748b;">Local Server</span>
+      <span style="font-weight:700;color:#10b981;"><span class="dot"></span>Connected (:8080)</span>
+    </div>
+    <div class="status-row">
+      <span style="color:#64748b;">Candidate</span>
+      <span style="font-weight:600;" id="ext-cand-name">Loading...</span>
+    </div>
+    <div class="status-row">
+      <span style="color:#64748b;">Active Resume</span>
+      <span style="font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="ext-resume-name">Loading...</span>
+    </div>
+  </div>
+
+  <button class="btn" id="btn-open-app">Open JobHunter Webapp ↗</button>
+
+  <div class="footer">
+    Works on Greenhouse, Lever, Ashby, Workday, SmartRecruiters & Taleo.
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

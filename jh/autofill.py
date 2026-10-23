@@ -300,6 +300,103 @@ PLATFORM_INFO = {
 }
 
 
+def parse_date_to_year(date_str, default_year=2026):
+    """Extract approximate year integer from date string (e.g. '2023-01', '2021', 'Present')."""
+    if not date_str:
+        return default_year
+    s = str(date_str).strip().lower()
+    if "present" in s or "now" in s or "current" in s:
+        return default_year
+    m = re.search(r"\b(19\d\d|20\d\d)\b", s)
+    if m:
+        try:
+            return int(m.group(1))
+        except ValueError:
+            pass
+    return default_year
+
+
+def calculate_experience_years(experiences):
+    """Calculate deterministic total years of professional experience across all roles."""
+    if not experiences:
+        return 0
+    total_years = 0
+    now_year = datetime.date.today().year
+    for exp in experiences:
+        start_y = parse_date_to_year(exp.get("start") or exp.get("start_date"), default_year=now_year)
+        end_y = parse_date_to_year(exp.get("end") or exp.get("end_date"), default_year=now_year)
+        if start_y > end_y:
+            start_y, end_y = end_y, start_y
+        dur = max(1, end_y - start_y + 1)
+        total_years += dur
+    return max(1, min(total_years, 35)) if experiences else 0
+
+
+def calculate_skill_tenures(skills, experiences):
+    """Compute calculated years of experience per skill based on candidate role history."""
+    tenures = {}
+    now_year = datetime.date.today().year
+    exp_text_durations = []
+    for exp in experiences:
+        start_y = parse_date_to_year(exp.get("start") or exp.get("start_date"), default_year=now_year)
+        end_y = parse_date_to_year(exp.get("end") or exp.get("end_date"), default_year=now_year)
+        dur = max(1, end_y - start_y + 1)
+        role = (exp.get("role") or "").lower()
+        company = (exp.get("company") or "").lower()
+        bullets = " ".join(exp.get("bullets") or []).lower()
+        combined = f"{role} {company} {bullets}"
+        exp_text_durations.append((combined, dur))
+
+    total_overall = calculate_experience_years(experiences)
+    for sk in (skills or []):
+        sk_clean = sk.strip().lower()
+        if not sk_clean:
+            continue
+        sk_years = 0
+        for text, dur in exp_text_durations:
+            if sk_clean in text:
+                sk_years += dur
+        if sk_years == 0:
+            sk_years = max(1, int(total_overall * 0.5)) if total_overall > 1 else 1
+        tenures[sk_clean] = sk_years
+    return tenures
+
+
+def extract_address_components(location_str):
+    """Extract structured street, city, state/province, postal code, and country from location string."""
+    loc = (location_str or "").strip()
+    parts = [p.strip() for p in loc.split(",") if p.strip()]
+    city = parts[0] if parts else "San Francisco"
+    state_province = ""
+    country = "United States"
+    postal_code = ""
+    street = ""
+
+    if len(parts) >= 3:
+        city = parts[0]
+        state_province = parts[1]
+        country = parts[2]
+    elif len(parts) == 2:
+        city = parts[0]
+        p1 = parts[1].strip()
+        if len(p1) == 2 and p1.isalpha():
+            state_province = p1.upper()
+        else:
+            country = p1
+
+    zip_match = re.search(r"\b\d{5}(?:-\d{4})?\b", loc)
+    if zip_match:
+        postal_code = zip_match.group(0)
+
+    return {
+        "street_address": street,
+        "city": city,
+        "state_province": state_province,
+        "postal_code": postal_code,
+        "country": country
+    }
+
+
 def get_autofill_payload(profile, job=None):
     """Assemble a unified, standard ATS-ready autofill dictionary from the candidate profile and job."""
     name = (profile.get("name") or "Candidate").strip()
@@ -307,9 +404,9 @@ def get_autofill_payload(profile, job=None):
     email = (profile.get("email") or "").strip()
     phone = (profile.get("phone") or "").strip()
     location = (profile.get("location") or "").strip()
-    loc_parts = [p.strip() for p in location.split(",") if p.strip()]
-    city = loc_parts[0] if loc_parts else location
-    country = loc_parts[-1] if len(loc_parts) > 1 else "United States"
+    addr_comp = extract_address_components(location)
+    city = addr_comp["city"]
+    country = addr_comp["country"]
 
     # Social links
     linkedin = (profile.get("linkedin") or "").strip()
@@ -327,23 +424,62 @@ def get_autofill_payload(profile, job=None):
     min_sal = profile.get("min_salary")
     salary_str = f"${int(min_sal):,} / year" if min_sal else "Competitive / Flexible based on overall package"
 
-    # Experience details
+    # Multi-position experience details
     exps = profile.get("experience") or []
     current_exp = exps[0] if exps else {}
     current_company = (current_exp.get("company") or "").strip()
     current_role = (current_exp.get("role") or target_title).strip()
     current_bullets = current_exp.get("bullets") or []
 
-    # Education details
+    work_history = []
+    for idx, exp in enumerate(exps):
+        is_cur = idx == 0 and ("present" in str(exp.get("end") or "").lower() or not exp.get("end"))
+        work_history.append({
+            "company": (exp.get("company") or "").strip(),
+            "title": (exp.get("role") or exp.get("title") or "").strip(),
+            "start_date": str(exp.get("start") or exp.get("start_date") or "").strip(),
+            "end_date": str(exp.get("end") or exp.get("end_date") or ("Present" if is_cur else "")).strip(),
+            "is_current": is_cur,
+            "location": (exp.get("location") or location).strip(),
+            "description": " ".join(exp.get("bullets") or []).strip(),
+            "bullets": exp.get("bullets") or []
+        })
+
+    # Multi-education details
     edus = profile.get("education") or []
     top_edu = edus[0] if edus else {}
     degree = (top_edu.get("degree") or "Bachelor of Science in Computer Science").strip()
     school = (top_edu.get("institution") or "").strip()
     grad_year = str(top_edu.get("graduation_year") or "")
 
-    # Top skills
+    education_history = []
+    for edu in edus:
+        education_history.append({
+            "institution": (edu.get("institution") or "").strip(),
+            "degree": (edu.get("degree") or "").strip(),
+            "field_of_study": (edu.get("field_of_study") or edu.get("major") or "").strip(),
+            "start_year": str(edu.get("start_year") or "").strip(),
+            "graduation_year": str(edu.get("graduation_year") or "").strip(),
+            "gpa": str(edu.get("gpa") or "").strip()
+        })
+
+    # Top skills & tenure
     skills = profile.get("skills") or []
     skills_csv = ", ".join(skills[:15])
+    skill_years = calculate_skill_tenures(skills, exps)
+    total_years_exp = calculate_experience_years(exps)
+
+    # Legal & EEO defaults merged with profile configuration
+    cfg_legal = profile.get("legal_and_eeo") or {}
+    legal_and_eeo = {
+        "authorized_us": cfg_legal.get("authorized_us") or "Yes",
+        "require_sponsorship_now": cfg_legal.get("require_sponsorship_now") or "No",
+        "require_sponsorship_future": cfg_legal.get("require_sponsorship_future") or "No",
+        "gender": cfg_legal.get("gender") or "Decline to self-identify",
+        "race_ethnicity": cfg_legal.get("race_ethnicity") or "Decline to self-identify",
+        "veteran_status": cfg_legal.get("veteran_status") or "No",
+        "disability_status": cfg_legal.get("disability_status") or "No"
+    }
 
     # Summary
     summary = (profile.get("summary") or "").strip()
@@ -409,15 +545,21 @@ def get_autofill_payload(profile, job=None):
         "location": location,
         "city": city,
         "country": country,
+        "address_components": addr_comp,
         "linkedin_url": linkedin,
         "github_url": github,
         "portfolio_url": portfolio,
         "target_title": target_title,
         "current_company": current_company,
         "current_role": current_role,
+        "work_history": work_history,
+        "education_history": education_history,
+        "skill_years": skill_years,
+        "total_years_experience": total_years_exp,
+        "legal_and_eeo": legal_and_eeo,
         "desired_salary": salary_str,
-        "work_authorization": "Authorized to work without sponsorship",
-        "visa_sponsorship": "No, I do not require visa sponsorship",
+        "work_authorization": "Authorized to work without sponsorship" if legal_and_eeo["authorized_us"] == "Yes" else "Requires authorization",
+        "visa_sponsorship": "No, I do not require visa sponsorship" if legal_and_eeo["require_sponsorship_now"] == "No" else "Yes, I require visa sponsorship",
         "notice_period": "Immediate (or standard 2 weeks)",
         "degree": degree,
         "institution": school,
@@ -778,7 +920,22 @@ CRITICAL TRUTH & RECRUITER 2026/2027 CONSTRAINTS:
 """
 
 
-def solve_screening_question(question, profile, job=None, max_words=120, tone="direct", use_llm=None, llm_caller=None):
+def classify_question_type(question):
+    """Classify screening question as boolean, numeric, or narrative."""
+    q_low = (question or "").lower()
+    if any(k in q_low for k in ["how many years", "years of experience", "number of years", "years of hands-on"]):
+        return "numeric"
+    if any(k in q_low for k in [
+        "authorized to work", "legally authorized", "eligible to work",
+        "require visa", "require sponsorship", "visa sponsorship",
+        "are you at least 18", "over 18", "willing to relocate",
+        "have you ever worked", "previously employed", "prior employee"
+    ]):
+        return "boolean"
+    return "narrative"
+
+
+def solve_screening_question(question, profile, job=None, question_type="auto", max_words=120, tone="direct", use_llm=None, llm_caller=None):
     """Synthesize a grounded, personalized answer to any job application screening question."""
     if isinstance(profile, dict) and isinstance(job, dict):
         if ("company" in profile or "title" in profile) and ("skills" in job or "experience" in job):
@@ -791,8 +948,61 @@ def solve_screening_question(question, profile, job=None, max_words=120, tone="d
     exps = profile.get("experience") or []
     top_bullets = [b for e in exps for b in e.get("bullets", []) if b.strip()][:4]
 
-    # Deterministic fallback response generator
-    q_low = question.lower()
+    q_low = (question or "").lower()
+    resolved_type = classify_question_type(question) if question_type == "auto" else question_type
+
+    cfg_legal = profile.get("legal_and_eeo") or {}
+    auth_us = cfg_legal.get("authorized_us") or profile.get("work_authorization") or "Yes"
+    auth_val = "Yes" if "yes" in str(auth_us).lower() or "authorized" in str(auth_us).lower() else "No"
+    spons = cfg_legal.get("require_sponsorship_now") or profile.get("visa_sponsorship") or "No"
+    spons_val = "Yes" if "yes" in str(spons).lower() or "require" in str(spons).lower() else "No"
+
+    # 1. Direct Boolean / Radio Question Handling
+    if resolved_type == "boolean":
+        if any(k in q_low for k in ["require sponsorship", "require visa", "visa sponsorship", "need sponsorship"]):
+            ans = spons_val
+        elif any(k in q_low for k in ["authorized", "authorization", "legally", "eligible"]):
+            ans = auth_val
+        elif any(k in q_low for k in ["prior", "previously", "former employee", "have you ever worked"]):
+            ans = "No"
+        elif any(k in q_low for k in ["18", "age", "adult"]):
+            ans = "Yes"
+        elif any(k in q_low for k in ["relocate", "relocation"]):
+            ans = "Yes"
+        else:
+            ans = "Yes"
+        return {
+            "question": question,
+            "answer": ans,
+            "question_type": "boolean",
+            "provider": "profile_rules",
+            "model": "grounded_boolean",
+            "grounded": True,
+            "word_count": len(ans.split())
+        }
+
+    # 2. Direct Numeric Experience Years Handling
+    if resolved_type == "numeric":
+        total_exp = calculate_experience_years(exps)
+        skill_tenures = calculate_skill_tenures(skills, exps)
+        matched_years = total_exp
+        # Identify if a specific skill was requested in the question
+        for sk, yrs in skill_tenures.items():
+            if sk in q_low:
+                matched_years = yrs
+                break
+        ans = str(max(1, matched_years))
+        return {
+            "question": question,
+            "answer": ans,
+            "question_type": "numeric",
+            "provider": "profile_calculation",
+            "model": "deterministic_tenure",
+            "grounded": True,
+            "word_count": 1
+        }
+
+    # 3. Deterministic narrative fallback response generator
     fallback_answer = ""
 
     if any(k in q_low for k in ["why", "interest", "excite", "apply"]):
@@ -874,16 +1084,15 @@ def solve_screening_question(question, profile, job=None, max_words=120, tone="d
                 cleaned = clean_text(str(parsed_json["answer"])).strip()
             else:
                 cleaned = clean_text(raw_res).strip()
-            # Clean enclosing quotes or markdown symbols that could break form inputs
             cleaned = re.sub(r"^\s*[\"']+|[\"']+\s*$", "", cleaned).strip()
             cleaned = re.sub(r"[*#_`]", "", cleaned).strip()
 
-            # Verify no hallucinations against candidate profile
             check = refit.ungrounded(profile, cleaned.replace(title, "").replace(company, ""))
             if not check["skills"] and not check["numbers"]:
                 return {
                     "question": question,
                     "answer": cleaned,
+                    "question_type": "narrative",
                     "provider": cfg.get("provider", "ai"),
                     "model": cfg.get("model", ""),
                     "grounded": True,
@@ -895,6 +1104,7 @@ def solve_screening_question(question, profile, job=None, max_words=120, tone="d
     return {
         "question": question,
         "answer": fallback_answer,
+        "question_type": "narrative",
         "provider": "deterministic",
         "model": "grounded_rules",
         "grounded": True,

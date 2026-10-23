@@ -4871,6 +4871,13 @@
           ${posted ? `<span class="meta-pill meta-posted"><span class="meta-pill-icon">${ico('clock')}</span><span>Posted ${esc(posted)}</span></span>` : ''}
         </div>
 
+        <div class="jobright-ext-callout">
+          <span class="ext-callout-icon">✨</span>
+          <div>
+            <strong>JobHunter AI Copilot Extension ready:</strong> Click <em>Apply on ${esc(bestApplySource(j).source || 'Official Site')}</em> and the side flyout will automatically match your resume, autofill ATS forms, and solve screening questions in 1 click!
+          </div>
+        </div>
+
         <div class="detail-actions-bar">
           <div class="detail-actions-main">
             <button type="button" class="btn btn-primary btn-easy-apply" id="btnDetailEasyApply" data-action="easy-apply-now" data-key="${esc(key)}" style="background:#10b981;border-color:#10b981;color:#ffffff;" title="Apply in 1 Click: Auto-tailors resume, drafts customized pitch, logs application with 7-day follow-up">

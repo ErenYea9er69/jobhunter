@@ -6357,6 +6357,30 @@ button.chip:hover { background: var(--brand-soft); color: var(--brand); border-c
   border: 1px solid #26262D;
 }
 
+/* Jobright AI Autofill Callout */
+.jobright-ext-callout {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+  font-size: 12.5px;
+  color: #064e3b;
+  line-height: 1.4;
+}
+[data-theme="dark"] .jobright-ext-callout {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.25);
+  color: #6ee7b7;
+}
+.ext-callout-icon {
+  font-size: 16px;
+  color: #10b981;
+}
+
 .btn-outline-success {
   background: transparent;
   color: var(--green-deep);
