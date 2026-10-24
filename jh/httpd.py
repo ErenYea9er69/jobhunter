@@ -12,7 +12,7 @@ import traceback
 import urllib.parse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-from . import ats, autofill, config, db, digest, exporters, pipeline, resume_parser, refit, tracker, __version__
+from . import ats, autofill, config, db, digest, exporters, extension_installer, pipeline, resume_parser, refit, tracker, __version__
 
 log = logging.getLogger("jobhunter")
 TOKEN = os.environ.get("JH_TOKEN") or secrets.token_urlsafe(24)
@@ -611,6 +611,24 @@ def r_ext_confirm_applied(q, body):
     }
 
 
+@route("GET", "/api/desktop/extension-status")
+def r_desktop_ext_status(q, body):
+    return extension_installer.get_extension_status()
+
+
+@route("POST", "/api/desktop/launch-browser-extension")
+def r_desktop_launch_ext(q, body):
+    browser_type = (body.get("browser_type") or "auto").strip()
+    url = (body.get("url") or f"http://127.0.0.1:{config.PORT}").strip()
+    return extension_installer.launch_browser_with_extension(url=url, browser_type=browser_type)
+
+
+@route("POST", "/api/desktop/open-extension-folder")
+def r_desktop_open_ext_folder(q, body):
+    browser_type = (body.get("browser_type") or "auto").strip()
+    return extension_installer.open_extension_manager(browser_type=browser_type)
+
+
 @route("GET", "/api/applications")
 def r_apps(q, body):
     return {"applications": tracker.list_applications()}
@@ -1072,7 +1090,7 @@ class Handler(SimpleHTTPRequestHandler):
         query_params = urllib.parse.parse_qs(parsed.query or "")
         token_in_query = query_params.get("token", [""])[0] == TOKEN
         token_valid = (self.headers.get("X-JH-Token") == TOKEN) or token_in_query
-        is_extension_call = path.startswith("/api/extension/")
+        is_extension_call = path.startswith("/api/extension/") or path.startswith("/api/desktop/")
         if not is_extension_call and not token_valid:
             return self._json({"error": "Missing or invalid session token. Reload the page."}, 401)
         if method == "GET" and path == "/api/search/stream":
