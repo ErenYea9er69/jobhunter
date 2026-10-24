@@ -18,6 +18,7 @@ def build():
     icon_path = os.path.join(BASE_DIR, "app_icon.ico")
     public_path = os.path.join(BASE_DIR, "public")
     data_path = os.path.join(BASE_DIR, "data")
+    extension_path = os.path.join(BASE_DIR, "extension")
 
     sep = ";" if sys.platform == "win32" else ":"
 
@@ -29,11 +30,14 @@ def build():
         "--onedir",
         f"--icon={icon_path}",
         f"--add-data={public_path}{sep}public",
+        f"--add-data={extension_path}{sep}extension",
         f"--add-data={icon_path}{sep}.",
         "--hidden-import=webview",
         "--hidden-import=webview.platforms.winforms",
         "--hidden-import=sqlite3",
         "--hidden-import=urllib.request",
+        "--hidden-import=jh.extension_installer",
+        "--hidden-import=jh.autofill",
         "--clean",
         "-y",
         os.path.join(BASE_DIR, "desktop.py")
@@ -45,10 +49,16 @@ def build():
 
     print(f"Running PyInstaller:\n{' '.join(cmd)}\n")
     res = subprocess.run(cmd, cwd=BASE_DIR)
-    
+
     if res.returncode == 0:
         dist_dir = os.path.join(BASE_DIR, "dist", "JobHunter")
         exe_file = os.path.join(dist_dir, "JobHunter.exe")
+        dist_ext_dir = os.path.join(dist_dir, "extension")
+
+        # Guarantee extension directory is populated
+        if os.path.isdir(extension_path) and not os.path.isfile(os.path.join(dist_ext_dir, "manifest.json")):
+            print("Syncing extension directory to dist/JobHunter/extension...")
+            shutil.copytree(extension_path, dist_ext_dir, dirs_exist_ok=True)
         zip_base = os.path.join(BASE_DIR, "dist", "JobHunter-Windows-x64")
         
         print("\nCreating release ZIP archive...")

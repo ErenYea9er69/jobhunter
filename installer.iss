@@ -39,7 +39,9 @@ Source: "app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app_icon.ico"
+Name: "{autoprograms}\{#MyAppName} (with AI Browser Extension)"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--launch-browser"; IconFilename: "{app}\app_icon.ico"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app_icon.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--launch-browser"; Description: "Launch JobHunter and open Chrome/Edge with AI Extension"; Flags: nowait postinstall unchecked
