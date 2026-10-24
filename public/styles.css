@@ -13409,6 +13409,28 @@ body.compact-mode .chip {
   }
 }
 
+/* ==========================================================================
+   AI Copilot Browser Extension Dialog & Dock Launcher
+   ========================================================================== */
+#dockExtensionBtn {
+  color: #12b76a;
+  position: relative;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
 
+#dockExtensionBtn:hover {
+  color: #34d399;
+  background: rgba(18, 183, 106, 0.15);
+  transform: translateY(-1px);
+}
 
+#extensionDialog {
+  max-width: 580px;
+  width: 90vw;
+  border-radius: 14px;
+}
 
+#extensionDialog::backdrop {
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(4px);
+}

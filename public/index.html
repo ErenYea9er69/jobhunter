@@ -100,6 +100,10 @@
 
     <div class="dock-sep" role="separator" aria-orientation="vertical"></div>
 
+    <button type="button" class="dock-item" id="dockExtensionBtn" data-tooltip="AI Copilot Extension" aria-label="Browser Extension">
+      <svg class="dock-icon" aria-hidden="true"><use href="#i-bolt"/></svg>
+    </button>
+
     <a href="#/settings" class="dock-item" data-nav="settings" data-tooltip="Settings" aria-label="Settings" id="settingsDockBtn">
       <svg class="dock-icon" aria-hidden="true"><use href="#i-settings"/></svg>
     </a>
@@ -2525,6 +2529,66 @@
         <button type="button" class="btn btn-danger" data-confirm="ok" id="confirmOk">Confirm</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- ================= EXTENSION DIALOG ================= -->
+  <dialog class="dialog" id="extensionDialog" aria-labelledby="extDialogTitle">
+    <div class="dialog-head">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:22px;">⚡</span>
+        <div>
+          <h2 id="extDialogTitle" style="margin:0;font-size:1.15rem;">JobHunter AI Autofill &amp; Copilot Extension</h2>
+          <p class="muted" style="margin:2px 0 0;font-size:0.82rem;">1-Click browser companion for Workday, Greenhouse, Lever, Ashby &amp; more</p>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" data-action="dialog-close" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div style="padding:16px 0;display:flex;flex-direction:column;gap:16px;">
+      <div class="card" style="background:rgba(18,183,106,0.08);border:1px solid rgba(18,183,106,0.25);border-radius:10px;padding:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-weight:600;color:#12b76a;display:flex;align-items:center;gap:6px;">
+            <span>✨</span> Automated Browser Launch
+          </span>
+          <span class="pill pill-success" style="font-size:0.75rem;">Instant • Zero-Setup</span>
+        </div>
+        <p style="font-size:0.85rem;margin:0 0 12px;color:var(--text-secondary,#94a3b8);">
+          Launches your Chromium browser with JobHunter and the Autofill &amp; Copilot companion extension pre-loaded automatically.
+        </p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <select id="extBrowserSelect" class="form-select" style="max-width:200px;font-size:0.85rem;padding:6px 10px;border-radius:6px;background:var(--card-bg,#1e293b);color:var(--text-primary,#fff);border:1px solid var(--border,#334155);">
+            <option value="auto">Auto-detect browser</option>
+            <option value="chrome">Google Chrome</option>
+            <option value="edge">Microsoft Edge</option>
+            <option value="brave">Brave</option>
+          </select>
+          <button type="button" class="btn btn-primary" id="btnLaunchBrowserWithExt" style="background:#12b76a;border-color:#12b76a;color:#fff;">
+            <span>🚀 Launch Browser with Extension</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="card" style="border:1px solid var(--border,#334155);border-radius:10px;padding:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-weight:600;display:flex;align-items:center;gap:6px;">
+            <span>📁</span> Permanent Developer Mode Setup
+          </span>
+          <span class="pill" style="font-size:0.75rem;">1-Click Path Copy</span>
+        </div>
+        <p style="font-size:0.85rem;margin:0 0 12px;color:var(--text-secondary,#94a3b8);">
+          Want the extension permanently installed across all browser sessions? Click below to copy the folder path and open your browser's extension manager. Then enable <em>Developer mode</em> and click <em>Load unpacked</em>!
+        </p>
+        <div style="display:flex;gap:10px;">
+          <button type="button" class="btn btn-secondary" id="btnOpenExtManager">
+            <span>📂 Open Extension Manager &amp; Copy Path</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="extStatusFeedback" style="font-size:0.82rem;color:var(--text-muted,#64748b);"></div>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" data-action="dialog-close">Close</button>
+    </div>
   </dialog>
 
   <!-- ================= VARIANT DIALOG ================= -->

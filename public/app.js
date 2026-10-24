@@ -8580,6 +8580,87 @@
     $('#appDialogForm').addEventListener('submit', e => { e.preventDefault(); submitAppDialog(); });
     $('#watchDialogForm').addEventListener('submit', e => { e.preventDefault(); submitWatch(); });
     $('#digestThresholdSelect').addEventListener('change', changeDigestCutoff);
+
+    const extBtn = $('#dockExtensionBtn');
+    if (extBtn) extBtn.addEventListener('click', openExtensionDialog);
+    const launchExtBtn = $('#btnLaunchBrowserWithExt');
+    if (launchExtBtn) launchExtBtn.addEventListener('click', launchBrowserWithExtension);
+    const openMgrBtn = $('#btnOpenExtManager');
+    if (openMgrBtn) openMgrBtn.addEventListener('click', openExtensionManagerAndCopy);
+  }
+
+  async function openExtensionDialog() {
+    const d = $('#extensionDialog');
+    if (!d) return;
+    d.showModal();
+    const fb = $('#extStatusFeedback');
+    if (fb) fb.textContent = 'Detecting installed Chromium browsers...';
+    try {
+      const res = await api('/api/desktop/extension-status');
+      if (res && res.browsers) {
+        const sel = $('#extBrowserSelect');
+        if (sel) {
+          sel.innerHTML = '<option value="auto">Auto-detect browser</option>';
+          res.browsers.forEach(b => {
+            const opt = document.createElement('option');
+            opt.value = b.type;
+            opt.textContent = `${b.name} (${b.type})`;
+            sel.appendChild(opt);
+          });
+        }
+        if (fb) {
+          fb.innerHTML = `<span style="color:#12b76a;font-weight:600;">✓ Extension ready (${res.name || 'JobHunter AI Copilot'})</span> &bull; Detected: ${res.browsers.map(b => b.name).join(', ') || 'None'}`;
+        }
+      }
+    } catch (err) {
+      if (fb) fb.textContent = 'Extension available in program directory.';
+    }
+  }
+
+  async function launchBrowserWithExtension() {
+    const sel = $('#extBrowserSelect');
+    const bType = sel ? sel.value : 'auto';
+    const btn = $('#btnLaunchBrowserWithExt');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Launching...';
+    }
+    try {
+      const res = await api('/api/desktop/launch-browser-extension', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ browser_type: bType, url: window.location.origin })
+      });
+      if (res && res.success) {
+        toast(`Launched ${res.browser} with JobHunter extension pre-loaded!`, 'success');
+        const d = $('#extensionDialog');
+        if (d) d.close();
+      } else {
+        toast(res.error || 'Could not launch browser', 'error');
+      }
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🚀 Launch Browser with Extension</span>';
+      }
+    }
+  }
+
+  async function openExtensionManagerAndCopy() {
+    const sel = $('#extBrowserSelect');
+    const bType = sel ? sel.value : 'auto';
+    try {
+      await api('/api/desktop/open-extension-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ browser_type: bType })
+      });
+      toast('Extension folder opened & path copied to clipboard! Click "Load unpacked" in browser.', 'success', 6000);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   }
 
   // ----------------------------------------------------------------- hidden jobs
