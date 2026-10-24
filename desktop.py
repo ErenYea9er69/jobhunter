@@ -80,11 +80,19 @@ def main():
     ]
     icon_path = next((p for p in icon_candidates if os.path.isfile(p)), None)
 
-    # If --launch-browser flag is supplied, launch Chromium with extension pre-loaded
-    if args.launch_browser:
+    # Check launch mode (from argument or saved setting in db)
+    try:
+        from jh import db
+        db_launch_mode = db.get_setting("desktop_launch_mode", "desktop")
+    except Exception:
+        db_launch_mode = "desktop"
+    should_launch_browser = args.launch_browser or (db_launch_mode == "browser")
+
+    # If browser mode is active, launch Chromium with extension pre-loaded
+    if should_launch_browser:
         launch_res = extension_installer.launch_browser_with_extension(url=app_url, browser_type=args.browser)
         print("=" * 60)
-        print("  JobHunter Desktop Running with AI Extension")
+        print("  JobHunter Running in Browser Mode with AI Extension")
         print(f"  URL:     {app_url}")
         print(f"  Browser: {launch_res.get('browser', 'Default')} ({launch_res.get('path', '')})")
         print("=" * 60)
@@ -101,8 +109,23 @@ def main():
                 pass
             sys.exit(0)
 
-    # Launch desktop window
+    # Ensure local server is responsive before opening desktop window
+    import urllib.request
+    for _ in range(30):
+        try:
+            with urllib.request.urlopen(app_url, timeout=0.3):
+                break
+        except Exception:
+            time.sleep(0.08)
+
+    # Launch native desktop window
     gui_launched = False
+    storage_path = os.path.join(config.DATA_DIR, "webview")
+    try:
+        os.makedirs(storage_path, exist_ok=True)
+    except Exception:
+        storage_path = None
+
     try:
         import webview
 
@@ -118,7 +141,7 @@ def main():
             background_color="#0f172a",
         )
         gui_launched = True
-        webview.start(private_mode=False, icon=icon_path)
+        webview.start(private_mode=False, icon=icon_path, storage_path=storage_path)
 
     except Exception as err:
         log.warning("Could not launch native webview window (%s). Falling back to browser...", err)

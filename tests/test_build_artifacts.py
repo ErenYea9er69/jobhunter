@@ -13,6 +13,10 @@ class TestBuildArtifacts(unittest.TestCase):
         ext_manifest = os.path.join(BASE_DIR, "dist", "JobHunter", "extension", "manifest.json")
         self.assertTrue(os.path.isfile(ext_manifest), f"Missing bundled extension manifest: {ext_manifest}")
 
+    def test_dist_public_bundled(self):
+        index_file = os.path.join(BASE_DIR, "dist", "JobHunter", "public", "index.html")
+        self.assertTrue(os.path.isfile(index_file), f"Missing public/index.html in dist: {index_file}")
+
     def test_dist_installer_exists(self):
         installer_exe = os.path.join(BASE_DIR, "dist", "JobHunter-Setup.exe")
         self.assertTrue(os.path.isfile(installer_exe), f"Missing setup installer: {installer_exe}")

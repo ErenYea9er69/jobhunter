@@ -1922,6 +1922,38 @@
               <button type="button" class="btn btn-primary btn-sm" id="btnSaveGeneralSettings">Save general preferences</button>
             </div>
           </section>
+
+          <!-- Desktop Display & Browser Launch Mode -->
+          <section class="card settings-card" data-keywords="desktop browser window display mode launch extension">
+            <div class="card-head">
+              <div>
+                <h3 class="card-title"><svg class="i" aria-hidden="true"><use href="#i-monitor"/></svg>Desktop &amp; Browser Launch Mode</h3>
+                <p class="muted">Choose whether JobHunter runs in its native desktop window or opens automatically in your web browser.</p>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-field span-2">
+                <label for="cfgLaunchMode">Default Startup Mode</label>
+                <select id="cfgLaunchMode">
+                  <option value="desktop" selected>🖥️ Native Desktop Window (Default)</option>
+                  <option value="browser">🌐 Web Browser (Chrome / Edge with AI Extension)</option>
+                </select>
+                <small class="muted">You can change this anytime. Native desktop keeps JobHunter self-contained; browser mode integrates with your existing tabs.</small>
+              </div>
+
+              <div class="form-field span-2" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding-top:6px;">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnOpenInBrowserNow">
+                  <svg class="i" aria-hidden="true"><use href="#i-arrow-up-right"/></svg>
+                  <span>Open Now in Web Browser</span>
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnLaunchExtMainBrowser">
+                  <svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>
+                  <span>Launch Main Browser with Copilot Extension</span>
+                </button>
+              </div>
+            </div>
+          </section>
         </div>
 
         <!-- 2. AI ENGINE & GUARDRAILS -->

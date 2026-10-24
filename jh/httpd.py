@@ -629,6 +629,18 @@ def r_desktop_open_ext_folder(q, body):
     return extension_installer.open_extension_manager(browser_type=browser_type)
 
 
+@route("POST", "/api/desktop/open-in-browser")
+def r_desktop_open_in_browser(q, body):
+    browser_type = (body.get("browser_type") or "auto").strip()
+    url = (body.get("url") or f"http://127.0.0.1:{config.PORT}").strip()
+    res = extension_installer.launch_browser_with_extension(url=url, browser_type=browser_type)
+    if not res.get("success"):
+        import webbrowser
+        webbrowser.open(url)
+        return {"success": True, "browser": "Default Web Browser", "url": url}
+    return res
+
+
 @route("GET", "/api/applications")
 def r_apps(q, body):
     return {"applications": tracker.list_applications()}
@@ -730,7 +742,7 @@ def r_get_settings(q, body):
                "ai_model", "ollama_endpoint",
                "max_scored_jobs", "max_results", "linkedin_scrape_depth", "user_country", "include_worldwide_remote",
                "theme_mode", "ui_density", "sound_enabled", "default_sort", "default_work_mode", "default_min_score",
-               "auto_hide_applied", "auto_hide_expired"}
+               "auto_hide_applied", "auto_hide_expired", "desktop_launch_mode"}
     out = {}
     with db.session() as c:
         for row in c.execute("SELECT key, value FROM settings"):
@@ -761,6 +773,7 @@ def r_get_settings(q, body):
     out.setdefault("default_sort", db.get_setting("default_sort", "score"))
     out.setdefault("auto_hide_applied", db.get_setting("auto_hide_applied", "0"))
     out.setdefault("auto_hide_expired", db.get_setting("auto_hide_expired", "0"))
+    out.setdefault("desktop_launch_mode", db.get_setting("desktop_launch_mode", "desktop"))
     return out
 
 
@@ -774,7 +787,7 @@ def r_settings(q, body):
                "ai_model", "ollama_endpoint",
                "max_scored_jobs", "max_results", "linkedin_scrape_depth", "user_country", "include_worldwide_remote",
                "theme_mode", "ui_density", "sound_enabled", "default_sort", "default_work_mode", "default_min_score",
-               "auto_hide_applied", "auto_hide_expired"}
+               "auto_hide_applied", "auto_hide_expired", "desktop_launch_mode"}
     for k, v in body.items():
         if k in allowed:
             db.set_setting(k, str(v).strip())
@@ -1272,8 +1285,6 @@ def create_server(host=None, port=None):
             actual_port = p
             break
         except OSError:
-            if port is not None:
-                raise
             continue
 
     if srv is None:

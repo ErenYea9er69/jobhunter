@@ -1107,6 +1107,10 @@
     const hideExpiredCb = $('#cfgAutoHideExpired');
     if (hideExpiredCb) hideExpiredCb.checked = s.auto_hide_expired === '1';
 
+    // Launch Mode
+    const launchModeSel = $('#cfgLaunchMode');
+    if (launchModeSel && s.desktop_launch_mode) launchModeSel.value = s.desktop_launch_mode;
+
     // Adzuna
     const adzId = $('#cfgAdzunaAppId');
     if (adzId && s.adzuna_app_id) adzId.value = s.adzuna_app_id;
@@ -1223,7 +1227,8 @@
           auto_hide_applied: $('#cfgAutoHideApplied') && $('#cfgAutoHideApplied').checked ? '1' : '0',
           auto_hide_expired: $('#cfgAutoHideExpired') && $('#cfgAutoHideExpired').checked ? '1' : '0',
           ui_density: val('cfgUiDensity') || 'comfortable',
-          sound_enabled: $('#cfgSoundEnabled') && $('#cfgSoundEnabled').checked ? '1' : '0'
+          sound_enabled: $('#cfgSoundEnabled') && $('#cfgSoundEnabled').checked ? '1' : '0',
+          desktop_launch_mode: val('cfgLaunchMode') || 'desktop'
         };
         const reloadMins = parseInt(val('cfgAutoRefresh'), 10) || 0;
         setAutoReloadMinutes(reloadMins);
@@ -1236,6 +1241,51 @@
           toast('General preferences saved');
         } catch (e) {
           toast('Failed to save preferences: ' + e.message, 'error');
+        }
+      });
+    }
+
+    // 4b. Desktop Launch Mode immediate change & Browser triggers
+    const launchModeSel = $('#cfgLaunchMode');
+    if (launchModeSel) {
+      launchModeSel.addEventListener('change', async () => {
+        const mode = launchModeSel.value;
+        try {
+          await api('/api/settings', { method: 'POST', body: { desktop_launch_mode: mode } });
+          toast(mode === 'browser' ? 'JobHunter will open in browser by default' : 'JobHunter will run in native desktop window');
+        } catch (e) {
+          toast(e.message, 'error');
+        }
+      });
+    }
+
+    const openInBrowserBtn = $('#btnOpenInBrowserNow');
+    if (openInBrowserBtn) {
+      openInBrowserBtn.addEventListener('click', async () => {
+        try {
+          const res = await api('/api/desktop/open-in-browser', { method: 'POST' });
+          toast('Opened JobHunter in ' + (res.browser || 'web browser'), 'success');
+        } catch (e) {
+          window.open(window.location.origin, '_blank');
+        }
+      });
+    }
+
+    const launchExtMainBtn = $('#btnLaunchExtMainBrowser');
+    if (launchExtMainBtn) {
+      launchExtMainBtn.addEventListener('click', async () => {
+        try {
+          const res = await api('/api/desktop/launch-browser-extension', {
+            method: 'POST',
+            body: { browser_type: 'auto', url: window.location.origin }
+          });
+          if (res && res.success) {
+            toast(`Launched ${res.browser} with Copilot Extension active!`, 'success');
+          } else {
+            toast(res.error || 'Could not launch browser', 'error');
+          }
+        } catch (e) {
+          toast(e.message, 'error');
         }
       });
     }
@@ -2109,7 +2159,7 @@
 
       if (ringPath) {
         ringPath.setAttribute('stroke-dasharray', `${score}, 100`);
-        ringPath.className = `circle ${score >= 85 ? 'score-high' : score >= 70 ? 'score-med' : 'score-low'}`;
+        ringPath.setAttribute('class', `circle ${score >= 85 ? 'score-high' : score >= 70 ? 'score-med' : 'score-low'}`);
       }
       if (scoreText) scoreText.textContent = `${score}%`;
       if (gradeBadge) {

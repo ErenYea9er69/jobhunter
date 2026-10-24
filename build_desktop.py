@@ -59,6 +59,11 @@ def build():
         if os.path.isdir(extension_path) and not os.path.isfile(os.path.join(dist_ext_dir, "manifest.json")):
             print("Syncing extension directory to dist/JobHunter/extension...")
             shutil.copytree(extension_path, dist_ext_dir, dirs_exist_ok=True)
+
+        dist_public_dir = os.path.join(dist_dir, "public")
+        if os.path.isdir(public_path) and not os.path.isfile(os.path.join(dist_public_dir, "index.html")):
+            print("Syncing public directory to dist/JobHunter/public...")
+            shutil.copytree(public_path, dist_public_dir, dirs_exist_ok=True)
         zip_base = os.path.join(BASE_DIR, "dist", "JobHunter-Windows-x64")
         
         print("\nCreating release ZIP archive...")
