@@ -10,14 +10,49 @@ import json
 import logging
 import os
 import re
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import ats, db, exporters, pipeline, refit, resume_parser, scoring, sources, tracker, workspace
+from .evidence import EvidenceLedger, build_ledger_from_profile, verify_grounding, create_audit_manifest
 from .filestore import FileStore
+from .models import ToolOutcome, WarningCategory
+from .observability import record_tool_call, record_security_event, timed_operation, EventType
+from .schemas import (
+    validate_search_input, validate_score_input, validate_tailor_input,
+    validate_track_input, validate_screening_input, validate_export_format,
+    validate_string, ValidationError,
+)
+from .source_policy import check_url, sanitize_apply_url
+from .source_registry import get_registry
 from .util import clean_text, now_iso
 
 log = logging.getLogger("jobhunter.mcp")
+
+
+def _correlation_id() -> str:
+    """Generate a short correlation ID for tool call tracing."""
+    return uuid.uuid4().hex[:12]
+
+
+def _tool_envelope(
+    status: str = "ok",
+    data: dict | None = None,
+    warnings: list | None = None,
+    sources_used: list | None = None,
+    correlation_id: str = "",
+) -> dict[str, Any]:
+    """Build the standard tool result envelope per Section 8.2 of the blueprint."""
+    return {
+        "status": status,
+        "success": status in ("ok", "partial"),
+        "data": data or {},
+        "warnings": warnings or [],
+        "sources": sources_used or [],
+        "generated_at": now_iso(),
+        "correlation_id": correlation_id or _correlation_id(),
+    }
 
 
 def _resolve_profile(name_or_id: str = "", filestore: Optional[FileStore] = None) -> dict[str, Any]:
@@ -921,18 +956,33 @@ def register_tools_and_resources(mcp: Any, filestore: FileStore, workspace_path:
 
     @mcp.tool()
     def source_health() -> dict[str, Any]:
-        """Check the status, latency, and operational health of all 15+ job board scrapers.
+        """Check the status, latency, and operational health of all job sources.
 
         Returns:
-            Status report for LinkedIn, Indeed, ZipRecruiter, RemoteOK, and other native sources.
+            Registry-based status report with capabilities, access methods, and rate limits.
         """
         try:
-            report = pipeline.health_report()
-            filestore.save_sources_health(report)
-            return {
-                "success": True,
-                "sources": report,
-            }
+            cor_id = _correlation_id()
+            registry = get_registry()
+            registry_health = registry.health_summary()
+
+            # Also get runtime pipeline health where available
+            try:
+                pipeline_report = pipeline.health_report()
+                filestore.save_sources_health(pipeline_report)
+            except Exception:
+                pipeline_report = {}
+
+            record_tool_call("source_health", cor_id, outcome="ok")
+            env = _tool_envelope(
+                data={
+                    "registry": registry_health,
+                    "runtime": pipeline_report,
+                },
+                sources_used=pipeline_report if isinstance(pipeline_report, list) else list(registry_health.keys()),
+                correlation_id=cor_id,
+            )
+            return env
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -1017,9 +1067,15 @@ def register_tools_and_resources(mcp: Any, filestore: FileStore, workspace_path:
 
     @mcp.resource("jobhunter://sources")
     def get_sources_resource() -> str:
-        """Health and operational availability of all job board sources."""
+        """Source registry health, supported capabilities, and last-refresh metadata."""
         try:
-            report = pipeline.health_report()
-            return json.dumps(report, indent=2)
+            registry = get_registry()
+            data = registry.health_summary()
+            # Merge runtime pipeline health when available
+            try:
+                data["runtime"] = pipeline.health_report()
+            except Exception:
+                data["runtime"] = {}
+            return json.dumps(data, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})

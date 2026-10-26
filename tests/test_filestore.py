@@ -89,6 +89,48 @@ class TestFileStore(unittest.TestCase):
         self.assertTrue(Path(letter_path).is_file())
         self.assertEqual(Path(letter_path).read_text(encoding="utf-8"), text_content)
 
+    def test_watchlist_lifecycle(self):
+        self.assertEqual(self.store.load_watchlist(), [])
+
+        # Add company
+        entry = self.store.add_to_watchlist("Stripe", board_url="https://stripe.com/jobs", notes="Target tier 1")
+        self.assertEqual(entry["company"], "Stripe")
+        self.assertEqual(entry["board_url"], "https://stripe.com/jobs")
+
+        # Load watchlist
+        wl = self.store.load_watchlist()
+        self.assertEqual(len(wl), 1)
+        self.assertEqual(wl[0]["company"], "Stripe")
+
+        # Update company
+        updated = self.store.add_to_watchlist("Stripe", notes="Updated notes")
+        self.assertEqual(updated["notes"], "Updated notes")
+        self.assertEqual(len(self.store.load_watchlist()), 1)
+
+        # Remove company
+        removed = self.store.remove_from_watchlist("Stripe")
+        self.assertTrue(removed)
+        self.assertEqual(len(self.store.load_watchlist()), 0)
+
+        # Remove nonexistent returns False
+        self.assertFalse(self.store.remove_from_watchlist("Nonexistent"))
+
+    def test_export_and_list_deletable(self):
+        self.store.save_config("theme", "dark")
+        self.store.add_to_watchlist("Datadog")
+        self.store.save_output("reports", "fit_report.json", {"score": 90})
+
+        export = self.store.export_all_data()
+        self.assertIn("config", export)
+        self.assertIn("watchlist", export)
+        self.assertIn("generated_outputs", export)
+        self.assertEqual(export["config"].get("theme"), "dark")
+
+        deletable = self.store.list_deletable_files()
+        self.assertTrue(len(deletable) >= 2)
+        types = [d["type"] for d in deletable]
+        self.assertIn("durable_data", types)
+
 
 if __name__ == "__main__":
     unittest.main()

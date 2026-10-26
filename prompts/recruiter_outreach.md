@@ -38,20 +38,36 @@ The job post is in <job_post>. The candidate's verified profile is in <candidate
 <output_format>
 Return valid JSON only matching this schema:
 {
+  "channel": "linkedin_connect | inmail | email | referral",
   "target_company": "Company Name",
   "target_role": "Role Title",
-  "linkedin_connection_note": "Under 300 chars message tailored with verified tech stack",
-  "linkedin_connection_chars": 265,
-  "hiring_manager_inmail": {
-    "subject_line": "Catchy, professional subject",
-    "body": "120-160 word pitch highlighting verified metric and technical alignment"
+  "draft_text": {
+    "linkedin_connection_note": "Under 300 chars message tailored with verified tech stack",
+    "hiring_manager_inmail": {
+      "subject_line": "Catchy, professional subject",
+      "body": "120-160 word pitch highlighting verified metric and technical alignment"
+    },
+    "peer_referral_request": {
+      "subject_line": "Subject line for internal employee",
+      "body": "100-140 word friendly note asking for advice or team referral"
+    }
   },
-  "peer_referral_request": {
-    "subject_line": "Subject line for internal employee",
-    "body": "100-140 word friendly note asking for advice or team referral"
+  "length_metrics": {
+    "connection_note_chars": 265,
+    "inmail_word_count": 140,
+    "referral_word_count": 120
   },
-  "key_proof_point_used": "Verified fact from resume cited"
+  "claim_evidence": [
+    {
+      "claim": "What was stated",
+      "evidence_id": "ev_...",
+      "verdict": "supported | derived | needs_review"
+    }
+  ],
+  "personalization_sources": ["Job description", "Company tech blog"],
+  "review_required": []
 }
+Output contract: channel, draft_text, length_metrics, claim_evidence, personalization_sources, and review_required.
 </output_format>
 ```
 

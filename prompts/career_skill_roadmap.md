@@ -22,33 +22,49 @@ Target Role & Market Stack: <market_requirements>
 </inputs>
 
 <rules>
-1. Prioritize Leverage: Focus on the 2-3 skills that appear most frequently in job requirements that the candidate currently lacks.
-2. Practical 2-Week Project: Suggest a realistic, concrete micro-project the candidate can build in 10-14 days to demonstrate production-level competence.
-3. Senior Interview Bridge: Explain how the candidate can leverage their existing foundational skills to discuss the new technology intelligently in interviews.
-4. Specificity: Name specific libraries, tools, and architectural patterns (e.g., Kafka consumer groups, Kubernetes Helm charts, Redis pub/sub).
+1. Prioritize Leverage: Base priorities on target-job evidence, the current candidate profile, and candidate goals.
+2. Requirement Tiers: Separate mandatory requirements from preferred requirements and optional interests.
+3. Coherent Milestone Projects: Prefer one coherent project that proves several related skills over a long disconnected list of tutorials. Make each milestone measurable through a project, artifact, test, or explanation the candidate can demonstrate.
+4. Reality & Honesty: Do not claim that a plan guarantees employment or mastery. Adapt milestone pacing to available time and starting skill.
+5. Evidence Verification: If recommending courses, tools, certifications, or documentation, only refer to verified, current industry standards.
 </rules>
 
 <output_format>
 Return valid JSON only matching this schema:
 {
-  "target_title": "Target Role",
-  "top_missing_skills": [
+  "baseline": {
+    "target_title": "Target Role Title",
+    "current_strengths": ["Verified skill or domain"],
+    "starting_level": "mid | senior | staff"
+  },
+  "priority_gaps": [
     {
-      "skill": "Technology name",
-      "market_demand_level": "High | Critical | Emerging",
-      "why_important": "1-sentence explanation of why top tech companies require this"
+      "skill": "Technology or concept name",
+      "tier": "mandatory | preferred | optional",
+      "market_demand_level": "critical | high | emerging",
+      "why_important": "1-sentence explanation tied to target role requirements"
     }
   ],
-  "fast_track_project": {
-    "project_title": "Hands-on micro-project name",
-    "architecture_summary": "1-2 sentence description of what the candidate will build",
+  "milestones": [
+    {
+      "phase": "30_day | 60_day | 90_day | fast_track_14_day",
+      "goal": "Core objective for this milestone phase",
+      "deliverable": "Concrete artifact produced (repo, architecture doc, benchmark)",
+      "target_skills": ["Skill 1", "Skill 2"]
+    }
+  ],
+  "project_specification": {
+    "project_title": "Hands-on capstone project name",
+    "architecture_summary": "1-2 sentence description of system architecture and tech stack",
     "deliverables": ["Deliverable 1", "Deliverable 2"],
-    "time_to_complete_days": 14
+    "technologies_integrated": ["Tech A", "Tech B"]
   },
-  "interview_bridge_script": "Suggested talking point for interviews explaining ramp-up momentum",
-  "recommended_learning_resources": [
-    {"topic": "Core Concept", "focus_area": "What to study"}
-  ]
+  "validation_checks": [
+    "Criterion or test proving production-level competence (e.g. p99 latency < 50ms under k6 load)"
+  ],
+  "portfolio_evidence": "Suggested repository description, README highlight, or interview demo track",
+  "time_assumptions": "Hours per week and total weeks assumed",
+  "risks": ["Potential challenge, time constraint, or complexity blocker to watch for"]
 }
 </output_format>
 ```

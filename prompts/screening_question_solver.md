@@ -44,12 +44,22 @@ The screening question is in <question>. The job context is in <job_posting>. Th
 <output_format>
 Return valid JSON only matching this schema:
 {
+  "status": "draft | needs_review",
   "question_type": "motivation | technical_achievement | compensation | logistics | skill_verification",
-  "answer": "Clean plain text answer (60-120 words) with zero markdown or quotes",
-  "key_proof_point": "1-sentence summary of the verified fact used",
+  "answer_text": "Clean plain text answer (60-120 words) with zero markdown or quotes",
   "word_count": 85,
-  "grounded": true
+  "character_count": 450,
+  "claim_evidence": [
+    {
+      "claim": "What was stated",
+      "evidence_id": "ev_...",
+      "verdict": "supported | derived | needs_review"
+    }
+  ],
+  "missing_inputs": [],
+  "review_required": []
 }
+Output contract: status, answer_text, word_count, character_count, claim_evidence, missing_inputs, and review_required.
 </output_format>
 ```
 

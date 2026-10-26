@@ -25,17 +25,25 @@ from .util import now_iso
 class FileStore:
     """Thread-safe JSON file storage for .jobhunter workspace data."""
 
+    SCHEMA_VERSION = "1.0"
+    MAX_BACKUPS = 5
+
     def __init__(self, jobhunter_dir: str | Path):
         self.jh_dir = Path(jobhunter_dir).resolve()
         self.cache_dir = self.jh_dir / "cache"
         self.output_dir = self.jh_dir / "output"
+        self.profiles_dir = self.jh_dir / "profiles"
+        self.backups_dir = self.jh_dir / "backups"
         self._lock = threading.Lock()
 
         # Ensure base directories exist
         self.jh_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.profiles_dir.mkdir(parents=True, exist_ok=True)
+        self.backups_dir.mkdir(parents=True, exist_ok=True)
         (self.output_dir / "tailored").mkdir(parents=True, exist_ok=True)
         (self.output_dir / "cover-letters").mkdir(parents=True, exist_ok=True)
+        (self.output_dir / "interview-prep").mkdir(parents=True, exist_ok=True)
         (self.output_dir / "reports").mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------ atomic file IO
@@ -295,3 +303,208 @@ class FileStore:
                         except OSError:
                             pass
         return str(target_file.resolve())
+
+    # ------------------------------------------------------------ profiles/
+
+    @property
+    def profiles_index_path(self) -> Path:
+        return self.profiles_dir / "index.json"
+
+    def save_profile(self, profile_id: str, profile_data: dict[str, Any]) -> None:
+        """Save a normalized profile and update the profile index."""
+        with self._lock:
+            # Save individual profile file
+            profile_file = self.profiles_dir / f"{profile_id}.json"
+            record = dict(profile_data)
+            record["schema_version"] = self.SCHEMA_VERSION
+            record["profile_id"] = profile_id
+            record["updated_at"] = now_iso()
+            self._write_json_atomic(profile_file, record)
+
+            # Update index
+            index = self._read_json(self.profiles_index_path, default={"profiles": [], "schema_version": self.SCHEMA_VERSION})
+            entries = index.get("profiles", [])
+            existing_idx = next((i for i, e in enumerate(entries) if e.get("profile_id") == profile_id), -1)
+            entry = {
+                "profile_id": profile_id,
+                "variant_name": profile_data.get("_profile_name", profile_data.get("variant_name", "")),
+                "source_file": profile_data.get("_source_file", ""),
+                "skills_count": len(profile_data.get("skills", [])),
+                "updated_at": now_iso(),
+            }
+            if existing_idx >= 0:
+                entries[existing_idx] = entry
+            else:
+                entries.append(entry)
+            index["profiles"] = entries
+            index["schema_version"] = self.SCHEMA_VERSION
+            self._write_json_atomic(self.profiles_index_path, index)
+
+    def load_profile(self, profile_id: str) -> Optional[dict[str, Any]]:
+        """Load a profile by ID."""
+        with self._lock:
+            profile_file = self.profiles_dir / f"{profile_id}.json"
+            data = self._read_json(profile_file, default=None)
+            return data
+
+    def list_profiles(self) -> list[dict[str, Any]]:
+        """Return the profile index entries."""
+        with self._lock:
+            index = self._read_json(self.profiles_index_path, default={"profiles": []})
+            return index.get("profiles", [])
+
+    # ------------------------------------------------------------ backups/
+
+    def create_backup(self, file_path: Path, reason: str = "") -> Optional[str]:
+        """Create a backup of a durable file in .jobhunter/backups/.
+
+        Keeps a bounded rotation of MAX_BACKUPS per source file.
+        Returns the backup path or None on failure.
+        """
+        if not file_path.is_file():
+            return None
+        try:
+            import shutil
+            stem = file_path.stem
+            suffix = file_path.suffix
+            timestamp = now_iso().replace(":", "-").replace("+", "_")
+            backup_name = f"{stem}_{timestamp}{suffix}"
+            backup_path = self.backups_dir / backup_name
+            shutil.copy2(file_path, backup_path)
+
+            # Rotate old backups for this file
+            existing = sorted(
+                [f for f in self.backups_dir.iterdir() if f.name.startswith(stem) and f.suffix == suffix],
+                key=lambda f: f.stat().st_mtime,
+            )
+            while len(existing) > self.MAX_BACKUPS:
+                oldest = existing.pop(0)
+                try:
+                    oldest.unlink()
+                except OSError:
+                    pass
+
+            return str(backup_path)
+        except Exception:
+            return None
+
+    # ------------------------------------------------------------ schema versioning
+
+    def validate_schema_version(self, data: dict[str, Any], expected: str = "") -> bool:
+        """Check if data has a compatible schema version."""
+        expected = expected or self.SCHEMA_VERSION
+        return data.get("schema_version", "1.0") == expected
+
+    # ------------------------------------------------------------ watchlist.json
+
+    @property
+    def watchlist_path(self) -> Path:
+        return self.jh_dir / "watchlist.json"
+
+    def load_watchlist(self) -> list[dict[str, Any]]:
+        """Load the target company watchlist."""
+        with self._lock:
+            data = self._read_json(self.watchlist_path, default={"companies": [], "schema_version": self.SCHEMA_VERSION})
+            return data.get("companies", [])
+
+    def add_to_watchlist(self, company: str, board_url: str = "", notes: str = "") -> dict[str, Any]:
+        """Add a target company to the watchlist."""
+        with self._lock:
+            data = self._read_json(self.watchlist_path, default={"companies": [], "schema_version": self.SCHEMA_VERSION})
+            companies = data.get("companies", [])
+
+            # Check for duplicate
+            existing = next((c for c in companies if c.get("company", "").lower() == company.lower()), None)
+            if existing:
+                if board_url:
+                    existing["board_url"] = board_url
+                if notes:
+                    existing["notes"] = notes
+                existing["updated_at"] = now_iso()
+            else:
+                entry = {
+                    "company": company,
+                    "board_url": board_url,
+                    "notes": notes,
+                    "added_at": now_iso(),
+                    "updated_at": now_iso(),
+                }
+                companies.append(entry)
+                existing = entry
+
+            data["companies"] = companies
+            data["schema_version"] = self.SCHEMA_VERSION
+            self._write_json_atomic(self.watchlist_path, data)
+            return existing
+
+    def remove_from_watchlist(self, company: str) -> bool:
+        """Remove a company from the watchlist. Returns True if found and removed."""
+        with self._lock:
+            data = self._read_json(self.watchlist_path, default={"companies": []})
+            companies = data.get("companies", [])
+            before = len(companies)
+            companies = [c for c in companies if c.get("company", "").lower() != company.lower()]
+            if len(companies) == before:
+                return False
+            data["companies"] = companies
+            self._write_json_atomic(self.watchlist_path, data)
+            return True
+
+    # ------------------------------------------------------------ data export / deletion
+
+    def export_all_data(self) -> dict[str, Any]:
+        """Export all durable data for the candidate. Returns a dict of all stored data."""
+        with self._lock:
+            result: dict[str, Any] = {}
+            result["config"] = self._read_json(self.jh_dir / "config.json", default={})
+            result["applications"] = self._read_json(self.jh_dir / "applications.json", default=[])
+            result["watchlist"] = self._read_json(self.watchlist_path, default={})
+
+            # Profiles
+            profiles = []
+            if self.profiles_dir.is_dir():
+                for pf in self.profiles_dir.glob("*.json"):
+                    if pf.name != "index.json":
+                        profiles.append(self._read_json(pf, default={}))
+            result["profiles"] = profiles
+
+            # Output manifest (filenames only, not full content)
+            outputs: dict[str, list[str]] = {}
+            if self.output_dir.is_dir():
+                for subdir in self.output_dir.iterdir():
+                    if subdir.is_dir():
+                        outputs[subdir.name] = [f.name for f in subdir.iterdir() if f.is_file()]
+            result["generated_outputs"] = outputs
+            result["exported_at"] = now_iso()
+            result["schema_version"] = self.SCHEMA_VERSION
+            return result
+
+    def list_deletable_files(self) -> list[dict[str, str]]:
+        """Preview files that would be deleted by a full data deletion."""
+        files = []
+        for path in [
+            self.jh_dir / "config.json",
+            self.jh_dir / "applications.json",
+            self.watchlist_path,
+        ]:
+            if path.is_file():
+                files.append({"path": str(path), "type": "durable_data"})
+
+        if self.profiles_dir.is_dir():
+            for pf in self.profiles_dir.glob("*.json"):
+                files.append({"path": str(pf), "type": "profile"})
+
+        for subdir_name in ("tailored", "cover-letters", "interview-prep", "reports"):
+            subdir = self.output_dir / subdir_name
+            if subdir.is_dir():
+                for f in subdir.iterdir():
+                    if f.is_file():
+                        files.append({"path": str(f), "type": f"output/{subdir_name}"})
+
+        if self.cache_dir.is_dir():
+            for f in self.cache_dir.iterdir():
+                if f.is_file():
+                    files.append({"path": str(f), "type": "cache"})
+
+        return files
+

@@ -36,19 +36,25 @@ Candidate Facts: <candidate_source>
 <output_format>
 Return valid JSON only matching this schema:
 {
-  "overall_score": 88,
-  "verdict": "Strong Hire | Lean Hire | Borderline | Needs Practice",
-  "strengths": ["Personal ownership was clear", "Mentioned p99 latency metric"],
-  "areas_for_improvement": ["Elaborate on why you chose PostgreSQL over DynamoDB"],
-  "red_flags": [],
-  "rubric_scores": {
-    "ownership": 90,
-    "technical_depth": 85,
-    "quantified_impact": 90,
-    "structure": 87
+  "dimension_scores": {
+    "technical_precision": 22,
+    "structure_clarity": 20,
+    "evidence_result": 23,
+    "ownership_reflection": 21
   },
-  "refined_answer_suggestion": "Polished, high-impact version of their answer ready to deliver"
+  "total_score": 86,
+  "verdict": "Strong Hire | Lean Hire | Borderline | Needs Practice",
+  "evidence_for_scores": [
+    "Technical precision: mentioned p99 latency metric and PostgreSQL trade-off",
+    "Ownership: clearly stated personal role in architecture decision"
+  ],
+  "strengths": ["Personal ownership was clear", "Mentioned p99 latency metric"],
+  "specific_improvements": ["Elaborate on why you chose PostgreSQL over DynamoDB"],
+  "technical_corrections": [],
+  "suggested_rewrite": "Polished, high-impact version of their answer ready to deliver",
+  "confidence_notes": "Scores reflect practice feedback only, not a prediction of a real interview outcome."
 }
+Output contract: dimension_scores, total_score, evidence_for_scores, strengths, specific_improvements, technical_corrections, suggested_rewrite, and confidence_notes.
 </output_format>
 ```
 

@@ -37,38 +37,53 @@ The job post is in <job_post>. The candidate's verified resume is in <candidate_
 <output_format>
 Return valid JSON only matching this schema:
 {
-  "role": "Target Job Title",
-  "company": "Company Name",
-  "interview_focus_areas": ["System Design", "Distributed State", "Data Pipelines"],
-  "technical_deep_dives": [
+  "role_context": {
+    "role": "Target Job Title",
+    "company": "Company Name",
+    "interview_focus_areas": ["System Design", "Distributed State", "Data Pipelines"]
+  },
+  "technical_questions": [
     {
       "topic": "Technology or Architecture Area",
       "question": "Realistic scenario or trade-off question",
       "expected_concepts": ["Concept 1", "Concept 2"],
-      "candidate_talking_point": "Suggested talking point referencing real project from candidate profile"
+      "candidate_talking_point": "Suggested talking point referencing real project from candidate profile",
+      "evidence_ids": ["ev_..."]
     }
   ],
-  "behavioral_scenarios": [
+  "system_design_exercises": [
+    {
+      "prompt": "Design a system that...",
+      "evaluation_criteria": ["Scalability", "Fault tolerance"],
+      "candidate_relevant_experience": "Related real project from profile"
+    }
+  ],
+  "behavioral_story_outlines": [
     {
       "theme": "Cross-Functional Execution | Ambiguity | Technical Conflict",
       "question": "Targeted behavioral question",
       "star_strategy": {
-        "situation_task": "Context based on candidate's real experience",
-        "action_taken": "Action candidate took",
-        "quantified_result": "Verified outcome with metric"
-      }
+        "situation": "Context based on candidate's real experience",
+        "task": "What needed to be done",
+        "action": "Action candidate took",
+        "result": "Verified outcome with metric",
+        "learning": "What the candidate learned"
+      },
+      "evidence_ids": ["ev_..."]
     }
   ],
-  "gap_talking_points": [
+  "evidence_needed": [
     {
       "missing_skill": "Technology name",
       "recommended_response": "Senior, transparent response explaining conceptual readiness"
     }
   ],
-  "questions_to_ask_interviewer": [
+  "questions_for_interviewer": [
     "Perceptive question about engineering culture, deployment, or architecture"
-  ]
+  ],
+  "review_notes": []
 }
+Output contract: role_context, technical_questions, system_design_exercises, behavioral_story_outlines, evidence_needed, questions_for_interviewer, and review_notes.
 </output_format>
 ```
 

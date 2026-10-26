@@ -63,6 +63,14 @@ The job post is in <job_post>. The candidate's verified resume is in <candidate_
 <output_format>
 Return valid JSON only matching this schema:
 {
+  "status": "draft | needs_review",
+  "resume_sections": [
+    {
+      "section_type": "header | summary | competencies | experience | education | projects | certifications",
+      "content": "Section content text or structured data",
+      "evidence_ids": ["ev_...", "ev_..."]
+    }
+  ],
   "executive_hook": "1-2 sentence punchy positioning hook tailored to role and archetype",
   "target_title": "Tailored target role headline",
   "archetype_applied": "startup_velocity | enterprise_scale | technical_depth",
@@ -76,30 +84,31 @@ Return valid JSON only matching this schema:
     "0.0": "Accomplished [X], as measured by [Y], by doing [Z] (100% grounded)",
     "0.1": "Optimized bullet using verified metrics and strong action verbs"
   },
-  "recruiter_6sec_audit": {
-    "skim_score": 96,
-    "skim_verdict": "Instant Yes — Strong F-Pattern Anchor",
-    "eye_catchers": [
-      "Target Title & Executive Hook aligned with Company's tech stack",
-      "Core Stack Match: Top primary technologies highlighted immediately",
-      "Quantified impact: Google X-Y-Z bullets with verified production metrics"
-    ],
-    "ats_keyword_match_pct": 94,
-    "quantified_bullet_pct": 85,
-    "action_verb_strength": "Elite",
-    "scan_zones": {
-      "zone_1_anchor": "Target Title & 1-Sentence Executive Hook (Sec 0-2)",
-      "zone_2_competencies": "Core Competency Grid with Top Stack Matched (Sec 2-4)",
-      "zone_3_proof": "Top 2 Quantified Impact Bullets (Sec 4-6)"
+  "claim_evidence": [
+    {
+      "claim": "What was stated in the output",
+      "evidence_id": "ev_...",
+      "verdict": "supported | derived | needs_review"
     }
-  },
+  ],
   "honest_gaps": [
     {
       "missing_skill": "Technology name",
+      "requirement_type": "required | preferred",
       "advice": "Honest ramp-up advice or parallel architecture bridge"
     }
-  ]
+  ],
+  "format_warnings": [],
+  "review_required": [],
+  "recruiter_6sec_audit": {
+    "skim_score": 96,
+    "skim_verdict": "Instant Yes — Strong F-Pattern Anchor",
+    "ats_keyword_match_pct": 94,
+    "quantified_bullet_pct": 85,
+    "action_verb_strength": "Elite"
+  }
 }
+Every substantive claim must map to one or more evidence IDs. The exporter converts approved sections into the requested document format.
 </output_format>
 ```
 

@@ -78,8 +78,11 @@ def ensure_jobhunter_dir(workspace_path: str | Path) -> Path:
 
     subdirs = [
         jh_dir / "cache",
+        jh_dir / "profiles",
+        jh_dir / "backups",
         jh_dir / "output" / "tailored",
         jh_dir / "output" / "cover-letters",
+        jh_dir / "output" / "interview-prep",
         jh_dir / "output" / "reports",
     ]
     for d in subdirs:

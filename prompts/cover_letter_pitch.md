@@ -50,6 +50,7 @@ The job post is in <job_post>. The candidate's verified resume is in <candidate_
 <output_format>
 Return valid JSON only matching this schema:
 {
+  "status": "draft | needs_review",
   "pitch_angle": "direct_impact | startup_velocity | technical_architect | executive_brief",
   "pitch_hook": "1-2 sentence compelling opening paragraph connecting candidate background to company mission",
   "value_pillars": [
@@ -62,14 +63,24 @@ Return valid JSON only matching this schema:
   "why_company": "1 concise paragraph on domain/product alignment and engineering culture fit",
   "honest_bridge": "Honest learning bridge for any missing tech, or empty string if fully matched",
   "call_to_action": "Low-friction, engaging closing paragraph",
-  "full_text": "Complete formatted pitch text ready to send (150-240 words)",
+  "letter_text": "Complete formatted pitch text ready to send (150-240 words)",
+  "claim_evidence": [
+    {
+      "claim": "What was stated",
+      "evidence_id": "ev_...",
+      "verdict": "supported | derived | needs_review"
+    }
+  ],
+  "unsupported_company_claims": [],
+  "honest_gaps": [],
+  "review_required": [],
   "telemetry": {
     "word_count": 210,
     "reading_time_sec": 35,
-    "pitch_score": 95,
     "grounded_facts_count": 5
   }
 }
+Output contract: status, letter_text, claim_evidence, unsupported_company_claims, honest_gaps, and review_required.
 </output_format>
 ```
 
