@@ -46,3 +46,9 @@ ENV/
 Thumbs.db
 .vscode/
 .idea/
+
+# JobHunter MCP ephemeral data
+.jobhunter/engine.db*
+.jobhunter/cache/
+.jobhunter/*.tmp*
+

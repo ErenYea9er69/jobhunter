@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "jobhunter": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "c:/Users/hp/Desktop/jobhunter/mcp_server.py"
+      ],
+      "env": {
+        "JH_WORKSPACE": "${workspaceFolder}"
+      }
+    }
+  }
+}

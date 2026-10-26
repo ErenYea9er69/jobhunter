@@ -80,71 +80,52 @@ JobHunter features a custom LinkedIn search and radar engine built for speed, re
 
 ---
 
-## Running the Application
+## Model Context Protocol (MCP) Server
 
-### Option 1: One-Click Windows Setup (Recommended)
-Run `JobHunter-Setup.exe`:
-- Installs JobHunter into user local application directory (no administrator rights needed).
-- Creates Desktop and Start Menu shortcuts.
-- Automatically launches the application.
+JobHunter runs as an **MCP Server** directly inside AI coding assistants:
+- **Antigravity**
+- **Cursor**
+- **Claude Desktop**
+- **VS Code Copilot / Windsurf / Cline**
 
-### Option 2: Portable Application
-Unzip `JobHunter-Windows-x64.zip` and double-click `JobHunter.exe`.
+The MCP server exposes **24 tools** and **6 resources** using the standard `stdio` transport.
 
-### Option 3: 1-Click Batch Launcher
-Double-click `JobHunter.bat` in the repository root.
+### Quick Start: Running the MCP Server
 
-### Option 4: Python Desktop Window
 ```bash
-python desktop.py
+# 1. Install dependencies
+pip install -r requirements-mcp.txt
+
+# 2. Run the MCP server directly
+python mcp_server.py
 ```
 
-### Option 5: Headless Local Server
-```bash
-python server.py
-```
-Open your browser and navigate to: `http://127.0.0.1:8080`
+### Resume-as-Code Filesystem Architecture
 
----
+JobHunter reads your resumes directly from your repository workspace:
+- Place resume files (`.pdf`, `.docx`, `.txt`) in your repository root or a `resumes/` folder.
+- When the MCP server launches, it scans and parses each resume into a distinct variant (e.g., `backend-engineer.pdf` → "Backend Engineer").
+- Persistent application records, user settings, and tailored outputs live as JSON files in `.jobhunter/`:
+  - `.jobhunter/config.json` — Preferences and active resume selection
+  - `.jobhunter/applications.json` — Tracked job applications and interview status
+  - `.jobhunter/output/tailored/` — Generated tailored resumes
+  - `.jobhunter/output/cover-letters/` — Generated cover letters
+  - `.jobhunter/output/reports/` — ATS audits and skill gap analyses
 
-## Configuration & Environment Variables
+### MCP Host Setup Examples
 
-All settings have safe defaults and can be configured via environment variables or the UI settings panel:
-
-| Variable | Default | Purpose |
-| :--- | :--- | :--- |
-| `JH_HOST` | `127.0.0.1` | Server binding host. |
-| `JH_PORT` | `8080` | Server binding port. |
-| `JH_DATA_DIR` | `./data` | Directory where SQLite database (`jobhunter.db`) is stored. |
-| `JH_LINKEDIN_INCREMENTAL_MIN` | `10` | Interval in minutes for background LinkedIn Radar scans (set `0` to disable). |
-| `JH_LINKEDIN_DEPTH` | `standard` | LinkedIn search depth (`fast`, `standard`, `deep`, `max`). |
-| `JH_SEARCH_DEADLINE` | `35` | Timeout in seconds for search queries before fast responses return. |
-| `AI_PROVIDER` | `auto` | AI engine: `auto`, `gemini`, `openai`, `anthropic`, `ollama`, `deterministic`. |
-| `GEMINI_API_KEY` | `""` | Google Gemini API key. |
-| `ANTHROPIC_API_KEY` | `""` | Anthropic Claude API key. |
-| `OPENAI_API_KEY` | `""` | OpenAI API key. |
-| `JH_OLLAMA_ENDPOINT` | `http://127.0.0.1:11434` | Local Ollama endpoint for 100% offline LLM tailoring. |
-| `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`| `""` | Optional Adzuna credentials for local and non-tech job aggregation. |
-| `JH_DIGEST_TIME` | `""` | Daily morning digest time (e.g. `08:00`). |
-
----
-
-## Building Installers & Distribution Bundles
-
-To build the standalone Windows executable and setup installer:
-```bash
-python build_desktop.py
-```
-Outputs in `dist/`:
-- `dist/JobHunter-Setup.exe` (Windows Installer)
-- `dist/JobHunter-Windows-x64.zip` (Portable ZIP)
-- `dist/JobHunter/JobHunter.exe` (Standalone Executable)
+See detailed configuration examples in [`docs/mcp-setup/`](docs/mcp-setup/README.md):
+- [Claude Desktop (`claude_desktop_config.json`)](docs/mcp-setup/claude_desktop_config.json)
+- [Cursor (`.cursor/mcp.json`)](docs/mcp-setup/cursor_mcp.json)
+- [Antigravity (`antigravity_mcp_config.json`)](docs/mcp-setup/antigravity_mcp_config.json)
+- [VS Code (`.vscode/mcp.json`)](docs/mcp-setup/vscode_mcp.json)
 
 ---
 
 ## Running Tests
 
-Run the full verification suite across all 76 unit and regression tests:
+Run the full verification test suite:
 ```bash
-python -m unittest discover -s tests
+python -m unittest discover -s tests -p "test_*.py"
 ```
+

@@ -34,8 +34,19 @@ else:
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DATA_DIR = os.environ.get("JH_DATA_DIR", os.path.join(BASE_DIR, "data"))
 
-STATIC_DIR = os.path.join(BASE_DIR, "public")
-DB_PATH = os.path.join(DATA_DIR, "jobhunter.db")
+MCP_MODE = os.environ.get("JH_MCP_MODE", "0") == "1"
+WORKSPACE_DIR = os.environ.get("JH_WORKSPACE", "")
+if WORKSPACE_DIR:
+    WORKSPACE_DIR = os.path.abspath(WORKSPACE_DIR)
+
+if MCP_MODE or WORKSPACE_DIR:
+    _ws = WORKSPACE_DIR or os.path.abspath(os.getcwd())
+    JOBHUNTER_DIR = os.path.join(_ws, ".jobhunter")
+    DATA_DIR = os.environ.get("JH_DATA_DIR", JOBHUNTER_DIR)
+    DB_PATH = os.path.join(DATA_DIR, "engine.db")
+else:
+    JOBHUNTER_DIR = ""
+    DB_PATH = os.path.join(DATA_DIR, "jobhunter.db")
 
 HOST = os.environ.get("JH_HOST", "127.0.0.1")
 PORT = int(os.environ.get("JH_PORT", "8080"))
@@ -125,3 +136,17 @@ SMTP_PASSWORD = os.environ.get("JH_SMTP_PASSWORD", "")
 
 MAX_BODY_BYTES = 12 * 1024 * 1024
 USER_AGENT = "JobHunter/2.0 (+local personal job search tool)"
+
+
+def configure_mcp_environment(workspace_path: str = ""):
+    """Dynamically reconfigure paths for MCP mode in a given workspace directory."""
+    global MCP_MODE, WORKSPACE_DIR, JOBHUNTER_DIR, DATA_DIR, DB_PATH
+    MCP_MODE = True
+    os.environ["JH_MCP_MODE"] = "1"
+    ws = os.path.abspath(workspace_path) if workspace_path else (WORKSPACE_DIR or os.path.abspath(os.getcwd()))
+    WORKSPACE_DIR = ws
+    os.environ["JH_WORKSPACE"] = ws
+    JOBHUNTER_DIR = os.path.join(ws, ".jobhunter")
+    DATA_DIR = os.environ.get("JH_DATA_DIR", JOBHUNTER_DIR)
+    DB_PATH = os.path.join(DATA_DIR, "engine.db")
+    return JOBHUNTER_DIR

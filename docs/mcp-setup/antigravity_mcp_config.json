@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "jobhunter": {
+      "command": "python",
+      "args": [
+        "c:/Users/hp/Desktop/jobhunter/mcp_server.py"
+      ],
+      "env": {
+        "JH_WORKSPACE": "c:/Users/hp/Desktop/jobhunter"
+      }
+    }
+  }
+}

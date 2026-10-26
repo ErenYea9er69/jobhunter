@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jobhunter-mcp"
+version = "2.0.0"
+description = "JobHunter MCP Server — AI coding assistant tools for job searching, resume scoring, truthful tailoring, and application tracking"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "JobHunter Maintainers" }
+]
+keywords = ["mcp", "model-context-protocol", "job-search", "resume", "ats", "ai"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Office/Business",
+    "Topic :: Software Development",
+]
+dependencies = [
+    "mcp[cli]>=1.0.0",
+]
+
+[project.scripts]
+jobhunter-mcp = "mcp_server:main"
+
+[tool.setuptools.packages.find]
+include = ["jh*"]
