@@ -558,7 +558,9 @@ def generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=N
     rejected_count = 0
     if use_llm:
         import pathlib
-        prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "resume_tailor_6sec.md"
+        prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "resume_tailor.md"
+        if not prompt_path.exists():
+            prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "resume_tailor_6sec.md"
         system_prompt = LLM_SYSTEM
         try:
             if prompt_path.exists():
@@ -1047,7 +1049,9 @@ def generate_cover_pitch(job, profile, tone="direct", angle="direct_impact", sel
 
     if should_use_llm:
         import pathlib
-        prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "cover_letter_pitch.md"
+        prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "cover_letter.md"
+        if not prompt_path.exists():
+            prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "cover_letter_pitch.md"
         system_prompt = COVER_PITCH_LLM_SYSTEM
         try:
             if prompt_path.exists():
@@ -1239,7 +1243,9 @@ def generate_interview_prep(job, profile, use_llm=None, llm_caller=None):
 
     if should_use_llm:
         import pathlib
-        prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "interview_prep_copilot.md"
+        prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "interview_prep.md"
+        if not prompt_path.exists():
+            prompt_path = pathlib.Path(config.BASE_DIR) / "prompts" / "interview_prep_copilot.md"
         system_prompt = (
             "You are a Principal Engineering Director and Senior Technical Hiring Manager. "
             "Generate a role-specific interview preparation blueprint for the candidate. Return valid JSON only."

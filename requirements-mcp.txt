@@ -1,2 +1,0 @@
-# JobHunter MCP Server requirements
-mcp[cli]>=1.0.0
