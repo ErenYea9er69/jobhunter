@@ -80,41 +80,33 @@ def init_workspace_and_engine(ws_path: str = "") -> tuple[FileStore, str]:
     log.info("Initializing engine SQLite at %s", config.DB_PATH)
     db.init_db()
 
-    # 4. Discover and parse resumes from workspace
-    log.info("Scanning workspace for resume files...")
-    found_resumes = workspace.discover_resumes(ws)
-    log.info("Found %d resume file(s)", len(found_resumes))
+    # 4. Incremental Resume Registry scan
+    log.info("Scanning workspace for resume files via ResumeRegistry...")
+    from jh.resume_registry import ResumeRegistry
+    resume_reg = ResumeRegistry(ws)
+    sync_res = resume_reg.scan_and_sync()
+    log.info("Resume scan sync complete: %s parsed, %s cached",
+             sync_res.get("parsed_count", 0), sync_res.get("cached_count", 0))
 
     global _evidence_ledger
     _evidence_ledger = EvidenceLedger()
 
     parsed_profiles = []
-    for item in found_resumes:
-        try:
-            import time as _t
-            _parse_start = _t.monotonic()
-            prof = workspace.parse_resume_variant(item["path"])
-            p_id = f"var_{_slugify(item['name'])}"
-            prof["_profile_id"] = p_id
-            prof["_profile_name"] = item["name"]
-            db.save_profile(prof, profile_id=p_id)
-            parsed_profiles.append((p_id, item["name"], prof))
+    for var in resume_reg.list_variants():
+        prof = var.get("profile")
+        if not prof:
+            continue
+        p_id = var.get("id") or f"var_{_slugify(var.get('name', ''))}"
+        db.save_profile(prof, profile_id=p_id)
+        parsed_profiles.append((p_id, var.get("name", ""), prof))
 
-            # Build evidence claims from this profile
-            variant_ledger = build_ledger_from_profile(prof, source_file=item["path"])
-            for claim in variant_ledger.claims.values():
-                _evidence_ledger.add(claim)
-
-            _parse_ms = (_t.monotonic() - _parse_start) * 1000
-            record_parse_event(item["path"], success=True, duration_ms=_parse_ms)
-            log.info("Loaded resume variant '%s' (%s skills, %d evidence claims)",
-                     item["name"], len(prof.get("skills", [])), len(variant_ledger))
-        except Exception as e:
-            record_parse_event(item.get("path", ""), success=False, detail=str(e))
-            log.warning("Could not parse resume '%s': %s", item["filename"], e)
+        # Build evidence claims from this profile
+        variant_ledger = build_ledger_from_profile(prof, source_file=var.get("path", ""))
+        for claim in variant_ledger.claims.values():
+            _evidence_ledger.add(claim)
 
     # 4. Set active resume
-    active_name = filestore.get_active_resume()
+    active_name = resume_reg.get_active_variant() or filestore.get_active_resume()
     if active_name:
         profiles = db.list_resume_profiles()
         match = next((p for p in profiles if p["name"].lower() == active_name.lower() or p["id"].lower() == active_name.lower()), None)
@@ -126,6 +118,7 @@ def init_workspace_and_engine(ws_path: str = "") -> tuple[FileStore, str]:
         first_id, first_name, _ = parsed_profiles[0]
         db.set_active_resume_profile(first_id)
         filestore.set_active_resume(first_name)
+        resume_reg.set_active_variant(first_name)
         log.info("Active resume defaulted to: '%s'", first_name)
     else:
         log.info("No resumes found in workspace. Add resumes to root or resumes/ directory.")
@@ -169,7 +162,7 @@ def create_server(ws_path: str = "") -> FastMCP:
     filestore, ws = init_workspace_and_engine(ws_path)
     mcp = FastMCP("JobHunter")
     register_tools_and_resources(mcp, filestore, ws)
-    log.info("JobHunter MCP Server ready. 24 tools, 6 resources registered.")
+    log.info("JobHunter MCP Server ready. 27 tools, 7 resources, 8 prompts registered.")
     return mcp
 
 

@@ -66,6 +66,19 @@ def clean_text(val):
     return s.strip()
 
 
+def slugify(text: str) -> str:
+    """Make filename-safe slug from text."""
+    clean = re.sub(r"[^\w\s-]", "", str(text or "")).strip().lower()
+    return re.sub(r"[-\s]+", "-", clean)[:40] or "item"
+
+
+def file_sha256(file_path: str) -> str:
+    """Compute SHA-256 hash of a file for change detection."""
+    import hashlib
+    with open(file_path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
 def html_to_text(raw, limit=8000):
     """Convert HTML (possibly entity-escaped HTML) to readable plain text."""
     if not raw:

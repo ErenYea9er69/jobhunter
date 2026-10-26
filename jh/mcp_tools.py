@@ -14,7 +14,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import ats, db, exporters, pipeline, refit, resume_parser, scoring, sources, tracker, workspace
+from . import ats, autofill, db, digest, exporters, interview, pipeline, refit, resume_parser, scoring, sources, tracker, workspace
 from .evidence import EvidenceLedger, build_ledger_from_profile, verify_grounding, create_audit_manifest
 from .filestore import FileStore
 from .models import ToolOutcome, WarningCategory
@@ -42,16 +42,18 @@ def _tool_envelope(
     warnings: list | None = None,
     sources_used: list | None = None,
     correlation_id: str = "",
+    schema_version: str = "1.0",
 ) -> dict[str, Any]:
-    """Build the standard tool result envelope per Section 8.2 of the blueprint."""
+    """Build the standard tool result envelope per Section 4.3 of newall-logic.md."""
     return {
         "status": status,
         "success": status in ("ok", "partial"),
         "data": data or {},
         "warnings": warnings or [],
         "sources": sources_used or [],
-        "generated_at": now_iso(),
         "correlation_id": correlation_id or _correlation_id(),
+        "schema_version": schema_version,
+        "generated_at": now_iso(),
     }
 
 
@@ -251,6 +253,16 @@ def register_tools_and_resources(mcp: Any, filestore: FileStore, workspace_path:
             fp = Path(path)
             if not fp.is_absolute():
                 fp = ws / fp
+            fp = fp.resolve()
+
+            # Prevent directory traversal escaping workspace
+            if ws:
+                resolved_ws = Path(ws).resolve()
+                try:
+                    fp.relative_to(resolved_ws)
+                except ValueError:
+                    return {"success": False, "error": f"Access denied: path '{path}' escapes workspace boundary."}
+
             if not fp.is_file():
                 return {"success": False, "error": f"File not found: {fp}"}
 
@@ -678,6 +690,67 @@ def register_tools_and_resources(mcp: Any, filestore: FileStore, workspace_path:
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def solve_screening_questions(
+        job_id: str = "",
+        questions: Any = None,
+        variant_name: str = "",
+    ) -> dict[str, Any]:
+        """Draft honest, evidence-grounded answers for application screening questions.
+
+        Args:
+            job_id: ID of the target job posting for context.
+            questions: Single screening question or list of screening questions.
+            variant_name: Optional resume variant to draw candidate evidence from.
+
+        Returns:
+            Standard result envelope with drafted answers and missing-information flags.
+        """
+        try:
+            prof = _resolve_profile(variant_name, filestore)
+            job = db.get_job(job_id) if job_id else None
+
+            q_list: list[str] = []
+            if isinstance(questions, list):
+                q_list = [str(q).strip() for q in questions if str(q).strip()]
+            elif isinstance(questions, str) and questions.strip():
+                lines = [l.strip() for l in questions.split("\n") if l.strip()]
+                q_list = lines if lines else [questions.strip()]
+
+            if not q_list:
+                return _tool_envelope(
+                    status="needs_review",
+                    data={"answers": []},
+                    warnings=["No valid screening questions provided."],
+                )
+
+            answers = []
+            warnings = []
+            for q in q_list:
+                res = autofill.solve_screening_question(q, prof, job)
+                ans_text = res.get("answer", "")
+                status_flag = "supported" if res.get("grounded", True) else "needs_user_input"
+                if not ans_text:
+                    status_flag = "unknown"
+                    warnings.append(f"Could not determine answer for: '{q[:50]}...'")
+                answers.append({
+                    "question": q,
+                    "answer": ans_text or "Requires candidate confirmation.",
+                    "status": status_flag,
+                    "confidence": res.get("confidence", 0.9),
+                    "notes": res.get("notes", ""),
+                })
+
+            envelope_status = "ok" if not warnings else "partial"
+            return _tool_envelope(
+                status=envelope_status,
+                data={"job_id": job_id, "variant_used": prof.get("name", ""), "answers": answers},
+                warnings=warnings,
+            )
+        except Exception as e:
+            log.exception("Error in solve_screening_questions: %s", e)
+            return _tool_envelope(status="error", warnings=[str(e)])
+
+    @mcp.tool()
     def interview_prep(
         job_title: str,
         company: str = "",
@@ -751,6 +824,42 @@ def register_tools_and_resources(mcp: Any, filestore: FileStore, workspace_path:
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def evaluate_mock_interview(
+        question: str,
+        candidate_answer: str,
+        role_level: str = "senior",
+        rubric: str = "standard",
+    ) -> dict[str, Any]:
+        """Evaluate a candidate's practice interview answer with 4-dimension scoring, verdict, and grounded rewrite.
+
+        Args:
+            question: The interview question asked.
+            candidate_answer: The candidate's draft or transcribed spoken answer.
+            role_level: Target seniority level ('entry', 'mid', 'senior', 'staff', 'lead').
+            rubric: Evaluation rubric to apply ('standard', 'strict', 'executive').
+
+        Returns:
+            Scores across ownership, metrics, technical depth, clarity, overall verdict, and coached rewrite.
+        """
+        try:
+            cor_id = _correlation_id()
+            res = interview.evaluate_mock_interview(
+                question=question,
+                candidate_answer=candidate_answer,
+                role_level=role_level,
+                rubric=rubric,
+            )
+            record_tool_call("evaluate_mock_interview", cor_id, outcome="ok")
+            return _tool_envelope(
+                status="ok",
+                data=res,
+                correlation_id=cor_id,
+            )
+        except Exception as e:
+            log.exception("Error in evaluate_mock_interview: %s", e)
+            return _tool_envelope(status="error", warnings=[str(e)])
 
     # =========================================================================
     # 5. APPLICATION TRACKING TOOLS
@@ -902,6 +1011,78 @@ def register_tools_and_resources(mcp: Any, filestore: FileStore, workspace_path:
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def daily_digest(
+        date: str = "",
+        include_jobs: bool = True,
+        include_interviews: bool = True,
+    ) -> dict[str, Any]:
+        """Summarize new matching jobs, overdue follow-ups, upcoming interviews, and recommended high-leverage actions.
+
+        Args:
+            date: Target date for digest (YYYY-MM-DD). Defaults to current date.
+            include_jobs: Whether to include new high-fit job postings.
+            include_interviews: Whether to include upcoming scheduled interviews.
+
+        Returns:
+            Structured daily summary with pending action items and high-leverage recommendations.
+        """
+        try:
+            cor_id = _correlation_id()
+            import datetime
+            target_date = date.strip() if date else datetime.date.today().isoformat()
+
+            apps = tracker.list_applications()
+            overdue = [
+                {"id": a["id"], "company": a.get("company", ""), "title": a.get("title", ""), "follow_up": a.get("follow_up_date", "")}
+                for a in apps if a.get("overdue")
+            ]
+
+            interviews = []
+            if include_interviews:
+                interviews = [
+                    {"id": a["id"], "company": a.get("company", ""), "title": a.get("title", ""), "status": a.get("status", ""), "notes": a.get("notes", "")}
+                    for a in apps if a.get("status") in ("interview", "screening")
+                ]
+
+            jobs_summary = []
+            if include_jobs:
+                try:
+                    cached_jobs = filestore.get_latest_cached_jobs()
+                    jobs_summary = cached_jobs[:5] if isinstance(cached_jobs, list) else []
+                except Exception:
+                    jobs_summary = []
+
+            actions = []
+            for item in overdue:
+                actions.append(f"Follow up on application with {item['company']} for {item['title']} (due {item['follow_up']}).")
+            for item in interviews:
+                actions.append(f"Prepare interview answers and STAR stories for {item['company']}.")
+            if jobs_summary:
+                top_job = jobs_summary[0]
+                actions.append(f"Review and tailor resume for top match: {top_job.get('title', '')} at {top_job.get('company', '')}.")
+            if not actions:
+                actions.append("Scan new job sources and review active application pipeline.")
+
+            digest_data = {
+                "date": target_date,
+                "overdue_follow_ups": overdue,
+                "upcoming_interviews": interviews,
+                "new_matching_jobs": jobs_summary,
+                "recommended_actions": actions,
+                "total_active_applications": len(apps),
+            }
+
+            record_tool_call("daily_digest", cor_id, outcome="ok")
+            return _tool_envelope(
+                status="ok",
+                data=digest_data,
+                correlation_id=cor_id,
+            )
+        except Exception as e:
+            log.exception("Error in daily_digest: %s", e)
+            return _tool_envelope(status="error", warnings=[str(e)])
 
     # =========================================================================
     # 6. UTILITY TOOLS
@@ -1079,3 +1260,128 @@ def register_tools_and_resources(mcp: Any, filestore: FileStore, workspace_path:
             return json.dumps(data, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
+
+    @mcp.resource("jobhunter://evidence/{name}")
+    def get_evidence_resource(name: str) -> str:
+        """Evidence ledger and audit records for candidate claims in a resume variant."""
+        try:
+            prof = _resolve_profile(name, filestore)
+            ledger = build_ledger_from_profile(prof)
+            return json.dumps({
+                "variant": name,
+                "summary": ledger.summary(),
+                "claims": ledger.to_list(),
+            }, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    # =========================================================================
+    # 8. MCP PROMPTS CONTRACTS (Sections 18 & 19)
+    # =========================================================================
+
+    def _read_prompt_template(prompt_name: str) -> str:
+        prompt_dir = ws / "prompts" if ws else Path(__file__).resolve().parent.parent / "prompts"
+        p_path = prompt_dir / f"{prompt_name}.md"
+        if p_path.exists():
+            return p_path.read_text(encoding="utf-8")
+        fallback_dir = Path(__file__).resolve().parent.parent / "prompts"
+        fb_path = fallback_dir / f"{prompt_name}.md"
+        if fb_path.exists():
+            return fb_path.read_text(encoding="utf-8")
+        return f"# {prompt_name}\n\nTask contract for {prompt_name}."
+
+    @mcp.prompt()
+    def resume_tailor(job_id: str, variant_name: str = "", archetype: str = "technical_depth") -> str:
+        """System prompt contract for tailoring a resume to a target job posting."""
+        tpl = _read_prompt_template("resume_tailor")
+        return (
+            f"{tpl}\n\n"
+            f"--- EXECUTION CONTEXT ---\n"
+            f"Target Job ID: {job_id}\n"
+            f"Resume Variant: {variant_name or 'active'}\n"
+            f"Archetype: {archetype}\n"
+        )
+
+    @mcp.prompt()
+    def cover_letter(job_id: str, variant_name: str = "", pitch_angle: str = "balanced") -> str:
+        """System prompt contract for generating a personalized 3-paragraph cover letter."""
+        tpl = _read_prompt_template("cover_letter")
+        return (
+            f"{tpl}\n\n"
+            f"--- EXECUTION CONTEXT ---\n"
+            f"Target Job ID: {job_id}\n"
+            f"Resume Variant: {variant_name or 'active'}\n"
+            f"Pitch Angle: {pitch_angle}\n"
+        )
+
+    @mcp.prompt()
+    def interview_prep(job_id: str, variant_name: str = "", interview_type: str = "all") -> str:
+        """System prompt contract for tailored technical and behavioral interview preparation."""
+        tpl = _read_prompt_template("interview_prep")
+        return (
+            f"{tpl}\n\n"
+            f"--- EXECUTION CONTEXT ---\n"
+            f"Target Job ID: {job_id}\n"
+            f"Resume Variant: {variant_name or 'active'}\n"
+            f"Interview Type: {interview_type}\n"
+        )
+
+    @mcp.prompt()
+    def screening_question_solver(job_id: str, questions: str, variant_name: str = "") -> str:
+        """System prompt contract for drafting evidence-grounded screening question answers."""
+        tpl = _read_prompt_template("screening_question_solver")
+        return (
+            f"{tpl}\n\n"
+            f"--- EXECUTION CONTEXT ---\n"
+            f"Target Job ID: {job_id}\n"
+            f"Resume Variant: {variant_name or 'active'}\n"
+            f"Questions:\n{questions}\n"
+        )
+
+    @mcp.prompt()
+    def recruiter_outreach(company: str, role: str, channel: str = "linkedin", variant_name: str = "") -> str:
+        """System prompt contract for generating high-conversion recruiter outreach messages."""
+        tpl = _read_prompt_template("recruiter_outreach")
+        return (
+            f"{tpl}\n\n"
+            f"--- EXECUTION CONTEXT ---\n"
+            f"Company: {company}\n"
+            f"Role: {role}\n"
+            f"Channel: {channel}\n"
+            f"Resume Variant: {variant_name or 'active'}\n"
+        )
+
+    @mcp.prompt()
+    def mock_interview_evaluator(question: str, candidate_answer: str, role_level: str = "senior", rubric: str = "standard") -> str:
+        """System prompt contract for 4-dimension mock interview answer grading and coaching."""
+        tpl = _read_prompt_template("mock_interview_evaluator")
+        return (
+            f"{tpl}\n\n"
+            f"--- EXECUTION CONTEXT ---\n"
+            f"Question: {question}\n"
+            f"Candidate Answer: {candidate_answer}\n"
+            f"Role Level: {role_level}\n"
+            f"Rubric: {rubric}\n"
+        )
+
+    @mcp.prompt()
+    def career_skill_roadmap(job_id: str, variant_name: str = "") -> str:
+        """System prompt contract for 30-60-90 day skill acquisition roadmaps."""
+        tpl = _read_prompt_template("career_skill_roadmap")
+        return (
+            f"{tpl}\n\n"
+            f"--- EXECUTION CONTEXT ---\n"
+            f"Target Job ID: {job_id}\n"
+            f"Resume Variant: {variant_name or 'active'}\n"
+        )
+
+    @mcp.prompt()
+    def application_follow_up(app_id: str, channel: str = "email") -> str:
+        """System prompt contract for polite, professional post-application follow-up messages."""
+        tpl = _read_prompt_template("application_follow_up")
+        return (
+            f"{tpl}\n\n"
+            f"--- EXECUTION CONTEXT ---\n"
+            f"Application ID: {app_id}\n"
+            f"Channel: {channel}\n"
+        )

@@ -15,8 +15,8 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
-from . import config
-from .util import (HttpError, clean_salary_label, clean_job_type, clean_text, extract_job_sections,
+from .. import config
+from ..util import (HttpError, clean_salary_label, clean_job_type, clean_text, extract_job_sections,
                     format_schema_salary, html_to_text, http_get, http_get_json,
                     iso_or_empty, now_iso, parse_schema_job_posting)
 
@@ -619,7 +619,7 @@ class Adzuna(Source):
     name, tier, needs_key = "Adzuna", "Aggregator API", True
 
     def _keys(self):
-        from . import db
+        from .. import db
         return (config.ADZUNA_APP_ID or db.get_setting("adzuna_app_id"), config.ADZUNA_APP_KEY or db.get_setting("adzuna_app_key"))
 
     def available(self):
@@ -652,7 +652,7 @@ class Adzuna(Source):
         check_loc = loc_str.lower()
         if not check_loc or check_loc in ("remote", "worldwide", "any"):
             try:
-                from . import db
+                from .. import db
                 check_loc = (db.get_setting("user_country") or "").lower().strip()
                 if not check_loc:
                     check_loc = (db.get_profile().get("location") or "").lower().strip()
@@ -946,7 +946,7 @@ class LinkedInGuest(Source):
         # Get profile skills for skill-based slicing
         profile_skills = []
         try:
-            from . import db
+            from .. import db
             profile = db.get_profile()
             if not profile.get("_is_empty"):
                 profile_skills = [s for s in (profile.get("skills") or []) if s and len(s) > 1][:8]
@@ -1026,7 +1026,7 @@ class LinkedInGuest(Source):
 
         user_c = ""
         try:
-            from . import db
+            from .. import db
             user_c = (db.get_setting("user_country") or "").strip()
             if not user_c:
                 user_c = (db.get_profile().get("location") or "").strip()
@@ -1044,7 +1044,7 @@ class LinkedInGuest(Source):
         # Load known IDs from all 3 tables for promoted-safe early stopping and avoiding re-downloads
         known_db_ids = set()
         try:
-            from . import db
+            from .. import db
             with db.session() as c:
                 try:
                     for r in c.execute("SELECT job_key FROM seen_jobs WHERE job_key LIKE 'linkedin-%'").fetchall():
@@ -1073,7 +1073,7 @@ class LinkedInGuest(Source):
         cursor_key = f"li_cursor_{clean_kw_key}_{clean_loc_key}"[:60]
         base_cursor = 0
         try:
-            from . import db
+            from .. import db
             c_val = db.get_setting(cursor_key)
             if c_val and c_val.isdigit():
                 base_cursor = int(c_val)
@@ -1344,7 +1344,7 @@ class LinkedInGuest(Source):
         # Advance cursor for deep searches
         if depth in ("deep", "max") and primary_offsets:
             try:
-                from . import db
+                from .. import db
                 next_cur = primary_offsets[-1] + 25
                 if next_cur >= 900:
                     next_cur = 0
@@ -1434,7 +1434,7 @@ class LinkedInGuest(Source):
 
         user_c = ""
         try:
-            from . import db
+            from .. import db
             user_c = (db.get_setting("user_country") or "").strip()
             if not user_c:
                 user_c = (db.get_profile().get("location") or "").strip()
@@ -1452,7 +1452,7 @@ class LinkedInGuest(Source):
         known_ids = set()
         known_canonical_keys = set()
         try:
-            from . import db
+            from .. import db
             with db.session() as c:
                 # Direct LinkedIn IDs
                 for tbl in ("search_jobs", "seen_jobs", "pending_search_jobs"):
@@ -1480,7 +1480,7 @@ class LinkedInGuest(Source):
             if not page_text or page_text == "429":
                 return parsed
             try:
-                from . import dedup
+                from .. import dedup
             except Exception:
                 dedup = None
 
@@ -1540,7 +1540,7 @@ class LinkedInGuest(Source):
         # Check fingerprint against stored top job ID
         last_top_id = ""
         try:
-            from . import db
+            from .. import db
             last_top_id = db.get_setting("li_radar_last_top_id") or ""
         except Exception:
             pass
@@ -1554,7 +1554,7 @@ class LinkedInGuest(Source):
             # Page 1 has genuine new postings! Collect them immediately
             if top_id:
                 try:
-                    from . import db
+                    from .. import db
                     db.set_setting("li_radar_last_top_id", top_id)
                 except Exception:
                     pass
@@ -1628,14 +1628,14 @@ class LinkedInGuest(Source):
             if slices:
                 slice_idx = 0
                 try:
-                    from . import db
+                    from .. import db
                     slice_idx = int(db.get_setting("li_radar_slice_idx") or 0)
                 except Exception:
                     pass
 
                 rot_kw = slices[slice_idx % len(slices)]
                 try:
-                    from . import db
+                    from .. import db
                     db.set_setting("li_radar_slice_idx", str((slice_idx + 1) % len(slices)))
                 except Exception:
                     pass
@@ -1675,7 +1675,7 @@ class LinkedInGuest(Source):
             if not out:
                 backfill_offset = 25
                 try:
-                    from . import db
+                    from .. import db
                     backfill_offset = int(db.get_setting("li_radar_backfill_offset") or 25)
                 except Exception:
                     pass
@@ -1715,7 +1715,7 @@ class LinkedInGuest(Source):
                 if next_offset > 900 or len(bf_items) == 0:
                     next_offset = 25
                 try:
-                    from . import db
+                    from .. import db
                     db.set_setting("li_radar_backfill_offset", str(next_offset))
                 except Exception:
                     pass
@@ -1989,7 +1989,7 @@ class Bayt(Source):
 
         if not loc_lower or loc_lower in ("remote", "anywhere", "worldwide"):
             try:
-                from . import db
+                from .. import db
                 uc = (db.get_setting("user_country") or "").lower().strip()
                 if not uc:
                     uc = (db.get_profile().get("location") or "").lower().strip()
@@ -2398,3 +2398,19 @@ def breaker_record(name, ok):
 def reset_breakers():
     with _blk:
         _breaker.clear()
+
+
+# --- Modular Source Adapters (Section 6.4 & 7 of newall-logic.md) ---
+from .base import BaseSourceAdapter, SourceJob, SourcePage, SourceHealth
+from .greenhouse import GreenhouseAdapter
+from .lever import LeverAdapter
+from .ashby import AshbyAdapter
+from .smartrecruiters import SmartRecruitersAdapter
+from .jobicy import JobicyAdapter
+from .himalayas import HimalayasAdapter
+from .adzuna import AdzunaAdapter
+from .usajobs import USAJobsAdapter
+from .remotive import RemotiveAdapter
+from .jooble import JoobleAdapter
+from .workable_account import WorkableAccountAdapter
+from .linkedin_adapter import LinkedInAdapter

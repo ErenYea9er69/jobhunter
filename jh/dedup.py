@@ -203,3 +203,102 @@ def merge_jobs(raw_jobs):
         g["apply_cost_note"] = best_src.get("apply_cost_note", "")
 
     return groups
+
+
+def resolve_duplicates_5stage(postings: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Execute the 5-stage duplicate resolution from Section 9.1 of newall-logic.md.
+
+    Stages:
+    1. Provider identity (same source + provider job id)
+    2. Canonical source URL (same stripped url)
+    3. Employer and role key (normalized company + title key + location)
+    4. Description fingerprint (Jaccard similarity >= 0.85 on description)
+    5. Merge decision (auto-merge high-confidence, keep source links and separate apply_urls)
+    """
+    if not postings:
+        return [], []
+
+    merged: list[dict] = []
+    uncertain: list[dict] = []
+
+    for post in postings:
+        job = dict(post)
+        if not job.get("title") or not job.get("company"):
+            continue
+
+        c_url = canonical_url(job.get("url") or job.get("source_url") or "")
+        apply_url = job.get("apply_url") or job.get("applicationLink") or c_url
+        src_name = job.get("source", "Unknown")
+        jid = str(job.get("id") or "")
+        co = normalize_company(job.get("company", ""))
+        tk = _title_key(job.get("title", ""))
+        lc = _loc_class(job)
+        desc = (job.get("description") or "").lower()
+
+        src_record = {
+            "source": src_name,
+            "id": jid,
+            "url": c_url,
+            "apply_url": apply_url,
+            "posted_at": job.get("posted_at", ""),
+            "source_tier": job.get("source_tier", ""),
+            "source_rank": source_rank(src_name, job.get("source_tier", "")),
+            "is_free_to_apply": is_free_to_apply(src_name),
+        }
+
+        matched_target = None
+        for cand in merged:
+            # Stage 1: Provider identity
+            cand_sources = cand.get("sources", [])
+            stage1_match = False
+            for s in cand_sources:
+                if s.get("source") == src_name and jid and s.get("id") == jid:
+                    stage1_match = True
+                    break
+            if stage1_match:
+                matched_target = cand
+                break
+
+            # Stage 2: Canonical source URL
+            cand_url = canonical_url(cand.get("source_url") or cand.get("url") or "")
+            if c_url and cand_url and c_url == cand_url:
+                matched_target = cand
+                break
+
+            # Stage 3: Employer and role key
+            cand_co = normalize_company(cand.get("company", ""))
+            cand_tk = _title_key(cand.get("title", ""))
+            cand_lc = _loc_class(cand)
+
+            if co and cand_co and co == cand_co:
+                if tk and cand_tk and (tk == cand_tk or _jaccard(tk, cand_tk) >= 0.85):
+                    if lc == cand_lc or "remote" in (lc, cand_lc) or "unknown" in (lc, cand_lc):
+                        matched_target = cand
+                        break
+
+            # Stage 4: Description fingerprint
+            if co and cand_co and co == cand_co and desc and cand.get("description"):
+                cand_desc = cand["description"].lower()
+                if len(desc) > 100 and len(cand_desc) > 100:
+                    sim = _jaccard(desc[:1000], cand_desc[:1000])
+                    if sim >= 0.85:
+                        matched_target = cand
+                        break
+
+        if matched_target is not None:
+            # Stage 5: Merge decision
+            matched_target["sources"].append(src_record)
+            if len(desc) > len(matched_target.get("description", "")):
+                matched_target["description"] = job.get("description", "")
+            if not matched_target.get("salary") and job.get("salary"):
+                matched_target["salary"] = job["salary"]
+            if not matched_target.get("work_mode") and job.get("work_mode"):
+                matched_target["work_mode"] = job["work_mode"]
+        else:
+            new_canonical = dict(job)
+            new_canonical["source_url"] = c_url
+            new_canonical["apply_url"] = apply_url
+            new_canonical["sources"] = [src_record]
+            merged.append(new_canonical)
+
+    return merged, uncertain

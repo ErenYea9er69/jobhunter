@@ -971,3 +971,140 @@ def score_job_best(job, profiles=None):
 
     return winning_result
 
+
+def calculate_explainable_fit(profile: dict, job: dict) -> dict:
+    """Calculate the explainable 100-point fit score and separate eligibility checks per Section 10.
+
+    Weights:
+    - Skills: 35
+    - Responsibilities & Scope: 25
+    - Seniority & Ownership: 15
+    - Domain & Environment: 10
+    - Work Conditions: 10
+    - Compensation: 5
+    """
+    cand_skills = set(profile.get("skills") or [])
+    cand_skills_l = {s.lower() for s in cand_skills}
+
+    title = job.get("title") or ""
+    desc = job.get("description") or ""
+    all_text = f"{title}\n{desc}"
+
+    # 1. Skills (Weight: 35)
+    extracted_weights = sk.extract_weighted(all_text)
+    matched = [s for s in extracted_weights if s in cand_skills or s.lower() in cand_skills_l]
+    missing = [s for s in extracted_weights if s not in matched]
+
+    adjacent = []
+    adj_credit = 0.0
+    for m in missing:
+        if m in sk.ADJACENT or any(m in members for members in sk.CLUSTERS.values()):
+            adjacent.append(m)
+            adj_credit += 0.45 * extracted_weights.get(m, 1.0)
+
+    total_w = sum(extracted_weights.values()) or 1.0
+    matched_w = sum(extracted_weights[s] for s in matched) + adj_credit
+    skills_score = min(100.0, (matched_w / total_w) * 100.0)
+
+    # 2. Responsibilities and Scope (Weight: 25)
+    title_ratio = _title_score(title, profile)
+    resp_score = min(100.0, title_ratio * 100.0)
+
+    # 3. Seniority and Ownership (Weight: 15)
+    job_level = level_of(title)
+    if job_level is None:
+        sen_class = classify_job_seniority(title, desc)
+        job_level = 3 if "senior" in sen_class else 4 if "lead" in sen_class or "staff" in sen_class else 2
+    cand_years = float(profile.get("years_of_experience") or 0.0)
+    cand_level = years_to_level(cand_years) if cand_years else 2
+    diff = abs(job_level - cand_level)
+    sen_score = max(0.0, 100.0 - (diff * 25.0))
+
+    # 4. Domain and Environment (Weight: 10)
+    domain_score = 75.0 if matched else 50.0
+
+    # 5. Work conditions (Weight: 10)
+    job_mode = (job.get("work_mode") or "").strip().lower()
+    cand_mode = (profile.get("work_mode_preference") or "").strip().lower()
+    work_conditions_score = 100.0
+    if cand_mode and job_mode:
+        if cand_mode in job_mode or job_mode in cand_mode or "remote" in (cand_mode, job_mode):
+            work_conditions_score = 100.0
+        else:
+            work_conditions_score = 30.0
+
+    # 6. Compensation (Weight: 5)
+    cand_min_sal = float(profile.get("target_salary_min") or profile.get("salary_min") or 0.0)
+    job_sal = job.get("salary_min") or job.get("salary")
+    comp_applicable = False
+    comp_score = None
+    if cand_min_sal and job_sal:
+        comp_applicable = True
+        comp_score = 100.0
+
+    # Separate Eligibility Checks (met, not_met, unknown)
+    eligibility_details: dict[str, str] = {}
+    if cand_mode and job_mode:
+        if cand_mode == "remote" and job_mode in ("on-site", "onsite"):
+            eligibility_details["work_mode"] = "not_met"
+        elif cand_mode in ("on-site", "onsite") and job_mode == "remote":
+            eligibility_details["work_mode"] = "met"
+        else:
+            eligibility_details["work_mode"] = "met"
+    else:
+        eligibility_details["work_mode"] = "unknown"
+
+    overall_eligibility = "not_met" if "not_met" in eligibility_details.values() else "met"
+
+    # Weighted combination normalized across applicable dimensions
+    active_weights = {"skills": 35.0, "responsibilities": 25.0, "seniority": 15.0, "domain": 10.0, "work_conditions": 10.0}
+    scores = {
+        "skills": skills_score,
+        "responsibilities": resp_score,
+        "seniority": sen_score,
+        "domain": domain_score,
+        "work_conditions": work_conditions_score,
+    }
+    if comp_applicable and comp_score is not None:
+        active_weights["compensation"] = 5.0
+        scores["compensation"] = comp_score
+
+    weight_sum = sum(active_weights.values())
+    weighted_total = sum(scores[dim] * active_weights[dim] for dim in active_weights)
+    final_score = weighted_total / weight_sum
+
+    # Completeness and Coverage
+    filled_fields = sum(1 for f in (title, desc, job.get("location"), job.get("work_mode"), job.get("company"), job.get("salary")) if f)
+    completeness = round(filled_fields / 6.0, 2)
+    coverage = round(len(matched) / max(1, len(cand_skills)), 2)
+
+    confidence = "high" if completeness >= 0.7 and coverage >= 0.3 else "medium" if completeness >= 0.5 else "low"
+
+    return {
+        "fit_score": round(final_score),
+        "breakdown": {
+            "skills": round(skills_score, 1),
+            "responsibilities": round(resp_score, 1),
+            "seniority": round(sen_score, 1),
+            "domain": round(domain_score, 1),
+            "work_conditions": round(work_conditions_score, 1),
+            "compensation": round(comp_score, 1) if comp_score is not None else None,
+        },
+        "dimension_weights": {
+            "skills": 35,
+            "responsibilities": 25,
+            "seniority": 15,
+            "domain": 10,
+            "work_conditions": 10,
+            "compensation": 5,
+        },
+        "score_confidence": confidence,
+        "job_data_completeness": completeness,
+        "candidate_evidence_coverage": coverage,
+        "eligibility": overall_eligibility,
+        "eligibility_details": eligibility_details,
+        "matched_skills": sorted(matched),
+        "missing_skills": sorted(missing),
+        "adjacent_skills": sorted(adjacent),
+    }
+

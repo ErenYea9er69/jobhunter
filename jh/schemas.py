@@ -78,6 +78,18 @@ class ValidationResult:
         if not self.valid:
             raise self.errors[0]
 
+    def __getitem__(self, key: str) -> Any:
+        return self.cleaned[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self.cleaned[key] = value
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.cleaned
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.cleaned.get(key, default)
+
 
 # ──────────────────────────────────────────── primitive validators
 
@@ -372,17 +384,41 @@ def validate_track_input(args: dict[str, Any]) -> ValidationResult:
     return result
 
 
-def validate_screening_input(args: dict[str, Any]) -> ValidationResult:
+def validate_screening_input(args: dict[str, Any], raise_on_error: bool = True) -> ValidationResult:
     """Validate screening question solver input."""
     result = ValidationResult()
 
-    question, err = validate_string(
-        args.get("question"), "question",
-        max_length=MAX_DESCRIPTION_LENGTH, required=True,
-    )
-    if err:
-        result.add_error("question", err)
-    result.cleaned["question"] = question
+    job_id = args.get("job_id", "")
+    if job_id:
+        jid, err = validate_string(job_id, "job_id", max_length=200)
+        if err:
+            result.add_warning(err)
+        result.cleaned["job_id"] = jid
+    else:
+        result.cleaned["job_id"] = ""
+
+    variant_name, _ = validate_string(args.get("variant_name", ""), "variant_name", max_length=200)
+    result.cleaned["variant_name"] = variant_name
+
+    questions = args.get("questions")
+    if questions is not None:
+        if not isinstance(questions, list) or len(questions) == 0:
+            result.add_error("questions", "Must provide at least one screening question")
+            result.cleaned["questions"] = []
+        else:
+            cleaned_q = [str(q).strip() for q in questions if str(q).strip()]
+            if not cleaned_q:
+                result.add_error("questions", "Questions list contains no valid text")
+            result.cleaned["questions"] = cleaned_q
+    else:
+        question, err = validate_string(
+            args.get("question"), "question",
+            max_length=MAX_DESCRIPTION_LENGTH, required=True,
+        )
+        if err:
+            result.add_error("question", err)
+        result.cleaned["question"] = question
+        result.cleaned["questions"] = [question] if question else []
 
     char_limit, err = validate_int(
         args.get("char_limit"), "char_limit",
@@ -400,6 +436,50 @@ def validate_screening_input(args: dict[str, Any]) -> ValidationResult:
         result.add_warning(err)
     result.cleaned["word_limit"] = word_limit
 
+    if raise_on_error:
+        result.raise_if_invalid()
+    return result
+
+
+def validate_mock_interview_input(args: dict[str, Any], raise_on_error: bool = True) -> ValidationResult:
+    """Validate practice mock interview question and answer evaluation input."""
+    result = ValidationResult()
+
+    question, err = validate_string(args.get("question"), "question", required=True, max_length=10_000)
+    if err:
+        result.add_error("question", err)
+    result.cleaned["question"] = question
+
+    ans, err = validate_string(args.get("candidate_answer"), "candidate_answer", required=True, max_length=50_000)
+    if err:
+        result.add_error("candidate_answer", err)
+    result.cleaned["candidate_answer"] = ans
+
+    role_level, _ = validate_string(args.get("role_level", "senior"), "role_level", max_length=50)
+    result.cleaned["role_level"] = role_level or "senior"
+
+    rubric, _ = validate_string(args.get("rubric", "standard"), "rubric", max_length=100)
+    result.cleaned["rubric"] = rubric or "standard"
+
+    if raise_on_error:
+        result.raise_if_invalid()
+    return result
+
+
+def validate_daily_digest_input(args: dict[str, Any], raise_on_error: bool = True) -> ValidationResult:
+    """Validate daily digest parameters."""
+    result = ValidationResult()
+
+    date_str, err = validate_string(args.get("date"), "date", max_length=30)
+    if err:
+        result.add_warning(err)
+    result.cleaned["date"] = date_str
+
+    result.cleaned["include_jobs"] = bool(args.get("include_jobs", True))
+    result.cleaned["include_interviews"] = bool(args.get("include_interviews", True))
+
+    if raise_on_error:
+        result.raise_if_invalid()
     return result
 
 

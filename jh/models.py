@@ -289,15 +289,18 @@ class ArtifactManifest:
 class ToolResult:
     """Standard result envelope for every MCP tool response."""
     status: ToolOutcome = ToolOutcome.OK
+    success: bool = True
     data: dict[str, Any] = field(default_factory=dict)
     warnings: list[dict[str, str]] = field(default_factory=list)
     sources: list[dict[str, str]] = field(default_factory=list)
     generated_at: str = field(default_factory=now_iso)
     correlation_id: str = field(default_factory=lambda: _new_id("cor_"))
+    schema_version: str = "1.0"
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["status"] = self.status.value
+        d["success"] = self.status in (ToolOutcome.OK, ToolOutcome.PARTIAL)
         return d
 
     def add_warning(self, category: WarningCategory, message: str) -> None:
