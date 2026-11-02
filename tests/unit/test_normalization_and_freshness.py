@@ -60,3 +60,22 @@ def test_freshness_evaluation_states():
     # 4. Unknown when no dates and no verification
     empty_job = {}
     assert evaluate_freshness(empty_job) == FreshnessState.UNKNOWN
+
+
+def test_canonical_posting_deterministic_id_across_process_seeds():
+    """Verify that canonical id generation without explicit id is deterministic and independent of PYTHONHASHSEED."""
+    import os
+    import subprocess
+    import sys
+
+    code = "from jh.normalization import build_canonical_posting\nraw = {'title': 'Software Engineer', 'url': 'https://example.com/jobs/1'}\nprint(build_canonical_posting(raw, source_name='Example')['id'])"
+    cmd = [sys.executable, "-c", code]
+    res1 = subprocess.run(cmd, capture_output=True, text=True, env=dict(os.environ, PYTHONHASHSEED="12345"))
+    res2 = subprocess.run(cmd, capture_output=True, text=True, env=dict(os.environ, PYTHONHASHSEED="54321"))
+
+    assert res1.returncode == 0
+    assert res2.returncode == 0
+    id1 = res1.stdout.strip()
+    id2 = res2.stdout.strip()
+    assert id1 == id2, f"Canonical ID must be deterministic across hash seeds, got {id1} vs {id2}"
+    assert id1.startswith("example-")

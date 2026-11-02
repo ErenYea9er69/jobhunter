@@ -6,6 +6,7 @@ and work-mode values while preserving separate source URL and application URL.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Any, Dict, Optional
 
@@ -111,7 +112,12 @@ def build_canonical_posting(raw_data: dict[str, Any], source_name: str = "") -> 
 
     posted_at = iso_or_empty(raw_data.get("posted_at") or raw_data.get("published_at") or raw_data.get("date") or "")
 
-    canonical_id = raw_data.get("id") or f"{clean_text(source_name).lower()}-{abs(hash(source_url or title))}"
+    if raw_data.get("id"):
+        canonical_id = raw_data["id"]
+    else:
+        raw_key = (source_url or title).encode("utf-8")
+        hash_digest = hashlib.sha256(raw_key).hexdigest()[:12]
+        canonical_id = f"{clean_text(source_name).lower()}-{hash_digest}"
 
     return {
         "id": canonical_id,
