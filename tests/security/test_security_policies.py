@@ -140,3 +140,36 @@ def test_http_get_enforces_ssrf_policy():
         err = str(exc_info.value).lower()
         assert "policy" in err or "blocked" in err, f"Expected policy block, got: {exc_info.value}"
 
+
+def test_xml_entity_expansion_protection():
+    """Verify that safe_parse_xml and _docx_text reject DTD and entity expansion payloads."""
+    import io
+    import zipfile
+    from jh.util import safe_parse_xml
+    from jh.resume_parser import _docx_text, ParseError
+
+    unsafe_xml = """<?xml version="1.0"?>
+    <!DOCTYPE lolz [
+      <!ENTITY lol "lol">
+      <!ELEMENT lolz (#PCDATA)>
+      <!ENTITY lol1 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
+    ]>
+    <lolz>&lol1;</lolz>
+    """
+
+    # 1. safe_parse_xml must reject DTD/ENTITY with ValueError
+    with pytest.raises(ValueError) as exc:
+        safe_parse_xml(unsafe_xml)
+    assert "unsafe xml" in str(exc.value).lower()
+
+    # 2. _docx_text must reject a docx containing DTD/ENTITY declarations in document.xml
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("word/document.xml", unsafe_xml)
+    docx_bytes = buf.getvalue()
+
+    with pytest.raises(ParseError) as exc:
+        _docx_text(docx_bytes)
+    assert "unsafe" in str(exc.value).lower() or "damaged" in str(exc.value).lower()
+
+

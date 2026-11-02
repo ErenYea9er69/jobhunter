@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 from .. import config
 from ..util import (HttpError, clean_salary_label, clean_job_type, clean_text, extract_job_sections,
                     format_schema_salary, html_to_text, http_get, http_get_json,
-                    iso_or_empty, now_iso, parse_schema_job_posting)
+                    iso_or_empty, now_iso, parse_schema_job_posting, safe_parse_xml)
 
 BREAKER_FAILS = 3
 BREAKER_COOLDOWN = 300
@@ -352,7 +352,7 @@ class WeWorkRemotely(Source):
         for feed_url in feeds:
             try:
                 xml = http_get(feed_url, retries=0)
-                root = ET.fromstring(xml)
+                root = safe_parse_xml(xml)
                 for item in root.iter("item"):
                     link = item.findtext("link") or ""
                     if link in seen_urls:

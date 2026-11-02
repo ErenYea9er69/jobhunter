@@ -46,7 +46,13 @@ def _docx_text(raw):
     except (zipfile.BadZipFile, KeyError):
         raise ParseError("The .docx file is damaged or not a Word document.")
     ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-    root = ET.fromstring(xml)
+    try:
+        from .util import safe_parse_xml
+        root = safe_parse_xml(xml)
+    except ValueError as e:
+        raise ParseError(f"The .docx file contains unsafe XML: {e}")
+    except ET.ParseError:
+        raise ParseError("The .docx XML is malformed.")
     lines = []
     for p in root.iter(ns + "p"):
         buf = []

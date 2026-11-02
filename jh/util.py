@@ -10,6 +10,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 
 from . import config
@@ -473,3 +474,17 @@ def http_get(url, headers=None, timeout=None, retries=1, max_bytes=6_000_000, da
 
 def http_get_json(url, **kw):
     return json.loads(http_get(url, **kw))
+
+
+def safe_parse_xml(xml_content: str | bytes) -> ET.Element:
+    """Parse XML string or bytes, rejecting DTD/entity declarations to prevent XXE and entity expansion attacks."""
+    if not xml_content:
+        raise ValueError("Unsafe XML: Empty content.")
+
+    test_str = xml_content if isinstance(xml_content, str) else xml_content.decode("utf-8", errors="replace")
+    lowered = test_str.lower()
+    if "<!doctype" in lowered or "<!entity" in lowered:
+        raise ValueError("Unsafe XML: DTD and entity declarations are forbidden.")
+
+    return ET.fromstring(xml_content)
+
