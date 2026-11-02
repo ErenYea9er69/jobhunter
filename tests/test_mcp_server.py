@@ -202,6 +202,8 @@ class TestMCPServer(unittest.TestCase):
         cfg_res = self._call_tool("configure", key="min_salary", value="150000")
         self.assertTrue(cfg_res["success"])
         self.assertEqual(cfg_res["value"], "150000")
+        from jh import db
+        self.assertEqual(db.get_setting("min_salary"), "150000")
 
         # 2. export_resume txt
         export_res = self._call_tool("export_resume", format="txt")

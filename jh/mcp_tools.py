@@ -1199,6 +1199,10 @@ def register_tools_and_resources(mcp: Any, filestore: FileStore, workspace_path:
         try:
             if key and value is not None and value != "":
                 cfg = filestore.save_config(key, value)
+                try:
+                    db.save_setting(key, str(value))
+                except Exception as dbe:
+                    log.warning("Failed to persist setting to db: %s", dbe)
                 return {
                     "success": True,
                     "updated_key": key,

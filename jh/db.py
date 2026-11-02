@@ -883,6 +883,8 @@ def set_setting(key, value):
     with session() as c:
         c.execute("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", (key, str(value)))
 
+save_setting = set_setting
+
 
 def replace_search_jobs(jobs, query="", location="", sources=None, clear_existing=True):
     """Store search jobs with extracted categories into DB.
