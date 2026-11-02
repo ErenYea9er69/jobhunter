@@ -173,3 +173,27 @@ def test_xml_entity_expansion_protection():
     assert "unsafe" in str(exc.value).lower() or "damaged" in str(exc.value).lower()
 
 
+def test_gitignore_protects_candidate_pii_and_workspace_artifacts(tmp_path):
+    """Verify that root .gitignore and workspace .gitignore prevent candidate PII leakage."""
+    import subprocess
+    from jh import workspace
+
+    # 1. ensure_jobhunter_dir must produce a .gitignore that ignores candidate data
+    jh_dir = workspace.ensure_jobhunter_dir(tmp_path)
+    content = (jh_dir / ".gitignore").read_text(encoding="utf-8")
+    assert "*" in content, "Workspace .gitignore must ignore all files by default"
+
+    # 2. Check git ignores candidate files in repo
+    res = subprocess.run(
+        ["git", "check-ignore", ".jobhunter/resume_manifest.json", ".jobhunter/profiles/candidate.json", "output/resume.pdf", "applications.json"],
+        capture_output=True,
+        text=True
+    )
+    ignored = res.stdout.splitlines()
+    assert ".jobhunter/profiles/candidate.json" in ignored
+    assert ".jobhunter/resume_manifest.json" in ignored
+    assert "output/resume.pdf" in ignored
+    assert "applications.json" in ignored
+
+
+

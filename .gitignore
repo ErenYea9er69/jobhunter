@@ -47,8 +47,14 @@ Thumbs.db
 .vscode/
 .idea/
 
-# JobHunter MCP ephemeral data
-.jobhunter/engine.db*
-.jobhunter/cache/
-.jobhunter/*.tmp*
+# JobHunter candidate PII, profiles, outputs, and workspace data
+.jobhunter/*
+!.jobhunter/.gitignore
+output/
+backups/
+applications.json
+
+
+# Security audit reports
+SECURITY-KILL-*.md
 

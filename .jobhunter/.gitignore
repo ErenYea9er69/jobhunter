@@ -1,6 +1,3 @@
-# Ignore ephemeral engine db and search cache
-engine.db
-engine.db-wal
-engine.db-shm
-cache/
-*.tmp
+# Ignore all candidate data, profiles, outputs, backups, and databases
+*
+!.gitignore

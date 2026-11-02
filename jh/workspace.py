@@ -92,12 +92,9 @@ def ensure_jobhunter_dir(workspace_path: str | Path) -> Path:
     gitignore_path = jh_dir / ".gitignore"
     if not gitignore_path.exists():
         gitignore_content = (
-            "# Ignore ephemeral engine db and search cache\n"
-            "engine.db\n"
-            "engine.db-wal\n"
-            "engine.db-shm\n"
-            "cache/\n"
-            "*.tmp\n"
+            "# Ignore all candidate data, profiles, outputs, backups, and databases\n"
+            "*\n"
+            "!.gitignore\n"
         )
         try:
             gitignore_path.write_text(gitignore_content, encoding="utf-8")
