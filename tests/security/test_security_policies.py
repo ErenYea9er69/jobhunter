@@ -83,6 +83,32 @@ def test_path_traversal_protection(tmp_path):
     assert "escapes workspace" in res_abs.get("error", "").lower() or "access denied" in res_abs.get("error", "").lower()
 
 
+def test_scan_resumes_rejects_subpath_traversal(tmp_path):
+    """Verify scan_resumes rejects subpaths that escape the workspace boundary."""
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+    jh_dir = ws / ".jobhunter"
+    jh_dir.mkdir()
+    fs = FileStore(jh_dir)
+
+    server = FastMCP(name="JobHunterSecurityTest")
+    register_tools_and_resources(server, fs, ws)
+
+    scan_fn = server._tool_manager._tools["scan_resumes"].fn
+
+    # Attempt path traversal via relative escape
+    res_rel = scan_fn(subpath="../../outside")
+    assert not res_rel.get("success"), "Relative subpath escaping workspace must fail"
+    assert "escapes workspace" in res_rel.get("error", "").lower() or "access denied" in res_rel.get("error", "").lower()
+
+    # Attempt path traversal via absolute path outside workspace
+    outside_dir = tmp_path / "outside_dir"
+    outside_dir.mkdir()
+    res_abs = scan_fn(subpath=str(outside_dir.resolve()))
+    assert not res_abs.get("success"), "Absolute subpath escaping workspace must fail"
+    assert "escapes workspace" in res_abs.get("error", "").lower() or "access denied" in res_abs.get("error", "").lower()
+
+
 def test_sanitize_apply_url_removes_trackers():
     """Verify tracking parameters are scrubbed while preserving valid destination."""
     dirty_url = "https://boards.greenhouse.io/company/jobs/12345?utm_source=linkedin&utm_medium=cpc&utm_campaign=hiring&ref=tracker123&keep_this=true"

@@ -110,7 +110,25 @@ def register_tools_and_resources(mcp: Any, filestore: FileStore, workspace_path:
             Dict containing list of discovered resumes, parsed count, and active resume.
         """
         try:
-            target_dir = (ws / subpath) if subpath else ws
+            target_dir = Path(subpath) if subpath else ws
+            if not target_dir.is_absolute():
+                target_dir = ws / target_dir
+            target_dir = target_dir.resolve()
+
+            # Prevent directory traversal escaping workspace
+            if ws:
+                resolved_ws = Path(ws).resolve()
+                try:
+                    target_dir.relative_to(resolved_ws)
+                except ValueError:
+                    return {
+                        "success": False,
+                        "error": f"Access denied: path '{subpath}' escapes workspace boundary.",
+                        "found_count": 0,
+                        "parsed_count": 0,
+                        "resumes": [],
+                    }
+
             found = workspace.discover_resumes(target_dir)
             parsed_list = []
 
