@@ -1,5 +1,6 @@
 """Daily digest: new high-fit jobs since the last run. Writes an HTML file and emails it when SMTP is set."""
 import datetime
+import logging
 import html
 import os
 import smtplib
@@ -10,6 +11,8 @@ from email.mime.text import MIMEText
 
 from . import config, db, pipeline
 from .util import now_iso
+
+log = logging.getLogger("jobhunter.digest")
 
 
 def build_digest(profile=None, mark_sent=False, min_score=None):
@@ -82,7 +85,7 @@ def start_scheduler():
             try:
                 send_digest()
             except Exception as e:
-                print(f"[digest] failed: {e}")
+                log.error("[digest] failed: %s", e)
     t = threading.Thread(target=loop, daemon=True, name="jh-digest")
     t.start()
     return t

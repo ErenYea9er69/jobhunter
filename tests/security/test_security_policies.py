@@ -196,4 +196,18 @@ def test_gitignore_protects_candidate_pii_and_workspace_artifacts(tmp_path):
     assert "applications.json" in ignored
 
 
+def test_no_raw_stdout_prints_in_package():
+    """Verify that no module in jh prints directly to stdout (which corrupts MCP JSON-RPC framing)."""
+    import ast
+    from pathlib import Path
+    jh_root = Path("jh")
+    for py_file in jh_root.rglob("*.py"):
+        tree = ast.parse(py_file.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id == "print":
+                    pytest.fail(f"Raw print() found in {py_file}:{node.lineno} - MCP stdio transport requires logging via stderr")
+
+
+
 
