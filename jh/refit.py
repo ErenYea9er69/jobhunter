@@ -306,7 +306,7 @@ def _call_llm(system, user, cfg=None):
 
         body = json.dumps(payload).encode()
         raw = http_get(url, data=body, method="POST", retries=0, timeout=config.LLM_TIMEOUT_SECONDS,
-                       headers=headers)
+                       headers=headers, allow_private=(prov == "custom"))
         data = json.loads(raw)
         if isinstance(data, dict) and "error" in data:
             err_msg = data["error"].get("message") if isinstance(data["error"], dict) else str(data["error"])
@@ -347,7 +347,7 @@ def _call_llm(system, user, cfg=None):
             ollama_payload["format"] = "json"
         body = json.dumps(ollama_payload).encode()
         raw = http_get(url, data=body, method="POST", retries=0, timeout=config.LLM_TIMEOUT_SECONDS,
-                       headers={"Content-Type": "application/json"})
+                       headers={"Content-Type": "application/json"}, allow_private=True)
         data = json.loads(raw)
         if isinstance(data, dict) and "error" in data:
             raise RuntimeError(f"Ollama API error: {data['error']}")

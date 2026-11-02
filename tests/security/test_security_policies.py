@@ -129,3 +129,14 @@ def test_redact_url_protects_query_secrets():
 
     assert "supersecret123" not in redacted
     assert "api.adzuna.com" in redacted
+
+
+def test_http_get_enforces_ssrf_policy():
+    """Verify that http_get enforces source_policy and blocks private/loopback requests before network connect."""
+    from jh.util import http_get, HttpError
+    for forbidden in ["http://127.0.0.1:8000/api", "http://169.254.169.254/latest/meta-data/", "http://10.0.0.1/admin"]:
+        with pytest.raises(HttpError) as exc_info:
+            http_get(forbidden)
+        err = str(exc_info.value).lower()
+        assert "policy" in err or "blocked" in err, f"Expected policy block, got: {exc_info.value}"
+

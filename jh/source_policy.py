@@ -75,6 +75,17 @@ ALLOWED_DOMAINS: set[str] = {
     "jobicy.com",
     "www.arbeitnow.com",
     "api.adzuna.com",
+    "data.usajobs.gov",
+    "www.usajobs.gov",
+    "hn.algolia.com",
+
+    # AI Model Providers
+    "api.openai.com",
+    "api.anthropic.com",
+    "generativelanguage.googleapis.com",
+    "api.deepseek.com",
+    "api.groq.com",
+    "api.mistral.ai",
 
     # Regional boards
     "www.bayt.com",
@@ -144,6 +155,10 @@ def check_url(url: str, *, allow_user_provided: bool = False) -> Tuple[bool, Opt
     hostname = (parsed.hostname or "").lower().strip(".")
     if not hostname:
         return False, "Missing hostname"
+
+    # Block localhost and internal domain names
+    if hostname in ("localhost", "127.0.0.1", "::1") or hostname.endswith(".local") or hostname.endswith(".internal"):
+        return False, f"Host '{hostname}' is a reserved local address (SSRF prevention)"
 
     # 3. Block IP-literal URLs that resolve to private ranges
     blocked_reason = _check_ip_literal(hostname)
@@ -253,6 +268,11 @@ def _is_domain_allowed(hostname: str, *, allow_user_provided: bool = False) -> b
     # Employer career site pattern match
     for pattern in _EMPLOYER_CAREER_PATTERNS:
         if pattern.search(hostname):
+            return True
+
+    if allow_user_provided:
+        # User-provided URLs (e.g. apply URLs or configured custom sites)
+        if "." in hostname and not hostname.startswith(".") and not hostname.endswith("."):
             return True
 
     return False

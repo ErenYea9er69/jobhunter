@@ -410,20 +410,38 @@ class HttpError(Exception):
     pass
 
 
-def http_get(url, headers=None, timeout=None, retries=1, max_bytes=6_000_000, data=None, method=None):
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Enforces source policy on HTTP redirect targets to prevent SSRF via redirect."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        from . import source_policy
+        allowed, reason = source_policy.check_url(newurl, allow_user_provided=True)
+        if not allowed:
+            raise HttpError(f"Redirect blocked by security policy: {reason}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def http_get(url, headers=None, timeout=None, retries=1, max_bytes=6_000_000, data=None, method=None, allow_private: bool = False):
     """GET (or POST with data) with gzip support, size cap, and one polite retry on 429/5xx."""
     parsed = urllib.parse.urlparse(url or "")
     if parsed.scheme.lower() not in ("http", "https"):
         raise HttpError(f"Unsupported URL scheme: '{parsed.scheme}'. Only http and https are allowed.")
+
+    if not allow_private:
+        from . import source_policy
+        allowed, reason = source_policy.check_url(url, allow_user_provided=True)
+        if not allowed:
+            raise HttpError(f"Security policy violation: {reason}")
+
     timeout = timeout or config.SOURCE_TIMEOUT_SECONDS
     hdrs = {"User-Agent": config.USER_AGENT, "Accept": "application/json, text/html;q=0.9, */*;q=0.5",
             "Accept-Encoding": "gzip"}
     hdrs.update(headers or {})
+    opener = urllib.request.build_opener(SafeRedirectHandler()) if not allow_private else urllib.request.build_opener()
     last = None
     for attempt in range(retries + 1):
         try:
             req = urllib.request.Request(url, headers=hdrs, data=data, method=method)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with opener.open(req, timeout=timeout) as resp:
                 raw = resp.read(max_bytes + 1)
                 if len(raw) > max_bytes:
                     raise HttpError("response too large")
