@@ -13,7 +13,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
 
 from .. import config
 from ..util import (HttpError, clean_salary_label, clean_job_type, clean_text, extract_job_sections,

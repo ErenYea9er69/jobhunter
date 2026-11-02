@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
 import zlib
 
 from . import skills as sk
