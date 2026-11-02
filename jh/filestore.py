@@ -284,7 +284,11 @@ class FileStore:
         target_dir = self.output_dir / cat_clean
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        target_file = target_dir / filename
+        target_file = (target_dir / filename).resolve()
+        try:
+            target_file.relative_to(self.output_dir.resolve())
+        except ValueError:
+            raise ValueError(f"Access denied: filename '{filename}' escapes output directory.")
         with self._lock:
             if isinstance(data, (dict, list)):
                 self._write_json_atomic(target_file, data)

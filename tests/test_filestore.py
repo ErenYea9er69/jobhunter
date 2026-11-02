@@ -131,6 +131,12 @@ class TestFileStore(unittest.TestCase):
         types = [d["type"] for d in deletable]
         self.assertIn("durable_data", types)
 
+    def test_save_output_rejects_path_traversal(self):
+        """Verify save_output blocks filenames attempting directory traversal out of output_dir."""
+        with self.assertRaises(ValueError):
+            self.store.save_output("reports", "../../../../evil.txt", "evil")
+
+
 
 if __name__ == "__main__":
     unittest.main()
