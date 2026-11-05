@@ -32,3 +32,4 @@ class TestExtensionBundle(unittest.TestCase):
         for fname in required_files:
             file_path = self.ext_dir / fname
             self.assertTrue(file_path.is_file(), f"File '{fname}' missing from extension/")
+

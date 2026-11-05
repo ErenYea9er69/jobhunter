@@ -242,3 +242,4 @@ def get_extension_status() -> dict[str, Any]:
         "browsers": browsers,
         "recommended_browser": browsers[0]["name"] if browsers else None,
     }
+

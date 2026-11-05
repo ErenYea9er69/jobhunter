@@ -23,3 +23,4 @@ class TestDesktopLauncher(unittest.TestCase):
         self.assertIn("--port", res.stdout)
         self.assertIn("--launch-browser", res.stdout)
         self.assertIn("--install-extension", res.stdout)
+

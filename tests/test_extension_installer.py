@@ -38,3 +38,4 @@ class TestExtensionInstaller(unittest.TestCase):
         self.assertIn("extension_dir", status)
         self.assertIn("browsers", status)
         self.assertIn("extension_dir_valid", status)
+

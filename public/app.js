@@ -378,3 +378,4 @@
   loadApplications();
   loadExtensionStatus();
 })();
+

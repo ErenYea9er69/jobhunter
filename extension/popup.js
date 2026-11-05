@@ -30,3 +30,4 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (statusEl) statusEl.innerHTML = '<span class="dot" style="background:#ef4444;"></span>Disconnected';
   }
 });
+

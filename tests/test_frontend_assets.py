@@ -25,3 +25,4 @@ class TestFrontendAssets(unittest.TestCase):
         self.assertIn("tab-tracker", html)
         self.assertIn("tab-copilot", html)
         self.assertIn("tab-extension", html)
+
