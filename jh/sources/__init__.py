@@ -17,8 +17,8 @@ import xml.etree.ElementTree as ET  # nosemgrep: python.lang.security.use-defuse
 
 from .. import config
 from ..util import (HttpError, clean_salary_label, clean_job_type, clean_text, extract_job_sections,
-                    format_schema_salary, html_to_text, http_get, http_get_json,
-                    iso_or_empty, now_iso, parse_schema_job_posting, safe_parse_xml)
+                    html_to_text, http_get, http_get_json, iso_or_empty,
+                    parse_schema_job_posting, safe_parse_xml, stable_id)
 
 BREAKER_FAILS = 3
 BREAKER_COOLDOWN = 300
@@ -35,12 +35,18 @@ PAID_OR_GATED_SOURCES = {
 # Direct employer ATS (100) > Free Major Job Boards (88-96) > Free Feeds (70-85) > Paid/Gated Feeds (30-35)
 SOURCE_RANKS = {
     "Greenhouse": 100, "Lever": 100, "Ashby": 100, "SmartRecruiters": 100, "Workable": 100,
-    "Startup ATS": 100, "Y Combinator": 98,
+    "Lever EU": 100, "Recruitee": 100, "Personio": 100, "Teamtailor": 100, "BambooHR": 100, "Breezy": 100,
+    "Startup ATS": 100, "Company Boards": 100, "Career Page": 97, "Y Combinator": 98,
     "LinkedIn": 96, "Indeed": 95, "ZipRecruiter": 94, "Hacker News": 92,
-    "Bayt": 88, "Naukri": 88, "HelloWork": 88,
-    "Himalayas": 85, "Jobicy": 82, "Arbeitnow": 80, "Adzuna": 75,
+    "Bayt": 88, "Naukri": 88, "HelloWork": 88, "Arbeitsagentur": 90,
+    "Himalayas": 85, "Jobicy": 82, "Arbeitnow": 80, "Adzuna": 75, "Working Nomads": 80, "The Muse": 78, "Custom Feed": 84,
+    "Regional Boards": 86, "Job Sites": 90, "Jooble": 76, "JobTech": 90, "Pinpoint": 100,
     "We Work Remotely": 35, "Remotive": 34, "Remote OK": 33, "RemoteOK": 33,
 }
+
+
+_ATS_NAMES = {"Greenhouse", "Lever", "Lever EU", "Ashby", "SmartRecruiters", "Workable", "Recruitee", "Personio",
+              "Teamtailor", "BambooHR", "Breezy", "Startup ATS", "Company Boards", "Career Page", "Pinpoint"}
 
 
 def is_free_to_apply(source):
@@ -55,7 +61,7 @@ def apply_cost_note(source):
         return PAID_OR_GATED_SOURCES[s]
     if s.replace(" ", "") in PAID_OR_GATED_SOURCES:
         return PAID_OR_GATED_SOURCES[s.replace(" ", "")]
-    if s in {"Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workable", "Startup ATS"}:
+    if s in _ATS_NAMES:
         return "100% Free Official Employer ATS"
     if s == "Y Combinator":
         return "100% Free Direct Founder Application"
@@ -70,14 +76,18 @@ def source_rank(source, tier=""):
 
 
 def source_kind(source, tier=""):
-    if str(tier).startswith("Direct company ATS") or source in {"Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Workable", "Startup ATS"}:
+    if str(tier).startswith("Direct company ATS") or source in _ATS_NAMES:
         return "Direct employer ATS"
     if source == "Y Combinator":
         return "Startup ecosystem"
-    if source in {"LinkedIn", "Indeed", "ZipRecruiter", "Bayt", "Naukri", "HelloWork"}:
+    if source in {"LinkedIn", "Indeed", "ZipRecruiter", "Bayt", "Naukri", "HelloWork", "Arbeitsagentur"}:
         return "Major job board"
-    if source == "Adzuna":
+    if source in ("Adzuna", "Jooble"):
         return "Job aggregator"
+    if source in ("Regional Boards", "Job Sites"):
+        return "Regional or small-employer board"
+    if source == "JobTech":
+        return "Major job board"
     s = (source or "").strip()
     if s in PAID_OR_GATED_SOURCES or s.replace(" ", "") in PAID_OR_GATED_SOURCES or "paid" in str(tier).lower() or "gated" in str(tier).lower():
         return "Paid/Gated feed"
@@ -327,7 +337,7 @@ class Himalayas(Source):
             currency = j.get("currency", "USD") or "USD"
             sal = f"${int(min_s):,} - ${int(max_s):,} {currency}" if min_s and max_s else ""
             loc = ", ".join(j.get("locationRestrictions") or []) or "Worldwide (Remote)"
-            guid = j.get("guid") or abs(hash(j.get("applicationLink", "") or title))
+            guid = j.get("guid") or stable_id(j.get("applicationLink", "") or title)
             out.append(make_job(id=f"himalayas-{guid}",
                                 title=title, company=comp, location=loc, work_mode="Remote", salary=sal,
                                 job_type=j.get("employmentType"), url=j.get("applicationLink"),
@@ -386,9 +396,14 @@ class HackerNewsHiring(Source):
             return []
         sid = story["objectID"]
         q = f"&query={urllib.parse.quote(query)}" if query else ""
-        data = http_get_json(f"https://hn.algolia.com/api/v1/search?tags=comment,story_{sid}&hitsPerPage=60{q}")
+        hits = []
+        for page in range(3):
+            data = http_get_json(f"https://hn.algolia.com/api/v1/search?tags=comment,story_{sid}&hitsPerPage=100&page={page}{q}")
+            hits.extend(data.get("hits", []))
+            if page + 1 >= int(data.get("nbPages") or 1):
+                break
         out = []
-        for h in data.get("hits", []):
+        for h in hits:
             if h.get("parent_id") != int(sid) and str(h.get("parent_id")) != str(sid):
                 continue  # replies to postings are not postings
             text = html_to_text(h.get("comment_text", ""), 4000)
@@ -539,82 +554,6 @@ class YCombinatorStartups(Source):
         return job
 
 
-class StartupATS(Source):
-    name, tier = "Startup ATS", "Direct company ATS"
-
-    # Pre-verified high-growth startups and unicorns hosted on Ashby and Greenhouse
-    STARTUP_DIRECTORY = (
-        ("Ashby", "ramp", "Ramp"),
-        ("Ashby", "notion", "Notion"),
-        ("Ashby", "plaid", "Plaid"),
-        ("Ashby", "cursor", "Cursor"),
-        ("Ashby", "zapier", "Zapier"),
-        ("Ashby", "perplexity", "Perplexity AI"),
-        ("Ashby", "vanta", "Vanta"),
-        ("Ashby", "resend", "Resend"),
-        ("Ashby", "elevenlabs", "ElevenLabs"),
-        ("Ashby", "cognition", "Cognition"),
-        ("Ashby", "harvey", "Harvey"),
-        ("Ashby", "langchain", "LangChain"),
-        ("Ashby", "railway", "Railway"),
-        ("Ashby", "neon", "Neon"),
-        ("Ashby", "replit", "Replit"),
-        ("Ashby", "linear", "Linear"),
-        ("Ashby", "modal", "Modal"),
-        ("Ashby", "posthog", "PostHog"),
-        ("Ashby", "benchling", "Benchling"),
-        ("Greenhouse", "brex", "Brex"),
-        ("Greenhouse", "scaleai", "Scale AI"),
-        ("Greenhouse", "fivetran", "Fivetran"),
-        ("Greenhouse", "gusto", "Gusto"),
-    )
-
-    def available(self):
-        return True
-
-    def unavailable_reason(self):
-        return ""
-
-    def _search_company(self, board, slug, company_name, query, location):
-        try:
-            jobs = board.fetch_company(slug, company_name)
-            out = []
-            for j in jobs:
-                j["is_startup"] = True
-                j["source"] = self.name
-                j["source_tier"] = self.tier
-                if query and not _matches(query, j.get("title", ""), j.get("company", "")):
-                    continue
-                out.append(j)
-            return out
-        except Exception:
-            return []
-
-    def fetch(self, query, location):
-        out = []
-        boards = {
-            "Ashby": Ashby(),
-            "Greenhouse": Greenhouse(),
-            "Lever": Lever()
-        }
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-            futures = [
-                pool.submit(self._search_company, boards[b_type], slug, comp_name, query, location)
-                for b_type, slug, comp_name in self.STARTUP_DIRECTORY
-                if b_type in boards
-            ]
-            for f in concurrent.futures.as_completed(futures):
-                try:
-                    res = f.result()
-                    if res:
-                        out.extend(res)
-                except Exception:
-                    continue
-
-        return out
-
-
 class Adzuna(Source):
     name, tier, needs_key = "Adzuna", "Aggregator API", True
 
@@ -629,13 +568,15 @@ class Adzuna(Source):
     def unavailable_reason(self):
         return "Add a free Adzuna app id and key (ADZUNA_APP_ID, ADZUNA_APP_KEY) to cover local and non-tech jobs."
 
-    def fetch(self, query, location):
+    def fetch(self, query, location, country=None):
         i, k = self._keys()
         q = {"app_id": i, "app_key": k, "results_per_page": 40, "content-type": "application/json"}
         if query:
             q["what"] = query
         loc_str = (location or "").strip()
-        if loc_str and loc_str.lower() not in ("remote", "worldwide"):
+        from .. import regions as _regions
+        is_country_name = bool(country) and loc_str.lower() == _regions.country_name(country.upper()).lower()
+        if loc_str and loc_str.lower() not in ("remote", "worldwide") and not is_country_name:
             q["where"] = loc_str
 
         ADZUNA_COUNTRIES = {
@@ -662,6 +603,8 @@ class Adzuna(Source):
             if k_name in check_loc:
                 target_country = c_code
                 break
+        if country:
+            target_country = country.lower()
 
         data = http_get_json(f"https://api.adzuna.com/v1/api/jobs/{target_country}/search/1?" + urllib.parse.urlencode(q))
         out = []
@@ -703,9 +646,10 @@ class Greenhouse(_Board):
 
 class Lever(_Board):
     name = board = "Lever"
+    api_base = "https://api.lever.co"
 
     def fetch_company(self, slug, company_name=""):
-        data = http_get_json(f"https://api.lever.co/v0/postings/{slug}?mode=json")
+        data = http_get_json(f"{self.api_base}/v0/postings/{slug}?mode=json")
         name = company_name or slug.replace("-", " ").title()
         out = []
         for j in data if isinstance(data, list) else []:
@@ -800,20 +744,9 @@ BOARDS = {b.board.lower(): b for b in (Greenhouse(), Lever(), Ashby(), Workable(
 
 
 def detect_board(company_name):
-    """Probe each ATS with likely slugs and return (board_type, slug) for the first hit, or None."""
-    base = re.sub(r"[^a-z0-9 -]", "", company_name.lower()).strip()
-    slugs = list(dict.fromkeys([base.replace(" ", ""), base.replace(" ", "-"), base.split(" ")[0]]))
-    for slug in slugs:
-        if not slug:
-            continue
-        for board in BOARDS.values():
-            try:
-                jobs = board.fetch_company(slug, company_name)
-                if jobs:
-                    return board.board.lower(), slug
-            except Exception:
-                continue
-    return None
+    """Find the public careers board of a company by name. Returns ``(board_type, slug)`` or None."""
+    from .. import company_directory
+    return company_directory.detect_board(company_name)
 
 
 # ---------------------------------------------------------------- major job boards
@@ -1731,6 +1664,10 @@ class LinkedInGuest(Source):
 
 def _fetch_html_tls(url, headers=None, impersonate="chrome", timeout=8):
     """Fetch using curl_cffi for browser TLS impersonation (bypasses Cloudflare/Akamai bot walls), with fallback to http_get."""
+    from .. import source_policy
+    allowed, reason = source_policy.resolve_and_check(url)
+    if not allowed:
+        raise HttpError(f"Security policy violation: {reason}")
     try:
         from curl_cffi import requests as curl_requests
         with curl_requests.Session(impersonate=impersonate) as s:
@@ -1795,10 +1732,10 @@ class Indeed(Source):
                     return value
         return ""
 
-    def fetch(self, query, location):
+    def fetch(self, query, location, domain="www.indeed.com"):
         """Native Indeed public scraper using TLS impersonation to bypass Cloudflare."""
         params = {"q": query or "software engineer", "l": location or "", "fromage": "14"}
-        url = "https://www.indeed.com/jobs?" + urllib.parse.urlencode(params)
+        url = f"https://{domain}/jobs?" + urllib.parse.urlencode(params)
         try:
             page = _fetch_html_tls(url, impersonate="chrome")
         except Exception:
@@ -1824,7 +1761,7 @@ class Indeed(Source):
             out.append(make_job(id=f"indeed-{jid}", title=title, company=company, location=loc,
                                 salary=sal, job_type=job_type,
                                 work_mode="Remote" if "remote" in f"{loc} {desc}".lower() else "",
-                                url=f"https://www.indeed.com/viewjob?jk={urllib.parse.quote(jid)}",
+                                url=f"https://{domain}/viewjob?jk={urllib.parse.quote(jid)}",
                                 description=desc, source=self.name, source_credit="Indeed public results",
                                 source_tier=self.tier, needs_enrichment=True))
         return out
@@ -1839,7 +1776,9 @@ class Indeed(Source):
         if not jid:
             return job
 
-        detail_url = f"https://www.indeed.com/m/viewjob?jk={urllib.parse.quote(jid)}"
+        host = urllib.parse.urlparse(job.get("url", "")).hostname or ""
+        host = host if host.endswith("indeed.com") else "www.indeed.com"
+        detail_url = f"https://{host}/m/viewjob?jk={urllib.parse.quote(jid)}"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -2015,7 +1954,7 @@ class Bayt(Source):
         }
         country_slug = "international"
         for k, v in BAYT_COUNTRIES.items():
-            if k in loc_lower:
+            if re.search(r"(?<![a-zà-ÿ])" + re.escape(k) + r"(?![a-zà-ÿ])", loc_lower):
                 country_slug = v
                 break
 
@@ -2048,7 +1987,7 @@ class Bayt(Source):
                     title = html.unescape(t.group(2).strip())
                     comp = html.unescape((c.group(1) if c else "").strip())
                     loc = html.unescape((l.group(1) if l else "").strip())
-                    jid = str(abs(hash(link)))
+                    jid = stable_id(link)
                     if jid in seen:
                         continue
                     seen.add(jid)
@@ -2130,7 +2069,7 @@ class Naukri(Source):
             items = data.get("jobDetails") or []
             jobs = []
             for it in items:
-                jid = str(it.get("jobId") or abs(hash(it.get("title", ""))))
+                jid = str(it.get("jobId") or stable_id(it.get("title", "")))
                 title = it.get("title") or ""
                 comp = it.get("companyName") or ""
                 placeholders = it.get("placeholders") or []
@@ -2368,12 +2307,7 @@ def enrich_job(job):
     return job
 
 
-SEARCH_SOURCES = [
-    StartupATS(), YCombinatorStartups(),
-    Himalayas(), Remotive(), Jobicy(), Arbeitnow(), RemoteOK(), WeWorkRemotely(),
-    HackerNewsHiring(), Adzuna(), LinkedInGuest(), Indeed(),
-    ZipRecruiter(), Bayt(), Naukri(), HelloWork()
-]
+SEARCH_SOURCES = []  # filled at the bottom of this module, after every source class exists
 
 
 # ---------------------------------------------------------------- circuit breaker
@@ -2400,17 +2334,17 @@ def reset_breakers():
         _breaker.clear()
 
 
-# --- Modular Source Adapters (Section 6.4 & 7 of newall-logic.md) ---
-from .base import BaseSourceAdapter, SourceJob, SourcePage, SourceHealth
-from .greenhouse import GreenhouseAdapter
-from .lever import LeverAdapter
-from .ashby import AshbyAdapter
-from .smartrecruiters import SmartRecruitersAdapter
-from .jobicy import JobicyAdapter
-from .himalayas import HimalayasAdapter
-from .adzuna import AdzunaAdapter
-from .usajobs import USAJobsAdapter
-from .remotive import RemotiveAdapter
-from .jooble import JoobleAdapter
-from .workable_account import WorkableAccountAdapter
-from .linkedin_adapter import LinkedInAdapter
+# ---------------------------------------------------------------- additional sources
+# Imported last: these modules use Source, make_job and _Board defined above.
+from . import ats_boards as _ats_boards  # noqa: E402,F401  (adds more boards to BOARDS)
+from . import feeds as _feeds  # noqa: E402
+from . import local as _local  # noqa: E402
+from .. import company_directory as _company_directory  # noqa: E402
+
+SEARCH_SOURCES = [
+    _company_directory.make_company_boards_source(), YCombinatorStartups(),
+    Himalayas(), Remotive(), Jobicy(), Arbeitnow(), RemoteOK(), WeWorkRemotely(), *_feeds.NEW_SOURCES[2:4],
+    HackerNewsHiring(), Adzuna(), LinkedInGuest(), Indeed(),
+    ZipRecruiter(), Bayt(), Naukri(), HelloWork(), _feeds.Arbeitsagentur(),
+    *_feeds.NEW_SOURCES[:2], *_local.NEW_SOURCES,
+]

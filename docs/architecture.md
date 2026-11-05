@@ -1,96 +1,65 @@
-# JobHunter Architecture & Engineering Specification
+# Architecture
 
-## 1. Executive Summary & Design Principles
-
-JobHunter is a **local-first, career workflow engine** exposed through the Model Context Protocol (MCP) using a standard `stdio` transport. It empowers candidate agents in environments such as Antigravity, Cursor, Claude Desktop, and VS Code to discover jobs, evaluate fit, tailor application materials with zero factual hallucination, practice interviews, and manage application pipelines.
-
-### Core Principles
-1. **Candidate Truth as Ground Reality**: Candidate facts (employment history, skills, metrics, degrees) originate exclusively from verified resume documents and explicit user confirmations. JobHunter never hallucinates or fabricates career claims.
-2. **Deterministic Grounding & Repair**: AI-generated drafts are subjected to a 5-stage verification ledger (Extract, Match, Check, Repair, Audit) that strips unsupported claims and flags unverified requirements in an `honest_gaps` manifest.
-3. **Local-First & Privacy-By-Default**: All persistent data resides locally in `.jobhunter/`. No candidate data is sent to external cloud databases, and telemetry logs contain no PII or raw resume text.
-4. **Resilient Source Federation**: Multiple job sources (Greenhouse, Lever, RemoteOK, Jobicy, Himalayas, Indeed, Adzuna, Jobindex) are polled concurrently with circuit breakers, strict SSRF defenses, and rate limiting.
-
----
-
-## 2. System Architecture
+## Layers
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                 MCP Host (Antigravity / Cursor / Claude)     │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ JSON-RPC over stdio
-┌──────────────────────────────▼──────────────────────────────┐
-│                    mcp_server.py / jh/mcp_tools.py          │
-│  - 24 Registered MCP Tools                                  │
-│  - 6 Passive Read-Only Context Resources                    │
-│  - Standard Tool Envelope & Request Correlation Tracing     │
-└──────┬───────────────────────┬───────────────────────┬──────┘
-       │                       │                       │
-┌──────▼──────┐         ┌──────▼──────┐         ┌──────▼──────┐
-│  Ingestion  │         │  Discovery  │         │ Application │
-│  & Evidence │         │  & Scoring  │         │  Workflow   │
-├─────────────┤         ├─────────────┤         ├─────────────┤
-│workspace.py │         │pipeline.py  │         │refit.py     │
-│resume_parser│         │sources.py   │         │autofill.py  │
-│evidence.py  │         │source_reg.py│         │ats.py       │
-│models.py    │         │source_policy│         │tracker.py   │
-│schemas.py   │         │dedup.py     │         │exporters.py │
-│             │         │scoring.py   │         │digest.py    │
-└──────┬──────┘         └──────┬──────┘         └──────┬──────┘
-       │                       │                       │
-┌──────▼───────────────────────▼───────────────────────▼──────┐
-│                      Persistence Layer                       │
-│  - filestore.py: Atomic JSON I/O (.jobhunter/ + backups/)    │
-│  - db.py: SQLite Index Cache (engine.db - rebuildable)      │
-│  - observability.py: Redacted structured event logger       │
-└─────────────────────────────────────────────────────────────┘
+MCP client (Claude Desktop, Cursor, ...)
+        |  stdio, JSON-RPC
+mcp_server.py            start-up, resume sync, FastMCP instance
+jh/team/                 the CEO, five specialists and the Reviewer (see docs/team.md)
+jh/mcp_tools.py          39 specialist tools and 7 read-only resources
+jh/mcp_helpers.py        envelope, error handling, job cards, resolvers, tool registry
+        |
+jh/pipeline.py           search orchestration, scoring, caching, LinkedIn radar
+jh/preferences.py        validated personal preferences (overlay on the resume)
+jh/regions.py            countries, cities, which sources serve which place
+jh/source_registry.py    one catalog of sources, skip rules, per-country call plans
+jh/company_directory.py  starter list, watchlist, discovered boards, board health
+jh/sources/              source classes (__init__), ATS adapters, feeds and APIs, local.py (site reader, regional boards)
+jh/regional_boards.py, localize.py   local board catalog, local-language query variants
+jh/scoring.py, skills.py, dedup.py, evidence.py, refit.py, ats.py, interview.py, screening.py, tracker.py
+jh/db.py                 SQLite: profiles, stored jobs, applications, watchlist, settings
+jh/util.py, source_policy.py   HTTP client, parsing helpers, outbound network policy
 ```
 
----
+## One search, step by step
 
-## 3. Module Responsibilities
+1. `pipeline.search` loads your preferences and overlays them on the resume profile. The stored resume is not changed.
+2. `regions.resolve_targets` turns target countries, the location argument, and the resume location into country codes.
+3. For each source, `source_registry.skip_reason` decides whether to run it. Skips are reported in the result.
+4. `source_registry.plan` expands a source into calls: Indeed once per target country, Adzuna once per country, Bayt once per Middle East or North Africa country.
+5. All calls run in a thread pool with a 35 second deadline. A failing source never blocks the rest. Results are cached per source and query. Three failures in a row pause a source (circuit breaker).
+6. `company_directory.harvest` reads ATS links in the raw results and remembers new company boards.
+7. Personal filters apply: excluded companies, maximum age, company focus.
+8. `dedup.merge_jobs` merges the same job from several sources. `scoring` scores each job against every live resume and keeps the best.
+9. The result carries per-source status and a `coverage` block, so an empty result explains itself.
 
-| Module | Responsibility |
-| :--- | :--- |
-| `jh/models.py` | Pydantic v2 domain records: `EvidenceClaim`, `JobPosting`, `FitScore`, `ApplicationRecord`, `SourceOutcome`, `GroundingResult`. |
-| `jh/schemas.py` | Bounded runtime input/output validators for all MCP tool arguments, preventing path escapes and malformed requests. |
-| `jh/evidence.py` | 5-stage factual grounding engine: checks candidate drafts against verified evidence claims, detects unverified metrics/dates/titles, and populates `honest_gaps`. |
-| `jh/source_registry.py` | Declarative registry of permitted search adapters, endpoints, capabilities, rate limits, and freshness TTL rules. |
-| `jh/source_policy.py` | Network security boundary: SSRF protection, private IPv4/IPv6 CIDR rejection, loopback blocking, domain whitelisting, and scheme validation. |
-| `jh/pipeline.py` | Concurrent search orchestrator with timeouts, exponential backoff, circuit breaking, and partial-results delivery. |
-| `jh/dedup.py` | 5-stage cross-source deduplication: Exact ID, Canonical URL, Strong Composite Match, Fuzzy Candidate Match, Ambiguous Matching. |
-| `jh/scoring.py` | Explainable 100-point fit formula: Skill Match (40), Title & Domain (25), Seniority (20), Work Mode & Compensation (15), plus data completeness indicator. |
-| `jh/resume_parser.py` | Multi-format text and structure extraction (PDF, DOCX, TXT) with provenance tracking and extraction confidence status. |
-| `jh/ats.py` | Parsing-aware resume auditor reporting section structure, keyword density, contact visibility, and layout risks. |
-| `jh/refit.py` | Truthful document tailoring engine binding versioned prompt templates with candidate evidence and job criteria. |
-| `jh/tracker.py` | Durable application lifecycle state machine tracking status stages (`saved`, `applied`, `interview`, `offer`), interview dates, and due actions. |
-| `jh/filestore.py` | Thread-safe, crash-resilient atomic file store managing `.jobhunter/` JSON files, schema versions, automated backup rotation, and watchlist management. |
-| `jh/db.py` | Rebuildable SQLite cache and query accelerator (`engine.db`). Authoritative state remains in JSON files. |
-| `jh/observability.py` | Privacy-safe structured telemetry: logs correlation IDs, latencies, and tool outcomes while redacting PII, tokens, and resume text. |
+## The team layer
 
----
+`jh/team/` sits between the client and the tools. `register_team` runs last in `register_tools_and_resources`, takes the registry of specialist tools (each already wrapped in the envelope), and adds seven CEO tools. `TeamMCP.list_tools` filters what the client sees (surface `team` or `full`). It does not remove tools, so the CEO can still call them.
 
-## 4. End-to-End Operational Lifecycle
+- `router.py`: request to intents and entities. Rule-based.
+- `ceo.py`: plan, delegate, retry and widen, review, report. One handler per intent.
+- `directives.py`, `roles.py`: the written brief for each task, the roster, and the owner of every tool.
+- `qa.py`: the Reviewer. Pure functions, offline except `live_check`.
+- `missions.py`: the `missions` table in `engine.db`.
 
-1. **Startup & Recovery**:
-   - Host spawns `mcp_server.py` via `stdio`.
-   - `filestore.py` validates directory structure and ensures `.jobhunter/`, `cache/`, `backups/`, and `output/` exist.
-   - Authoritative JSON stores (`config.json`, `applications.json`, `watchlist.json`) are verified with schema version checks.
-   - SQLite cache (`engine.db`) is initialized or rebuilt from JSON if corrupt.
-   - Discovered resumes are scanned and parsed; evidence claims are indexed.
-2. **Job Discovery**:
-   - Client calls `search_jobs`.
-   - `source_policy.py` validates queries and filters.
-   - `pipeline.py` fans out queries to active source adapters in parallel.
-   - `dedup.py` groups duplicates and selects canonical employer job board postings.
-   - Results are scored using `scoring.py` and returned within the standard envelope.
-3. **Tailoring & Grounding**:
-   - Client calls `tailor_resume` or `generate_cover_letter`.
-   - `refit.py` constructs a prompt populated with candidate-proven claims and target requirements.
-   - The model draft is inspected by `evidence.py` to ensure every skill, metric, and title matches candidate evidence.
-   - Unsupported statements are repaired or placed in `honest_gaps`, returning a `needs_review` status if unresolved.
-   - Output is saved as a versioned artifact in `.jobhunter/output/tailored/`.
-4. **Application Tracking**:
-   - Client records an application event via `track_application`.
-   - `tracker.py` updates stage history, schedules next-action reminders, and writes atomically to `applications.json`.
-   - Next-action reminders are surfaced on demand via `daily_digest` or `list_applications`.
+## Company boards
+
+`CompanyBoards` is one source with its own thread pool and a 25 second budget. It draws from three pools: your watchlist (always fetched, all roles), a short starter list, and discovered boards. The pool is limited per search (default 60), least recently fetched first. Each board keeps a health record in the `discovered_boards` table.
+
+## Data stores
+
+SQLite (`engine.db`) is the only store for resumes, jobs, applications, the watchlist and board health. `preferences.json` holds preferences. Generated documents go to `output/`. Nothing else is persisted.
+
+## Extending
+
+Add a source: subclass `Source` (or `_Board` for an ATS) in `jh/sources/`, add it to `SEARCH_SOURCES` or `BOARDS`, add a `SourceInfo` in `source_registry.py` with its regions, and add a fixture test. The catalog test fails if a source is missing from the registry.
+
+Add a specialist tool: also add its name to exactly one `Role.tools` tuple in `jh/team/roles.py`. A test fails otherwise.
+
+Add a tool: write a function in `register_tools_and_resources` with the `@tool` decorator and a docstring with an `Args:` section. Return a dict or a `Result`. Raise `ToolError` for fixable problems.
+
+## Background workers
+
+`pipeline.py` still holds the auto-search worker and the LinkedIn radar from the web-app version. The MCP server does not start them. The background enricher does run after a search, limited to the 60 best-scored jobs per search.

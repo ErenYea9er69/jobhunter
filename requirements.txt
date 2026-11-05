@@ -1,2 +1,4 @@
-# JobHunter MCP Server requirements
-mcp[cli]>=1.0.0
+# Runtime. mcp 2.x removed the module this server imports, so stay on 1.x.
+mcp[cli]>=1.9,<2
+curl_cffi>=0.7
+pypdf>=4.0

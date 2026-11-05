@@ -1,55 +1,19 @@
-"""Runtime configuration. Every value reads from an environment variable with a safe default."""
+"""Runtime configuration. Every value reads from an environment variable with a safe default.
+
+JobHunter runs as an MCP server. Its data lives in ``<workspace>/.jobhunter/``.
+Call ``configure_mcp_environment`` once at startup to point the paths at a workspace.
+"""
 import os
-import sys
 
-# Support PyInstaller frozen bundles
-if getattr(sys, "frozen", False):
-    BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.executable)))
-    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
-    if os.environ.get("JH_DATA_DIR"):
-        DATA_DIR = os.environ["JH_DATA_DIR"]
-    else:
-        portable_dir = os.path.join(exe_dir, "data")
-        try:
-            os.makedirs(portable_dir, exist_ok=True)
-            test_file = os.path.join(portable_dir, ".test_write")
-            with open(test_file, "w") as f:
-                f.write("1")
-            os.remove(test_file)
-            DATA_DIR = portable_dir
-        except Exception:
-            local_appdata = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-            DATA_DIR = os.path.join(local_appdata, "JobHunter", "data")
-            os.makedirs(DATA_DIR, exist_ok=True)
-
-    src_db = os.path.join(BASE_DIR, "data", "jobhunter.db")
-    dst_db = os.path.join(DATA_DIR, "jobhunter.db")
-    if os.path.isfile(src_db) and not os.path.isfile(dst_db):
-        import shutil
-        try:
-            shutil.copy2(src_db, dst_db)
-        except Exception:
-            pass
-else:
-    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    DATA_DIR = os.environ.get("JH_DATA_DIR", os.path.join(BASE_DIR, "data"))
-
-MCP_MODE = os.environ.get("JH_MCP_MODE", "0") == "1"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKSPACE_DIR = os.environ.get("JH_WORKSPACE", "")
 if WORKSPACE_DIR:
     WORKSPACE_DIR = os.path.abspath(WORKSPACE_DIR)
 
-if MCP_MODE or WORKSPACE_DIR:
-    _ws = WORKSPACE_DIR or os.path.abspath(os.getcwd())
-    JOBHUNTER_DIR = os.path.join(_ws, ".jobhunter")
-    DATA_DIR = os.environ.get("JH_DATA_DIR", JOBHUNTER_DIR)
-    DB_PATH = os.path.join(DATA_DIR, "engine.db")
-else:
-    JOBHUNTER_DIR = ""
-    DB_PATH = os.path.join(DATA_DIR, "jobhunter.db")
-
-HOST = os.environ.get("JH_HOST", "127.0.0.1")
-PORT = int(os.environ.get("JH_PORT", "8080"))
+# Before configure_mcp_environment() runs (tests, scripts) fall back to ./data.
+JOBHUNTER_DIR = os.path.join(WORKSPACE_DIR, ".jobhunter") if WORKSPACE_DIR else ""
+DATA_DIR = os.environ.get("JH_DATA_DIR") or JOBHUNTER_DIR or os.path.join(BASE_DIR, "data")
+DB_PATH = os.path.join(DATA_DIR, "engine.db")
 
 # Search behavior
 SEARCH_WORKERS = 16
@@ -60,6 +24,17 @@ STALE_CACHE_MAX_SECONDS = int(os.environ.get("JH_STALE_MAX", str(24 * 3600)))
 MAX_RESULTS = int(os.environ.get("JH_MAX_RESULTS", "1000"))
 MAX_SCORED_JOBS = int(os.environ.get("JH_MAX_SCORED_JOBS", "2500"))
 ENRICH_TOP_N = int(os.environ.get("JH_ENRICH_TOP_N", "40"))
+
+# Company career boards (watchlist, starter directory, boards discovered from other sources)
+COMPANY_BOARD_WORKERS = int(os.environ.get("JH_COMPANY_WORKERS", "8"))
+COMPANY_BOARDS_PER_SEARCH = int(os.environ.get("JH_COMPANY_BOARDS_PER_SEARCH", "60"))
+COMPANY_BOARD_BUDGET_SECONDS = float(os.environ.get("JH_COMPANY_BUDGET", "25"))
+COMPANY_BOARD_TIMEOUT_SECONDS = float(os.environ.get("JH_COMPANY_TIMEOUT", "6"))
+DISCOVERED_BOARDS_MAX = int(os.environ.get("JH_DISCOVERED_BOARDS_MAX", "400"))
+
+# The background enricher reads full job pages. Cap how many it reads per cycle so a
+# long-lived MCP process stays polite to job sites.
+ENRICH_BG_MAX_PER_CYCLE = int(os.environ.get("JH_ENRICH_BG_MAX", "60"))
 
 def get_max_scored_jobs():
     try:
@@ -104,13 +79,13 @@ def get_linkedin_incremental_minutes():
 
 # Major job boards (LinkedIn, Indeed, ZipRecruiter, etc.) are built-in native scrapers
 # that run as part of every search without external library wrappers.
-ENABLE_LINKEDIN = True
-ENABLE_MAJOR_BOARDS = True
 ADZUNA_COUNTRY = os.environ.get("JH_ADZUNA_COUNTRY", "us")
 ADZUNA_APP_ID = os.environ.get("ADZUNA_APP_ID", "")
 ADZUNA_APP_KEY = os.environ.get("ADZUNA_APP_KEY", "")
+JOOBLE_API_KEY = os.environ.get("JOOBLE_API_KEY", "")
 
 # Optional LLM for tailoring, cover letters, and strategy. Without a key the app uses the deterministic engine.
+# Keys come from environment variables only. The MCP tools never accept or return secrets.
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
@@ -124,25 +99,12 @@ LLM_MODEL = os.environ.get("JH_LLM_MODEL", "")
 LLM_TIMEOUT_SECONDS = float(os.environ.get("JH_LLM_TIMEOUT", "40"))
 OLLAMA_ENDPOINT = os.environ.get("JH_OLLAMA_ENDPOINT", "http://127.0.0.1:11434")
 
-# Demo mode seeds a sample profile and labeled sample jobs. Off by default.
-DEMO = os.environ.get("JH_DEMO", "0") == "1"
-
-# Digest scheduling and email
-DIGEST_TIME = os.environ.get("JH_DIGEST_TIME", "")  # "08:00" enables the scheduler
-SMTP_HOST = os.environ.get("JH_SMTP_HOST", "")
-SMTP_PORT = int(os.environ.get("JH_SMTP_PORT", "587"))
-SMTP_USER = os.environ.get("JH_SMTP_USER", "")
-SMTP_PASSWORD = os.environ.get("JH_SMTP_PASSWORD", "")
-
-MAX_BODY_BYTES = 12 * 1024 * 1024
-USER_AGENT = "JobHunter/2.0 (+local personal job search tool)"
+USER_AGENT = "JobHunter/2.1 (+local personal job search tool)"
 
 
 def configure_mcp_environment(workspace_path: str = ""):
-    """Dynamically reconfigure paths for MCP mode in a given workspace directory."""
-    global MCP_MODE, WORKSPACE_DIR, JOBHUNTER_DIR, DATA_DIR, DB_PATH
-    MCP_MODE = True
-    os.environ["JH_MCP_MODE"] = "1"
+    """Point all paths at a workspace directory. Returns the ``.jobhunter`` directory."""
+    global WORKSPACE_DIR, JOBHUNTER_DIR, DATA_DIR, DB_PATH
     ws = os.path.abspath(workspace_path) if workspace_path else (WORKSPACE_DIR or os.path.abspath(os.getcwd()))
     WORKSPACE_DIR = ws
     os.environ["JH_WORKSPACE"] = ws

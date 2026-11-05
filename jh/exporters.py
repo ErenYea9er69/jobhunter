@@ -1,7 +1,6 @@
 """Resume export: plain text, escaped HTML, real .docx, and a text-based single-column PDF."""
 import html
 import io
-import re
 import zipfile
 
 H = {"widths": None}
@@ -226,9 +225,6 @@ def to_pdf(r):
     return out.getvalue()
 
 
-def safe_name(r, ext):
-    base = re.sub(r"[^A-Za-z0-9_-]+", "_", (r.get("name") or "resume").strip()) or "resume"
-    return f"{base}_Resume.{ext}"
 
 
 def cover_letter_to_docx(text, profile, job):
@@ -339,7 +335,3 @@ def cover_letter_to_pdf(text, profile, job):
     return out.getvalue()
 
 
-def safe_cover_name(r, job, ext):
-    base = re.sub(r"[^A-Za-z0-9_-]+", "_", (r.get("name") or "candidate").strip()) or "candidate"
-    comp = re.sub(r"[^A-Za-z0-9_-]+", "_", (job.get("company") or "company").strip()) or "company"
-    return f"{base}_{comp}_Cover_Letter.{ext}"

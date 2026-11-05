@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from . import resume_parser
 from .util import now_iso
@@ -77,9 +77,6 @@ def ensure_jobhunter_dir(workspace_path: str | Path) -> Path:
     jh_dir = ws / ".jobhunter"
 
     subdirs = [
-        jh_dir / "cache",
-        jh_dir / "profiles",
-        jh_dir / "backups",
         jh_dir / "output" / "tailored",
         jh_dir / "output" / "cover-letters",
         jh_dir / "output" / "interview-prep",

@@ -8,7 +8,7 @@ import os
 import re
 
 from . import config, db, skills as sk
-from .util import http_get, HttpError
+from .util import http_get
 
 NUM_RE = re.compile(r"\d[\d,]*(?:\.\d+)?%?")
 IRREGULAR = {"built", "led", "wrote", "ran", "drove", "cut", "set", "made", "grew", "won", "taught", "became", "began", "chose"}

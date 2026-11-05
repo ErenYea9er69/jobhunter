@@ -1,0 +1,23 @@
+{
+ "linkedin_scraper": {
+  "file": "jh/sources/__init__.py",
+  "start": "LINKEDIN_GEO_MAP = {",
+  "end": "def _fetch_html_tls(",
+  "sha256": "eaa6449a4f455020b7407eba4784fb3f467935b68c90a7a526ec758b96361d79",
+  "lines": 911
+ },
+ "linkedin_radar": {
+  "file": "jh/pipeline.py",
+  "start": "# ---------------------------------------------------------------- LinkedIn incremental scraper",
+  "end": "_enrich_bg_stop = threading.Event()",
+  "sha256": "4e1b33e2d8bce391e8bf8bb7706c1d04570b6e473d2af6376d42763bcf577c3c",
+  "lines": 331
+ },
+ "linkedin_cfg_depth": {
+  "file": "jh/config.py",
+  "start": "def get_linkedin_scrape_depth():",
+  "end": "# Major job boards",
+  "sha256": "11fe7758043be93a3dfff5369ce194dde783eccfdc8061316c3113fb2f244c00",
+  "lines": 21
+ }
+}

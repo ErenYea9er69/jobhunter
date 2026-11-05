@@ -4,7 +4,7 @@ import json
 import time
 
 from . import db, sources as src, refit, ats
-from .util import days_since, now_iso, normalize_company, clean_text
+from .util import days_since, now_iso, clean_text
 
 STATUSES = ["saved", "applied", "interview", "offer", "rejected"]  # "rejected" is the Archived column in the UI
 FOLLOW_UP_DAYS = {"applied": 7, "interview": 3, "offer": 2}
@@ -345,15 +345,15 @@ def get_stale_applications_alerts(threshold_days=5):
     }
 
 
-def generate_one_click_bundle(job, profile=None, use_llm=None):
+def generate_one_click_bundle(job, profile=None, use_llm=None, archetype="startup_velocity"):
     """High-velocity 1-Click Application Bundle: tailored resume, role pitch, outreach note, interview prep, and pre-filled screening answers."""
     t0 = time.time()
-    from . import autofill
+    from . import screening
     if not profile:
         profile = db.get_profile()
 
     # 1. Tailored Resume & 6-Second Audit
-    ref = refit.generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=use_llm)
+    ref = refit.generate_custom_resume(job, profile, archetype=archetype, use_llm=use_llm)
     tailored = ref["tailored_resume"]
     before_ats = ats.compute_ats_audit(profile, job)
     after_ats = ats.compute_ats_audit(tailored, job)
@@ -375,7 +375,7 @@ def generate_one_click_bundle(job, profile=None, use_llm=None):
     ]
     screening_answers = []
     for q in standard_questions:
-        ans = autofill.solve_screening_question(q, job, profile, use_llm=use_llm)
+        ans = screening.solve_screening_question(q, profile, job, use_llm=use_llm)
         screening_answers.append({
             "question": q,
             "answer": ans.get("answer", ""),
@@ -400,7 +400,7 @@ def generate_one_click_bundle(job, profile=None, use_llm=None):
         "sources": job.get("sources") or [{"source": job.get("source"), "url": job.get("url")}],
         "job_data": job,
         "tailored_resume": tailored,
-        "cover_letter": pitch.get("letter", "")
+        "cover_letter": pitch.get("full_text", "")
     })
 
     return {
@@ -414,7 +414,7 @@ def generate_one_click_bundle(job, profile=None, use_llm=None):
         "refinement": ref,
         "executive_hook": ref.get("executive_hook", ""),
         "role_pitch": pitch,
-        "cover_letter": pitch.get("letter", ""),
+        "cover_letter": pitch.get("full_text", ""),
         "recruiter_outreach": outreach,
         "interview_prep": prep,
         "screening_answers": screening_answers,
@@ -435,24 +435,9 @@ def list_watchlist():
 
 
 def add_watch(company_name, slug="", board_type="", target_role=""):
-    company_name = (company_name or "").strip()
-    if not company_name:
-        raise ValueError("company_name is required")
-    detected = None
-    if not slug or not board_type:
-        detected = src.detect_board(company_name)
-        if detected:
-            board_type, slug = detected
-        elif not slug:
-            raise ValueError(f"Could not find a public careers board for {company_name}. Enter the board type and slug by hand.")
-    board_type = (board_type or "greenhouse").lower()
-    if board_type not in src.BOARDS:
-        raise ValueError(f"board_type must be one of {', '.join(src.BOARDS)}")
-    wl_id = f"wl-{int(time.time() * 1000)}"
-    with db.session() as c:
-        c.execute("INSERT INTO watchlist (id,company_name,slug,board_type,target_role,added_at) VALUES (?,?,?,?,?,?)",
-                  (wl_id, company_name, slug, board_type, target_role or "", now_iso()))
-    return {"id": wl_id, "board_type": board_type, "slug": slug, "auto_detected": bool(detected)}
+    """Add a company to the watchlist. Delegates to ``company_directory`` (de-duplicates, supports every ATS)."""
+    from . import company_directory
+    return company_directory.add_company(name=company_name, board_type=board_type, slug=slug, target_role=target_role)
 
 
 def check_watchlist(profile, force=True):

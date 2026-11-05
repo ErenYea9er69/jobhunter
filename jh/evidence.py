@@ -14,9 +14,8 @@ Implements the multi-stage grounding pipeline from the blueprint:
 
 from __future__ import annotations
 
-import hashlib
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from . import skills as sk
 from .models import (
@@ -25,9 +24,7 @@ from .models import (
     ExtractionStatus,
     GroundingVerdict,
     SourceLocation,
-    _new_id,
 )
-from .util import now_iso
 
 
 # ──────────────────────────────────────────── constants
@@ -450,37 +447,7 @@ def _build_corpus_text(profile: dict[str, Any]) -> str:
 
 # ──────────────────────────────────────────── audit manifest
 
-def create_audit_manifest(
-    grounding_result: GroundingResult,
-    profile_id: str,
-    job_id: str,
-    prompt_version: str = "",
-    artifact_type: str = "tailored_resume",
-) -> dict[str, Any]:
-    """Stage E: Create an audit manifest recording grounding results."""
-    return {
-        "manifest_id": _new_id("mfst_"),
-        "artifact_type": artifact_type,
-        "profile_id": profile_id,
-        "job_id": job_id,
-        "prompt_version": prompt_version,
-        "validator_version": VALIDATOR_VERSION,
-        "grounding_status": grounding_result.status,
-        "total_claims": len(grounding_result.verdicts),
-        "supported": grounding_result.supported_count,
-        "unsupported": grounding_result.unsupported_count,
-        "needs_review": grounding_result.needs_review_count,
-        "honest_gaps": grounding_result.honest_gaps,
-        "generated_at": now_iso(),
-    }
 
 
 # ──────────────────────────────────────────── file hashing
 
-def file_hash(file_path: str) -> str:
-    """Compute SHA-256 hash of a file for change detection."""
-    try:
-        with open(file_path, "rb") as f:
-            return hashlib.sha256(f.read()).hexdigest()
-    except OSError:
-        return ""

@@ -8,7 +8,7 @@ import threading
 import uuid
 
 from . import config
-from .util import now_iso, parse_salary, annualize, days_since, clean_text, clean_job_type
+from .util import now_iso, parse_salary, annualize, clean_text, clean_job_type
 
 _init_lock = threading.Lock()
 SCHEMA_VERSION = 4
@@ -263,6 +263,12 @@ def init_db():
             id TEXT PRIMARY KEY, company_name TEXT NOT NULL, slug TEXT NOT NULL, board_type TEXT NOT NULL,
             target_role TEXT, added_at TEXT NOT NULL, last_checked TEXT, active_matches_count INTEGER DEFAULT 0)""")
         c.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        # Company boards found by reading job links from other sources (snowball discovery).
+        c.execute("""CREATE TABLE IF NOT EXISTS discovered_boards (
+            board_type TEXT NOT NULL, slug TEXT NOT NULL, company_name TEXT DEFAULT '',
+            first_seen TEXT NOT NULL, last_fetched REAL DEFAULT 0, last_ok REAL DEFAULT 0,
+            job_count INTEGER DEFAULT 0, fail_count INTEGER DEFAULT 0, found_via TEXT DEFAULT '',
+            PRIMARY KEY (board_type, slug))""")
         c.execute("""CREATE TABLE IF NOT EXISTS status_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT, app_id TEXT NOT NULL, status TEXT NOT NULL, changed_at TEXT NOT NULL)""")
         c.execute("""CREATE TABLE IF NOT EXISTS seen_jobs (
@@ -364,10 +370,6 @@ def init_db():
                 ))
             except Exception:
                 pass
-
-        if config.DEMO and not c.execute("SELECT 1 FROM profile WHERE id=1").fetchone():
-            from .demo import DEMO_PROFILE
-            c.execute("INSERT INTO profile (id,data,updated_at) VALUES (1,?,?)", (json.dumps(DEMO_PROFILE), now_iso()))
 
         # Clean any HTML entities from stored legacy jobs
         _cleanup_html_entities(c)
@@ -507,8 +509,6 @@ def get_profile(profile_id=None):
     return data
 
 
-def get_resume_profile(profile_id=None):
-    return get_profile(profile_id=profile_id)
 
 
 def get_live_profiles():
@@ -544,30 +544,6 @@ def get_live_profiles():
     return profiles or [get_profile()]
 
 
-def set_resume_profile_live(profile_id, is_live=None):
-    """Toggle or set the live matching status for a resume profile.
-    Guarantees that at least one resume remains Live in the pool at all times.
-    """
-    with session() as c:
-        row = c.execute("SELECT id, name, is_live FROM resume_profiles WHERE id=?", (profile_id,)).fetchone()
-        if not row:
-            raise ValueError(f"Resume profile '{profile_id}' not found.")
-
-        current_live = bool(row["is_live"]) if "is_live" in row.keys() else True
-        new_live = (not current_live) if is_live is None else bool(is_live)
-
-        if not new_live:
-            live_count = c.execute("SELECT count(*) as cnt FROM resume_profiles WHERE is_live=1").fetchone()["cnt"]
-            if live_count <= 1 and current_live:
-                raise ValueError("At least one resume must remain Live in the matching pool.")
-
-        c.execute("UPDATE resume_profiles SET is_live=?, updated_at=? WHERE id=?", (1 if new_live else 0, now_iso(), profile_id))
-
-    return {
-        "id": row["id"],
-        "name": row["name"],
-        "is_live": new_live
-    }
 
 
 def save_profile(data, profile_id=None):
@@ -886,6 +862,25 @@ def set_setting(key, value):
 save_setting = set_setting
 
 
+def get_job(job_id):
+    """Return one stored job by its job_key (the id shown in search results), or None.
+
+    Looks in the active search table first, then in jobs staged by the background radar.
+    """
+    key = (job_id or "").strip()
+    if not key:
+        return None
+    with session() as c:
+        for table in ("search_jobs", "pending_search_jobs"):
+            row = c.execute(f"SELECT job_json FROM {table} WHERE job_key=?", (key,)).fetchone()
+            if row:
+                try:
+                    return json.loads(row["job_json"])
+                except Exception:
+                    return None
+    return None
+
+
 def replace_search_jobs(jobs, query="", location="", sources=None, clear_existing=True):
     """Store search jobs with extracted categories into DB.
     If clear_existing is True, deletes old search jobs first (explicit query replacement).
@@ -932,9 +927,6 @@ def replace_search_jobs(jobs, query="", location="", sources=None, clear_existin
                   (query, location, total_now, json.dumps(sources or []), now))
 
 
-def upsert_search_jobs(jobs, query="", location="", sources=None):
-    """Upsert search jobs into search_jobs cache without clearing existing jobs."""
-    return replace_search_jobs(jobs, query=query, location=location, sources=sources, clear_existing=False)
 
 
 def update_search_job(job):
@@ -1312,66 +1304,6 @@ def store_pending_jobs(jobs, query=""):
     return added_count
 
 
-def apply_refresh_sync():
-    """Triggered when the user presses Refresh:
-    1. Moves staged new jobs from pending_search_jobs into search_jobs.
-    2. Safely prunes truly stale jobs (e.g. jobs not updated in over 90 days).
-    3. Clears pending_search_jobs table.
-    4. Returns refresh statistics and updated database list.
-    """
-    now = now_iso()
-    added_count = 0
-    removed_count = 0
-
-    with session() as c:
-        pending_rows = c.execute("SELECT * FROM pending_search_jobs").fetchall()
-        for r in pending_rows:
-            skills_txt = r["skills_text"] if "skills_text" in r.keys() else ""
-            best_pid = r["best_profile_id"] if "best_profile_id" in r.keys() else ""
-            best_pname = r["best_profile_name"] if "best_profile_name" in r.keys() else ""
-            c.execute("""
-                INSERT OR REPLACE INTO search_jobs
-                (job_key, query, title, company, location, work_mode, category, job_type, seniority, country,
-                 min_salary, max_salary, score, opportunity_score, is_famous, is_startup, industry, h1b,
-                 source_kind, source_names, posted_at, job_json, created_at, updated_at, is_active, skills_text,
-                 best_profile_id, best_profile_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
-            """, (
-                r["job_key"], r["query"], r["title"], r["company"], r["location"], r["work_mode"],
-                r["category"], r["job_type"], r["seniority"], r["country"], r["min_salary"], r["max_salary"],
-                r["score"], r["opportunity_score"], r["is_famous"], r["is_startup"], r["industry"], r["h1b"],
-                r["source_kind"], r["source_names"], r["posted_at"], r["job_json"], now, now, skills_txt,
-                best_pid, best_pname
-            ))
-        added_keys = [r["job_key"] for r in pending_rows]
-        added_count = len(added_keys)
-
-        # Clear pending queue
-        c.execute("DELETE FROM pending_search_jobs")
-
-        # Safely prune dead / stale jobs without discarding active listings:
-        # Never prune jobs that were just staged/added/updated today.
-        # Only prune jobs whose last sync was > 90 days ago and posted > 90 days ago.
-        cutoff_date = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=90)).isoformat()
-        prune_cur = c.execute("""
-            DELETE FROM search_jobs
-            WHERE updated_at < ?
-              AND posted_at != '' AND posted_at IS NOT NULL AND posted_at < ?
-        """, (cutoff_date, cutoff_date))
-        removed_count = prune_cur.rowcount if prune_cur else 0
-
-        # Update meta count and timestamp
-        total_now = c.execute("SELECT count(*) FROM search_jobs WHERE is_active=1").fetchone()[0]
-        c.execute("UPDATE search_meta SET total_count=?, updated_at=? WHERE id=1", (total_now, now))
-
-    return {
-        "success": True,
-        "added_count": added_count,
-        "added_job_keys": added_keys,
-        "removed_count": removed_count,
-        "total_jobs": total_now,
-        "message": f"Refreshed: {added_count} new job{'s' if added_count != 1 else ''} added, {removed_count} expired job{'s' if removed_count != 1 else ''} removed."
-    }
 
 
 def get_auto_search_settings():
@@ -1422,15 +1354,3 @@ def set_auto_search_settings(enabled=True, interval_hours=5.0):
     return get_auto_search_settings()
 
 
-def purge_all():
-    """Delete every user table, then VACUUM so removed content leaves the file."""
-    with session() as c:
-        for t in ("resume_profiles", "profile", "applications", "watchlist", "settings", "status_history",
-                  "seen_jobs", "source_cache", "source_health", "search_jobs", "search_meta", "pending_search_jobs"):
-            c.execute(f"DELETE FROM {t}")
-    conn = connect()
-    try:
-        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        conn.execute("VACUUM")
-    finally:
-        conn.close()

@@ -1,60 +1,13 @@
-# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*$py.class
-*.pyd
-*.dll
-*.so
-*.dylib
-
-# Local databases and SQLite files
-*.db
-*.db-wal
-*.db-shm
-*.sqlite
-*.sqlite3
-data/*.db
-data/*.db-wal
-data/*.db-shm
-data/digests/
-
-# Archives and binaries
-*.zip
-*.tar
-*.tar.gz
-*.tgz
-*.7z
-*.rar
-*.exe
-*.msi
-
-# PyInstaller / Build artifacts
+.pytest_cache/
+.venv/
+venv/
+.env
+*.egg-info/
 build/
 dist/
-*.spec
-.pytest_cache/
-
-# Environments and Secrets
-.env
-.venv/
-env/
-venv/
-ENV/
-
-# IDE and OS files
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-
-# JobHunter candidate PII, profiles, outputs, and workspace data
-.jobhunter/*
-!.jobhunter/.gitignore
-output/
-backups/
-applications.json
-
-
-# Security audit reports
-SECURITY-KILL-*.md
-
+# Personal data and generated files
+.jobhunter/
+data/
+*.db

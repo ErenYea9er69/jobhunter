@@ -7,9 +7,9 @@ import re
 import threading
 import time
 
-from . import config, db, dedup, sources as src
-from .scoring import score_job, score_job_best
-from .util import now_iso, parse_date
+from . import company_directory, config, db, dedup, preferences, regions, source_registry, sources as src
+from .scoring import score_job_best
+from .util import days_since, normalize_company, now_iso
 
 log = logging.getLogger("jobhunter")
 _pool = cf.ThreadPoolExecutor(max_workers=config.SEARCH_WORKERS, thread_name_prefix="jh-src")
@@ -352,9 +352,17 @@ def derive_query(profile):
     return (profile.get("target_title") or "").strip()
 
 
+LAST_SOURCE_STATUS: dict = {}
+
+
 def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all", profile=None, force_refresh=False, limit=None, on_progress=None, persist_as_pending=False):
     t0 = time.time()
     profile = profile if profile is not None else db.get_profile()
+    # Personal preferences overlay the resume only for this search. The stored resume is untouched.
+    prefs = preferences.load()
+    profile = preferences.overlay_profile(profile, prefs)
+    if (famous_mode or "all").lower().strip() == "all":
+        famous_mode = preferences.famous_mode(prefs)
     is_profile_search = not (query and query.strip()) or query.strip().lower() == (profile.get("target_title") or "").strip().lower()
     query = (query or "").strip() or derive_query(profile)
     location = (location or "").strip()
@@ -362,38 +370,39 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
 
     from .scoring import derive_target_roles
     extra_terms = [r for r in derive_target_roles(profile) if r.lower() != query.lower()] if is_profile_search else []
+    depth = prefs.get("search_depth", "standard")
+    targets = regions.resolve_targets(prefs, profile, location)
+    remote_ok = regions.wants_remote(prefs, profile)
 
     tasks = {}
     for s in src.SEARCH_SOURCES:
+        configured = s.configured() if hasattr(s, "configured") else True
+        skip = source_registry.skip_reason(s.name, prefs, targets, remote_ok, configured)
+        if skip:
+            state, why, silent = skip
+            if not silent:
+                statuses.append({"source": s.name, "state": state, "count": 0, "error": why, "ms": 0, "stale": False})
+            continue
         if not s.available():
             statuses.append({"source": s.name, "state": "disabled", "count": 0, "error": s.unavailable_reason(), "ms": 0, "stale": False})
             continue
+        calls = source_registry.plan(s.name, targets, location, remote_ok)
+        if not calls:
+            statuses.append({"source": s.name, "state": "skipped", "count": 0, "error": "No local site for your target countries.", "ms": 0, "stale": False})
+            continue
         queries_for_s = [query]
-        if is_profile_search and extra_terms and s.name in ("Indeed", "LinkedIn"):
+        if is_profile_search and extra_terms and s.name in ("Indeed", "LinkedIn") and depth != "quick":
             queries_for_s.append(extra_terms[0])
-        for q_term in queries_for_s:
-            key = f"{s.name}|{q_term.lower()}|{location.lower()}"
-            lbl = f"{s.name}:{q_term}" if len(queries_for_s) > 1 else s.name
-            if isinstance(s, src.LinkedInGuest):
-                tasks[_pool.submit(_run_source, lbl, lambda s=s, q_term=q_term: s.fetch(q_term, location, _deadline_at=time.time() + config.SEARCH_DEADLINE_SECONDS), key, force_refresh)] = lbl
-            else:
-                tasks[_pool.submit(_run_source, lbl, lambda s=s, q_term=q_term: s.fetch(q_term, location), key, force_refresh)] = lbl
-
-    fam_mode = (famous_mode or "all").lower().strip()
-    with db.session() as c:
-        watch = [dict(r) for r in c.execute("SELECT * FROM watchlist")]
-    for w in watch:
-        board = src.BOARDS.get((w["board_type"] or "").lower())
-        if not board:
-            continue
-        c_famous = is_famous_company(w.get("company_name") or w.get("slug"))
-        if fam_mode == "hide" and c_famous:
-            continue
-        if fam_mode == "only" and not c_famous:
-            continue
-        label = f"{board.name}:{w['slug']}"
-        key = f"board|{board.name}|{w['slug']}"
-        tasks[_pool.submit(_run_source, label, lambda b=board, w=w: b.fetch_company(w["slug"], w["company_name"]), key, force_refresh)] = label
+        if is_profile_search and extra_terms and depth == "deep" and not isinstance(s, src.LinkedInGuest):
+            queries_for_s = list(dict.fromkeys(queries_for_s + extra_terms[:2]))
+        for call in calls:
+            for q_term in queries_for_s:
+                key = f"{s.name}{call['suffix']}|{q_term.lower()}|{call['location'].lower()}"
+                lbl = f"{s.name}{call['suffix']}:{q_term}" if len(queries_for_s) > 1 else f"{s.name}{call['suffix']}"
+                if isinstance(s, src.LinkedInGuest):
+                    tasks[_pool.submit(_run_source, lbl, lambda s=s, q_term=q_term: s.fetch(q_term, location, _deadline_at=time.time() + config.SEARCH_DEADLINE_SECONDS), key, force_refresh)] = lbl
+                else:
+                    tasks[_pool.submit(_run_source, lbl, lambda s=s, q_term=q_term, call=call: s.fetch(q_term, call["location"], **call["kwargs"]), key, force_refresh)] = lbl
 
     source_labels = [tasks[f] for f in tasks]
     if on_progress:
@@ -457,9 +466,19 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
                         "total": len(tasks)
                     })
 
-    if config.DEMO:
-        from .demo import SAMPLE_JOBS
-        raw.extend(SAMPLE_JOBS)
+    # Snowball discovery: every link to a known ATS adds that company's board to future searches.
+    try:
+        new_boards = company_directory.harvest(raw)
+    except Exception:
+        new_boards = 0
+
+    # Personal filters from preferences
+    blocked = {normalize_company(c) for c in prefs.get("excluded_companies") or [] if c}
+    if blocked:
+        raw = [j for j in raw if normalize_company(j.get("company", "")) not in blocked]
+    max_age = int(prefs.get("max_age_days") or 0)
+    if max_age:
+        raw = [j for j in raw if not j.get("posted_at") or days_since(j["posted_at"]) is None or days_since(j["posted_at"]) <= max_age]
 
     famous_mode = (famous_mode or "all").lower().strip()
     for j in raw:
@@ -527,7 +546,7 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
             "est_seconds": est_total_s
         })
 
-    live_profiles = db.get_live_profiles()
+    live_profiles = [preferences.overlay_profile(p, prefs) for p in db.get_live_profiles()]
     if profile and not profile.get("_is_empty") and not live_profiles:
         live_profiles = [profile]
 
@@ -645,6 +664,21 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
     _remember(filtered)
 
     failed = [s for s in statuses if s["state"] in ("failed", "timeout", "paused", "stale")]
+    LAST_SOURCE_STATUS.clear()
+    LAST_SOURCE_STATUS.update({s["source"]: dict(s, at=now_iso()) for s in statuses})
+    ran = [s for s in statuses if s["state"] in ("ok", "cached", "stale", "failed", "timeout", "paused")]
+    coverage = {
+        "target_countries": [regions.country_name(c) for c in targets],
+        "remote_included": remote_ok,
+        "sources_ran": len(ran),
+        "sources_with_results": sum(1 for s in statuses if s.get("count")),
+        "sources_skipped": [{"source": s["source"], "why": s.get("error", "")} for s in statuses if s["state"] in ("skipped", "disabled")],
+        "raw_postings": len(raw),
+        "unique_jobs": len(merged),
+        "company_boards": company_directory.last_run(),
+        "new_boards_discovered": new_boards,
+        "search_depth": depth,
+    }
     result = {
         "count": len(filtered), "query": query, "famous_mode": famous_mode, "jobs": filtered,
         "all_jobs": merged, "total_stored": len(merged), "sources": sorted(statuses, key=lambda s: s["source"]),
@@ -652,7 +686,8 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
         "partial": bool(failed), "elapsed_ms": int((time.time() - t0) * 1000),
         "profile_empty": bool(profile.get("_is_empty")),
         "fallback_notice": fallback_notice,
-        "warnings": ([f"{len(failed)} source(s) did not respond. Showing results from the rest."] if failed else []),
+        "coverage": coverage,
+        "warnings": ([f"{len(failed)} source(s) did not respond ({', '.join(s['source'] for s in failed[:6])}). Showing results from the rest."] if failed else []),
     }
     if on_progress:
         on_progress("complete", result)
@@ -1199,6 +1234,8 @@ def _background_enrichment_worker():
                 except Exception:
                     pass
 
+            # Best-scored jobs first, a bounded batch per search. The rest wait for the next search.
+            pending_jobs = pending_jobs[:config.ENRICH_BG_MAX_PER_CYCLE]
             total_jobs = len(pending_jobs)
             with _enrich_lock:
                 _enrich_telemetry["is_running"] = True
@@ -1271,7 +1308,7 @@ def _background_enrichment_worker():
                 _enrich_telemetry["is_running"] = False
             time.sleep(5)
 
-        _enrich_bg_wake.wait(timeout=30)
+        _enrich_bg_wake.wait(timeout=900)
         _enrich_bg_wake.clear()
 
 

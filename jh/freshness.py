@@ -10,9 +10,9 @@ Tracks and computes job freshness states:
 from __future__ import annotations
 
 import enum
-from typing import Any, Dict, Optional
+from typing import Any
 
-from .util import days_since, parse_date
+from .util import days_since
 
 
 class FreshnessState(str, enum.Enum):
@@ -48,6 +48,3 @@ def evaluate_freshness(job: dict[str, Any], max_age_days: int = 30) -> Freshness
     return FreshnessState.UNKNOWN
 
 
-def is_stale(job: dict[str, Any], freshness_window_days: int = 30) -> bool:
-    """Return True if job is stale according to freshness window."""
-    return evaluate_freshness(job, max_age_days=freshness_window_days) == FreshnessState.STALE

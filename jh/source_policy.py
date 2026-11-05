@@ -1,15 +1,18 @@
-"""Source access policy — blocks unsafe network behavior and validates URLs.
+"""Outbound network policy: public hosts only.
 
-Implements SSRF prevention, domain allowlisting, and access-method enforcement
-before any HTTP request leaves the server. Every outbound fetch must pass
-through ``check_url`` before the request is made.
+JobHunter fetches job pages from many employers and from user-supplied feeds, so a fixed
+domain allowlist is not workable. The policy blocks what can hurt the user instead:
 
-Security controls:
-- Scheme validation (https/http only)
-- Private-network / loopback / link-local blocking
-- Domain allowlist enforcement
-- Redirect chain depth limit
-- Response size cap reference
+- Only ``http`` and ``https`` URLs.
+- No localhost, ``.local`` or ``.internal`` names.
+- No IP literal in a private, loopback, link-local or reserved range.
+- DNS is resolved before every request. A name that points at a blocked address is refused,
+  which closes the "public name, private address" hole.
+- Every redirect target goes through the same checks.
+
+Known limit: the check resolves the name once and the HTTP client resolves it again, so a
+hostile DNS server could still answer differently the second time (DNS rebinding). For a
+local, single-user tool this is an accepted residual risk.
 """
 
 from __future__ import annotations
@@ -18,16 +21,16 @@ import ipaddress
 import logging
 import re
 import socket
-from typing import Any, Optional, Set, Tuple
-from urllib.parse import urlparse
+import threading
+import time
+from typing import Optional, Tuple
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 log = logging.getLogger("jobhunter.source_policy")
 
 
-# ──────────────────────────────────────────── policy configuration
-
 class PolicyViolation(Exception):
-    """Raised when a URL or network request violates the source policy."""
+    """Raised when a URL violates the outbound policy."""
 
     def __init__(self, url: str, reason: str):
         self.url = url
@@ -35,310 +38,142 @@ class PolicyViolation(Exception):
         super().__init__(f"Policy violation for '{_redact_url(url)}': {reason}")
 
 
-# Schemes that are always allowed
 ALLOWED_SCHEMES = {"http", "https"}
-
-# Maximum redirect chain depth
 MAX_REDIRECTS = 5
-
-# Maximum response size (6 MB, matching util.http_get default)
 MAX_RESPONSE_BYTES = 6_000_000
 
-# Known safe domains for job sources
-# This is the allowlist of hostnames whose outbound requests are permitted.
-# Model-generated URLs that resolve outside this list are blocked.
-ALLOWED_DOMAINS: set[str] = {
-    # Direct employer ATS
-    "boards-api.greenhouse.io",
-    "boards.greenhouse.io",
-    "api.lever.co",
-    "jobs.lever.co",
-    "api.ashbyhq.com",
-    "jobs.ashbyhq.com",
-    "api.smartrecruiters.com",
-    "jobs.smartrecruiters.com",
-    "apply.workable.com",
-
-    # Major job boards
-    "www.linkedin.com",
-    "linkedin.com",
-    "www.indeed.com",
-    "indeed.com",
-    "api.indeed.com",
-    "www.ziprecruiter.com",
-    "api.ziprecruiter.com",
-
-    # Free feeds / APIs
-    "hacker-news.firebaseio.com",
-    "www.workatastartup.com",
-    "himalayas.app",
-    "jobicy.com",
-    "www.arbeitnow.com",
-    "api.adzuna.com",
-    "data.usajobs.gov",
-    "www.usajobs.gov",
-    "hn.algolia.com",
-
-    # AI Model Providers
-    "api.openai.com",
-    "api.anthropic.com",
-    "generativelanguage.googleapis.com",
-    "api.deepseek.com",
-    "api.groq.com",
-    "api.mistral.ai",
-
-    # Regional boards
-    "www.bayt.com",
-    "www.naukri.com",
-    "www.hellowork.com",
-
-    # Remote boards (may have paywalls for apply, but listing is public)
-    "weworkremotely.com",
-    "www.weworkremotely.com",
-    "remotive.com",
-    "remotive.io",
-    "remoteok.com",
-    "remoteok.io",
-
-    # Y Combinator
-    "www.ycombinator.com",
-    "news.ycombinator.com",
-}
-
-# Patterns for auto-approved employer career subdomains
-_EMPLOYER_CAREER_PATTERNS = [
-    re.compile(r"^careers?\.", re.IGNORECASE),
-    re.compile(r"^jobs?\.", re.IGNORECASE),
-    re.compile(r"\.greenhouse\.io$", re.IGNORECASE),
-    re.compile(r"\.lever\.co$", re.IGNORECASE),
-    re.compile(r"\.ashbyhq\.com$", re.IGNORECASE),
-    re.compile(r"\.smartrecruiters\.com$", re.IGNORECASE),
-    re.compile(r"\.workable\.com$", re.IGNORECASE),
-]
-
-# Private / reserved IP ranges that must be blocked (SSRF prevention)
 _BLOCKED_NETWORKS = [
-    ipaddress.ip_network("127.0.0.0/8"),       # loopback
-    ipaddress.ip_network("10.0.0.0/8"),         # private
-    ipaddress.ip_network("172.16.0.0/12"),      # private
-    ipaddress.ip_network("192.168.0.0/16"),     # private
-    ipaddress.ip_network("169.254.0.0/16"),     # link-local
-    ipaddress.ip_network("0.0.0.0/8"),          # "this network"
-    ipaddress.ip_network("::1/128"),            # IPv6 loopback
-    ipaddress.ip_network("fc00::/7"),           # IPv6 ULA
-    ipaddress.ip_network("fe80::/10"),          # IPv6 link-local
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("100.64.0.0/10"),   # carrier-grade NAT
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local and cloud metadata
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.0.0.0/24"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("198.18.0.0/15"),
+    ipaddress.ip_network("224.0.0.0/4"),     # multicast
+    ipaddress.ip_network("240.0.0.0/4"),     # reserved
+    ipaddress.ip_network("::/128"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+    ipaddress.ip_network("ff00::/8"),
 ]
 
+_dns_cache: dict[str, tuple[float, Optional[str]]] = {}
+_dns_lock = threading.Lock()
+_DNS_TTL = 60.0
 
-# ──────────────────────────────────────────── URL checking
 
-def check_url(url: str, *, allow_user_provided: bool = False) -> Tuple[bool, Optional[str]]:
-    """Validate a URL against the source policy.
+def _blocked_ip(ip_str: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(ip_str.split("%")[0])
+    except ValueError:
+        return True
+    if getattr(ip, "ipv4_mapped", None):
+        ip = ip.ipv4_mapped
+    return any(ip in net for net in _BLOCKED_NETWORKS)
 
-    Returns:
-        (is_allowed, reason_if_blocked)
-    """
+
+def check_url(url: str) -> Tuple[bool, Optional[str]]:
+    """Static checks that need no network. Returns ``(allowed, reason_if_blocked)``."""
     if not url:
         return False, "Empty URL"
-
     try:
         parsed = urlparse(url)
     except Exception:
         return False, "Malformed URL"
-
-    # 1. Scheme check
     scheme = (parsed.scheme or "").lower()
     if scheme not in ALLOWED_SCHEMES:
-        return False, f"Blocked scheme '{scheme}'; only http/https allowed"
-
-    # 2. Hostname extraction
-    hostname = (parsed.hostname or "").lower().strip(".")
-    if not hostname:
+        return False, f"Blocked scheme '{scheme}'; only http and https are allowed"
+    host = (parsed.hostname or "").lower().strip(".")
+    if not host:
         return False, "Missing hostname"
-
-    # Block localhost and internal domain names
-    if hostname in ("localhost", "127.0.0.1", "::1") or hostname.endswith(".local") or hostname.endswith(".internal"):
-        return False, f"Host '{hostname}' is a reserved local address (SSRF prevention)"
-
-    # 3. Block IP-literal URLs that resolve to private ranges
-    blocked_reason = _check_ip_literal(hostname)
-    if blocked_reason:
-        return False, blocked_reason
-
-    # 4. Domain allowlist check
-    if _is_domain_allowed(hostname, allow_user_provided=allow_user_provided):
-        return True, None
-
-    return False, f"Domain '{hostname}' is not in the approved source list"
-
-
-def check_url_strict(url: str) -> None:
-    """Like check_url but raises PolicyViolation on failure."""
-    allowed, reason = check_url(url)
-    if not allowed:
-        raise PolicyViolation(url, reason or "Blocked by source policy")
-
-
-def resolve_and_check(url: str) -> Tuple[bool, Optional[str]]:
-    """Resolve hostname to IP and verify it doesn't target private networks.
-
-    This is the full SSRF check — call it before making the actual HTTP request
-    when DNS resolution is needed.
-    """
-    allowed, reason = check_url(url)
-    if not allowed:
-        return False, reason
-
-    parsed = urlparse(url)
-    hostname = (parsed.hostname or "").lower()
-
+    if host == "localhost" or host.endswith((".localhost", ".local", ".internal")):
+        return False, f"Host '{host}' is a local address"
     try:
-        addrs = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
-    except socket.gaierror:
-        return False, f"DNS resolution failed for '{hostname}'"
-
-    for family, _, _, _, sockaddr in addrs:
-        ip_str = sockaddr[0]
-        try:
-            ip = ipaddress.ip_address(ip_str)
-        except ValueError:
-            continue
-        for net in _BLOCKED_NETWORKS:
-            if ip in net:
-                return False, f"Resolved IP {ip_str} is in a blocked network range"
-
+        ipaddress.ip_address(host)
+    except ValueError:
+        if "." not in host:
+            return False, f"Host '{host}' is not a public domain name"
+    else:
+        if _blocked_ip(host):
+            return False, f"IP address {host} is in a blocked range"
     return True, None
 
 
-# ──────────────────────────────────────────── redirect policy
+def resolve_and_check(url: str) -> Tuple[bool, Optional[str]]:
+    """Full check: static rules plus DNS resolution of the host."""
+    ok, reason = check_url(url)
+    if not ok:
+        return False, reason
+    host = (urlparse(url).hostname or "").lower().strip(".")
+    try:
+        ipaddress.ip_address(host)
+        return True, None  # literal already vetted above
+    except ValueError:
+        pass
+    now = time.time()
+    with _dns_lock:
+        hit = _dns_cache.get(host)
+        if hit and now - hit[0] < _DNS_TTL:
+            return (hit[1] is None, hit[1])
+    verdict: Optional[str] = None
+    try:
+        for info in socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP):
+            if _blocked_ip(info[4][0]):
+                verdict = f"'{host}' resolves to a blocked address ({info[4][0]})"
+                break
+    except socket.gaierror:
+        verdict = f"DNS resolution failed for '{host}'"
+    with _dns_lock:
+        if len(_dns_cache) > 2048:
+            _dns_cache.clear()
+        _dns_cache[host] = (now, verdict)
+    return (verdict is None, verdict)
+
+
+def check_url_strict(url: str) -> None:
+    ok, reason = resolve_and_check(url)
+    if not ok:
+        raise PolicyViolation(url, reason or "Blocked by source policy")
+
 
 def check_redirect(original_url: str, redirect_url: str, depth: int = 0) -> Tuple[bool, Optional[str]]:
-    """Check whether a redirect target is acceptable.
-
-    Args:
-        original_url: The URL that initiated the redirect chain
-        redirect_url: The target of this redirect
-        depth: Current redirect chain depth
-
-    Returns:
-        (is_allowed, reason_if_blocked)
-    """
     if depth >= MAX_REDIRECTS:
         return False, f"Redirect chain too deep (>{MAX_REDIRECTS})"
-
-    return check_url(redirect_url, allow_user_provided=True)
-
-
-# ──────────────────────────────────────────── domain management
-
-def add_allowed_domain(domain: str) -> None:
-    """Add a domain to the runtime allowlist (e.g. for user-configured company boards)."""
-    clean = domain.lower().strip().strip(".")
-    if clean:
-        ALLOWED_DOMAINS.add(clean)
-        log.info("Added allowed domain: %s", clean)
-
-
-def remove_allowed_domain(domain: str) -> None:
-    """Remove a domain from the runtime allowlist."""
-    clean = domain.lower().strip().strip(".")
-    ALLOWED_DOMAINS.discard(clean)
-
-
-def list_allowed_domains() -> list[str]:
-    """Return sorted list of currently allowed domains."""
-    return sorted(ALLOWED_DOMAINS)
-
-
-# ──────────────────────────────────────────── internal helpers
-
-def _is_domain_allowed(hostname: str, *, allow_user_provided: bool = False) -> bool:
-    """Check if hostname or its parent domain is in the allowlist."""
-    # Direct match
-    if hostname in ALLOWED_DOMAINS:
-        return True
-
-    # Subdomain match: e.g. 'boards.greenhouse.io' matches '*.greenhouse.io'
-    parts = hostname.split(".")
-    for i in range(1, len(parts)):
-        parent = ".".join(parts[i:])
-        if parent in ALLOWED_DOMAINS:
-            return True
-
-    # Employer career site pattern match
-    for pattern in _EMPLOYER_CAREER_PATTERNS:
-        if pattern.search(hostname):
-            return True
-
-    if allow_user_provided:
-        # User-provided URLs (e.g. apply URLs or configured custom sites)
-        if "." in hostname and not hostname.startswith(".") and not hostname.endswith("."):
-            return True
-
-    return False
-
-
-def _check_ip_literal(hostname: str) -> Optional[str]:
-    """If hostname is an IP literal, check it against blocked ranges."""
-    try:
-        ip = ipaddress.ip_address(hostname)
-    except ValueError:
-        return None  # not an IP literal, DNS resolution happens later
-
-    for net in _BLOCKED_NETWORKS:
-        if ip in net:
-            return f"IP address {hostname} is in a blocked network range (SSRF prevention)"
-
-    return None
+    return resolve_and_check(redirect_url)
 
 
 def _redact_url(url: str) -> str:
-    """Redact sensitive parts of a URL for logging."""
     try:
-        parsed = urlparse(url)
-        # Redact query params that might contain tokens
-        return f"{parsed.scheme}://{parsed.hostname}{parsed.path}"
+        p = urlparse(url)
+        return f"{p.scheme}://{p.hostname}{p.path}"
     except Exception:
         return "<malformed-url>"
 
 
-# ──────────────────────────────────────────── sanitize job URLs
+# Query keys that only track the visitor. ``gh_jid`` and requisition ids are kept on purpose.
+_TRACKING_KEY = re.compile(
+    r"^(utm_.*|ref|referer|referrer|source|src|trk|trackingid|refid|currentjobid|fccid|vjs|vjk|"
+    r"gh_src|lever-source|lever-origin|fbclid|gclid|mc_.*|_hsenc|_hsmi)$",
+    re.IGNORECASE,
+)
+
 
 def sanitize_apply_url(url: str) -> Tuple[str, list[str]]:
-    """Strip tracking parameters and validate a job application URL.
-
-    Returns:
-        (cleaned_url, warnings)
-    """
-    warnings = []
+    """Strip tracking parameters from an apply link. Returns ``(clean_url, warnings)``."""
+    warnings: list[str] = []
     if not url:
         return "", warnings
-
-    allowed, reason = check_url(url, allow_user_provided=True)
-    if not allowed:
+    ok, reason = check_url(url)
+    if not ok:
         warnings.append(f"Apply URL blocked: {reason}")
         return "", warnings
-
-    try:
-        parsed = urlparse(url)
-    except Exception:
-        return url, warnings
-
-    # Strip common tracking parameters
-    tracking_params = {
-        "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
-        "ref", "referer", "source", "trk", "trackingId", "currentJobId",
-        "refId", "fccid", "vjs", "vjk",
-    }
-
-    from urllib.parse import parse_qs, urlencode
-    params = parse_qs(parsed.query, keep_blank_values=False)
-    clean_params = {k: v for k, v in params.items() if k.lower() not in tracking_params}
-
-    if len(clean_params) < len(params):
+    parsed = urlparse(url)
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    kept = [(k, v) for k, v in pairs if not _TRACKING_KEY.match(k)]
+    if len(kept) < len(pairs):
         warnings.append("Tracking parameters removed from apply URL")
-
-    clean_query = urlencode(clean_params, doseq=True) if clean_params else ""
-    cleaned = parsed._replace(query=clean_query, fragment="").geturl()
-
-    return cleaned, warnings
+    return parsed._replace(query=urlencode(kept), fragment="").geturl(), warnings

@@ -2,6 +2,7 @@
 import datetime
 import email.utils
 import gzip
+import hashlib
 import html
 import io
 import json
@@ -106,6 +107,11 @@ def normalize_company(name):
 
 # ---------------------------------------------------------------- dates
 
+def stable_id(*parts) -> str:
+    """Short id that stays the same across runs. Python's built-in ``hash()`` is randomised per process."""
+    return hashlib.sha1("|".join(str(p) for p in parts).encode("utf-8", "replace")).hexdigest()[:12]
+
+
 def now_iso():
     return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
 
@@ -146,8 +152,18 @@ def days_since(value):
 
 # ---------------------------------------------------------------- salary
 
-_CUR = [("€", "EUR"), ("eur", "EUR"), ("£", "GBP"), ("gbp", "GBP"), ("cad", "CAD"), ("aud", "AUD"),
-        ("$", "USD"), ("usd", "USD")]
+# (pattern, ISO code). Symbols match anywhere; codes and words need word boundaries so that
+# "Europe" or "nomad" never read as a currency.
+_CUR = [(re.compile(p, re.I), c) for p, c in (
+    (r"€|\beuros?\b|\beur\b", "EUR"), (r"£|\bgbp\b", "GBP"), (r"\bcad\b", "CAD"), (r"\baud\b", "AUD"),
+    (r"\$|\busd\b", "USD"),
+    (r"\btnd\b|\bdinars?\b|د\.ت", "TND"), (r"\bmad\b|\bdirhams?\b", "MAD"), (r"\begp\b", "EGP"),
+    (r"\baed\b", "AED"), (r"\bsar\b", "SAR"), (r"\bchf\b", "CHF"), (r"\bpln\b|\bzl\b", "PLN"),
+    (r"\binr\b|₹", "INR"), (r"\bzar\b", "ZAR"), (r"\bngn\b|₦", "NGN"), (r"\bkes\b", "KES"),
+)]
+
+
+_MONTHLY_QUOTED = {"TND", "MAD", "EGP", "AED", "SAR"}
 
 
 def parse_salary(text):
@@ -157,8 +173,8 @@ def parse_salary(text):
         return None
     s = str(text).lower().replace(",", "")
     cur = "USD"
-    for token, code in _CUR:
-        if token in s:
+    for pattern, code in _CUR:
+        if pattern.search(s):
             cur = code
             break
     nums = []
@@ -178,6 +194,8 @@ def parse_salary(text):
         period = "hour"
     elif re.search(r"/\s*mo\b|per month|monthly", s):
         period = "month"
+    elif cur in _MONTHLY_QUOTED and hi < 200000 and not re.search(r"year|annual|/\s*yr|p\.?a\b", s):
+        period = "month"  # these markets quote salaries per month
     return {"min": lo, "max": hi, "currency": cur, "period": period}
 
 
@@ -246,6 +264,14 @@ def format_schema_salary(sal_obj):
     return ""
 
 
+_CODE = r"(?:usd|eur|gbp|cad|aud|tnd|mad|aed|sar|chf)"
+_AMT = rf"(?:[$€£]|\b{_CODE}\b)?\s?\d[\d,.]*\s?[kK]?"
+_SALARY_PROSE = re.compile(
+    rf"(?:salary|compensation|pay|rate)(?:\s+range)?(?:\s+(?:of|is|from))?\s*[:\-]?\s*"
+    rf"({_AMT}\s*(?:[-\u2013]|to)\s*{_AMT}(?:\s*(?:{_CODE}\b|[$€£]))?(?:\s*(?:per|/|a)\s*(?:year|yr|month|mo|hour|hr|annum))?)",
+    re.I)
+
+
 def extract_job_sections(text):
     """Parse structured sections: responsibilities, qualifications, how to apply, contact info."""
     if not text:
@@ -277,6 +303,11 @@ def extract_job_sections(text):
     pay_m = re.search(r'(?:Pay|Salary|Compensation|Rate):\s*([^\n\r]+)', text, re.I)
     if pay_m:
         sections["salary_text"] = pay_m.group(1).strip()
+    else:
+        # Prose such as "Salary 60,000-80,000 EUR" or "pay range of $90k to $120k"
+        prose = _SALARY_PROSE.search(text)
+        if prose and re.search(r"[$€£]|\b(?:usd|eur|gbp|cad|aud|tnd|mad|aed|sar|chf)\b", prose.group(1), re.I):
+            sections["salary_text"] = prose.group(1).strip()
 
     # 4. Job type in text
     type_m = re.search(r'(?:Job Type|Employment Type|Contract Type):\s*([^\n\r]+)', text, re.I)
@@ -412,24 +443,28 @@ class HttpError(Exception):
 
 
 class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Enforces source policy on HTTP redirect targets to prevent SSRF via redirect."""
+    """Applies the outbound policy to every redirect target (blocks redirects into private networks)."""
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         from . import source_policy
-        allowed, reason = source_policy.check_url(newurl, allow_user_provided=True)
+        allowed, reason = source_policy.resolve_and_check(newurl)
         if not allowed:
             raise HttpError(f"Redirect blocked by security policy: {reason}")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def http_get(url, headers=None, timeout=None, retries=1, max_bytes=6_000_000, data=None, method=None, allow_private: bool = False):
-    """GET (or POST with data) with gzip support, size cap, and one polite retry on 429/5xx."""
+def _http_fetch(url, headers=None, timeout=None, retries=1, max_bytes=6_000_000, data=None, method=None, allow_private=False):
+    """Fetch a URL and return ``(raw_bytes, declared_charset_or_None)``.
+
+    Applies the outbound policy (public hosts only, DNS resolved), gzip support, a size cap,
+    and one polite retry on 429/5xx.
+    """
     parsed = urllib.parse.urlparse(url or "")
     if parsed.scheme.lower() not in ("http", "https"):
         raise HttpError(f"Unsupported URL scheme: '{parsed.scheme}'. Only http and https are allowed.")
 
     if not allow_private:
         from . import source_policy
-        allowed, reason = source_policy.check_url(url, allow_user_provided=True)
+        allowed, reason = source_policy.resolve_and_check(url)
         if not allowed:
             raise HttpError(f"Security policy violation: {reason}")
 
@@ -456,13 +491,16 @@ def http_get(url, headers=None, timeout=None, retries=1, max_bytes=6_000_000, da
                         raise
                     except Exception as e:
                         raise HttpError(f"gzip decompression failed: {e}")
-                return raw.decode("utf-8", errors="replace")
+                return raw, resp.headers.get_content_charset()
         except urllib.error.HTTPError as e:
             last = HttpError(f"HTTP {e.code} from {urllib.parse.urlparse(url).netloc}")
+            last.status = e.code
             if e.code in (429, 500, 502, 503, 504) and attempt < retries:
                 time.sleep(min(2.0, 0.6 * (attempt + 1)))
                 continue
             raise last
+        except HttpError:
+            raise
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             last = HttpError(f"network error for {urllib.parse.urlparse(url).netloc}: {e}")
             if attempt < retries:
@@ -470,6 +508,21 @@ def http_get(url, headers=None, timeout=None, retries=1, max_bytes=6_000_000, da
                 continue
             raise last
     raise last or HttpError("request failed")
+
+
+def http_get(url, headers=None, timeout=None, retries=1, max_bytes=6_000_000, data=None, method=None, allow_private: bool = False):
+    """GET (or POST with data). Returns the body decoded as UTF-8."""
+    raw, _ = _http_fetch(url, headers, timeout, retries, max_bytes, data, method, allow_private)
+    return raw.decode("utf-8", errors="replace")
+
+
+def http_get_text(url, **kw):
+    """Like ``http_get`` but honours the charset the server declares (Latin-1, Windows-1256, ...)."""
+    raw, charset = _http_fetch(url, **kw)
+    try:
+        return raw.decode(charset or "utf-8", errors="replace")
+    except LookupError:
+        return raw.decode("utf-8", errors="replace")
 
 
 def http_get_json(url, **kw):

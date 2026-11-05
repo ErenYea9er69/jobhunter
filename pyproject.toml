@@ -4,29 +4,37 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jobhunter-mcp"
-version = "2.0.0"
-description = "JobHunter MCP Server — AI coding assistant tools for job searching, resume scoring, truthful tailoring, and application tracking"
+version = "2.3.0"
+description = "MCP server for job search: many sources, resume-grounded scoring, truthful document tailoring, application tracking"
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [
-    { name = "JobHunter Maintainers" }
-]
-keywords = ["mcp", "model-context-protocol", "job-search", "resume", "ats", "ai"]
+license = { text = "MIT" }
+authors = [{ name = "JobHunter Maintainers" }]
+keywords = ["mcp", "model-context-protocol", "job-search", "resume", "ats"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Topic :: Office/Business",
-    "Topic :: Software Development",
 ]
 dependencies = [
-    "mcp[cli]>=1.0.0",
+    "mcp[cli]>=1.9,<2",
+    "curl_cffi>=0.7",
+    "pypdf>=4.0",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
 
 [project.scripts]
 jobhunter-mcp = "mcp_server:main"
 
+[tool.setuptools]
+py-modules = ["mcp_server"]
+
 [tool.setuptools.packages.find]
 include = ["jh*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

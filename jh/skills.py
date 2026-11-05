@@ -166,11 +166,28 @@ _REQUIRED = re.compile(r"requirements?|qualifications?|you have|you bring|must[\
 _RESP = re.compile(r"responsibilities|what you.?ll do|the role|your role|in this role|day[\s-]to[\s-]day", re.I)
 
 
+# Many feeds deliver a posting as one long line: "Required: A, B. Nice to have: C." Split such
+# lines at the section marker so each part keeps its own weight.
+_INLINE_MARKER = re.compile(
+    r"(?<=[.;!?\s])(?=(?:nice[\s-]to[\s-]have|bonus(?:\s+points)?|preferred(?:\s+qualifications|\s+skills)?|"
+    r"good[\s-]to[\s-]have|desirable|requirements?|required(?:\s+skills)?|must[\s-]have|qualifications?|"
+    r"responsibilities|what you.?ll (?:do|need)|about you)\s*[:\-]\s)",
+    re.I,
+)
+
+
+def _split_inline_sections(text):
+    for line in (text or "").splitlines():
+        parts = _INLINE_MARKER.split(line) if len(line) > 70 else [line]
+        for part in parts:
+            yield part
+
+
 def extract_weighted(text):
     """Return {skill: weight}. Core required skills weigh 1.0, adjacent tools 0.5, responsibilities 0.7, preferred 0.4."""
     weights = {}
     mode, mode_w = "neutral", 0.85
-    for line in (text or "").splitlines():
+    for line in _split_inline_sections(text):
         s = line.strip()
         if not s:
             continue

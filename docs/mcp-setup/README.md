@@ -1,80 +1,41 @@
-# JobHunter MCP Server — Setup Guide
+# Connecting JobHunter to your client
 
-JobHunter exposes 24 tools and 6 resources over the Model Context Protocol (MCP) using `stdio` transport. It allows AI assistants like Antigravity, Cursor, Claude Desktop, and VS Code to search job boards, score resumes against postings, generate truthful tailored resumes, create targeted cover letters, and track applications directly inside your chat.
+JobHunter speaks MCP over stdio. Every client needs the same three things: the Python command, the path to `mcp_server.py`, and the workspace folder that holds your resumes.
 
-## Prerequisites
+Replace the paths below with your own. Use forward slashes on Windows.
 
-- Python 3.11+
-- Install MCP dependencies:
-  ```bash
-  pip install -r requirements-mcp.txt
-  ```
+## Check it first
 
----
+```bash
+pip install -r requirements.txt
+JH_WORKSPACE=/path/to/workspace python mcp_server.py --check
+```
 
-## 1. Antigravity Setup
+You should see `7 tools OK`. These are the CEO tools. Add `--surface full` to see all 46.
 
-Add JobHunter to your Antigravity configuration file (usually in `~/.gemini/config/mcp_config.json`):
+## Claude Desktop
+
+File: `claude_desktop_config.json` (Settings, Developer, Edit Config).
 
 ```json
 {
   "mcpServers": {
     "jobhunter": {
       "command": "python",
-      "args": ["c:/Users/hp/Desktop/jobhunter/mcp_server.py"],
-      "env": {
-        "JH_WORKSPACE": "c:/Users/hp/Desktop/jobhunter"
-      }
+      "args": ["/path/to/jobhunter/mcp_server.py"],
+      "env": { "JH_WORKSPACE": "/path/to/workspace" }
     }
   }
 }
 ```
 
----
+## Cursor
 
-## 2. Cursor Setup
+File: `.cursor/mcp.json` in your project, or the global `~/.cursor/mcp.json`. Same JSON as above.
 
-Add JobHunter to `.cursor/mcp.json` in your repository:
+## VS Code
 
-```json
-{
-  "mcpServers": {
-    "jobhunter": {
-      "command": "python",
-      "args": ["c:/Users/hp/Desktop/jobhunter/mcp_server.py"],
-      "env": {
-        "JH_WORKSPACE": "${workspaceFolder}"
-      }
-    }
-  }
-}
-```
-
----
-
-## 3. Claude Desktop Setup
-
-Open your Claude Desktop config (`%APPDATA%/Claude/claude_desktop_config.json` on Windows or `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
-
-```json
-{
-  "mcpServers": {
-    "jobhunter": {
-      "command": "python",
-      "args": ["c:/Users/hp/Desktop/jobhunter/mcp_server.py"],
-      "env": {
-        "JH_WORKSPACE": "c:/Users/hp/Desktop/jobhunter"
-      }
-    }
-  }
-}
-```
-
----
-
-## 4. VS Code Copilot Setup
-
-Add JobHunter to `.vscode/mcp.json`:
+File: `.vscode/mcp.json`.
 
 ```json
 {
@@ -82,60 +43,32 @@ Add JobHunter to `.vscode/mcp.json`:
     "jobhunter": {
       "type": "stdio",
       "command": "python",
-      "args": ["c:/Users/hp/Desktop/jobhunter/mcp_server.py"],
-      "env": {
-        "JH_WORKSPACE": "${workspaceFolder}"
-      }
+      "args": ["/path/to/jobhunter/mcp_server.py"],
+      "env": { "JH_WORKSPACE": "/path/to/workspace" }
     }
   }
 }
 ```
 
----
+## Antigravity
 
-## Workspace Structure & Resumes
+File: `~/.gemini/config/mcp_config.json`. Same JSON as Claude Desktop.
 
-Place your resume files in the repository root or in a `resumes/` folder:
-```
-my-job-search/
-  resumes/
-    backend-engineer.pdf
-    fullstack.docx
-    cloud-architect.txt
-  .jobhunter/
-    config.json          (preferences & active resume)
-    applications.json    (tracked applications)
-    cache/jobs.json      (cached searches)
-    output/              (tailored resumes & cover letters)
-JobHunter automatically detects and parses all resume files upon startup.
+## Optional keys
 
----
+Add keys to the `env` block, never to a chat message.
 
-## 5. Troubleshooting & Diagnostics
+| Variable | Purpose |
+| --- | --- |
+| `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` | Turns on the Adzuna source |
+| `JOOBLE_API_KEY` | Turns on Jooble, which collects small local boards in many countries |
+| `JH_SURFACE` | `team` (default): the AI sees only the CEO tools. `full`: it sees every tool |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY` | LLM wording for documents. Without one, the built-in engine writes them |
+| `JH_AI_PROVIDER` | `auto`, `deterministic`, `gemini`, `openai`, `anthropic`, `ollama`, `custom` |
 
-### Protocol Stdout Pollution
-- **Issue**: Host reports `JSONRPC parse error` or connection drops immediately upon launch.
-- **Cause**: An unbuffered `print()` statement or library banner emitted text to `stdout`. MCP reserves `stdout` exclusively for JSON-RPC messages.
-- **Fix**: All diagnostic and informational messages in JobHunter are configured to use `logging` directed to `sys.stderr`. Never use `print()` in server code.
+## Troubleshooting
 
-### Python Environment & Path Resolution
-- **Issue**: `python: command not found` or module import failure (`No module named mcp`).
-- **Fix**: Specify the absolute path to your Python executable (or virtual environment interpreter) in the `"command"` field instead of generic `"python"`:
-  ```json
-  "command": "C:/Users/hp/AppData/Local/Python/pythoncore-3.14-64/python.exe"
-  ```
-
-### Unresolved `${workspaceFolder}`
-- **Issue**: Error stating `directory not found: ${workspaceFolder}`.
-- **Cause**: Some hosts (e.g. Claude Desktop) do not evaluate `${workspaceFolder}`.
-- **Fix**: Provide the literal absolute path in `"JH_WORKSPACE"`: `"c:/Users/hp/Desktop/jobhunter"`.
-
-### Permission Errors on `.jobhunter/`
-- **Issue**: `PermissionError: [Errno 13] Access denied` when saving configurations or applications.
-- **Fix**: Ensure the running user has read/write permissions for the workspace directory and `.jobhunter/`. JobHunter uses atomic file writes (`tempfile.NamedTemporaryFile` + `replace()`) which requires directory write permission.
-
-### Quick Verification Smoke Test
-Run the automated test suite to verify full protocol and module health:
-```bash
-python -m pytest -q
-```
+- `ModuleNotFoundError: mcp.server.fastmcp`: you installed mcp 2.x. Run `pip install "mcp[cli]>=1.9,<2"`.
+- No resume found: put a `.pdf`, `.docx` or `.txt` file in the workspace or `workspace/resumes/`, then call `scan_resumes`.
+- Searches return nothing: call `source_health`. The `coverage` block in a search result lists skipped sources and why.
+- Logs go to stderr. Your client shows them in its MCP log view.
