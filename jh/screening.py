@@ -228,7 +228,7 @@ def solve_screening_question(question, profile, job=None, question_type="auto", 
             "job_posting": {
                 "company": company,
                 "title": title,
-                "required_skills": job.get("required_skills", [])[:8],
+                "required_skills": list(job.get("required_skills", {}).keys() if isinstance(job.get("required_skills"), dict) else job.get("required_skills", []))[:8],
                 "description_snippet": (job.get("description", "") or "")[:1200]
             },
             "candidate_facts": {
