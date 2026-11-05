@@ -13,6 +13,21 @@ pip install -r requirements.txt
 python mcp_server.py --check        # starts the server, lists the tools, exits
 ```
 
+### Web Dashboard & ATS Browser Extension
+
+You can also run JobHunter as an interactive local web dashboard and Chrome/Edge browser extension:
+
+```bash
+python desktop.py
+```
+
+This starts the local HTTP daemon on `http://127.0.0.1:8765`, opens the modern 5-tab dashboard (`public/index.html`), and automatically launches your installed Chromium browser (Edge, Chrome, or Brave) with the ATS Autofill extension pre-loaded.
+
+- **Web Dashboard**: Interactive Radar job search, candidate profile manager, 5-stage Kanban application tracker (`saved`, `applied`, `interview`, `offer`, `rejected`), and truth-verified Document Studio.
+- **ATS Browser Extension**: Detects Greenhouse, Lever, Workday, Ashby, BambooHR, and SmartRecruiters in real-time, autofilling candidate information in 1-click and answering custom screening questions verified by Reviewer QA.
+
+---
+
 Put a PDF, DOCX or TXT resume in your workspace folder (or in `resumes/`), then add the server to your client. Examples for each client are in `docs/mcp-setup/`.
 
 ```json
