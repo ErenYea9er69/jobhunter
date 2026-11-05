@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JobHunter — Autonomous AI Job Search & Copilot</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">⚡</div>
+        <div class="brand-info">
+          <div class="brand-name">JobHunter</div>
+          <div class="brand-sub">Autonomous Copilot v2.3</div>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="tab-radar">
+          <span class="nav-icon">🔍</span>
+          <span>Radar & Search</span>
+        </button>
+        <button class="nav-item" data-tab="tab-profiles">
+          <span class="nav-icon">👤</span>
+          <span>Profiles & Resumes</span>
+        </button>
+        <button class="nav-item" data-tab="tab-tracker">
+          <span class="nav-icon">📊</span>
+          <span>Application Tracker</span>
+        </button>
+        <button class="nav-item" data-tab="tab-copilot">
+          <span class="nav-icon">✍️</span>
+          <span>Document Studio</span>
+        </button>
+        <button class="nav-item" data-tab="tab-extension">
+          <span class="nav-icon">⚡</span>
+          <span>Extension & Desktop</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="server-status">
+          <span class="status-dot"></span>
+          <span id="daemon-status-text">Server: Connected (:8765)</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <header class="topbar">
+        <div class="topbar-title" id="page-title">Radar & Job Search</div>
+        <div class="topbar-actions">
+          <div class="active-profile-badge" id="active-profile-badge">
+            <span class="badge-label">Active Profile:</span>
+            <span class="badge-val" id="topbar-profile-name">Loading...</span>
+          </div>
+          <button class="btn btn-primary" id="btn-quick-launch-ext">⚡ Launch Copilot</button>
+        </div>
+      </header>
+
+      <div class="content-body">
+        <!-- TAB 1: Radar & Search -->
+        <section class="tab-pane active" id="tab-radar">
+          <div class="search-bar-card">
+            <div class="search-inputs">
+              <div class="input-group">
+                <label>Job Title / Keywords</label>
+                <input type="text" id="search-query" placeholder="e.g. Backend Engineer, Python, Tech Lead" value="Software Engineer">
+              </div>
+              <div class="input-group">
+                <label>Location / Country</label>
+                <input type="text" id="search-location" placeholder="e.g. Remote, Paris, Tunis, Berlin" value="Remote">
+              </div>
+              <button class="btn btn-primary search-btn" id="btn-run-search">🔍 Hunt Jobs</button>
+            </div>
+          </div>
+
+          <div class="results-header">
+            <div class="results-count" id="search-results-count">Results: Ready</div>
+            <div class="results-filter">
+              <span>Sort by:</span>
+              <select id="sort-filter" class="select-input">
+                <option value="score">Fit Score (High to Low)</option>
+                <option value="recent">Most Recent</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="job-cards-grid" id="job-cards-grid">
+            <div class="empty-state">
+              <div class="empty-icon">🎯</div>
+              <div class="empty-title">Ready to scan live market opportunities</div>
+              <div class="empty-desc">Click "Hunt Jobs" to discover vacancies across regional feeds, ATS boards, and direct employers.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 2: Profiles & Resumes -->
+        <section class="tab-pane" id="tab-profiles">
+          <div class="profiles-card">
+            <div class="section-header">
+              <h2>Candidate Profiles & Resumes</h2>
+              <button class="btn btn-secondary" id="btn-scan-resumes">🔄 Scan Workspace Resumes</button>
+            </div>
+            <div class="profile-details-grid">
+              <div class="profile-info-panel">
+                <h3 id="prof-cand-name">Candidate Name</h3>
+                <div class="prof-title" id="prof-target-title">Target Title</div>
+                <div class="prof-meta-list" id="prof-meta-list"></div>
+                <h4>Verified Skills</h4>
+                <div class="skills-tags" id="prof-skills-tags"></div>
+              </div>
+              <div class="profile-variants-panel">
+                <h3>Available Resume Variants</h3>
+                <div class="variants-list" id="variants-list"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 3: Application Tracker -->
+        <section class="tab-pane" id="tab-tracker">
+          <div class="tracker-header">
+            <div class="funnel-stats-bar" id="funnel-stats-bar">
+              <div class="funnel-stat"><span class="stat-num" id="stat-saved">0</span> Saved</div>
+              <div class="funnel-stat"><span class="stat-num" id="stat-applied">0</span> Applied</div>
+              <div class="funnel-stat"><span class="stat-num" id="stat-interview">0</span> Interviewing</div>
+              <div class="funnel-stat"><span class="stat-num" id="stat-offer">0</span> Offers</div>
+              <div class="funnel-stat"><span class="stat-num" id="stat-rejected">0</span> Rejected</div>
+            </div>
+            <button class="btn btn-primary" id="btn-new-app">+ Track Application</button>
+          </div>
+
+          <div class="kanban-board">
+            <div class="kanban-col" data-status="saved">
+              <div class="col-header">Saved <span class="badge" id="badge-saved">0</span></div>
+              <div class="cards-list" id="col-saved"></div>
+            </div>
+            <div class="kanban-col" data-status="applied">
+              <div class="col-header">Applied <span class="badge" id="badge-applied">0</span></div>
+              <div class="cards-list" id="col-applied"></div>
+            </div>
+            <div class="kanban-col" data-status="interview">
+              <div class="col-header">Interview <span class="badge" id="badge-interview">0</span></div>
+              <div class="cards-list" id="col-interview"></div>
+            </div>
+            <div class="kanban-col" data-status="offer">
+              <div class="col-header">Offer <span class="badge" id="badge-offer">0</span></div>
+              <div class="cards-list" id="col-offer"></div>
+            </div>
+            <div class="kanban-col" data-status="rejected">
+              <div class="col-header">Rejected <span class="badge" id="badge-rejected">0</span></div>
+              <div class="cards-list" id="col-rejected"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 4: Document Studio -->
+        <section class="tab-pane" id="tab-copilot">
+          <div class="studio-card">
+            <h2>Truthful Document Studio & Reviewer QA</h2>
+            <p class="subtitle">Every document generated is verified sentence-by-sentence against candidate resume facts before approval.</p>
+            <div class="studio-grid">
+              <div class="studio-form">
+                <div class="input-group">
+                  <label>Job Title</label>
+                  <input type="text" id="doc-job-title" placeholder="e.g. Senior Backend Engineer">
+                </div>
+                <div class="input-group">
+                  <label>Company Name</label>
+                  <input type="text" id="doc-company" placeholder="e.g. Stripe">
+                </div>
+                <div class="input-group">
+                  <label>Job Description / Requirements</label>
+                  <textarea id="doc-job-desc" rows="6" placeholder="Paste job requirements here..."></textarea>
+                </div>
+                <div class="btn-group">
+                  <button class="btn btn-primary" id="btn-gen-letter">Draft Cover Letter</button>
+                  <button class="btn btn-secondary" id="btn-gen-prep">Interview Prep</button>
+                </div>
+              </div>
+              <div class="studio-preview">
+                <h3>Approved Output & Verification</h3>
+                <div class="doc-output-box" id="doc-output-box">
+                  Select an action above to generate verified documents.
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 5: Extension & Desktop Hub -->
+        <section class="tab-pane" id="tab-extension">
+          <div class="extension-hub-card">
+            <div class="hub-header">
+              <h2>⚡ ATS Autofill Extension & Desktop Integration</h2>
+              <div class="status-pill connected" id="ext-readiness-pill">Ready to Launch</div>
+            </div>
+            <p>The JobHunter Companion extension detects ATS job application forms in real-time, autofills your verified profile in 1-click, and answers custom screening questions.</p>
+
+            <div class="hub-grid">
+              <div class="hub-box">
+                <h3>🚀 1-Click Automated Browser Launch</h3>
+                <p>Launch your installed Chromium browser with the extension pre-loaded:</p>
+                <div class="browser-launch-actions" id="browser-launch-actions">
+                  <button class="btn btn-primary btn-large" id="btn-launch-browser-auto">Launch Edge / Chrome with Copilot</button>
+                </div>
+                <div class="detected-browsers-list" id="detected-browsers-list">
+                  <h4>Detected Chromium Browsers:</h4>
+                  <ul id="browsers-ul"></ul>
+                </div>
+              </div>
+
+              <div class="hub-box">
+                <h3>📂 Manual / Developer Setup</h3>
+                <p>To load the extension permanently in Developer Mode:</p>
+                <ol class="setup-steps">
+                  <li>Open <code>chrome://extensions</code> or <code>edge://extensions</code> in your browser.</li>
+                  <li>Enable <strong>Developer Mode</strong> (toggle in top right).</li>
+                  <li>Click <strong>Load unpacked</strong>.</li>
+                  <li>Select the <code>extension</code> folder in this project.</li>
+                </ol>
+                <button class="btn btn-secondary" id="btn-copy-ext-path">📋 Copy Extension Path</button>
+                <button class="btn btn-secondary" id="btn-open-ext-mgr">📂 Open Extension Manager</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
