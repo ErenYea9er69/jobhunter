@@ -113,3 +113,4 @@
 - [ ] Test the MCP server locally with standard stdio handshake (JSON-RPC `initialize`, `tools/list`).
 - [ ] Test running `uvx --from . jobhunter-mcp --check` from a clean temporary directory outside the repo.
 - [ ] Verify `~/.jobhunter` directory creation and that no errors occur.
+

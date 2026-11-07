@@ -13,7 +13,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from . import (ats, company_directory, config, db, evidence, exporters, interview, pipeline, preferences,
                refit, regions, screening, source_registry, sources, tracker, workspace)
