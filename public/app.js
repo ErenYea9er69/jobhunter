@@ -516,6 +516,40 @@
       return;
     }
 
+    if (kind === "linkedin-founder-dm") {
+      const founderName = document.getElementById("doc-input-founder-name")?.value || "";
+      const founderAngle = document.getElementById("doc-input-founder-angle")?.value || "scale_velocity";
+
+      const res = await apiPost("/api/outreach/linkedin-founder", {
+        job: { title: jobTitle, company: company, description: desc },
+        founder_name: founderName,
+        angle: founderAngle,
+      });
+
+      if (!res) {
+        if (previewContainer) previewContainer.textContent = "Error generating LinkedIn founder outreach.";
+        return;
+      }
+
+      state.currentLinkedInOutreach = res;
+
+      if (printBtn) printBtn.style.display = "none";
+      if (toggleBtn) toggleBtn.style.display = "none";
+      if (atsBadge) {
+        atsBadge.style.display = "inline-block";
+        atsBadge.textContent = `${res.connection_note_length} / 300 chars`;
+      }
+
+      if (qaBadge) {
+        const verdict = res.review_note?.verdict || "PASS";
+        qaBadge.textContent = `QA: ${verdict.toUpperCase()}`;
+        qaBadge.className = `qa-badge ${verdict.toLowerCase() === "pass" ? "pass" : "warn"}`;
+      }
+
+      renderLinkedInFounderContent(res);
+      return;
+    }
+
     if (kind === "cover-letter" || kind === "tailor-resume") {
       const res = await apiPost("/api/documents/job-package", {
         job: { title: jobTitle, company: company, description: desc },
@@ -688,6 +722,55 @@
       const quotedBody = encodeURIComponent(state.currentFounderOutreach.body || "");
       openGmailBtn.href = `https://mail.google.com/mail/?view=cm&fs=1&to=${quotedTo}&su=${quotedSu}&body=${quotedBody}`;
     }
+  }
+
+  function renderLinkedInFounderContent(data) {
+    const previewContainer = document.getElementById("doc-rendered-body");
+    if (!previewContainer || !data) return;
+
+    previewContainer.innerHTML = `
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--text-muted);">LinkedIn Connection Request Note (&lt;300 chars limit):</span>
+          <span style="font-size:12px;font-family:var(--font-mono);color:var(--primary-text);font-weight:700;">${data.connection_note_length} / 300 chars</span>
+        </div>
+        <div style="line-height:1.7;white-space:pre-wrap;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);font-size:13px;" id="linkedin-rendered-note">${escapeHtml(data.connection_note)}</div>
+        <button class="btn btn-secondary btn-sm" id="btn-copy-linkedin-note" style="margin-top:8px;">
+          Copy Connection Note
+        </button>
+      </div>
+
+      <hr style="margin:14px 0;border-color:var(--border);">
+
+      <div style="margin-top:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--text-muted);">Direct InMail / Message (${data.inmail_word_count} words):</span>
+          <span style="font-size:11px;color:var(--text-muted);">${escapeHtml(data.inmail_subject)}</span>
+        </div>
+        <div style="line-height:1.75;white-space:pre-wrap;padding:14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);font-size:13px;" id="linkedin-rendered-inmail">${escapeHtml(data.inmail_body)}</div>
+        <button class="btn btn-secondary btn-sm" id="btn-copy-linkedin-inmail" style="margin-top:8px;">
+          Copy InMail Pitch
+        </button>
+      </div>
+    `;
+
+    document.getElementById("btn-copy-linkedin-note")?.addEventListener("click", () => {
+      navigator.clipboard.writeText(data.connection_note || "");
+      const b = document.getElementById("btn-copy-linkedin-note");
+      if (b) {
+        b.textContent = "✓ Copied Note";
+        setTimeout(() => (b.textContent = "Copy Connection Note"), 2000);
+      }
+    });
+
+    document.getElementById("btn-copy-linkedin-inmail")?.addEventListener("click", () => {
+      navigator.clipboard.writeText(data.inmail_body || "");
+      const b = document.getElementById("btn-copy-linkedin-inmail");
+      if (b) {
+        b.textContent = "✓ Copied InMail";
+        setTimeout(() => (b.textContent = "Copy InMail Pitch"), 2000);
+      }
+    });
   }
 
   // ---------------------------------------------------------------- TAB 4: PROFILES
@@ -1004,7 +1087,7 @@
 
     // Document Generation Trigger
     document.getElementById("doc-type-select")?.addEventListener("change", (e) => {
-      const isFounder = e.target.value === "founder-cold-email";
+      const isFounder = e.target.value === "founder-cold-email" || e.target.value === "linkedin-founder-dm";
       const founderBox = document.getElementById("doc-founder-fields");
       if (founderBox) founderBox.style.display = isFounder ? "block" : "none";
     });

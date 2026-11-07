@@ -376,6 +376,19 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             res = founder_outreach.send_cold_email(to_email, subject, mail_body, company=company, job_title=job_title)
             return self._send_json(200, envelope(status="ok" if res.get("success") else "error", data=res))
 
+        if path in ("/api/outreach/linkedin-founder", "/api/extension/founder-outreach"):
+            job_info = body.get("job") or body
+            job_id = job_info.get("job_id", "")
+            job, profile = h.job_and_profile(job_id, job_info.get("title", ""), job_info.get("company", ""), job_info.get("description", ""))
+            res = founder_outreach.generate_linkedin_founder_outreach(
+                job,
+                profile,
+                founder_name=body.get("founder_name", ""),
+                founder_headline=body.get("founder_headline", ""),
+                angle=body.get("angle", "scale_velocity"),
+            )
+            return self._send_json(200, envelope(status="ok", data=res))
+
         if path == "/api/email-finder/find":
             name = body.get("name", "")
             company = body.get("company", "")

@@ -165,3 +165,15 @@ class TestHttpdHandler(unittest.TestCase):
         self.assertTrue(res["success"])
         self.assertEqual(res["data"]["primary_email"], "guillermo@vercel.com")
         self.assertEqual(res["data"]["domain"], "vercel.com")
+
+    def test_linkedin_founder_endpoint(self):
+        status, res = self._call("POST", "/api/outreach/linkedin-founder", {
+            "founder_name": "Paul Copplestone",
+            "company": "Supabase",
+            "description": "PostgreSQL and Go",
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(res["success"])
+        self.assertIn("connection_note", res["data"])
+        self.assertLessEqual(len(res["data"]["connection_note"]), 300)
+        self.assertIn("inmail_body", res["data"])

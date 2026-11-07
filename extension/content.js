@@ -20,6 +20,7 @@
 
   function detectATS() {
     const host = window.location.hostname.toLowerCase();
+    if (host.includes("linkedin.com")) return "linkedin";
     if (host.includes("greenhouse.io") || host.includes("grnh.se")) return "greenhouse";
     if (host.includes("lever.co")) return "lever";
     if (host.includes("ashbyhq.com") || document.querySelector("[class*='ashby' i]")) return "ashby";
@@ -307,6 +308,7 @@
     const flyout = document.createElement("div");
     flyout.id = "jh-flyout-container";
     flyout.className = "jh-collapsed";
+    const isLinkedIn = extState.platform === "linkedin";
     flyout.innerHTML = `
       <div class="jh-header">
         <div class="jh-header-left">
@@ -318,8 +320,8 @@
       <div class="jh-body">
         <div class="jh-card">
           <div class="jh-field-row">
-            <span>ATS Detected:</span>
-            <span class="jh-field-val">${extState.platform.toUpperCase()}</span>
+            <span>Mode:</span>
+            <span class="jh-field-val">${isLinkedIn ? "LINKEDIN OUTREACH" : extState.platform.toUpperCase()}</span>
           </div>
           <div class="jh-field-row">
             <span>Candidate:</span>
@@ -330,10 +332,16 @@
             <span class="jh-field-val" id="jh-res-val">${escapeHtml(extState.activeResume || "Software Engineer")}</span>
           </div>
         </div>
-        <button class="jh-action-btn" id="jh-autopilot-btn" style="background:#047857;color:#fff;">⚡ Auto-Pilot (Fill & Submit)</button>
-        <button class="jh-action-btn" id="jh-autofill-btn">📝 1-Click Autofill Form</button>
-        <button class="jh-action-btn" id="jh-solve-btn">🤖 Answer Screening Questions</button>
-        <div id="jh-fill-status" style="font-size:12px;text-align:center;min-height:16px;"></div>
+        ${isLinkedIn ? `
+          <button class="jh-action-btn" id="jh-gen-note-btn" style="background:#047857;color:#fff;">⚡ Generate &lt;300 Char Note</button>
+          <button class="jh-action-btn" id="jh-gen-inmail-btn">📝 Generate Direct InMail</button>
+          <button class="jh-action-btn" id="jh-insert-note-btn" style="display:none;background:#18181b;color:#34d399;border:1px solid #047857;">Insert into LinkedIn Note</button>
+        ` : `
+          <button class="jh-action-btn" id="jh-autopilot-btn" style="background:#047857;color:#fff;">⚡ Auto-Pilot (Fill & Submit)</button>
+          <button class="jh-action-btn" id="jh-autofill-btn">📝 1-Click Autofill Form</button>
+          <button class="jh-action-btn" id="jh-solve-btn">🤖 Answer Screening Questions</button>
+        `}
+        <div id="jh-fill-status" style="font-size:12px;text-align:left;min-height:16px;margin-top:6px;"></div>
       </div>
       <div class="jh-footer">
         <span>Protected Local Engine</span>
@@ -345,9 +353,71 @@
     document.getElementById("jh-close-btn")?.addEventListener("click", () => {
       flyout.classList.add("jh-collapsed");
     });
-    document.getElementById("jh-autopilot-btn")?.addEventListener("click", runAutoPilot);
-    document.getElementById("jh-autofill-btn")?.addEventListener("click", performAutofill);
-    document.getElementById("jh-solve-btn")?.addEventListener("click", solveScreeningQuestions);
+
+    if (isLinkedIn) {
+      async function fetchLinkedInPitch(isNoteOnly) {
+        const statusEl = document.getElementById("jh-fill-status");
+        if (statusEl) statusEl.textContent = "Analyzing profile & synthesizing grounded pitch...";
+
+        const nameEl = document.querySelector("h1.text-heading-xlarge") || document.querySelector("h1");
+        const headlineEl = document.querySelector(".text-body-medium") || document.querySelector("div.pv-text-details__left-panel");
+        const founderName = nameEl ? nameEl.innerText.trim() : "";
+        const founderHeadline = headlineEl ? headlineEl.innerText.trim() : "";
+
+        try {
+          const res = await fetch(`${BACKEND_BASE}/api/extension/founder-outreach`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              founder_name: founderName,
+              founder_headline: founderHeadline,
+              company: window.location.pathname.split("/")[2] || "Company",
+            }),
+          });
+          const env = await res.json();
+          const data = env.data || env;
+          if (data && data.connection_note) {
+            extState.lastLinkedInNote = data.connection_note;
+            const insertBtn = document.getElementById("jh-insert-note-btn");
+            if (insertBtn) insertBtn.style.display = "block";
+
+            if (isNoteOnly) {
+              if (statusEl) {
+                statusEl.innerHTML = `<strong>Note (${data.connection_note_length}/300 chars):</strong><div style="background:#18181b;padding:8px;border-radius:4px;margin-top:4px;font-size:11px;line-height:1.5;">${escapeHtml(data.connection_note)}</div>`;
+              }
+            } else {
+              if (statusEl) {
+                statusEl.innerHTML = `<strong>InMail (${data.inmail_word_count} words):</strong><div style="background:#18181b;padding:8px;border-radius:4px;margin-top:4px;font-size:11px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(data.inmail_body)}</div>`;
+              }
+            }
+          }
+        } catch (e) {
+          if (statusEl) statusEl.textContent = "Error generating outreach. Ensure JobHunter daemon is running on :8765.";
+        }
+      }
+
+      document.getElementById("jh-gen-note-btn")?.addEventListener("click", () => fetchLinkedInPitch(true));
+      document.getElementById("jh-gen-inmail-btn")?.addEventListener("click", () => fetchLinkedInPitch(false));
+      document.getElementById("jh-insert-note-btn")?.addEventListener("click", () => {
+        if (!extState.lastLinkedInNote) return;
+        const textarea = document.querySelector("textarea[name='message']") || document.querySelector("textarea#custom-message") || document.querySelector("textarea");
+        if (textarea) {
+          textarea.focus();
+          textarea.value = extState.lastLinkedInNote;
+          dispatchEvents(textarea);
+          const statusEl = document.getElementById("jh-fill-status");
+          if (statusEl) statusEl.textContent = "✓ Inserted into LinkedIn note input!";
+        } else {
+          navigator.clipboard.writeText(extState.lastLinkedInNote);
+          const statusEl = document.getElementById("jh-fill-status");
+          if (statusEl) statusEl.textContent = "✓ Copied to clipboard! (Modal textarea not open yet)";
+        }
+      });
+    } else {
+      document.getElementById("jh-autopilot-btn")?.addEventListener("click", runAutoPilot);
+      document.getElementById("jh-autofill-btn")?.addEventListener("click", performAutofill);
+      document.getElementById("jh-solve-btn")?.addEventListener("click", solveScreeningQuestions);
+    }
   }
 
   function escapeHtml(str) {

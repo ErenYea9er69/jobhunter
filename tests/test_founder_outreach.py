@@ -93,3 +93,39 @@ def test_gmail_draft_and_send_unconfigured(tmp_path, monkeypatch):
     send_res = founder_outreach.send_cold_email("founder@startup.io", "Quick note", "Hello")
     assert send_res["success"] is False
     assert send_res["reason"] == "not_configured"
+
+
+def test_generate_linkedin_founder_outreach():
+    profile = {
+        "name": "Sarah Connor",
+        "target_title": "Senior Backend Developer",
+        "skills": ["Go", "Kubernetes", "PostgreSQL"],
+        "experience": [
+            {
+                "company": "CloudScale",
+                "role": "Backend Engineer",
+                "bullets": ["Architected distributed caching layers reducing DB load by 50%."],
+            }
+        ],
+    }
+    job = {
+        "company": "Supabase",
+        "title": "Database Engineer",
+        "description": "Building real-time Postgres tooling with Go and Kubernetes.",
+    }
+
+    res = founder_outreach.generate_linkedin_founder_outreach(
+        job,
+        profile,
+        founder_name="Paul Copplestone",
+        founder_headline="Co-Founder & CEO at Supabase",
+    )
+
+    assert res["company"] == "Supabase"
+    assert "Hi Paul," in res["connection_note"]
+    assert res["connection_note_length"] <= 300
+    assert len(res["connection_note"]) <= 300
+    assert res["inmail_word_count"] < 130
+    assert "Supabase" in res["inmail_body"]
+    assert res["review_note"]["verdict"].lower() in ("pass", "warn")
+    assert res["review_inmail"]["verdict"].lower() in ("pass", "warn")

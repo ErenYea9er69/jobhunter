@@ -192,6 +192,77 @@ def generate_founder_cold_email(
     }
 
 
+def generate_linkedin_founder_outreach(
+    job: Dict[str, Any],
+    profile: Dict[str, Any],
+    founder_name: str = "",
+    founder_headline: str = "",
+    angle: str = "scale_velocity",
+) -> Dict[str, Any]:
+    """Generate high-converting LinkedIn founder outreach: <300 char connection note and direct InMail."""
+    company = job.get("company") or "your team"
+    cand_name = profile.get("name") or "Candidate"
+    first_name_cand = _first_name(cand_name)
+    fname_founder = _first_name(founder_name) if founder_name else ""
+    cand_skills = profile.get("skills", [])
+    cand_target_title = profile.get("target_title") or "Software Engineer"
+
+    # Derive matched skills
+    desc = job.get("description", "")
+    wanted = sk.extract(desc) if desc else []
+    matched = [s for s in wanted if s in cand_skills]
+    key_skill = matched[0] if matched else (cand_skills[0] if cand_skills else "full-stack engineering")
+
+    key_bullet = _extract_key_bullet(profile, matched or cand_skills[:3])
+    # For <300 chars, shorten bullet if needed
+    if len(key_bullet) > 90:
+        key_bullet = key_bullet[:85].rsplit(" ", 1)[0] + "..."
+
+    greeting = f"Hi {fname_founder}," if fname_founder else "Hi,"
+
+    # 1. Connection Note (<300 characters strictly)
+    if key_bullet:
+        note = f"{greeting} loved seeing how {company} is scaling. As an engineer specializing in {key_skill}, I recently focused on: {key_bullet}. Would love to connect and follow your journey!"
+    else:
+        note = f"{greeting} loved seeing how {company} is scaling. As an engineer specializing in {key_skill}, I love building high-ownership features end-to-end. Would love to connect and follow your journey!"
+
+    # Guarantee < 300 characters
+    if len(note) > 298:
+        note = note[:260].rsplit(".", 1)[0] + ". Would love to connect and follow your journey!"
+        if len(note) > 300:
+            note = note[:295].rsplit(" ", 1)[0] + "..."
+
+    # 2. Direct InMail / Message (80-120 words)
+    inmail_subject = f"engineering at {company} ({first_name_cand})"
+    inmail_hook = f"Reaching out directly because I've been following {company}'s roadmap with huge interest. Given how fast your team is shipping, I know every engineering hire needs to own systems independently."
+    inmail_proof = f"As a {cand_target_title}, I build with {key_skill}, focusing on high autonomy from architectural schema design to production deployment."
+    inmail_cta = "Are you open to a brief sync next week to see if we might collaborate, or prefer I send over a quick code sample?"
+    inmail_body = f"{greeting}\n\n{inmail_hook}\n\n{inmail_proof}\n\n{inmail_cta}\n\nBest,\n{cand_name}"
+
+    # QA Verification
+    review_note = qa.review_document(note, kind="outreach", profile=profile, job=job)
+    review_inmail = qa.review_document(inmail_body, kind="outreach", profile=profile, job=job)
+
+    return {
+        "company": company,
+        "founder_name": founder_name,
+        "connection_note": note,
+        "connection_note_length": len(note),
+        "inmail_subject": inmail_subject,
+        "inmail_body": inmail_body,
+        "inmail_word_count": len(inmail_body.split()),
+        "key_skill": key_skill,
+        "review_note": {
+            "verdict": review_note.verdict,
+            "findings": review_note.findings,
+        },
+        "review_inmail": {
+            "verdict": review_inmail.verdict,
+            "findings": review_inmail.findings,
+        },
+    }
+
+
 def save_draft_to_gmail(
     to_email: str,
     subject: str,
