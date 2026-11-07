@@ -121,7 +121,8 @@ def register_team(mcp: Any, tool: Callable, registry: dict[str, Callable], store
         """Hand in a draft you wrote from a work order. The Reviewer checks it and approves, edits or rejects it.
 
         Unsupported lines are removed and the rest is checked again. If the draft passes, it is saved as an approved file.
-        Show the client only an approved draft, together with any warnings.
+        Show the client only an approved draft, together with any warnings. When the review carries a robotic_style
+        warning, rewrite the listed phrases with facts from the resume and submit the draft again.
 
         Args:
             mission_id: The mission id from the work order.

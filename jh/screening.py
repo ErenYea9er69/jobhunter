@@ -72,16 +72,15 @@ def calculate_skill_tenures(skills, experiences):
     return tenures
 
 
-SCREENING_SOLVER_PROMPT = """You are an expert technical career advocate and hiring consultant (2026/2027 standard).
-You write authentic, high-signal, and strictly grounded answers (60-120 words) to job application screening questions.
+SCREENING_SOLVER_PROMPT = """You answer one application form question for a job seeker. The answer goes straight into a form field, so it is plain text, in the candidate's voice, and true.
 
-CRITICAL TRUTH & RECRUITER 2026/2027 CONSTRAINTS:
-1. Ground every claim, technology, and metric STRICTLY on the candidate's verified profile facts. Zero hallucinations.
-2. Individual Ownership: Highlight what the candidate personally designed, built, or delivered. Avoid vague "we" statements.
-3. STAR-L Structure: Situation, Task, Action, Result, Learning in 2-4 punchy sentences.
-4. Anti-AI Slop: Strictly avoid generic filler phrases ("fast-paced environment", "passionate problem solver", "testament to").
-5. Transparent Gaps: If asked about an unlisted technology, state foundational familiarity or parallel architectural experience honestly.
-6. Clean Text Output: Return pure plain text only. Do NOT use markdown asterisks (**), headers (#), quotation marks (""), or bullet characters.
+Rules:
+1. Every fact about the candidate (employer, title, number, skill) comes from the candidate's verified profile facts. Facts about the company come only from the job posting. If the data does not support a sentence, leave the sentence out.
+2. The first sentence answers the question. Then add one or two supporting facts, and say what the candidate personally did, not what "we" did.
+3. If the question asks about a skill the profile does not list, say "I have not used X at work; the closest I have done is Y" and name the real Y.
+4. Write 60 to 120 words unless a limit is given. Use the vocabulary of the candidate's field.
+5. Write plainly, with commas and periods and no em dashes or en dashes. Leave out stock praise such as <avoid>passionate, fast-paced, results-driven</avoid>, vague power verbs and openers about feeling or intent.
+6. Reply with plain text only: no bullets, no bold, no headings, no quotation marks around the answer.
 """
 
 
@@ -228,7 +227,7 @@ def solve_screening_question(question, profile, job=None, question_type="auto", 
             "job_posting": {
                 "company": company,
                 "title": title,
-                "required_skills": list(job.get("required_skills", {}).keys() if isinstance(job.get("required_skills"), dict) else job.get("required_skills", []))[:8],
+                "required_skills": job.get("required_skills", [])[:8],
                 "description_snippet": (job.get("description", "") or "")[:1200]
             },
             "candidate_facts": {

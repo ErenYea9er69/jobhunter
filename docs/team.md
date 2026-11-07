@@ -116,6 +116,7 @@ Documents (resume, cover letter, screening answers, recruiter messages), sentenc
 - **Employer facts.** "I admire Adyen's 2024 acquisition" is a warning unless the posting says so.
 - Resume header lines are checked against the profile: employer, title, start year, degree. Placeholders such as `[Company Name]` block.
 - Contact lines and date ranges are handled so they are not misread as claims.
+- **Style.** Machine-sounding patterns (stock openers like "I am excited to", hype, vague power verbs, the "not just X, but Y" frame, dashes, emoji in a form) are reported as a `robotic_style` warning that quotes each phrase and says what to write instead. It never blocks, because a genuine sentence can contain a flagged word. The rules and their reasons are in `docs/prompts.md`.
 
 What happens to a blocked draft: unsupported sentences are removed and the rest is checked again. If removal would delete more than a third of the draft, the draft is rejected, not patched, because what is left would no longer be what was written.
 
@@ -139,7 +140,7 @@ A document the deterministic engine writes is plain. When no model key is config
 
 ## Tune the prompts
 
-Role prompts are files in `prompts/team/`. Put a file with the same name in `<workspace>/prompts/team/` to replace one. `ceo_team(with_prompts=true)` shows what is in use.
+Role prompts are files in `prompts/team/`. The playbooks the Writer and Coach follow are in `prompts/`, and the shared style guide is `prompts/voice.md`. Put a file with the same name in `<workspace>/prompts/team/` to replace one. `ceo_team(with_prompts=true)` shows what is in use.
 
 ## Privacy
 

@@ -13,21 +13,6 @@ pip install -r requirements.txt
 python mcp_server.py --check        # starts the server, lists the tools, exits
 ```
 
-### Web Dashboard & ATS Browser Extension
-
-You can also run JobHunter as an interactive local web dashboard and Chrome/Edge browser extension:
-
-```bash
-python desktop.py
-```
-
-This starts the local HTTP daemon on `http://127.0.0.1:8765`, opens the modern 5-tab dashboard (`public/index.html`), and automatically launches your installed Chromium browser (Edge, Chrome, or Brave) with the ATS Autofill extension pre-loaded.
-
-- **Web Dashboard**: Interactive Radar job search, candidate profile manager, 5-stage Kanban application tracker (`saved`, `applied`, `interview`, `offer`, `rejected`), and truth-verified Document Studio.
-- **ATS Browser Extension**: Detects Greenhouse, Lever, Workday, Ashby, BambooHR, and SmartRecruiters in real-time, autofilling candidate information in 1-click and answering custom screening questions verified by Reviewer QA.
-
----
-
 Put a PDF, DOCX or TXT resume in your workspace folder (or in `resumes/`), then add the server to your client. Examples for each client are in `docs/mcp-setup/`.
 
 ```json
@@ -121,6 +106,7 @@ Every tool returns one envelope: `status` (`ok`, `partial`, `error`), `success`,
 - The Reviewer does not trust the employee who made the work. It checks every job (fields, link, date, country, duplicates, matched skills, scams, text aimed at your AI), reads live posting pages, and checks every document sentence against your resume. Invented employers, titles, degrees, certifications, skills, numbers and awards are removed or rejected. Details in `docs/team.md`.
 - The Reviewer is measured. `python -m jh.team.evals` scores it on fixed cases, and `docs/evals.md` reports the numbers and how far to trust them. The honest estimate on text it has never seen is lower than the scores on the cases it was built with.
 - The CEO's report comes from tool results only, and every job and document names the call that produced it.
+- The prompts follow their own rules. A linter checks every prompt for dashes, capital-letter shouting, persona boasting and invented statistics, and a test checks that each playbook asks the model for the keys the code reads. Drafts are scanned for machine-sounding phrases, and the Reviewer warns about them. See `docs/prompts.md`.
 - When a search finds nothing, the CEO widens it in steps and then says so. It does not fill the gap.
 - Generated text uses only facts the resume supports. `get_evidence` lists them.
 - `verify_draft` checks any text against that evidence and flags unsupported claims. `tailor_resume`, `cover_letter` and `prepare_application` run the same check and return the result.
@@ -155,6 +141,7 @@ The suite runs offline. A fake network serves fixtures that pin each vendor's re
 - Salary comparison does not convert currencies.
 - The CEO's request router is rule-based. It reads English and French, and a few Arabic words. On phrasings it had never seen, it was right about two times in three. An unclear request makes the CEO ask. The AI should pass `hints.intent` and `hints.reference` so nothing is guessed.
 - The Reviewer is also rules, not a model. It was built to catch what language models tend to invent. A new kind of fabrication can get through. Facts about the employer beyond the posting cannot be checked at all, so they are flagged.
+- When no model writes the text, the code's own templates do, and some still contain stock phrases (the outreach, follow-up and screening templates). The Reviewer flags them. They are listed in `docs/prompts.md`.
 - Only the top five jobs of a search get a live link check. Ask the CEO to recheck one before you apply.
 - Several scrapers return an empty list instead of an error when blocked, so `source_health` shows them as ok with zero results.
 - Reading some boards (LinkedIn, Indeed, ZipRecruiter and others) uses browser-like requests. See `docs/data-policy.md` and use `disabled_sources` if you do not want that.

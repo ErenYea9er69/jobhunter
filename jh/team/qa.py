@@ -25,7 +25,7 @@ from typing import Any, Callable, Optional
 
 from .. import dedup, evidence, regions, source_policy
 from . import claims as claims_mod
-from . import safety
+from . import safety, voice
 from ..util import html_to_text, http_get_text, parse_date
 
 BLOCK, WARN, INFO = "block", "warn", "info"
@@ -364,6 +364,13 @@ def _review_document(text: str, *, kind: str, profile: Optional[dict], job: Opti
     if blocks or bad_headers:
         rev.adjusted["unsupported_lines"] = bad_headers + [c.sentence for c in blocks]
     rev.adjusted["grounding"] = {"supported": g.get("supported"), "unsupported": g.get("unsupported"), "needs_review": g.get("needs_review")}
+
+    style_kind = {"resume": "resume", "answer": "plain", "outreach": "plain"}.get(kind, "prose")
+    style = voice.scan(strip_contact_lines(body, profile), style_kind)
+    if style:
+        rev.add(WARN, "robotic_style", f"{len(style)} machine-sounding pattern(s): {voice.summarize(style)}. Rewrite them plainly, with a fact only this candidate has.")
+        rev.adjusted["style_hits"] = [{"text": h.text, "category": h.category, "instead": h.plain} for h in style[:12]]
+        rev.adjusted["style_density"] = voice.density(style, body)
 
     if kind == "cover_letter":
         words = len(body.split())

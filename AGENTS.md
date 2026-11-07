@@ -20,6 +20,7 @@ Code that these regions call must keep its signature: `Source`, `make_job`, `htt
 - Tools only. Do not register MCP prompts. The role prompts in `prompts/team/` are files, not MCP prompts.
 - Every specialist tool belongs to exactly one employee in `jh/team/roles.py`. `tests/test_team.py` fails otherwise.
 - `tests/test_evals.py` is a gate. A change to `jh/team/qa.py`, `claims.py`, `safety.py` or `router.py` must not lower any score in `python -m jh.team.evals`. When a real fabrication or phrasing gets through, add it to `jh/team/evals.py` with a genuine counterpart, watch the test fail, then fix.
+- Prompts are code. Keep the first `markdown` block of a playbook as its only system prompt, keep the keys the code reads, keep the `<voice>` block identical to `prompts/voice.md`, and quote bad examples only inside `<robotic>`, `<voice>` or `<avoid>`. `python -m jh.team.voice <file>` lints a prompt, and `tests/test_prompts.py` and `tests/test_prompt_contract.py` are gates.
 - Anything the team shows the client must pass through `jh/team/qa.py`. Do not report a job or a document that skipped the Reviewer.
 - The Reviewer removes a job only on clear evidence (HTTP 404 or 410, expired job data, "no longer available" text). A blocked or script-heavy page is "not confirmed", never "dead".
 - Every tool returns the envelope from `jh/mcp_helpers.py`. Raise `ToolError` for problems the caller must fix.

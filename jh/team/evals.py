@@ -275,6 +275,76 @@ ROUND2_JOBS: list[tuple[str, str, dict, str]] = [
 ]
 
 
+# ---------------------------------------------------------------------------------------------
+# Style: does the scanner find machine-sounding text, and leave plain text alone? Each case is
+# (id, category, kind, text, expect) with expect "flag" or "clean".
+
+STYLE: list[tuple[str, str, str, str, str]] = [
+    ("S01", "opener and stock praise", "prose", "I am thrilled to apply for the Data Analyst position. I am a results-driven professional with a proven track record of leveraging data.", "flag"),
+    ("S02", "grand framing", "prose", "In today's fast-paced digital landscape, companies need dynamic team players. I am passionate about innovation.", "flag"),
+    ("S03", "false familiarity", "plain", "I came across your profile and was impressed by your work. I would love to connect!", "flag"),
+    ("S04", "power verbs", "prose", "Spearheaded cross-functional initiatives, utilizing cutting-edge tools to deliver seamless, robust solutions.", "flag"),
+    ("S05", "not just X but Y", "prose", "This role is not just a job, but a chance to make a real impact.", "flag"),
+    ("S06", "question opener", "prose", "Are you looking for a candidate who can hit the ground running? Look no further.", "flag"),
+    ("S07", "em dash", "prose", "I built the billing service \u2014 and cut costs by a third \u2014 while mentoring two juniors.", "flag"),
+    ("S08", "hollow closer", "prose", "Thank you for your time and consideration. I look forward to the opportunity to discuss how my skills align with your needs.", "flag"),
+    ("S09", "filler follow-up", "email", "I just wanted to circle back and touch base on my application.", "flag"),
+    ("S10", "unearned fit claim", "prose", "I believe I would be a great fit for this role and a strong asset to your innovative team.", "flag"),
+    ("S11", "vague quantity", "prose", "My experience spans numerous projects across a wide range of industries, resulting in significant improvements.", "flag"),
+    ("S12", "markdown and emoji in a form", "plain", "**Key strengths:** \u2022 Leadership \u2022 Communication \U0001F680", "flag"),
+    ("S13", "whether you are", "prose", "Whether you're scaling a startup or optimizing an enterprise, I deliver results.", "flag"),
+    ("S14", "summary closer", "prose", "To summarize, I am a passionate and driven engineer who thrives in fast-paced environments.", "flag"),
+    ("S15", "synergy", "prose", "I am eager to leverage my skills to drive synergies.", "flag"),
+    ("S16", "stacked framing", "prose", "At the heart of my approach is a testament to collaboration in an ever-evolving landscape.", "flag"),
+    ("S17", "en dash range", "prose", "I need 150\u2013240 words for the letter.", "flag"),
+    ("C01", "plain fact", "prose", "I rebuilt the weekly dispatch report in SQL. Monday planning dropped from two hours to forty minutes.", "clean"),
+    ("C02", "plain fact", "prose", "At Vermeg I cut PostgreSQL query time by 45% by redesigning indexes.", "clean"),
+    ("C03", "plain fact", "prose", "I am applying for the accountant role. I closed the month in four days instead of seven.", "clean"),
+    ("C04", "honest gap", "prose", "I have not used SAP. I have used Oracle ERP for three years and would learn SAP on the job.", "clean"),
+    ("C05", "plain history", "prose", "My manager asked me to take over the payroll run in March, and I ran it for two years.", "clean"),
+    ("C06", "finance leverage", "prose", "The company's financial leverage ratio rose to 2.1 after the buyout.", "clean"),
+    ("C07", "statistical robust", "prose", "I used robust standard errors in the regression and reported the results.", "clean"),
+    ("C08", "teaching fact", "prose", "I taught maths to 28 students aged 12 to 14 and raised pass rates from 61% to 78%.", "clean"),
+    ("C09", "french plain", "prose", "Je suis ing\u00e9nieur logiciel avec six ans d'exp\u00e9rience en Python.", "clean"),
+    ("C10", "logistics", "email", "Please find my CV attached. I can start on 1 March and my notice period is one month.", "clean"),
+    ("C11", "compound hyphens", "prose", "Lead engineer for a 3-person team building a mobile app in React Native.", "clean"),
+    ("C12", "list of three facts", "prose", "I speak French, Arabic and English; I wrote the user manual in all three.", "clean"),
+    ("C13", "plain offer", "prose", "I would be glad to talk about how the dispatch report works.", "clean"),
+    ("C14", "dynamic programming", "prose", "Used a dynamic programming approach to cut the planner's run time from 40 to 6 minutes.", "clean"),
+    ("C15", "resume header", "resume", "Software Engineer - Vermeg, Tunis, Tunisia  [2022-01 - Present]", "clean"),
+    ("C16", "restaurant", "prose", "I managed a fast food restaurant team of 12 and cut waste by a fifth.", "clean"),
+]
+
+
+# Style, second round. Written fresh and run once before any change: it flagged 10 of 12 machine-sounding texts and
+# flagged none of 10 plain ones. The two misses ("wealth of experience", "seasoned professional", "dedicated, motivated,
+# enthusiastic") were added as general patterns, so the set now stands as a regression test.
+STYLE_ROUND2: list[tuple[str, str, str, str, str]] = [
+    ("BS01", "opener", "prose", "I'm excited about the opportunity to bring my skills to your esteemed organization.", "flag"),
+    ("BS02", "stock praise", "prose", "With a track record of driving results, I am a dedicated, motivated, and enthusiastic professional.", "flag"),
+    ("BS03", "thrive", "prose", "I thrive in dynamic environments and love tackling complex challenges.", "flag"),
+    ("BS04", "frame", "prose", "It's not about the tools, it's about the mindset.", "flag"),
+    ("BS05", "passionate", "prose", "Passionate about technology and committed to excellence, I bring a wealth of experience.", "flag"),
+    ("BS06", "closer", "prose", "Please do not hesitate to contact me at your earliest convenience.", "flag"),
+    ("BS07", "power verb", "prose", "I successfully orchestrated the migration, ensuring seamless delivery.", "flag"),
+    ("BS08", "here's the thing", "prose", "Here's the thing: great engineers ship.", "flag"),
+    ("BS09", "leverage unlock", "prose", "I leverage AI to optimize workflows and unlock value.", "flag"),
+    ("BS10", "seasoned", "prose", "As a seasoned professional with a wealth of experience, I am well-positioned to add value.", "flag"),
+    ("BS11", "em dash", "email", "Thanks for the update \u2014 I will send the documents tomorrow.", "flag"),
+    ("BS12", "exclamation", "email", "Looking forward to hearing from you!", "flag"),
+    ("BC01", "plain", "prose", "I wrote the integration tests for the payments API and fixed 14 flaky ones.", "clean"),
+    ("BC02", "dynamic range", "prose", "The dynamic range of the sensor limited the first design.", "clean"),
+    ("BC03", "plain", "prose", "I led a team of five through the 2022 audit and we passed with no findings.", "clean"),
+    ("BC04", "french", "prose", "Je souhaite postuler au poste de technicien et je suis disponible d\u00e8s le 1er mars.", "clean"),
+    ("BC05", "plain", "prose", "I kept the team's budget under the 80,000 limit for three years.", "clean"),
+    ("BC06", "robust estimators", "prose", "We use robust estimators when the data has outliers.", "clean"),
+    ("BC07", "plain", "prose", "I sold hardware to small shops in Sfax and Sousse, 30 accounts in two years.", "clean"),
+    ("BC08", "leverage calculations", "prose", "The role involves leverage calculations for a lending desk.", "clean"),
+    ("BC09", "plain", "prose", "I can start on 1 March. My notice period is one month.", "clean"),
+    ("BC10", "plain", "prose", "Our monthly close used to take seven days. It now takes four.", "clean"),
+]
+
+
 def _caught(review: qa.Review, expect: str) -> bool:
     if expect == "pass":
         return not review.blocked
@@ -335,12 +405,34 @@ def run_router(cases=None) -> dict[str, Any]:
     return {"cases": n, "wrong": wrong, "accuracy": round((n - wrong) / n, 3), "failures": failures}
 
 
+def run_style(cases=None) -> dict[str, Any]:
+    from . import voice
+    cases = STYLE if cases is None else cases
+    flagged = missed = clean_ok = false_flag = 0
+    failures = []
+    for cid, cat, kind, text, expect in cases:
+        hits = voice.scan(text, kind)
+        if expect == "flag":
+            flagged += bool(hits)
+            missed += not hits
+            if not hits:
+                failures.append({"id": cid, "category": cat, "expect": "flag", "got": "clean"})
+        else:
+            clean_ok += not hits
+            false_flag += bool(hits)
+            if hits:
+                failures.append({"id": cid, "category": cat, "expect": "clean", "got": [h.text for h in hits]})
+    robotic, clean = flagged + missed, clean_ok + false_flag
+    return {"robotic": robotic, "flagged": flagged, "flag_rate": round(flagged / robotic, 3) if robotic else None,
+            "clean": clean, "false_flags": false_flag, "false_flag_rate": round(false_flag / clean, 3) if clean else None, "failures": failures}
+
+
 def run_all() -> dict[str, Any]:
     return {"documents": run_documents(), "jobs": run_jobs(), "router": run_router(),
             "heldout_documents": run_documents(cases=HELDOUT_DOCUMENTS), "heldout_jobs": run_jobs(cases=HELDOUT_JOBS),
             "heldout_router": run_router(cases=HELDOUT_ROUTER),
             "round2_documents": run_documents(cases=ROUND2_DOCUMENTS), "round2_jobs": run_jobs(cases=ROUND2_JOBS),
-            "round2_router": run_router(cases=ROUND2_ROUTER)}
+            "round2_router": run_router(cases=ROUND2_ROUTER), "style": run_style(), "style_round2": run_style(STYLE_ROUND2)}
 
 
 def main() -> None:
@@ -356,7 +448,11 @@ def main() -> None:
     r2d, r2j, r2r = res["round2_documents"], res["round2_jobs"], res["round2_router"]
     print(f"Round 2:   documents caught {r2d['caught']}/{r2d['fabrications']}, false alarms {r2d['false_alarms']}/{r2d['genuine']}; "
           f"jobs {r2j['cases'] - r2j['wrong']}/{r2j['cases']}; router {r2r['cases'] - r2r['wrong']}/{r2r['cases']}.")
-    for name in ("documents", "jobs", "router", "heldout_documents", "heldout_jobs", "heldout_router", "round2_documents", "round2_jobs", "round2_router"):
+    st = res["style"]
+    print(f"Style:     flagged {st['flagged']}/{st['robotic']} machine-sounding texts; {st['false_flags']} false flags on {st['clean']} plain texts.")
+    s2 = res["style_round2"]
+    print(f"Style 2:   flagged {s2['flagged']}/{s2['robotic']}; {s2['false_flags']} false flags on {s2['clean']} plain texts.")
+    for name in ("documents", "jobs", "router", "heldout_documents", "heldout_jobs", "heldout_router", "round2_documents", "round2_jobs", "round2_router", "style", "style_round2"):
         for f in res[name]["failures"]:
             print(f"  {name}: {json.dumps(f, ensure_ascii=False)}")
 

@@ -7,6 +7,7 @@
 - **Documents.** Texts a model might write for a letter or resume. Fabrications must be blocked (or, for claims that cannot be proven either way such as a language level, at least flagged). Genuine texts must not be blocked. Fabrications include invented employers, degrees, certifications, titles, team sizes, years, metrics, awards, talks, skills, and facts about the employer.
 - **Jobs.** Postings. Scams, prompt injection, junk titles and link tricks must be caught. Honest postings that mention fees, equipment, visas or WhatsApp in harmless ways must pass.
 - **Router.** Client phrasings in English, French and Arabic, with the intents and the job pointer they must produce.
+- **Style.** Machine-sounding text (stock openers, hype, vague power verbs, the "not just X, but Y" frame, dashes, emoji in a form) must be flagged. Plain text must not be, including technical uses of words a naive list would flag ("financial leverage", "robust standard errors", "dynamic programming").
 
 ## Results
 
@@ -18,6 +19,16 @@
 | Documents, held-out (12 fabrications, 10 genuine) | caught 4 of 12, 1 false alarm | caught 12 of 12, 0 false alarms |
 | Jobs, held-out (8) | 3 of 8 | 8 of 8 |
 | Router, held-out (25) | 5 of 25 | 25 of 25 |
+
+### Style (added in 2.4)
+
+| Set | Result |
+| --- | --- |
+| Dev (17 machine-sounding, 16 plain) | flags 17 of 17, 0 false flags |
+| Blind round, first pass (12 machine-sounding, 10 plain) | flagged 10 of 12, 0 false flags |
+| Blind round after adding the general patterns it exposed | 12 of 12, 0 false flags (now a regression set) |
+
+The scanner is a warning in the Reviewer, never a block. See `docs/prompts.md`.
 
 ## How much to trust these numbers
 

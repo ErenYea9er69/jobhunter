@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jobhunter-mcp"
-version = "2.3.0"
+version = "2.4.0"
 description = "MCP server for job search: many sources, resume-grounded scoring, truthful document tailoring, application tracking"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,5 +38,3 @@ include = ["jh*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = ["contracts", "integration", "security", "unit"]
-addopts = "--ignore=tests/contracts --ignore=tests/integration --ignore=tests/security --ignore=tests/unit --ignore=tests/test_filestore.py --ignore=tests/test_mcp_server.py --ignore=tests/test_workspace.py --ignore=tests/test_blueprint_v2.py"

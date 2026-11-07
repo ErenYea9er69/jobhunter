@@ -35,7 +35,7 @@ from jh.observability import record_startup  # noqa: E402
 from jh.resume_registry import ResumeRegistry  # noqa: E402
 from jh.team.surface import TeamMCP, resolve as resolve_surface  # noqa: E402
 
-__version__ = "2.3.0"
+__version__ = "2.4.0"
 
 INSTRUCTIONS = """JobHunter is a small job-search company. You are its CEO. The client talks to you and to nobody else.
 
@@ -54,6 +54,10 @@ Work like this:
 7. Before the client acts on a job or sends a document, call ceo_recheck.
 8. ceo_plan previews a request. ceo_delegate sends one task to one employee. ceo_team lists the team. ceo_status
    shows past work and the Reviewer's record.
+9. Speak to the client in plain lines: the answer first, short sentences, no em dashes, no praise of the question, and
+   no closing offer of more help or recap. Drafts you write for the client follow the style guide in ceo_team
+   (with_prompts=true). The Reviewer warns about machine-sounding phrases (robotic_style). Rewrite each flagged phrase
+   with a fact from the resume, then submit the draft again.
 
 The client's resume is the only source of facts about the candidate. Never invent any."""
 

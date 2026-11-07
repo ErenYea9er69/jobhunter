@@ -17,6 +17,7 @@ STANDARD_LIMITS = (
     "If a fact is missing, say it is missing. Do not guess.",
     "Name the job id for every job you mention.",
     "Your work goes to the Reviewer before it reaches the client.",
+    "Write in plain words and short sentences. Leave out stock phrases and em dashes.",
 )
 
 

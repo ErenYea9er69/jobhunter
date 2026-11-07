@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.4.0
+
+A review of every prompt (`docs/prompts.md`).
+
+### Fixed
+- Six of eight playbooks asked a model for keys the code does not read, so with a model key the reply was dropped. The cover letter asked for `letter_text` (the code reads `full_text`), the mock evaluator for `total_score` (the code requires `overall_score`), outreach and follow-up nested their message under `draft_text` (the code reads top-level `linkedin_connection_note` and `body`), interview prep and the roadmap used other names, and screening asked for `answer_text` (the code reads `answer`; the whole JSON object could land in a form field). All eight now match, and `tests/test_prompt_contract.py` feeds each code path a reply built from its playbook's own schema.
+- The embedded prompts in code (`LLM_SYSTEM`, `COVER_PITCH_LLM_SYSTEM`, `SCREENING_SOLVER_PROMPT`) were rewritten. Their text only. Each keeps the reply keys of its own code path.
+
+### Prompts
+- Removed persona boasting, "2026/2027 standard", invented statistics (the 6-second scan, a 95% ATS match, rejection in 5 seconds), self-reported scores and counts, example values in schemas, evidence ids that could not be produced, and the dead "User Message Template" sections.
+- Added a single style guide (`prompts/voice.md`). Its `<voice>` block is embedded in every playbook, the Writer prompt and the Coach prompt. Rules name patterns and give a plain alternative, because word bans alone drift to synonyms.
+- Each playbook now has the same skeleton (role, inputs, grounding, how to write, voice, examples, output). Examples come in robotic and plain pairs, drawn from finance, teaching and operations as well as software.
+- Every playbook serves two modes: JSON when the user message is JSON, plain text when a person reads it. Every schema ends in `missing_inputs`, so the model asks instead of leaving a placeholder.
+- Scoring in the mock evaluator has anchors for each band and uses the code's 0 to 100 scale. Follow-up and negotiation no longer ask for market data or competing offers. The roadmap's interview script has a "Now" line that is true today and an "After the project" line. The LinkedIn note limit is 200 characters.
+- The CEO prompt tells the AI how to speak to the client and to pass `hints.intent` and `hints.reference`.
+
+### Style checking
+- `jh/team/voice.py` finds machine-sounding patterns (openers, hype, stock adjectives, vague power verbs, grand framing, hollow closers, "not just X, but Y", dashes, emoji and markdown in form text). Technical uses such as "financial leverage" are not flagged.
+- The Reviewer reports them as a `robotic_style` warning with the phrase and the plain alternative. It does not block.
+- `python -m jh.team.voice <file>` lints a prompt file. `tests/test_prompts.py` lints all prompt files, the prompts in code and the tool descriptions.
+- Style evals: dev 17 of 17 flagged, 0 of 16 plain flagged. Blind first pass: 10 of 12 flagged, 0 of 10 plain flagged.
+
+### Not changed
+- The deterministic templates in `refit.py`, `tracker.py` and `screening.py` still contain some of the patterns, which the Reviewer now flags (see `docs/prompts.md`).
+- No model was run. The tests prove the contract and the static properties, not how a given model writes.
+- Prompt length grew from 2,715 to 6,126 words across the eight playbooks. About 1,500 words are the voice block repeated.
+
 ## 2.3.0
 
 Found by measuring version 2.2 on fixed cases (`docs/evals.md`): the Reviewer caught 12 of 22 fabrications, the job checks got 6 of 12 right, and the router got 18 of 40. This version fixes what that showed.
