@@ -430,6 +430,7 @@
                   <option value="cover-letter">Cover Letter (Direct Impact Pitch)</option>
                   <option value="founder-cold-email">Cold Email to Startup Founder (YC Style)</option>
                   <option value="linkedin-founder-dm">LinkedIn Founder Direct Outreach (&lt;300 Chars + InMail)</option>
+                  <option value="bigtech-hr-referral">Big Tech Recruiter &amp; Internal Referral Hub (Google, Meta, Uber...)</option>
                   <option value="interview-prep">STAR Interview Preparation Guide</option>
                   <option value="outreach">Recruiter Outreach &amp; LinkedIn Note</option>
                   <option value="tailor-resume">Tailored Resume Alignment</option>
@@ -465,6 +466,40 @@
                 <div class="input-field-group">
                   <label class="field-label">Product / Architecture Insight (Optional)</label>
                   <input type="text" id="doc-input-founder-obs" class="text-input" placeholder="e.g. your connection pooling or real-time sync engine">
+                </div>
+              </div>
+
+              <!-- Big Tech Recruiter & Referral Specific Fields (Dynamic) -->
+              <div id="doc-bigtech-fields" style="display:none;padding:12px;border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:14px;background:var(--bg-muted);">
+                <div class="input-field-group">
+                  <label class="field-label">Target Big Tech Enterprise</label>
+                  <select id="doc-input-bigtech-company" class="select-dropdown">
+                    <option value="google">Google (L3 - L6)</option>
+                    <option value="meta">Meta (E3 - E6)</option>
+                    <option value="uber">Uber (L3 - L6)</option>
+                    <option value="amazon">Amazon (L4 - L7)</option>
+                    <option value="apple">Apple (ICT2 - ICT5)</option>
+                    <option value="microsoft">Microsoft (L59 - L65)</option>
+                    <option value="netflix">Netflix (Senior / Staff)</option>
+                    <option value="stripe">Stripe (L2 - L5)</option>
+                  </select>
+                </div>
+                <div class="input-field-group">
+                  <label class="field-label">Job Requisition ID / Job Number (Optional)</label>
+                  <input type="text" id="doc-input-bigtech-req" class="text-input" placeholder="e.g. 154829 or Req-9921">
+                </div>
+                <div class="input-field-group">
+                  <label class="field-label">Recruiter or Contact Name (Optional)</label>
+                  <input type="text" id="doc-input-bigtech-recruiter" class="text-input" placeholder="e.g. Jennifer Miller or leave blank for team talent">
+                </div>
+                <div class="input-field-group">
+                  <label class="field-label">Target Leveling Tier</label>
+                  <select id="doc-input-bigtech-level" class="select-dropdown">
+                    <option value="mid">Mid-level (Google L4 / Meta E4 / Uber L4)</option>
+                    <option value="senior">Senior (Google L5 / Meta E5 / Uber L5)</option>
+                    <option value="junior">Early Career (Google L3 / Meta E3 / Uber L3)</option>
+                    <option value="staff">Staff / Principal (Google L6 / Meta E6 / Uber L6)</option>
+                  </select>
                 </div>
               </div>
 

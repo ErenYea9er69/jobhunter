@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import db, email_finder, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker
+from . import bigtech_directory, db, email_finder, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker
 from . import mcp_helpers as h
 from .mcp_helpers import envelope
 from .team import qa
@@ -164,6 +164,10 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             res = pipeline.search(query=q, location=loc, work_mode=wm, min_score=min_score, limit=limit, profile=prof, job_type=jt)
             jobs = res.get("jobs", []) if isinstance(res, dict) else res
             return self._send_json(200, envelope(status="ok", data={"jobs": jobs, "count": len(jobs), "coverage": res.get("coverage", {})}))
+
+        if path == "/api/bigtech/directory":
+            companies = bigtech_directory.list_bigtech_companies()
+            return self._send_json(200, envelope(status="ok", data={"companies": companies}))
 
         # 2. Static files from public/
         self._serve_static(path)
@@ -403,6 +407,21 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
                 role=role,
             )
             return self._send_json(200, envelope(status="ok" if res.get("success") else "error", data=res))
+
+        if path == "/api/bigtech/pitch":
+            company_key = body.get("company_key") or body.get("company", "google")
+            job_id = body.get("job_id", "")
+            job_info = body.get("job") or body
+            job, profile = h.job_and_profile(job_id, job_info.get("title", ""), job_info.get("company", ""), job_info.get("description", ""))
+            res = bigtech_directory.generate_bigtech_outreach(
+                company_key=company_key,
+                job=job,
+                profile=profile,
+                recruiter_name=body.get("recruiter_name", ""),
+                req_id=body.get("req_id", ""),
+                leveling_tier=body.get("leveling_tier", "mid"),
+            )
+            return self._send_json(200, envelope(status="ok", data=res))
 
         if path == "/api/gmail/config":
             em = body.get("email", "")

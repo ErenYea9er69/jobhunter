@@ -177,3 +177,22 @@ class TestHttpdHandler(unittest.TestCase):
         self.assertIn("connection_note", res["data"])
         self.assertLessEqual(len(res["data"]["connection_note"]), 300)
         self.assertIn("inmail_body", res["data"])
+
+    def test_bigtech_endpoints(self):
+        status, res = self._call("GET", "/api/bigtech/directory")
+        self.assertEqual(status, 200)
+        self.assertTrue(res["success"])
+        companies = res["data"]["companies"]
+        self.assertTrue(any(c["id"] == "google" for c in companies))
+
+        status_pitch, pitch_res = self._call("POST", "/api/bigtech/pitch", {
+            "company_key": "uber",
+            "title": "Software Engineer II",
+            "recruiter_name": "David Lee",
+            "req_id": "UB-9921",
+        })
+        self.assertEqual(status_pitch, 200)
+        self.assertTrue(pitch_res["success"])
+        self.assertEqual(pitch_res["data"]["company"], "Uber")
+        self.assertIn("referral_blurb", pitch_res["data"])
+        self.assertIn("UB-9921", pitch_res["data"]["inmail_subject"])

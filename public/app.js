@@ -550,6 +550,49 @@
       return;
     }
 
+    if (kind === "bigtech-hr-referral") {
+      const compKey = document.getElementById("doc-input-bigtech-company")?.value || "google";
+      const reqId = document.getElementById("doc-input-bigtech-req")?.value || "";
+      const recruiterName = document.getElementById("doc-input-bigtech-recruiter")?.value || "";
+      const levelingTier = document.getElementById("doc-input-bigtech-level")?.value || "mid";
+
+      const res = await apiPost("/api/bigtech/pitch", {
+        company_key: compKey,
+        req_id: reqId,
+        recruiter_name: recruiterName,
+        leveling_tier: levelingTier,
+        job: { title: jobTitle, company: company, description: desc },
+      });
+
+      if (!res) {
+        if (previewContainer) previewContainer.textContent = "Error generating Big Tech recruiter pitch.";
+        return;
+      }
+
+      state.currentBigTechPitch = res;
+
+      if (printBtn) printBtn.style.display = "none";
+      if (toggleBtn) toggleBtn.style.display = "none";
+      if (atsBadge) {
+        atsBadge.style.display = "inline-block";
+        atsBadge.textContent = `${res.company} · ${res.level_label}`;
+      }
+
+      if (openGmailBtn) {
+        openGmailBtn.style.display = "inline-flex";
+        openGmailBtn.href = res.gmail_compose_url || "#";
+      }
+
+      if (qaBadge) {
+        const verdict = res.review_inmail?.verdict || "PASS";
+        qaBadge.textContent = `QA: ${verdict.toUpperCase()}`;
+        qaBadge.className = `qa-badge ${verdict.toLowerCase() === "pass" ? "pass" : "warn"}`;
+      }
+
+      renderBigTechContent(res);
+      return;
+    }
+
     if (kind === "cover-letter" || kind === "tailor-resume") {
       const res = await apiPost("/api/documents/job-package", {
         job: { title: jobTitle, company: company, description: desc },
@@ -769,6 +812,66 @@
       if (b) {
         b.textContent = "✓ Copied InMail";
         setTimeout(() => (b.textContent = "Copy InMail Pitch"), 2000);
+      }
+    });
+  }
+
+  function renderBigTechContent(data) {
+    const previewContainer = document.getElementById("doc-rendered-body");
+    if (!previewContainer || !data) return;
+
+    previewContainer.innerHTML = `
+      <div style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <div>
+          <span style="font-size:16px;font-weight:700;">${escapeHtml(data.company)} <span style="font-size:13px;color:var(--text-muted);font-weight:400;">(${escapeHtml(data.level_label)})</span></span>
+          <span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Rubric focus: ${escapeHtml(data.rubric_focus)}</span>
+        </div>
+        <div style="font-size:12px;display:flex;align-items:center;gap:6px;">
+          <span style="color:var(--text-muted);">Recruiter:</span>
+          <strong style="color:var(--primary-text);font-family:var(--font-mono);">${escapeHtml(data.recruiter_email || "recruiter@bigtech.com")}</strong>
+        </div>
+      </div>
+
+      <!-- Section 1: Recruiter InMail -->
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--text-muted);">1. Recruiter InMail (Screening &amp; Triage Optimized · ${data.inmail_word_count} words):</span>
+          <button class="btn btn-secondary btn-sm" id="btn-copy-bigtech-inmail" style="padding:2px 8px;font-size:11px;">Copy InMail</button>
+        </div>
+        <div style="font-size:12px;font-weight:600;margin-bottom:4px;color:var(--text-secondary);">Subject: ${escapeHtml(data.inmail_subject)}</div>
+        <div style="line-height:1.75;white-space:pre-wrap;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);font-size:13px;">${escapeHtml(data.inmail_body)}</div>
+      </div>
+
+      <hr style="margin:14px 0;border-color:var(--border);">
+
+      <!-- Section 2: Internal Employee Referral Blurb -->
+      <div style="margin-top:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <div>
+            <span style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--text-muted);">2. Employee Referral Blurb (Formatted for ${escapeHtml(data.referral_portal_name)}):</span>
+            <span style="display:block;font-size:11px;color:var(--text-muted);">Give this directly to an engineer or alumnus at ${escapeHtml(data.company)} to submit on your behalf.</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btn-copy-bigtech-referral" style="padding:2px 8px;font-size:11px;">Copy Referral Blurb</button>
+        </div>
+        <div style="line-height:1.65;white-space:pre-wrap;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);font-size:12px;font-family:var(--font-mono);color:var(--text-secondary);">${escapeHtml(data.referral_blurb)}</div>
+      </div>
+    `;
+
+    document.getElementById("btn-copy-bigtech-inmail")?.addEventListener("click", () => {
+      navigator.clipboard.writeText(data.inmail_body || "");
+      const b = document.getElementById("btn-copy-bigtech-inmail");
+      if (b) {
+        b.textContent = "✓ Copied InMail";
+        setTimeout(() => (b.textContent = "Copy InMail"), 2000);
+      }
+    });
+
+    document.getElementById("btn-copy-bigtech-referral")?.addEventListener("click", () => {
+      navigator.clipboard.writeText(data.referral_blurb || "");
+      const b = document.getElementById("btn-copy-bigtech-referral");
+      if (b) {
+        b.textContent = "✓ Copied Referral Blurb";
+        setTimeout(() => (b.textContent = "Copy Referral Blurb"), 2000);
       }
     });
   }
@@ -1087,9 +1190,13 @@
 
     // Document Generation Trigger
     document.getElementById("doc-type-select")?.addEventListener("change", (e) => {
-      const isFounder = e.target.value === "founder-cold-email" || e.target.value === "linkedin-founder-dm";
+      const val = e.target.value;
+      const isFounder = val === "founder-cold-email" || val === "linkedin-founder-dm";
+      const isBigTech = val === "bigtech-hr-referral";
       const founderBox = document.getElementById("doc-founder-fields");
+      const bigtechBox = document.getElementById("doc-bigtech-fields");
       if (founderBox) founderBox.style.display = isFounder ? "block" : "none";
+      if (bigtechBox) bigtechBox.style.display = isBigTech ? "block" : "none";
     });
 
     // Inline Finder in Founder Cold Email Form
