@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import db, extension_installer, pipeline, resume_registry, screening, tracker
+from . import db, extension_installer, pipeline, preferences, refit, regions, resume_registry, screening, tracker
 from . import mcp_helpers as h
 from .mcp_helpers import envelope
 from .team import qa
@@ -136,12 +136,30 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             data = extension_installer.get_extension_status()
             return self._send_json(200, envelope(status="ok", data=data))
 
+        if path == "/api/preferences":
+            prefs = preferences.load()
+            prof = h.resolve_profile(require=False) or {}
+            targets = regions.resolve_targets(prefs, prof, "")
+            return self._send_json(200, envelope(status="ok", data={"preferences": prefs, "resolved_targets": targets}))
+
+        if path == "/api/jobs/details":
+            job_id = query.get("job_id", [""])[0]
+            job = h.build_job(job_id=job_id) if job_id else {}
+            prof = h.resolve_profile(require=False) or {}
+            gap = refit.generate_gap_report(job, prof) if job else {}
+            return self._send_json(200, envelope(status="ok", data={"job": job, "gap": gap}))
+
         if path == "/api/search":
             q = query.get("q", [""])[0]
             loc = query.get("location", [""])[0]
-            limit = int(query.get("limit", [25])[0])
-            jobs = pipeline.search_jobs(query=q, location=loc, limit=limit)
-            return self._send_json(200, envelope(status="ok", data={"jobs": jobs, "count": len(jobs)}))
+            wm = query.get("work_mode", ["Any"])[0]
+            jt = query.get("job_type", [""])[0]
+            min_score = int(query.get("min_score", [0])[0])
+            limit = int(query.get("limit", [50])[0])
+            prof = h.resolve_profile(overlay=False, require=False)
+            res = pipeline.search(query=q, location=loc, work_mode=wm, min_score=min_score, limit=limit, profile=prof, job_type=jt)
+            jobs = res.get("jobs", []) if isinstance(res, dict) else res
+            return self._send_json(200, envelope(status="ok", data={"jobs": jobs, "count": len(jobs), "coverage": res.get("coverage", {})}))
 
         # 2. Static files from public/
         self._serve_static(path)
@@ -239,6 +257,56 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             browser = body.get("browser", "auto")
             res = extension_installer.open_extension_manager(browser_type=browser)
             return self._send_json(200, envelope(status="ok", data=res))
+
+        if path == "/api/preferences":
+            updates = body.get("updates", body)
+            try:
+                saved = preferences.update(updates)
+                return self._send_json(200, envelope(status="ok", data={"saved": saved, "success": True}))
+            except Exception as e:
+                return self._send_json(400, envelope(status="error", error={"code": "invalid_preference", "message": str(e)}))
+
+        if path == "/api/documents/cover-letter":
+            job_id = body.get("job_id", "")
+            title = body.get("title", "")
+            company = body.get("company", "")
+            desc = body.get("description", "")
+            tone = body.get("tone", "direct")
+            angle = body.get("angle", "direct_impact")
+            job, profile = h.job_and_profile(job_id, title, company, desc)
+            pitch = refit.generate_cover_pitch(job, profile, tone=tone, angle=angle)
+            letter = pitch.get("full_text") or ""
+            review = qa.review_document(letter, kind="cover_letter", profile=profile, job=job)
+            return self._send_json(200, envelope(status="ok", data={
+                "letter": letter,
+                "hook": pitch.get("hook", ""),
+                "word_count": len(letter.split()),
+                "review": {"verdict": review.verdict, "findings": review.findings}
+            }))
+
+        if path == "/api/documents/interview-prep":
+            job_id = body.get("job_id", "")
+            job, profile = h.job_and_profile(job_id, body.get("title", ""), body.get("company", ""), body.get("description", ""))
+            prep = refit.generate_interview_prep(job, profile)
+            return self._send_json(200, envelope(status="ok", data={"prep": prep}))
+
+        if path == "/api/documents/outreach":
+            job_id = body.get("job_id", "")
+            job, profile = h.job_and_profile(job_id, body.get("title", ""), body.get("company", ""), body.get("description", ""))
+            outreach = refit.generate_recruiter_outreach(job, profile)
+            return self._send_json(200, envelope(status="ok", data={"outreach": outreach}))
+
+        if path == "/api/documents/tailor-resume":
+            job_id = body.get("job_id", "")
+            job, profile = h.job_and_profile(job_id, body.get("title", ""), body.get("company", ""), body.get("description", ""))
+            tailored = refit.generate_custom_resume(job, profile)
+            return self._send_json(200, envelope(status="ok", data={"tailored_resume": tailored}))
+
+        if path == "/api/auto-apply/launch":
+            url = body.get("url", "http://127.0.0.1:8765")
+            browser = body.get("browser", "auto")
+            res = extension_installer.launch_browser_with_extension(url=url, browser_type=browser)
+            return self._send_json(200, envelope(status="ok" if res.get("success") else "error", data=res))
 
         self._send_json(404, envelope(status="error", error={"code": "not_found", "message": f"Path '{path}' not found"}))
 

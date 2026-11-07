@@ -7,225 +7,705 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="app-container">
+  <div class="app-layout">
     <!-- Sidebar Navigation -->
     <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-logo">⚡</div>
-        <div class="brand-info">
-          <div class="brand-name">JobHunter</div>
-          <div class="brand-sub">Autonomous Copilot v2.3</div>
+      <div class="brand-block">
+        <div class="brand-symbol">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">JobHunter</span>
+          <span class="brand-tagline">Autonomous Copilot v2.4</span>
         </div>
       </div>
 
-      <nav class="nav-menu">
-        <button class="nav-item active" data-tab="tab-radar">
-          <span class="nav-icon">🔍</span>
-          <span>Radar & Search</span>
+      <nav class="nav-stack">
+        <button class="nav-link active" data-tab="tab-radar">
+          <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="m4.93 4.93 4.24 4.24"></path>
+            <path d="m14.83 9.17 4.24-4.24"></path>
+            <path d="m14.83 14.83 4.24 4.24"></path>
+            <path d="m9.17 14.83-4.24 4.24"></path>
+            <circle cx="12" cy="12" r="4"></circle>
+          </svg>
+          <span>Radar & Discovery</span>
         </button>
-        <button class="nav-item" data-tab="tab-profiles">
-          <span class="nav-icon">👤</span>
-          <span>Profiles & Resumes</span>
+
+        <button class="nav-link" data-tab="tab-tracker">
+          <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+            <path d="M7 7h3v10H7z"></path>
+            <path d="M14 7h3v6h-3z"></path>
+          </svg>
+          <span>Application Kanban</span>
         </button>
-        <button class="nav-item" data-tab="tab-tracker">
-          <span class="nav-icon">📊</span>
-          <span>Application Tracker</span>
+
+        <button class="nav-link" data-tab="tab-copilot">
+          <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <line x1="10" y1="9" x2="8" y2="9"></line>
+          </svg>
+          <span>Document Studio & Copilot</span>
         </button>
-        <button class="nav-item" data-tab="tab-copilot">
-          <span class="nav-icon">✍️</span>
-          <span>Document Studio</span>
+
+        <button class="nav-link" data-tab="tab-profiles">
+          <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+          <span>Profile & Resumes</span>
         </button>
-        <button class="nav-item" data-tab="tab-extension">
-          <span class="nav-icon">⚡</span>
-          <span>Extension & Desktop</span>
+
+        <button class="nav-link" data-tab="tab-preferences">
+          <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <span>Calibration & Filters</span>
+        </button>
+
+        <button class="nav-link" data-tab="tab-extension">
+          <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="20" height="14" x="2" y="3" rx="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          <span>Auto-Apply & Desktop</span>
         </button>
       </nav>
 
-      <div class="sidebar-footer">
-        <div class="server-status">
-          <span class="status-dot"></span>
-          <span id="daemon-status-text">Server: Connected (:8765)</span>
+      <div class="sidebar-status-card">
+        <div class="status-indicator-line">
+          <span class="status-pulse"></span>
+          <span class="status-label-text">Local Daemon :8765</span>
         </div>
+          <div class="status-sub-text">Privacy Protected • Offline SQLite</div>
       </div>
     </aside>
 
-    <!-- Main Content Area -->
-    <main class="main-content">
-      <header class="topbar">
-        <div class="topbar-title" id="page-title">Radar & Job Search</div>
-        <div class="topbar-actions">
-          <div class="active-profile-badge" id="active-profile-badge">
-            <span class="badge-label">Active Profile:</span>
-            <span class="badge-val" id="topbar-profile-name">Loading...</span>
+    <!-- Main Workspace -->
+    <main class="main-workspace">
+      <!-- Top Cockpit Header -->
+      <header class="topbar-cockpit">
+        <div class="cockpit-left">
+          <h1 class="cockpit-title" id="page-title">Radar & Opportunity Discovery</h1>
+          <div class="cockpit-pills">
+            <div class="active-badge" id="active-profile-pill">
+              <span class="pill-dot"></span>
+              <span class="pill-label">Profile:</span>
+              <strong id="active-profile-name">Default Resume</strong>
+            </div>
+            <div class="location-badge" id="active-geo-pill">
+              <span class="pill-label">Target:</span>
+              <span id="active-geo-val">Tunisia & Worldwide Remote</span>
+            </div>
           </div>
-          <button class="btn btn-primary" id="btn-quick-launch-ext">⚡ Launch Copilot</button>
+        </div>
+
+        <div class="cockpit-actions">
+          <button class="btn btn-secondary btn-sm" id="btn-theme-toggle" title="Switch Theme (Light / Dark)">
+            <svg class="theme-icon-dark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+            </svg>
+            <svg class="theme-icon-light" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
+              <circle cx="12" cy="12" r="4"></circle>
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+            </svg>
+            <span id="theme-status-text">Dark</span>
+          </button>
+          <button class="btn btn-secondary btn-sm" id="btn-sync-status">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            Sync
+          </button>
+          <button class="btn btn-primary" id="btn-top-launch-copilot">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            Launch Browser Copilot
+          </button>
         </div>
       </header>
 
-      <div class="content-body">
-        <!-- TAB 1: Radar & Search -->
-        <section class="tab-pane active" id="tab-radar">
-          <div class="search-bar-card">
-            <div class="search-inputs">
-              <div class="input-group">
-                <label>Job Title / Keywords</label>
-                <input type="text" id="search-query" placeholder="e.g. Backend Engineer, Python, Tech Lead" value="Software Engineer">
+      <div class="workspace-viewport">
+        <!-- TAB 1: RADAR & DISCOVERY FEED -->
+        <section class="tab-panel active" id="tab-radar">
+          <!-- Search & Filter Controls -->
+          <div class="radar-control-deck">
+            <div class="search-form-row">
+              <div class="input-field-group flex-2">
+                <label class="field-label">Role or Keywords</label>
+                <div class="input-with-icon">
+                  <svg class="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                  <input type="text" id="radar-query" class="text-input" placeholder="e.g. Software Engineer, Backend Python, Tech Lead" value="Software Engineer">
+                </div>
               </div>
-              <div class="input-group">
-                <label>Location / Country</label>
-                <input type="text" id="search-location" placeholder="e.g. Remote, Paris, Tunis, Berlin" value="Remote">
+
+              <div class="input-field-group flex-1">
+                <label class="field-label">Location / Geography</label>
+                <div class="input-with-icon">
+                  <svg class="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                  </svg>
+                  <input type="text" id="radar-location" class="text-input" placeholder="e.g. Remote, Tunis, France" value="Tunisia">
+                </div>
               </div>
-              <button class="btn btn-primary search-btn" id="btn-run-search">🔍 Hunt Jobs</button>
+
+              <button class="btn btn-primary btn-search-trigger" id="btn-radar-hunt">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                Hunt Jobs
+              </button>
+            </div>
+
+            <!-- Smart Filter Bar -->
+            <div class="filter-strip-row">
+              <div class="filter-group">
+                <span class="filter-label">Job Type:</span>
+                <div class="pill-group" id="filter-job-types">
+                  <button class="chip-toggle active" data-val="">All Types</button>
+                  <button class="chip-toggle" data-val="Full-time">Full-time</button>
+                  <button class="chip-toggle" data-val="Internship">Internship / PFE</button>
+                  <button class="chip-toggle" data-val="Contract">Contract</button>
+                </div>
+              </div>
+
+              <div class="filter-group">
+                <span class="filter-label">Work Mode:</span>
+                <div class="pill-group" id="filter-work-modes">
+                  <button class="chip-toggle active" data-val="Any">Any Mode</button>
+                  <button class="chip-toggle" data-val="Remote">Remote</button>
+                  <button class="chip-toggle" data-val="Hybrid">Hybrid</button>
+                  <button class="chip-toggle" data-val="Onsite">Onsite</button>
+                </div>
+              </div>
+
+              <div class="filter-group">
+                <span class="filter-label">Fit Floor:</span>
+                <div class="pill-group" id="filter-score-floor">
+                  <button class="chip-toggle active" data-val="0">All</button>
+                  <button class="chip-toggle" data-val="75">75%+</button>
+                  <button class="chip-toggle" data-val="85">85%+</button>
+                  <button class="chip-toggle" data-val="90">90%+</button>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="results-header">
-            <div class="results-count" id="search-results-count">Results: Ready</div>
-            <div class="results-filter">
-              <span>Sort by:</span>
-              <select id="sort-filter" class="select-input">
-                <option value="score">Fit Score (High to Low)</option>
-                <option value="recent">Most Recent</option>
-              </select>
-            </div>
-          </div>
+          <!-- Split Deck: Left Feed + Right Inspector -->
+          <div class="split-discovery-layout">
+            <!-- Left: Scrollable Feed of Job Cards -->
+            <div class="jobs-feed-column">
+              <div class="feed-summary-bar">
+                <span class="feed-counter" id="jobs-count-text">Ready to scan live market opportunities</span>
+                <div class="feed-sort-wrapper">
+                  <label>Sort:</label>
+                  <select id="radar-sort" class="select-dropdown">
+                    <option value="score">Fit Score (High to Low)</option>
+                    <option value="date">Most Recent</option>
+                  </select>
+                </div>
+              </div>
 
-          <div class="job-cards-grid" id="job-cards-grid">
-            <div class="empty-state">
-              <div class="empty-icon">🎯</div>
-              <div class="empty-title">Ready to scan live market opportunities</div>
-              <div class="empty-desc">Click "Hunt Jobs" to discover vacancies across regional feeds, ATS boards, and direct employers.</div>
+              <div class="jobs-cards-container" id="jobs-cards-container">
+                <div class="empty-feed-card">
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="m10 15 5-3-5-3v6Z"></path>
+                  </svg>
+                  <h2>Begin Opportunity Radar</h2>
+                  <p>Click "Hunt Jobs" above to search across company ATS boards, Keejob, regional feeds, and remote boards.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: Sticky Job Detail Inspector -->
+            <div class="job-inspector-column" id="job-inspector-column">
+              <div class="inspector-placeholder" id="inspector-placeholder">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="16" y1="13" x2="8" y2="13"></line>
+                  <line x1="16" y1="17" x2="8" y2="17"></line>
+                </svg>
+                <h2>Select an Opportunity</h2>
+                <p>Click any job card on the left to inspect requirements, AI fit rationale, verified skills breakdown, and 1-click tailored application actions.</p>
+              </div>
+
+              <div class="inspector-content" id="inspector-content" style="display:none;">
+                <div class="inspector-header">
+                  <div class="inspector-main-info">
+                    <h2 class="inspector-title" id="ins-job-title">Job Title</h2>
+                    <div class="inspector-sub-info">
+                      <span class="ins-company" id="ins-job-company">Company</span>
+                      <span class="ins-bullet">•</span>
+                      <span class="ins-location" id="ins-job-location">Location</span>
+                      <span class="ins-bullet">•</span>
+                      <span class="ins-source" id="ins-job-source">Source</span>
+                    </div>
+                  </div>
+                  <div class="inspector-score-badge" id="ins-score-badge">95% Fit</div>
+                </div>
+
+                <!-- One-Click Application Action Deck -->
+                <div class="inspector-action-bar">
+                  <button class="btn btn-primary flex-1" id="ins-btn-apply-copilot">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                    Apply with Browser Copilot
+                  </button>
+                  <button class="btn btn-secondary" id="ins-btn-queue-apply" title="Queue this job for Auto-Apply">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                    Queue Auto-Apply
+                  </button>
+                  <button class="btn btn-secondary" id="ins-btn-track-app">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    Track in Kanban
+                  </button>
+                  <button class="btn btn-secondary" id="ins-btn-open-link" title="Open Job Page">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                      <polyline points="15 3 21 3 21 9"></polyline>
+                      <line x1="10" y1="14" x2="21" y2="3"></line>
+                    </svg>
+                  </button>
+                </div>
+
+                <!-- Secondary Document Generation Shortcuts -->
+                <div class="inspector-tools-strip">
+                  <button class="tool-shortcut-btn" id="ins-btn-draft-letter">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path></svg>
+                    Cover Letter
+                  </button>
+                  <button class="tool-shortcut-btn" id="ins-btn-interview-prep">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    Interview Prep
+                  </button>
+                  <button class="tool-shortcut-btn" id="ins-btn-tailor-cv">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                    Tailor Resume
+                  </button>
+                </div>
+
+                <!-- Diagnostic Match Tabs -->
+                <div class="inspector-diagnostics-box">
+                  <div class="diag-header">Why You Match:</div>
+                  <div class="diag-skills-row" id="ins-diag-skills"></div>
+                  <div class="diag-notes-text" id="ins-diag-notes"></div>
+                </div>
+
+                <!-- Job Description Section -->
+                <div class="inspector-description-section">
+                  <h3 class="section-subheading">Job Description & Requirements</h3>
+                  <div class="description-body-text" id="ins-job-description"></div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <!-- TAB 2: Profiles & Resumes -->
-        <section class="tab-pane" id="tab-profiles">
-          <div class="profiles-card">
-            <div class="section-header">
-              <h2>Candidate Profiles & Resumes</h2>
-              <button class="btn btn-secondary" id="btn-scan-resumes">🔄 Scan Workspace Resumes</button>
-            </div>
-            <div class="profile-details-grid">
-              <div class="profile-info-panel">
-                <h3 id="prof-cand-name">Candidate Name</h3>
-                <div class="prof-title" id="prof-target-title">Target Title</div>
-                <div class="prof-meta-list" id="prof-meta-list"></div>
-                <h4>Verified Skills</h4>
-                <div class="skills-tags" id="prof-skills-tags"></div>
+        <!-- TAB 2: APPLICATION KANBAN TRACKER -->
+        <section class="tab-panel" id="tab-tracker">
+          <div class="tracker-header-strip">
+            <div class="funnel-metrics-deck">
+              <div class="metric-card">
+                <span class="metric-number" id="funnel-saved">0</span>
+                <span class="metric-title">Bookmarked</span>
               </div>
-              <div class="profile-variants-panel">
-                <h3>Available Resume Variants</h3>
-                <div class="variants-list" id="variants-list"></div>
+              <div class="metric-card">
+                <span class="metric-number" id="funnel-queued">0</span>
+                <span class="metric-title">Queued for Auto-Apply</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-number" id="funnel-applied">0</span>
+                <span class="metric-title">Submitted</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-number" id="funnel-interview">0</span>
+                <span class="metric-title">Interviews</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-number" id="funnel-offer">0</span>
+                <span class="metric-title">Offers</span>
+              </div>
+            </div>
+
+            <button class="btn btn-primary" id="btn-create-tracker-app">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              Add Application
+            </button>
+          </div>
+
+          <div class="kanban-columns-grid">
+            <div class="kanban-lane" data-lane="saved">
+              <div class="lane-header">
+                <span class="lane-title">Saved</span>
+                <span class="lane-count-pill" id="count-saved">0</span>
+              </div>
+              <div class="lane-cards-stack" id="lane-saved"></div>
+            </div>
+
+            <div class="kanban-lane" data-lane="queued">
+              <div class="lane-header">
+                <span class="lane-title">Queued Auto-Apply</span>
+                <span class="lane-count-pill" id="count-queued">0</span>
+              </div>
+              <div class="lane-cards-stack" id="lane-queued"></div>
+            </div>
+
+            <div class="kanban-lane" data-lane="applied">
+              <div class="lane-header">
+                <span class="lane-title">Applied</span>
+                <span class="lane-count-pill" id="count-applied">0</span>
+              </div>
+              <div class="lane-cards-stack" id="lane-applied"></div>
+            </div>
+
+            <div class="kanban-lane" data-lane="interview">
+              <div class="lane-header">
+                <span class="lane-title">Interviewing</span>
+                <span class="lane-count-pill" id="count-interview">0</span>
+              </div>
+              <div class="lane-cards-stack" id="lane-interview"></div>
+            </div>
+
+            <div class="kanban-lane" data-lane="offer">
+              <div class="lane-header">
+                <span class="lane-title">Offers</span>
+                <span class="lane-count-pill" id="count-offer">0</span>
+              </div>
+              <div class="lane-cards-stack" id="lane-offer"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 3: TRUTHFUL DOCUMENT STUDIO & COPILOT -->
+        <section class="tab-panel" id="tab-copilot">
+          <div class="studio-two-col">
+            <!-- Studio Input Form -->
+            <div class="studio-controls-card">
+              <h2 class="card-heading">Document Studio & Reviewer QA</h2>
+              <p class="card-desc">Every generated sentence is audited by the Reviewer against candidate resume facts before approval. Zero hallucinations guaranteed.</p>
+
+              <div class="input-field-group">
+                <label class="field-label">Document Type</label>
+                <select id="doc-type-select" class="select-dropdown">
+                  <option value="cover-letter">Cover Letter (Direct Impact Pitch)</option>
+                  <option value="interview-prep">STAR Interview Preparation Guide</option>
+                  <option value="outreach">Recruiter Outreach & LinkedIn Note</option>
+                  <option value="tailor-resume">Tailored Resume Alignment</option>
+                </select>
+              </div>
+
+              <div class="input-field-group">
+                <label class="field-label">Target Role Title</label>
+                <input type="text" id="doc-input-title" class="text-input" placeholder="e.g. Senior Backend Engineer" value="Software Engineer">
+              </div>
+
+              <div class="input-field-group">
+                <label class="field-label">Company Name</label>
+                <input type="text" id="doc-input-company" class="text-input" placeholder="e.g. Vermeg, Stripe, Adyen" value="Vermeg">
+              </div>
+
+              <div class="input-field-group">
+                <label class="field-label">Tone / Angle</label>
+                <select id="doc-input-tone" class="select-dropdown">
+                  <option value="direct_impact">Direct Impact (Facts & Results)</option>
+                  <option value="startup_velocity">Startup Velocity (Speed & Autonomy)</option>
+                  <option value="technical_architect">Technical Architect (Systems & Scale)</option>
+                  <option value="executive_brief">Executive Brief (Concise & Decisive)</option>
+                </select>
+              </div>
+
+              <div class="input-field-group">
+                <label class="field-label">Job Description / Requirements (Optional)</label>
+                <textarea id="doc-input-desc" class="textarea-input" rows="4" placeholder="Paste specific requirements or leave blank to use candidate profile target..."></textarea>
+              </div>
+
+              <button class="btn btn-primary btn-full" id="btn-generate-doc">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                Generate & Run Reviewer QA
+              </button>
+            </div>
+
+            <!-- Studio Output & Verification Box -->
+            <div class="studio-output-card">
+              <div class="output-header-bar">
+                <div class="output-title-wrapper">
+                  <span class="output-label">Approved Output</span>
+                  <span class="qa-badge pass" id="doc-qa-badge">Reviewer QA: PASS</span>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="btn-copy-doc">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
+                  Copy
+                </button>
+              </div>
+
+              <div class="doc-rendered-body" id="doc-rendered-body">
+                <p class="placeholder-text">Click "Generate & Run Reviewer QA" on the left to produce a truthful, verified draft tailored to the employer.</p>
               </div>
             </div>
           </div>
         </section>
 
-        <!-- TAB 3: Application Tracker -->
-        <section class="tab-pane" id="tab-tracker">
-          <div class="tracker-header">
-            <div class="funnel-stats-bar" id="funnel-stats-bar">
-              <div class="funnel-stat"><span class="stat-num" id="stat-saved">0</span> Saved</div>
-              <div class="funnel-stat"><span class="stat-num" id="stat-applied">0</span> Applied</div>
-              <div class="funnel-stat"><span class="stat-num" id="stat-interview">0</span> Interviewing</div>
-              <div class="funnel-stat"><span class="stat-num" id="stat-offer">0</span> Offers</div>
-              <div class="funnel-stat"><span class="stat-num" id="stat-rejected">0</span> Rejected</div>
-            </div>
-            <button class="btn btn-primary" id="btn-new-app">+ Track Application</button>
-          </div>
-
-          <div class="kanban-board">
-            <div class="kanban-col" data-status="saved">
-              <div class="col-header">Saved <span class="badge" id="badge-saved">0</span></div>
-              <div class="cards-list" id="col-saved"></div>
-            </div>
-            <div class="kanban-col" data-status="applied">
-              <div class="col-header">Applied <span class="badge" id="badge-applied">0</span></div>
-              <div class="cards-list" id="col-applied"></div>
-            </div>
-            <div class="kanban-col" data-status="interview">
-              <div class="col-header">Interview <span class="badge" id="badge-interview">0</span></div>
-              <div class="cards-list" id="col-interview"></div>
-            </div>
-            <div class="kanban-col" data-status="offer">
-              <div class="col-header">Offer <span class="badge" id="badge-offer">0</span></div>
-              <div class="cards-list" id="col-offer"></div>
-            </div>
-            <div class="kanban-col" data-status="rejected">
-              <div class="col-header">Rejected <span class="badge" id="badge-rejected">0</span></div>
-              <div class="cards-list" id="col-rejected"></div>
-            </div>
-          </div>
-        </section>
-
-        <!-- TAB 4: Document Studio -->
-        <section class="tab-pane" id="tab-copilot">
-          <div class="studio-card">
-            <h2>Truthful Document Studio & Reviewer QA</h2>
-            <p class="subtitle">Every document generated is verified sentence-by-sentence against candidate resume facts before approval.</p>
-            <div class="studio-grid">
-              <div class="studio-form">
-                <div class="input-group">
-                  <label>Job Title</label>
-                  <input type="text" id="doc-job-title" placeholder="e.g. Senior Backend Engineer">
-                </div>
-                <div class="input-group">
-                  <label>Company Name</label>
-                  <input type="text" id="doc-company" placeholder="e.g. Stripe">
-                </div>
-                <div class="input-group">
-                  <label>Job Description / Requirements</label>
-                  <textarea id="doc-job-desc" rows="6" placeholder="Paste job requirements here..."></textarea>
-                </div>
-                <div class="btn-group">
-                  <button class="btn btn-primary" id="btn-gen-letter">Draft Cover Letter</button>
-                  <button class="btn btn-secondary" id="btn-gen-prep">Interview Prep</button>
+        <!-- TAB 4: PROFILE & RESUME VARIANTS -->
+        <section class="tab-panel" id="tab-profiles">
+          <div class="profile-dashboard-grid">
+            <!-- Candidate Master Card -->
+            <div class="profile-card">
+              <div class="profile-hero">
+                <div class="avatar-circle" id="prof-avatar">JD</div>
+                <div class="hero-meta">
+                  <h2 class="candidate-name" id="prof-name">Candidate Name</h2>
+                  <div class="candidate-role" id="prof-role">Target Role</div>
+                  <div class="candidate-coords" id="prof-coords">Location • Email • Phone</div>
                 </div>
               </div>
-              <div class="studio-preview">
-                <h3>Approved Output & Verification</h3>
-                <div class="doc-output-box" id="doc-output-box">
-                  Select an action above to generate verified documents.
-                </div>
+
+              <div class="skills-categorized-section">
+                <h3 class="section-subheading">Verified Skills & Core Stack</h3>
+                <div class="skills-chips-flow" id="prof-skills-container"></div>
               </div>
+
+              <div class="experience-timeline-section">
+                <h3 class="section-subheading">Professional Experience Timeline</h3>
+                <div class="experience-items-list" id="prof-exp-container"></div>
+              </div>
+            </div>
+
+            <!-- Resume Variants Manager -->
+            <div class="variants-management-card">
+              <div class="variants-card-header">
+                <h2 class="card-heading">Available Resume Variants</h2>
+                <button class="btn btn-secondary btn-sm" id="btn-rescan-workspace">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                  Scan Folder
+                </button>
+              </div>
+              <p class="card-desc">Activate the resume variant that fits your target search. The active resume provides the verified facts for scoring and document tailoring.</p>
+
+              <div class="variants-stack-list" id="variants-stack-list"></div>
             </div>
           </div>
         </section>
 
-        <!-- TAB 5: Extension & Desktop Hub -->
-        <section class="tab-pane" id="tab-extension">
-          <div class="extension-hub-card">
-            <div class="hub-header">
-              <h2>⚡ ATS Autofill Extension & Desktop Integration</h2>
-              <div class="status-pill connected" id="ext-readiness-pill">Ready to Launch</div>
-            </div>
-            <p>The JobHunter Companion extension detects ATS job application forms in real-time, autofills your verified profile in 1-click, and answers custom screening questions.</p>
+        <!-- TAB 5: CALIBRATION & FILTERS -->
+        <section class="tab-panel" id="tab-preferences">
+          <div class="calibration-container">
+            <div class="calibration-card">
+              <div class="cal-header">
+                <h2 class="card-heading">Search Calibration & Preferences Engine</h2>
+                <button class="btn btn-primary" id="btn-save-preferences">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                  Save Preferences
+                </button>
+              </div>
+              <p class="card-desc">Preferences in <code>.jobhunter/preferences.json</code> control which local job boards run and how opportunities are ranked.</p>
 
-            <div class="hub-grid">
-              <div class="hub-box">
-                <h3>🚀 1-Click Automated Browser Launch</h3>
-                <p>Launch your installed Chromium browser with the extension pre-loaded:</p>
-                <div class="browser-launch-actions" id="browser-launch-actions">
-                  <button class="btn btn-primary btn-large" id="btn-launch-browser-auto">Launch Edge / Chrome with Copilot</button>
+              <div class="cal-form-grid">
+                <div class="input-field-group">
+                  <label class="field-label">Target Countries (comma separated)</label>
+                  <input type="text" id="pref-target-countries" class="text-input" placeholder="e.g. Tunisia, France, Germany">
+                  <span class="field-hint">Picks local national boards (Keejob for Tunisia, HelloWork for France, etc.)</span>
                 </div>
-                <div class="detected-browsers-list" id="detected-browsers-list">
-                  <h4>Detected Chromium Browsers:</h4>
-                  <ul id="browsers-ul"></ul>
+
+                <div class="input-field-group">
+                  <label class="field-label">Home Country & Preferred Cities</label>
+                  <input type="text" id="pref-home-cities" class="text-input" placeholder="e.g. Tunis, Sfax, Paris">
+                </div>
+
+                <div class="input-field-group">
+                  <label class="field-label">Preferred Job Types</label>
+                  <div class="checkbox-row" id="pref-job-types-row">
+                    <label class="checkbox-label"><input type="checkbox" value="Full-time" checked> Full-time</label>
+                    <label class="checkbox-label"><input type="checkbox" value="Internship"> Internship / PFE</label>
+                    <label class="checkbox-label"><input type="checkbox" value="Contract"> Contract / Freelance</label>
+                    <label class="checkbox-label"><input type="checkbox" value="Part-time"> Part-time</label>
+                  </div>
+                </div>
+
+                <div class="input-field-group">
+                  <label class="field-label">Default Work Mode</label>
+                  <select id="pref-work-mode" class="select-dropdown">
+                    <option value="Any">Any Mode (Remote, Hybrid, Onsite)</option>
+                    <option value="Remote">Remote Only</option>
+                    <option value="Hybrid">Hybrid</option>
+                    <option value="Onsite">Onsite</option>
+                  </select>
+                </div>
+
+                <div class="input-field-group">
+                  <label class="field-label">Excluded Companies (never show)</label>
+                  <input type="text" id="pref-excluded-companies" class="text-input" placeholder="e.g. Globex, SpamCo">
+                </div>
+
+                <div class="input-field-group">
+                  <label class="field-label">Excluded Keywords (hide technologies you dislike)</label>
+                  <input type="text" id="pref-excluded-keywords" class="text-input" placeholder="e.g. php, wordpress, legacy">
+                </div>
+
+                <div class="input-field-group">
+                  <label class="field-label">Dream Companies (boost fit score)</label>
+                  <input type="text" id="pref-dream-companies" class="text-input" placeholder="e.g. Google, Vermeg, Stripe, Mistral">
+                </div>
+
+                <div class="input-field-group">
+                  <label class="field-label">Search Depth</label>
+                  <select id="pref-search-depth" class="select-dropdown">
+                    <option value="standard">Standard (Balanced speed & depth)</option>
+                    <option value="quick">Quick (Top results only)</option>
+                    <option value="deep">Deep (Comprehensive multi-query variant)</option>
+                  </select>
                 </div>
               </div>
 
-              <div class="hub-box">
-                <h3>📂 Manual / Developer Setup</h3>
-                <p>To load the extension permanently in Developer Mode:</p>
-                <ol class="setup-steps">
-                  <li>Open <code>chrome://extensions</code> or <code>edge://extensions</code> in your browser.</li>
-                  <li>Enable <strong>Developer Mode</strong> (toggle in top right).</li>
-                  <li>Click <strong>Load unpacked</strong>.</li>
-                  <li>Select the <code>extension</code> folder in this project.</li>
-                </ol>
-                <button class="btn btn-secondary" id="btn-copy-ext-path">📋 Copy Extension Path</button>
-                <button class="btn btn-secondary" id="btn-open-ext-mgr">📂 Open Extension Manager</button>
+              <div id="pref-status-feedback" class="status-alert-box" style="display:none;"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 6: AUTO-APPLY & DESKTOP HUB -->
+        <section class="tab-panel" id="tab-extension">
+          <div class="extension-view-grid">
+            <!-- Auto-Apply Dispatcher & Queue Card -->
+            <div class="hub-card hub-card-span-2">
+              <div class="hub-card-header">
+                <div class="hub-icon-box">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                </div>
+                <div class="hub-card-header-info">
+                  <h2 class="card-heading">Auto-Apply Application Dispatcher</h2>
+                  <p class="card-desc">AI agent automatically iterates through queued jobs, autofills ATS applications (Greenhouse, Lever, Ashby, Workday), and answers screening questions.</p>
+                </div>
+                <div class="hub-card-header-actions">
+                  <button class="btn btn-primary" id="btn-run-auto-apply-queue">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                    Run Auto-Apply on Queued Jobs
+                  </button>
+                </div>
+              </div>
+
+              <!-- Queued Applications Table / List -->
+              <div class="auto-apply-queue-container">
+                <div class="queue-toolbar">
+                  <span class="queue-count-badge" id="auto-apply-queue-badge">0 Applications Queued</span>
+                  <span class="queue-hint-text">Add opportunities from the Radar or Kanban to automate submissions</span>
+                </div>
+                <div class="auto-apply-queue-list" id="auto-apply-queue-list">
+                  <div class="queue-empty-state">
+                    <p>No jobs queued for auto-apply yet. Find high-match jobs in Radar & Discovery and click <strong>"Queue Auto-Apply"</strong>.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Auto-Apply Settings & Work Authorization -->
+            <div class="hub-card">
+              <h2 class="card-heading">Work Authorization & Auto-Fill Rules</h2>
+              <p class="card-desc">Rules used by the copilot to answer legal compliance and availability questions on ATS forms.</p>
+
+              <div class="cal-form-grid" style="margin-top:14px;">
+                <div class="input-field-group">
+                  <label class="field-label">Legally Authorized to Work in Target Location?</label>
+                  <select id="auto-work-auth" class="select-dropdown">
+                    <option value="yes" selected>Yes — Legally Authorized</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+
+                <div class="input-field-group">
+                  <label class="field-label">Will you require Visa Sponsorship?</label>
+                  <select id="auto-visa-sponsorship" class="select-dropdown">
+                    <option value="no" selected>No — Do not require sponsorship</option>
+                    <option value="yes">Yes — Require sponsorship</option>
+                  </select>
+                </div>
+
+                <div class="input-field-group">
+                  <label class="field-label">Notice Period / Availability</label>
+                  <select id="auto-notice-period" class="select-dropdown">
+                    <option value="immediate" selected>Immediately Available</option>
+                    <option value="2weeks">2 Weeks</option>
+                    <option value="1month">1 Month</option>
+                  </select>
+                </div>
+
+                <div class="input-field-group">
+                  <label class="field-label">Submission Mode</label>
+                  <select id="auto-submission-mode" class="select-dropdown">
+                    <option value="supervised" selected>Supervised (Autofills + 1-Click to Confirm)</option>
+                    <option value="autonomous">Autonomous (5s countdown timer auto-submit)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- 1-Click Launch Box -->
+            <div class="hub-card">
+              <div class="hub-card-header">
+                <div class="hub-icon-box">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                </div>
+                <div>
+                  <h2 class="card-heading">1-Click ATS Browser Launcher</h2>
+                  <p class="card-desc">Launch Chromium with the JobHunter Copilot extension loaded and authenticated.</p>
+                </div>
+              </div>
+
+              <div class="hub-launch-cta">
+                <button class="btn btn-primary btn-large btn-full" id="btn-hub-launch-browser">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="3" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                  Launch Edge / Chrome with Copilot
+                </button>
+              </div>
+
+              <div class="detected-browsers-block">
+                <h3 class="section-subheading">Detected Chromium Installations:</h3>
+                <ul class="browsers-bullet-list" id="hub-browsers-list"></ul>
+              </div>
+            </div>
+
+            <!-- Live Screening Solver Testbed -->
+            <div class="hub-card hub-card-span-2">
+              <h2 class="card-heading">Interactive Screening Question Solver</h2>
+              <p class="card-desc">Test how the in-browser copilot answers custom employer questions using facts from your verified profile.</p>
+
+              <div class="input-field-group">
+                <label class="field-label">Employer Question</label>
+                <input type="text" id="hub-test-question" class="text-input" placeholder="e.g. How many years of experience do you have with Python and FastAPI?" value="How many years of professional experience do you have with Python and REST APIs?">
+              </div>
+
+              <button class="btn btn-secondary" id="btn-test-solve">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="m10 15 5-3-5-3v6Z"></path></svg>
+                Solve Question with Reviewer QA
+              </button>
+
+              <div class="test-solution-box" id="hub-test-answer-box">
+                <span class="placeholder-text">Click "Solve Question" above to preview truthful generated answers.</span>
               </div>
             </div>
           </div>
@@ -234,7 +714,44 @@
     </main>
   </div>
 
+  <!-- Modal for New Tracker Application -->
+  <div class="modal-backdrop" id="modal-new-app" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Track Application</h3>
+        <button class="modal-close-btn" id="btn-close-app-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="input-field-group">
+          <label class="field-label">Company Name</label>
+          <input type="text" id="modal-app-company" class="text-input" placeholder="e.g. Vermeg, Stripe">
+        </div>
+        <div class="input-field-group">
+          <label class="field-label">Job Title</label>
+          <input type="text" id="modal-app-title" class="text-input" placeholder="e.g. Backend Software Engineer">
+        </div>
+        <div class="input-field-group">
+          <label class="field-label">Application URL (Optional)</label>
+          <input type="text" id="modal-app-url" class="text-input" placeholder="https://...">
+        </div>
+        <div class="input-field-group">
+          <label class="field-label">Status Stage</label>
+          <select id="modal-app-status" class="select-dropdown">
+            <option value="saved">Bookmarked / Saved</option>
+            <option value="queued">Queued for Auto-Apply</option>
+            <option value="applied">Applied</option>
+            <option value="interview">Interviewing</option>
+            <option value="offer">Offer Received</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-cancel-modal">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-modal-app">Save to Kanban</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>
-
