@@ -499,6 +499,23 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
                 "confidence": j.get("confidence")}
 
     @tool
+    def score_fit(job_id: str = "", job_title: str = "", company: str = "", description: str = "", salary: str = "",
+                  location: str = "", resume_name: str = "") -> dict[str, Any]:
+        """Score how well your resume fits one job description. Returns match score, breakdown, and missing skills.
+
+        Args:
+            job_id: Id from search results. Or pass job_title, company and description for pasted text.
+            job_title: Title for pasted text.
+            company: Company for pasted text.
+            description: Posting text.
+            salary: Optional salary text. Read from the description when empty.
+            location: Optional location for pasted text.
+            resume_name: Resume variant. Empty means the active resume.
+        """
+        return score_job(job_id=job_id, job_title=job_title, company=company, description=description,
+                         salary=salary, location=location, resume_name=resume_name)
+
+    @tool
     def gap_report(job_id: str = "", job_title: str = "", company: str = "", description: str = "", resume_name: str = "") -> dict[str, Any]:
         """List which skills the job wants that your resume lacks, which are real gaps, and which you could add truthfully.
 
@@ -593,6 +610,23 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             base = f"{_slug(job.get('company', ''))}-{_slug(job.get('title', ''))}"
             out["saved_to"] = {"json": store.save_output("tailored", f"{base}.json", tailored), "text": store.save_output("tailored", f"{base}.txt", text)}
         return out
+
+    @tool
+    def rewrite_resume(job_id: str = "", job_title: str = "", company: str = "", description: str = "", archetype: str = "technical_depth",
+                       resume_name: str = "", save: bool = True) -> dict[str, Any]:
+        """Rewrite resume bullets tailored to a target job while strictly preserving factual accuracy.
+
+        Args:
+            job_id: Id from search results. Or pass job_title, company and description.
+            job_title: Title for pasted text.
+            company: Company for pasted text.
+            description: Posting text.
+            archetype: technical_depth, startup_velocity or enterprise_scale.
+            resume_name: Resume variant. Empty means the active resume.
+            save: Write the result to .jobhunter/output/tailored.
+        """
+        return tailor_resume(job_id=job_id, job_title=job_title, company=company, description=description,
+                             archetype=archetype, resume_name=resume_name, save=save)
 
     @tool
     def cover_letter(job_id: str = "", job_title: str = "", company: str = "", description: str = "", tone: str = "direct",
@@ -873,6 +907,23 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         app = next(a for a in tracker.list_applications() if a["id"] == app_id)
         return {"application": {k: app[k] for k in ("id", "company", "title", "status", "follow_up_date", "url", "notes")},
                 "updated_existing": bool(existing)}
+
+    @tool
+    def add_to_tracker(company: str = "", title: str = "", status: str = "applied", url: str = "", notes: str = "",
+                       follow_up_date: str = "", job_id: str = "") -> dict[str, Any]:
+        """Add a job application to your local application tracking pipeline.
+
+        Args:
+            company: Company, when there is no job_id.
+            title: Job title, when there is no job_id.
+            status: saved, applied, interview, offer or rejected.
+            url: Posting or application link.
+            notes: Referrals, contacts, thoughts.
+            follow_up_date: YYYY-MM-DD. Calculated from the stage when empty.
+            job_id: Id from search results.
+        """
+        return track_application(company=company, title=title, status=status, url=url, notes=notes,
+                                 follow_up_date=follow_up_date, job_id=job_id)
 
     @tool
     def list_applications(status: str = "") -> dict[str, Any]:

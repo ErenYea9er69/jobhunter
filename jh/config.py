@@ -10,10 +10,26 @@ WORKSPACE_DIR = os.environ.get("JH_WORKSPACE", "")
 if WORKSPACE_DIR:
     WORKSPACE_DIR = os.path.abspath(WORKSPACE_DIR)
 
-# Before configure_mcp_environment() runs (tests, scripts) fall back to ./data.
+# Data directory lives in the user's home folder (~/.jobhunter) by default,
+# and is fully configurable via the JH_DATA_DIR environment variable.
+DEFAULT_DATA_DIR = os.path.join(os.path.expanduser("~"), ".jobhunter")
 JOBHUNTER_DIR = os.path.join(WORKSPACE_DIR, ".jobhunter") if WORKSPACE_DIR else ""
-DATA_DIR = os.environ.get("JH_DATA_DIR") or JOBHUNTER_DIR or os.path.join(BASE_DIR, "data")
+DATA_DIR = os.environ.get("JH_DATA_DIR") or DEFAULT_DATA_DIR
 DB_PATH = os.path.join(DATA_DIR, "engine.db")
+
+def _ensure_data_dir() -> None:
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        # Migrate legacy data/engine.db only when initializing the user's default home directory
+        if DATA_DIR == DEFAULT_DATA_DIR:
+            legacy_db = os.path.join(BASE_DIR, "data", "engine.db")
+            if os.path.exists(legacy_db) and not os.path.exists(DB_PATH):
+                import shutil
+                shutil.copy2(legacy_db, DB_PATH)
+    except Exception:
+        pass
+
+_ensure_data_dir()
 
 # Search behavior
 SEARCH_WORKERS = 16
@@ -109,6 +125,7 @@ def configure_mcp_environment(workspace_path: str = ""):
     WORKSPACE_DIR = ws
     os.environ["JH_WORKSPACE"] = ws
     JOBHUNTER_DIR = os.path.join(ws, ".jobhunter")
-    DATA_DIR = os.environ.get("JH_DATA_DIR", JOBHUNTER_DIR)
+    DATA_DIR = os.environ.get("JH_DATA_DIR") or DEFAULT_DATA_DIR
     DB_PATH = os.path.join(DATA_DIR, "engine.db")
+    _ensure_data_dir()
     return JOBHUNTER_DIR

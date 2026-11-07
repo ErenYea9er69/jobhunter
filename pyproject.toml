@@ -31,10 +31,13 @@ dev = ["pytest>=8.0"]
 jobhunter-mcp = "mcp_server:main"
 
 [tool.setuptools]
-py-modules = ["mcp_server"]
+py-modules = ["mcp_server", "desktop"]
 
 [tool.setuptools.packages.find]
-include = ["jh*"]
+include = ["jh*", "prompts*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.json", "*.html", "*.css", "*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -8,12 +8,56 @@ By default the AI sees seven CEO tools. The 39 specialist tools sit behind them.
 
 ## Quick start
 
+### One-line Installation with uvx
+
+Run the MCP server directly with zero manual cloning or setup:
+
+```bash
+uvx --from git+https://github.com/ErenYea9er69/jobhunter jobhunter-mcp
+```
+
+### Claude Code CLI
+
+Add JobHunter directly with the Claude CLI:
+
+```bash
+claude mcp add jobhunter -- uvx --from git+https://github.com/ErenYea9er69/jobhunter jobhunter-mcp
+```
+
+### Claude Desktop Configuration
+
+Add the server to your `claude_desktop_config.json`:
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "jobhunter": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/ErenYea9er69/jobhunter",
+        "jobhunter-mcp"
+      ],
+      "env": {
+        "JH_DATA_DIR": ""
+      }
+    }
+  }
+}
+```
+
+*(Leave `JH_DATA_DIR` empty to default to `~/.jobhunter`, or provide a custom directory path).*
+
+### Local Development
+
 ```bash
 pip install -r requirements.txt
 python mcp_server.py --check        # starts the server, lists the tools, exits
 ```
 
-Put a PDF, DOCX or TXT resume in your workspace folder (or in `resumes/`), then add the server to your client. Examples for each client are in `docs/mcp-setup/`.
+Put a PDF, DOCX or TXT resume in your workspace folder (or in `resumes/`), or use `scan_resumes` / `parse_resume_file`. Local configuration can also be pointed at a workspace:
 
 ```json
 {
@@ -114,13 +158,13 @@ Every tool returns one envelope: `status` (`ok`, `partial`, `error`), `success`,
 
 ## Your data
 
-Everything lives in `<workspace>/.jobhunter/`, which ignores itself in git.
+Everything lives in your user home directory at `~/.jobhunter/` by default, or the folder configured via the `JH_DATA_DIR` environment variable.
 
 - `engine.db` is the SQLite database: resumes, stored jobs, applications, watchlist, board health.
 - `preferences.json` holds your preferences, feeds and career pages.
 - `output/` holds adapted resumes, cover letters, interview prep and exports.
 
-Applications live only in SQLite. An old `applications.json` is imported once and renamed.
+Applications live in SQLite. Any old `applications.json` is imported once and renamed.
 
 ## Protected code
 

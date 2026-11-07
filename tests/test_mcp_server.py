@@ -56,10 +56,14 @@ class TestMCPServer(unittest.TestCase):
         resume_file = resumes_dir / "senior-python-engineer.txt"
         resume_file.write_text(SAMPLE_RESUME, encoding="utf-8")
 
-        # Create and initialize server
+        # Create and initialize server with isolated data dir
+        self.jh_data_dir = self.ws_path / ".jobhunter"
+        self.jh_data_dir.mkdir(parents=True, exist_ok=True)
+        os.environ["JH_DATA_DIR"] = str(self.jh_data_dir)
         self.server = mcp_server.create_server(str(self.ws_path))
 
     def tearDown(self):
+        os.environ.pop("JH_DATA_DIR", None)
         self.temp_dir.cleanup()
 
     def _call_tool(self, name: str, **kwargs):

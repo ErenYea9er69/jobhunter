@@ -87,9 +87,10 @@ def ws(tmp_path, monkeypatch):
     from jh import company_directory, config, db, preferences, sources
     (tmp_path / "resumes").mkdir()
     (tmp_path / "resumes" / "ahmed_backend.txt").write_text(SAMPLE_RESUME, encoding="utf-8")
-    monkeypatch.delenv("JH_DATA_DIR", raising=False)
+    test_jh_dir = tmp_path / ".jobhunter"
+    test_jh_dir.mkdir(exist_ok=True)
+    monkeypatch.setenv("JH_DATA_DIR", str(test_jh_dir))
     config.configure_mcp_environment(str(tmp_path))
-    (tmp_path / ".jobhunter").mkdir(exist_ok=True)
     db.init_db()
     preferences._cache.update(mtime=None, path=None, data=None)
     company_directory._cache.clear()

@@ -18,8 +18,8 @@ SURFACES = ("team", "full")
 
 
 def resolve(value: str | None) -> str:
-    v = (value or os.environ.get("JH_SURFACE") or "team").strip().lower()
-    return v if v in SURFACES else "team"
+    v = (value or os.environ.get("JH_SURFACE") or "full").strip().lower()
+    return v if v in SURFACES else "full"
 
 
 class TeamMCP(FastMCP):
