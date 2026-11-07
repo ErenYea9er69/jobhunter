@@ -77,6 +77,7 @@ def ensure_jobhunter_dir(workspace_path: str | Path) -> Path:
     jh_dir = ws / ".jobhunter"
 
     subdirs = [
+        jh_dir / "cache",
         jh_dir / "output" / "tailored",
         jh_dir / "output" / "cover-letters",
         jh_dir / "output" / "interview-prep",

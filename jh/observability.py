@@ -168,12 +168,91 @@ def record_tool_call(
     return event
 
 
+def record_source_fetch(
+    source_name: str,
+    correlation_id: str = "",
+    success: bool = True,
+    job_count: int = 0,
+    duration_ms: float = 0.0,
+    retry_count: int = 0,
+    cached: bool = False,
+    warning: Optional[str] = None,
+) -> ObservabilityEvent:
+    """Record a source adapter fetch outcome."""
+    event = ObservabilityEvent(
+        event_type=EventType.CACHE_HIT if cached else (EventType.SOURCE_FETCH if success else EventType.SOURCE_ERROR),
+        correlation_id=correlation_id or uuid.uuid4().hex[:12],
+        source_name=source_name,
+        outcome="ok" if success else "error",
+        result_count=job_count,
+        duration_ms=duration_ms,
+        retry_count=retry_count,
+        warning_category=warning,
+    )
+    get_store().record(event)
+    return event
 
 
+def record_security_event(
+    blocked_url: str = "",
+    blocked_reason: str = "",
+    detail: str = "",
+    correlation_id: str = "",
+) -> ObservabilityEvent:
+    """Record a security-relevant event (blocked URL, path escape, etc.)."""
+    safe_url = _redact_for_log(blocked_url)
+    event = ObservabilityEvent(
+        event_type=EventType.SECURITY_BLOCKED,
+        correlation_id=correlation_id or uuid.uuid4().hex[:12],
+        outcome="blocked",
+        blocked_url=safe_url,
+        blocked_reason=blocked_reason,
+        detail=detail,
+    )
+    get_store().record(event)
+    return event
 
 
+def record_grounding_check(
+    supported: int = 0,
+    unsupported: int = 0,
+    needs_review: int = 0,
+    validator_version: str = "",
+    prompt_version: str = "",
+    correlation_id: str = "",
+) -> ObservabilityEvent:
+    """Record a grounding verification result."""
+    event = ObservabilityEvent(
+        event_type=EventType.GROUNDING_CHECK,
+        correlation_id=correlation_id or uuid.uuid4().hex[:12],
+        outcome="approved" if unsupported == 0 and needs_review == 0 else "needs_review",
+        result_count=supported + unsupported + needs_review,
+        validator_version=validator_version,
+        prompt_version=prompt_version,
+        detail=f"supported={supported} unsupported={unsupported} review={needs_review}",
+    )
+    get_store().record(event)
+    return event
 
 
+def record_parse_event(
+    source_file: str,
+    success: bool = True,
+    duration_ms: float = 0.0,
+    correlation_id: str = "",
+    detail: Optional[str] = None,
+) -> ObservabilityEvent:
+    """Record resume parsing attempt."""
+    safe_file = _redact_for_log(source_file) if "://" in source_file else source_file
+    event = ObservabilityEvent(
+        event_type=EventType.PARSE_RESUME,
+        correlation_id=correlation_id or uuid.uuid4().hex[:12],
+        outcome="ok" if success else "error",
+        duration_ms=duration_ms,
+        detail=f"file={safe_file}" + (f" {detail}" if detail else ""),
+    )
+    get_store().record(event)
+    return event
 
 
 def record_startup(

@@ -66,7 +66,18 @@ class TestMCPServer(unittest.TestCase):
         # Directly invoke the registered tool function through FastMCP tool manager
         tool = self.server._tool_manager.get_tool(name)
         self.assertIsNotNone(tool, f"Tool '{name}' not found on server")
-        return tool.fn(**kwargs)
+        raw = tool.fn(**kwargs)
+        if isinstance(raw, dict) and "data" in raw:
+            merged = dict(raw.get("data") or {})
+            merged["success"] = raw.get("success", True)
+            merged["status"] = raw.get("status", "ok")
+            merged["warnings"] = raw.get("warnings", [])
+            if isinstance(merged.get("saved_to"), dict):
+                merged["saved_to"] = merged["saved_to"].get("text") or merged["saved_to"].get("txt") or list(merged["saved_to"].values())[0]
+            if "letter" in merged and "cover_letter" not in merged:
+                merged["cover_letter"] = merged["letter"]
+            return merged
+        return raw
 
     def test_startup_discovery_and_active_resume(self):
         res = self._call_tool("list_resumes")

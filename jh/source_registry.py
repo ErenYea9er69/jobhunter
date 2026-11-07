@@ -155,3 +155,156 @@ def plan(name: str, targets: list[str], location: str, remote_ok: bool) -> list[
             return default
         return [{"suffix": f"@{c.lower()}", "location": _location_for(c, location), "kwargs": {}} for c in picks]
     return default
+
+
+from .models import SourceAccessMethod
+from dataclasses import field
+from typing import Any
+
+@dataclass
+class SourceCapabilities:
+    supports_keyword: bool = True
+    supports_location: bool = True
+    supports_remote: bool = False
+    supports_seniority: bool = False
+    supports_salary_filter: bool = False
+    supports_job_type: bool = False
+    supports_company_filter: bool = False
+    supports_pagination: bool = True
+    max_pages: int = 5
+    max_results_per_page: int = 25
+
+    def to_dict(self) -> dict[str, Any]:
+        from dataclasses import asdict
+        return asdict(self)
+
+
+@dataclass
+class SourceDescriptor:
+    name: str = ""
+    access_method: SourceAccessMethod = SourceAccessMethod.PUBLIC_FEED
+    capabilities: SourceCapabilities = field(default_factory=SourceCapabilities)
+    enabled: bool = True
+    requires_api_key: bool = False
+    api_key_env_var: str = ""
+    base_url: str = ""
+    regional_endpoints: dict[str, str] = field(default_factory=dict)
+    cache_ttl_seconds: int = 900
+    detail_ttl_seconds: int = 3600
+    rate_limit_rpm: int = 60
+    request_timeout_seconds: float = 10.0
+    max_retries: int = 2
+    circuit_breaker_threshold: int = 3
+    circuit_breaker_cooldown: int = 300
+    documentation_url: str = ""
+    terms_url: str = ""
+    notes: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        from dataclasses import asdict
+        d = asdict(self)
+        d["access_method"] = self.access_method.value
+        return d
+
+
+class SourceRegistry:
+    def __init__(self) -> None:
+        self._sources: dict[str, SourceDescriptor] = {}
+        self._register_defaults()
+
+    def _register_defaults(self) -> None:
+        self.register(SourceDescriptor(
+            name="Greenhouse",
+            access_method=SourceAccessMethod.PUBLIC_API,
+            capabilities=SourceCapabilities(supports_keyword=True, supports_location=False, supports_remote=False, supports_pagination=True, max_pages=10, max_results_per_page=100),
+            base_url="https://boards-api.greenhouse.io/v1/boards/{board}/jobs",
+            documentation_url="https://developers.greenhouse.io/job-board.html",
+        ))
+        self.register(SourceDescriptor(
+            name="Lever",
+            access_method=SourceAccessMethod.PUBLIC_API,
+            capabilities=SourceCapabilities(supports_keyword=True, supports_location=True, supports_remote=False, supports_pagination=True, max_pages=5),
+            base_url="https://api.lever.co/v0/postings/{company}",
+        ))
+        self.register(SourceDescriptor(
+            name="LinkedIn",
+            access_method=SourceAccessMethod.CAREER_SITE,
+            capabilities=SourceCapabilities(supports_keyword=True, supports_location=True, supports_remote=True, supports_pagination=True, max_pages=5),
+            base_url="https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search",
+        ))
+        self.register(SourceDescriptor(
+            name="Adzuna",
+            access_method=SourceAccessMethod.AUTHORIZED_API,
+            capabilities=SourceCapabilities(supports_keyword=True, supports_location=True, supports_salary_filter=True, supports_pagination=True, max_pages=5),
+            requires_api_key=True,
+            api_key_env_var="ADZUNA_APP_KEY",
+            base_url="https://api.adzuna.com/v1/api/jobs/{country}/search",
+            regional_endpoints={
+                "us": "https://api.adzuna.com/v1/api/jobs/us/search",
+                "gb": "https://api.adzuna.com/v1/api/jobs/gb/search",
+                "de": "https://api.adzuna.com/v1/api/jobs/de/search",
+                "fr": "https://api.adzuna.com/v1/api/jobs/fr/search",
+                "au": "https://api.adzuna.com/v1/api/jobs/au/search",
+                "ca": "https://api.adzuna.com/v1/api/jobs/ca/search",
+            },
+        ))
+        for name in ("Ashby", "Workable", "SmartRecruiters", "Recruitee", "Personio", "Teamtailor", "BambooHR", "Breezy", "Remotive", "We Work Remotely", "Remote OK"):
+            self.register(SourceDescriptor(name=name, access_method=SourceAccessMethod.PUBLIC_FEED, capabilities=SourceCapabilities(supports_keyword=True, supports_remote=True)))
+
+    def register(self, source: SourceDescriptor) -> None:
+        self._sources[source.name] = source
+
+    def get(self, name: str) -> Optional[SourceDescriptor]:
+        return self._sources.get(name)
+
+    def all(self) -> list[SourceDescriptor]:
+        return list(self._sources.values())
+
+    def enabled(self) -> list[SourceDescriptor]:
+        return [s for s in self._sources.values() if s.enabled]
+
+    def matching(self, **filters: Any) -> list[SourceDescriptor]:
+        result = []
+        for src in self.enabled():
+            caps = src.capabilities
+            match = True
+            for key, val in filters.items():
+                if val and hasattr(caps, key) and not getattr(caps, key):
+                    match = False
+                    break
+            if match:
+                result.append(src)
+        return result
+
+    def names(self) -> list[str]:
+        return list(self._sources.keys())
+
+    def health_summary(self) -> dict[str, Any]:
+        entries = []
+        for src in self._sources.values():
+            entries.append({
+                "name": src.name,
+                "enabled": src.enabled,
+                "access_method": src.access_method.value,
+                "requires_api_key": src.requires_api_key,
+                "cache_ttl_seconds": src.cache_ttl_seconds,
+                "rate_limit_rpm": src.rate_limit_rpm,
+            })
+        return {
+            "total_sources": len(self._sources),
+            "enabled_count": sum(1 for s in self._sources.values() if s.enabled),
+            "sources": entries,
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        return {name: src.to_dict() for name, src in self._sources.items()}
+
+
+_global_registry: Optional[SourceRegistry] = None
+
+
+def get_registry() -> SourceRegistry:
+    global _global_registry
+    if _global_registry is None:
+        _global_registry = SourceRegistry()
+    return _global_registry

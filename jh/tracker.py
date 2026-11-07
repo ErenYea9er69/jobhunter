@@ -374,8 +374,12 @@ def generate_one_click_bundle(job, profile=None, use_llm=None, archetype="startu
         "Tell us about a challenging technical problem you solved and the measurable impact it had."
     ]
     screening_answers = []
+    job_for_screening = dict(job) if isinstance(job, dict) else {}
+    req_sk = job_for_screening.get("required_skills")
+    if isinstance(req_sk, dict):
+        job_for_screening["required_skills"] = list(req_sk.keys())
     for q in standard_questions:
-        ans = screening.solve_screening_question(q, profile, job, use_llm=use_llm)
+        ans = screening.solve_screening_question(q, profile, job_for_screening, use_llm=use_llm)
         screening_answers.append({
             "question": q,
             "answer": ans.get("answer", ""),

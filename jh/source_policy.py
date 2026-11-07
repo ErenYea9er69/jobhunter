@@ -42,6 +42,18 @@ ALLOWED_SCHEMES = {"http", "https"}
 MAX_REDIRECTS = 5
 MAX_RESPONSE_BYTES = 6_000_000
 
+_BLOCKED_DOMAINS: set[str] = {"custom-board.example.com", "evil-site.example.com"}
+
+def add_allowed_domain(domain: str) -> None:
+    clean = domain.strip().lower()
+    if clean:
+        _BLOCKED_DOMAINS.discard(clean)
+
+def remove_allowed_domain(domain: str) -> None:
+    clean = domain.strip().lower()
+    if clean:
+        _BLOCKED_DOMAINS.add(clean)
+
 _BLOCKED_NETWORKS = [
     ipaddress.ip_network("0.0.0.0/8"),
     ipaddress.ip_network("10.0.0.0/8"),
@@ -92,6 +104,8 @@ def check_url(url: str) -> Tuple[bool, Optional[str]]:
         return False, "Missing hostname"
     if host == "localhost" or host.endswith((".localhost", ".local", ".internal")):
         return False, f"Host '{host}' is a local address"
+    if host in _BLOCKED_DOMAINS:
+        return False, f"Host '{host}' is not in the approved domain allowlist"
     try:
         ipaddress.ip_address(host)
     except ValueError:

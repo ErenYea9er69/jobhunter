@@ -20,6 +20,12 @@ from . import (ats, company_directory, config, db, evidence, exporters, intervie
 from . import mcp_helpers as h
 from .filestore import OutputStore
 from .mcp_helpers import Result, ToolError
+
+def _tool_envelope(status: str = "ok", data: Optional[dict] = None, warnings: Optional[list] = None,
+                   sources: Optional[list] = None, sources_used: Optional[list] = None, cid: str = "",
+                   error: Optional[dict] = None) -> dict[str, Any]:
+    src = sources if sources is not None else sources_used
+    return h.envelope(status=status, data=data, warnings=warnings, sources=src, cid=cid, error=error)
 from .resume_registry import ResumeRegistry
 from .source_policy import sanitize_apply_url
 from .util import clean_text, http_get_text
@@ -33,7 +39,7 @@ ARCHETYPE_ALIASES = {
 }
 PLAYBOOKS = ("resume_tailor", "cover_letter", "interview_prep", "screening_question_solver", "recruiter_outreach",
              "mock_interview_evaluator", "career_skill_roadmap", "application_follow_up")
-EDITABLE_SETTINGS = {"ai_provider", "ai_model", "max_results", "max_scored_jobs"}
+EDITABLE_SETTINGS = {"ai_provider", "ai_model", "max_results", "max_scored_jobs", "min_salary", "active_resume"}
 AI_PROVIDERS = {"auto", "deterministic", "gemini", "openai", "anthropic", "deepseek", "groq", "mistral", "ollama", "custom"}
 
 
@@ -488,7 +494,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         """
         job, profile = job_and_profile(job_id, job_title, company, description, resume_name, salary, location)
         j = h.score_against(job, profile)
-        return {**h.card(j, detail=True), "required_skills": j.get("required_skills", {}), "salary_annual_min": j.get("salary_annual_min"),
+        return {**h.card(j, detail=True), "score": j.get("score"), "breakdown": j.get("score_breakdown", {}), "required_skills": j.get("required_skills", {}), "salary_annual_min": j.get("salary_annual_min"),
                 "salary_annual_max": j.get("salary_annual_max"), "country": j.get("country"), "rationale": j.get("rationale", []),
                 "confidence": j.get("confidence")}
 
@@ -504,7 +510,10 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             resume_name: Resume variant. Empty means the active resume.
         """
         job, profile = job_and_profile(job_id, job_title, company, description, resume_name)
-        return refit.generate_gap_report(job, profile)
+        report = refit.generate_gap_report(job, profile)
+        report["saved_to"] = store.save_output("reports", f"{_slug(job.get('company', ''))}-{_slug(job.get('title', ''))}-gap.json", report)
+        report["report_file"] = report["saved_to"]
+        return report
 
     @tool
     def ats_audit(job_id: str = "", job_title: str = "", company: str = "", description: str = "", resume_name: str = "") -> dict[str, Any]:
@@ -520,6 +529,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         job, profile = job_and_profile(job_id, job_title, company, description, resume_name)
         audit = ats.compute_ats_audit(profile, job)
         audit["saved_to"] = store.save_output("reports", f"{_slug(job.get('company', ''))}-{_slug(job.get('title', ''))}-ats.json", audit)
+        audit["report_file"] = audit["saved_to"]
         return audit
 
     @tool
@@ -634,7 +644,10 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             raise ToolError("Give at least one question.")
         profile = h.resolve_profile(resume_name)
         job = h.build_job(job_id, job_title, company, description) if (job_id or job_title or description) else {}
-        answers = [{"question": q, **screening.solve_screening_question(q, profile, job)} for q in qs[:20]]
+        job_for_q = dict(job) if isinstance(job, dict) else {}
+        if isinstance(job_for_q.get("required_skills"), dict):
+            job_for_q["required_skills"] = list(job_for_q["required_skills"].keys())
+        answers = [{"question": q, **screening.solve_screening_question(q, profile, job_for_q)} for q in qs[:20]]
         return {"count": len(answers), "answers": answers}
 
     @tool
@@ -894,7 +907,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             if v:
                 merged[k] = v
         tracker.upsert_application(merged)
-        return {"id": id, "status": merged["status"], "notes": merged["notes"], "follow_up_date": merged["follow_up_date"]}
+        return {"id": id, "status": merged["status"], "notes": merged["notes"], "follow_up_date": merged["follow_up_date"], "application": merged}
 
     @tool
     def application_stats() -> dict[str, Any]:
@@ -1016,7 +1029,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         if k in ("max_results", "max_scored_jobs") and not v.isdigit():
             raise ToolError(f"{k} must be a whole number.")
         db.set_setting(k, v.lower() if k == "ai_provider" else v)
-        return {"updated": k, "ai": ai_status()}
+        return {"updated": k, "key": k, "value": v, "ai": ai_status()}
 
     # ===================================================================== RESOURCES (read-only views of the same data)
 
@@ -1051,6 +1064,13 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
     def preferences_resource() -> str:
         """Personal search preferences."""
         return as_json(preferences.load())
+
+    @mcp.resource("jobhunter://config")
+    def config_resource() -> str:
+        """Server and workspace configuration."""
+        data = dict(preferences.load())
+        data["workspace"] = str(ws)
+        return as_json(data)
 
     @mcp.resource("jobhunter://sources")
     def sources_resource() -> str:

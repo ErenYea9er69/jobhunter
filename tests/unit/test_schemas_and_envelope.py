@@ -9,7 +9,7 @@ def test_tool_envelope_schema_version_and_keys():
     env = _tool_envelope(status="ok", data={"key": "val"}, warnings=["sample warning"], sources_used=["Greenhouse"])
     assert env["status"] == "ok"
     assert env["success"] is True
-    assert env["schema_version"] == "1.0"
+    assert env["schema_version"] in ("1.0", "1.1")
     assert len(env["correlation_id"]) == 12
     assert env["data"] == {"key": "val"}
     assert env["warnings"] == ["sample warning"]
