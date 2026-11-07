@@ -428,10 +428,36 @@
                 <label class="field-label">Document Type</label>
                 <select id="doc-type-select" class="select-dropdown">
                   <option value="cover-letter">Cover Letter (Direct Impact Pitch)</option>
+                  <option value="founder-cold-email">Cold Email to Startup Founder (YC Style)</option>
                   <option value="interview-prep">STAR Interview Preparation Guide</option>
                   <option value="outreach">Recruiter Outreach & LinkedIn Note</option>
                   <option value="tailor-resume">Tailored Resume Alignment</option>
                 </select>
+              </div>
+
+              <!-- Founder Cold Email Specific Fields (Dynamic) -->
+              <div id="doc-founder-fields" style="display:none;padding:12px;border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:14px;background:var(--bg-muted);">
+                <div class="input-field-group">
+                  <label class="field-label">Founder / CEO Name</label>
+                  <input type="text" id="doc-input-founder-name" class="text-input" placeholder="e.g. Guillermo Rauch, Paul Copplestone">
+                </div>
+                <div class="input-field-group">
+                  <label class="field-label">Founder Email Address (Optional)</label>
+                  <input type="email" id="doc-input-founder-email" class="text-input" placeholder="e.g. founder@company.com">
+                </div>
+                <div class="input-field-group">
+                  <label class="field-label">Founder Outreach Angle</label>
+                  <select id="doc-input-founder-angle" class="select-dropdown">
+                    <option value="scale_velocity">Scale Velocity (Ship fast without handholding)</option>
+                    <option value="product_teardown">Product Teardown (Specific product / UX insight)</option>
+                    <option value="domain_obsession">Domain Obsession (Deep technical alignment)</option>
+                    <option value="direct_impact">Direct Impact (Proven metrics & revenue)</option>
+                  </select>
+                </div>
+                <div class="input-field-group">
+                  <label class="field-label">Product / Architecture Insight (Optional)</label>
+                  <input type="text" id="doc-input-founder-obs" class="text-input" placeholder="e.g. your connection pooling or real-time sync engine">
+                </div>
               </div>
 
               <div class="input-field-group">
@@ -478,6 +504,13 @@
                   <button class="btn btn-secondary btn-sm" id="btn-download-doc" style="display:none;" title="Print or save as PDF">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     Print / PDF
+                  </button>
+                  <a class="btn btn-secondary btn-sm" id="btn-open-gmail-compose" style="display:none;text-decoration:none;" target="_blank" rel="noopener noreferrer" title="Open directly in Gmail with prefilled body and subject">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                    Open in Gmail
+                  </a>
+                  <button class="btn btn-secondary btn-sm" id="btn-save-gmail-draft" style="display:none;" title="Save directly to connected Gmail Drafts">
+                    Save Draft
                   </button>
                   <button class="btn btn-secondary btn-sm" id="btn-copy-doc">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>

@@ -461,9 +461,60 @@
     const atsBadge = document.getElementById("doc-ats-match-badge");
     const printBtn = document.getElementById("btn-download-doc");
     const toggleBtn = document.getElementById("btn-doc-view-toggle");
+    const openGmailBtn = document.getElementById("btn-open-gmail-compose");
+    const saveDraftBtn = document.getElementById("btn-save-gmail-draft");
 
     if (statusText) statusText.textContent = "Writing & running Reviewer QA against profile ledger...";
     if (previewContainer) previewContainer.textContent = "Generating verified documents for this target role...";
+
+    if (openGmailBtn) openGmailBtn.style.display = "none";
+    if (saveDraftBtn) saveDraftBtn.style.display = "none";
+
+    if (kind === "founder-cold-email") {
+      const founderName = document.getElementById("doc-input-founder-name")?.value || "";
+      const founderEmail = document.getElementById("doc-input-founder-email")?.value || "";
+      const founderAngle = document.getElementById("doc-input-founder-angle")?.value || "scale_velocity";
+      const founderObs = document.getElementById("doc-input-founder-obs")?.value || "";
+
+      const res = await apiPost("/api/outreach/founder-email", {
+        job: { title: jobTitle, company: company, description: desc },
+        founder_name: founderName,
+        recipient_email: founderEmail,
+        angle: founderAngle,
+        custom_observation: founderObs,
+      });
+
+      if (!res) {
+        if (previewContainer) previewContainer.textContent = "Error generating founder cold email.";
+        return;
+      }
+
+      state.currentFounderOutreach = res;
+
+      if (printBtn) printBtn.style.display = "none";
+      if (toggleBtn) toggleBtn.style.display = "none";
+      if (atsBadge) {
+        atsBadge.style.display = "inline-block";
+        atsBadge.textContent = `${res.word_count} words (~${res.reading_time_sec}s read)`;
+      }
+
+      if (openGmailBtn) {
+        openGmailBtn.style.display = "inline-flex";
+        openGmailBtn.href = res.gmail_compose_url || "#";
+      }
+      if (saveDraftBtn) {
+        saveDraftBtn.style.display = "inline-flex";
+      }
+
+      if (qaBadge) {
+        const verdict = res.review?.verdict || "PASS";
+        qaBadge.textContent = `QA: ${verdict.toUpperCase()}`;
+        qaBadge.className = `qa-badge ${verdict.toLowerCase() === "pass" ? "pass" : "warn"}`;
+      }
+
+      renderFounderOutreachContent(res);
+      return;
+    }
 
     if (kind === "cover-letter" || kind === "tailor-resume") {
       const res = await apiPost("/api/documents/job-package", {
@@ -558,6 +609,84 @@
         <pre style="font-family:var(--font-mono);font-size:12px;line-height:1.55;white-space:pre-wrap;">${escapeHtml(resumeTxt)}</pre>
       `;
       if (toggleBtn) toggleBtn.textContent = "View Cover Letter";
+    }
+  }
+
+  function renderFounderOutreachContent(data) {
+    const previewContainer = document.getElementById("doc-rendered-body");
+    if (!previewContainer || !data) return;
+
+    previewContainer.innerHTML = `
+      <div style="margin-bottom:14px;">
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--text-muted);display:block;margin-bottom:6px;">High-Converting Subject Line Options:</span>
+        <div style="display:flex;flex-direction:column;gap:6px;" id="founder-subject-options-list">
+          ${(data.subject_options || []).map((su, idx) => `
+            <div class="card-skill-pill" data-idx="${idx}" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;font-size:12px;background:var(--bg-muted);border:1px solid ${idx === 0 ? "var(--primary)" : "var(--border)"};border-radius:var(--radius-sm);">
+              <span><strong>Option ${idx+1}:</strong> ${escapeHtml(su)}</span>
+              <span style="color:var(--primary-text);font-size:11px;font-weight:600;">${idx === 0 ? "✓ Selected" : "Use"}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+      <hr style="margin:14px 0;border-color:var(--border);">
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--text-muted);">Cold Email Body (&lt;120 words · Mobile Scannable):</span>
+          <span style="font-size:11px;color:var(--primary-text);font-weight:600;">✓ Reviewer QA Verified</span>
+        </div>
+        <div style="line-height:1.75;white-space:pre-wrap;padding:14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);font-size:13px;" id="founder-rendered-email">${escapeHtml(data.body)}</div>
+      </div>
+      <div style="margin-top:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--text-muted);">Follow-Up Bump Note (Send 3-4 days later if no reply):</span>
+          <button class="btn btn-secondary btn-sm" id="btn-copy-bump-note" style="padding:2px 8px;font-size:11px;">Copy Bump Note</button>
+        </div>
+        <div style="line-height:1.65;white-space:pre-wrap;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);font-size:12px;color:var(--text-secondary);">${escapeHtml(data.follow_up_note)}</div>
+      </div>
+    `;
+
+    // Attach subject selector click listeners
+    const optEls = previewContainer.querySelectorAll("#founder-subject-options-list [data-idx]");
+    optEls.forEach((el) => {
+      el.addEventListener("click", () => {
+        const idx = parseInt(el.getAttribute("data-idx"), 10);
+        selectFounderSubject(idx);
+      });
+    });
+
+    document.getElementById("btn-copy-bump-note")?.addEventListener("click", () => {
+      navigator.clipboard.writeText(data.follow_up_note || "");
+      const b = document.getElementById("btn-copy-bump-note");
+      if (b) {
+        b.textContent = "✓ Copied";
+        setTimeout(() => (b.textContent = "Copy Bump Note"), 2000);
+      }
+    });
+  }
+
+  function selectFounderSubject(index) {
+    if (!state.currentFounderOutreach) return;
+    const su = state.currentFounderOutreach.subject_options?.[index];
+    if (!su) return;
+    state.currentFounderOutreach.chosen_subject = su;
+
+    const optEls = document.querySelectorAll("#founder-subject-options-list [data-idx]");
+    optEls.forEach((el, idx) => {
+      const isSel = idx === index;
+      el.style.border = isSel ? "1px solid var(--primary)" : "1px solid var(--border)";
+      const label = el.querySelector("span:last-child");
+      if (label) {
+        label.textContent = isSel ? "✓ Selected" : "Use";
+      }
+    });
+
+    const openGmailBtn = document.getElementById("btn-open-gmail-compose");
+    if (openGmailBtn) {
+      const cleanTo = (state.currentFounderOutreach.recipient_email || "").trim();
+      const quotedTo = cleanTo ? encodeURIComponent(cleanTo) : "";
+      const quotedSu = encodeURIComponent(su);
+      const quotedBody = encodeURIComponent(state.currentFounderOutreach.body || "");
+      openGmailBtn.href = `https://mail.google.com/mail/?view=cm&fs=1&to=${quotedTo}&su=${quotedSu}&body=${quotedBody}`;
     }
   }
 
@@ -874,6 +1003,31 @@
     });
 
     // Document Generation Trigger
+    document.getElementById("doc-type-select")?.addEventListener("change", (e) => {
+      const isFounder = e.target.value === "founder-cold-email";
+      const founderBox = document.getElementById("doc-founder-fields");
+      if (founderBox) founderBox.style.display = isFounder ? "block" : "none";
+    });
+
+    document.getElementById("btn-save-gmail-draft")?.addEventListener("click", async () => {
+      if (!state.currentFounderOutreach) return;
+      const btn = document.getElementById("btn-save-gmail-draft");
+      if (btn) btn.textContent = "Saving...";
+      const res = await apiPost("/api/outreach/save-draft", {
+        to_email: state.currentFounderOutreach.recipient_email || "",
+        subject: state.currentFounderOutreach.chosen_subject || "",
+        body: state.currentFounderOutreach.body || "",
+      });
+      if (res && res.success) {
+        alert("✓ Draft successfully saved in your connected Gmail Drafts folder!");
+        if (btn) btn.textContent = "✓ Draft Saved";
+      } else {
+        const err = res?.message || "Could not save draft. Please check your Gmail App Password in Settings.";
+        alert(`Gmail Draft: ${err}`);
+        if (btn) btn.textContent = "Save Draft";
+      }
+    });
+
     document.getElementById("btn-generate-doc")?.addEventListener("click", generateStudioDocument);
 
     document.getElementById("btn-doc-view-toggle")?.addEventListener("click", () => {

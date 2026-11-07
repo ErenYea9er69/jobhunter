@@ -138,3 +138,19 @@ class TestHttpdHandler(unittest.TestCase):
         self.assertEqual(status, 403)
         self.assertFalse(res["success"])
         self.assertEqual(res["error"]["code"], "forbidden")
+
+    def test_founder_outreach_endpoints(self):
+        status, res = self._call("POST", "/api/outreach/founder-email", {
+            "title": "Full Stack Engineer",
+            "company": "Linear",
+            "description": "TypeScript, React, Node.js",
+            "founder_name": "Karri",
+            "founder_role": "CEO",
+            "angle": "scale_velocity",
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(res["success"])
+        self.assertIn("body", res["data"])
+        self.assertIn("subject_options", res["data"])
+        self.assertIn("Linear", res["data"]["body"])
+        self.assertIn("mail.google.com", res["data"]["gmail_compose_url"])

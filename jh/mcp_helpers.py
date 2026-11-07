@@ -120,6 +120,14 @@ def resolve_profile(name: str = "", overlay: bool = True, require: bool = True) 
     return preferences.overlay_profile(profile, None) if overlay and profile else (profile or {})
 
 
+def job_and_profile(job_id: str = "", title: str = "", company: str = "", description: str = "",
+                    resume_name: str = "", salary: str = "", location: str = "", url: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
+    """Retrieve or build a job and resolve the target profile."""
+    profile = resolve_profile(resume_name, overlay=True, require=False)
+    job = build_job(job_id, title, company, description, url=url, salary=salary, location=location) if (job_id or title or description) else {}
+    return job, profile
+
+
 def build_job(job_id: str = "", title: str = "", company: str = "", description: str = "", url: str = "",
               salary: str = "", location: str = "") -> dict[str, Any]:
     """A stored job by id, or a job built from pasted text."""

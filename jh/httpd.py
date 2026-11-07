@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import db, exporters, extension_installer, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker
+from . import db, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker
 from . import mcp_helpers as h
 from .mcp_helpers import envelope
 from .team import qa
@@ -344,6 +344,37 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
                     }
                 }
             }))
+
+        if path == "/api/outreach/founder-email":
+            job_info = body.get("job") or body
+            job_id = job_info.get("job_id", "")
+            job, profile = h.job_and_profile(job_id, job_info.get("title", ""), job_info.get("company", ""), job_info.get("description", ""))
+            res = founder_outreach.generate_founder_cold_email(
+                job,
+                profile,
+                founder_name=body.get("founder_name", ""),
+                founder_role=body.get("founder_role", "Founder & CEO"),
+                angle=body.get("angle", "scale_velocity"),
+                custom_observation=body.get("custom_observation", ""),
+                recipient_email=body.get("recipient_email", ""),
+            )
+            return self._send_json(200, envelope(status="ok", data=res))
+
+        if path == "/api/outreach/save-draft":
+            to_email = body.get("to_email", "")
+            subject = body.get("subject", "")
+            mail_body = body.get("body", "")
+            res = founder_outreach.save_draft_to_gmail(to_email, subject, mail_body)
+            return self._send_json(200, envelope(status="ok" if res.get("success") else "error", data=res))
+
+        if path == "/api/outreach/send-email":
+            to_email = body.get("to_email", "")
+            subject = body.get("subject", "")
+            mail_body = body.get("body", "")
+            company = body.get("company", "")
+            job_title = body.get("title", "")
+            res = founder_outreach.send_cold_email(to_email, subject, mail_body, company=company, job_title=job_title)
+            return self._send_json(200, envelope(status="ok" if res.get("success") else "error", data=res))
 
         if path == "/api/gmail/config":
             em = body.get("email", "")
