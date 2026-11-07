@@ -6,7 +6,7 @@ import time
 from . import db, sources as src, refit, ats
 from .util import days_since, now_iso, clean_text
 
-STATUSES = ["saved", "applied", "interview", "offer", "rejected"]  # "rejected" is the Archived column in the UI
+STATUSES = ["saved", "queued", "applied", "interview", "offer", "rejected"]  # "rejected" is the Archived column in the UI
 FOLLOW_UP_DAYS = {"applied": 7, "interview": 3, "offer": 2}
 
 

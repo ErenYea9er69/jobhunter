@@ -409,9 +409,11 @@
       if (lane) {
         const card = document.createElement("div");
         card.className = "kanban-opportunity-card";
+        const hasGmail = app.notes && app.notes.includes("[Gmail");
         card.innerHTML = `
           <div class="k-card-title">${escapeHtml(app.title || "Job")}</div>
           <div class="k-card-company">${escapeHtml(app.company || "Employer")}</div>
+          ${hasGmail ? '<div style="margin-top:2px;"><span class="tag-badge" style="color:var(--primary-text);border-color:var(--primary-border);font-size:11px;padding:1px 5px;">Gmail Synced</span></div>' : ""}
           <div class="k-card-actions">
             <select class="select-dropdown app-stage-select" data-id="${escapeHtml(app.id)}" style="font-size:12px;padding:3px 6px;">
               <option value="saved" ${status === "saved" ? "selected" : ""}>Saved</option>
@@ -419,6 +421,7 @@
               <option value="applied" ${status === "applied" ? "selected" : ""}>Applied</option>
               <option value="interview" ${status === "interview" ? "selected" : ""}>Interviewing</option>
               <option value="offer" ${status === "offer" ? "selected" : ""}>Offer</option>
+              <option value="rejected" ${status === "rejected" ? "selected" : ""}>Rejected</option>
             </select>
             ${app.url ? `<a href="${escapeHtml(app.url)}" target="_blank" style="color:var(--primary-text);font-size:12px;text-decoration:none;font-weight:600;">Link ↗</a>` : ""}
           </div>
@@ -865,6 +868,75 @@
       }
     });
 
+    // Gmail Tracker Modals & Triggers
+    document.getElementById("btn-setup-gmail")?.addEventListener("click", async () => {
+      const modal = document.getElementById("modal-gmail-setup");
+      const st = await apiGet("/api/gmail/status");
+      if (st && st.email) {
+        const emailInput = document.getElementById("modal-gmail-email");
+        if (emailInput) emailInput.value = st.email;
+      }
+      if (modal) modal.style.display = "flex";
+    });
+
+    document.getElementById("btn-close-gmail-modal")?.addEventListener("click", () => {
+      document.getElementById("modal-gmail-setup").style.display = "none";
+    });
+    document.getElementById("btn-cancel-gmail-modal")?.addEventListener("click", () => {
+      document.getElementById("modal-gmail-setup").style.display = "none";
+    });
+
+    document.getElementById("btn-save-gmail-config")?.addEventListener("click", async () => {
+      const email = document.getElementById("modal-gmail-email")?.value || "";
+      const app_password = document.getElementById("modal-gmail-password")?.value || "";
+      const feedback = document.getElementById("gmail-modal-feedback");
+      if (!email) {
+        if (feedback) {
+          feedback.style.display = "block";
+          feedback.textContent = "Please enter your Gmail address.";
+        }
+        return;
+      }
+      const res = await apiPost("/api/gmail/config", { email, app_password });
+      if (res && res.saved) {
+        if (feedback) {
+          feedback.style.display = "block";
+          feedback.textContent = "✓ Gmail credentials saved successfully!";
+          setTimeout(() => {
+            document.getElementById("modal-gmail-setup").style.display = "none";
+            feedback.style.display = "none";
+          }, 1400);
+        }
+        loadGmailStatus();
+      }
+    });
+
+    document.getElementById("btn-sync-gmail")?.addEventListener("click", async () => {
+      const btn = document.getElementById("btn-sync-gmail");
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>Syncing Gmail...</span>`;
+      }
+      const res = await apiPost("/api/gmail/sync", {});
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+            <polyline points="22,6 12,13 2,6"></polyline>
+          </svg>
+          Sync Gmail`;
+      }
+      if (res && res.success) {
+        alert(`Gmail Sync complete!\n• ${res.applications_updated || 0} applications updated\n• ${res.applications_created || 0} new job confirmations tracked`);
+        loadApplications();
+        loadGmailStatus();
+      } else {
+        const err = res?.error || "Could not connect to Gmail. Click the settings icon to configure your App Password.";
+        alert(`Gmail Sync: ${err}`);
+      }
+    });
+
     // Modal
     document.getElementById("btn-create-tracker-app")?.addEventListener("click", () => {
       document.getElementById("modal-new-app").style.display = "flex";
@@ -889,11 +961,26 @@
     });
   }
 
+  async function loadGmailStatus() {
+    const data = await apiGet("/api/gmail/status");
+    if (!data) return;
+    const btn = document.getElementById("btn-sync-gmail");
+    if (btn) {
+      if (data.configured) {
+        const last = data.last_sync ? ` (Last: ${data.last_sync.slice(11, 16)})` : "";
+        btn.title = `Connected: ${data.email}${last}. Click to scan Gmail for updates.`;
+      } else {
+        btn.title = "Gmail tracking not configured. Click the gear icon to set up.";
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- Init
   initTheme();
   initEvents();
   loadProfiles();
   loadPreferences();
   loadApplications();
+  loadGmailStatus();
   runRadarHunt();
 })();

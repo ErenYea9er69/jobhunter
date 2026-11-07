@@ -352,10 +352,25 @@
               </div>
             </div>
 
-            <button class="btn btn-primary" id="btn-create-tracker-app">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              Add Application
-            </button>
+            <div class="tracker-header-actions" style="display:flex;align-items:center;gap:8px;">
+              <button class="btn btn-secondary btn-sm" id="btn-sync-gmail" title="Scan Gmail for status updates">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                  <polyline points="22,6 12,13 2,6"></polyline>
+                </svg>
+                Sync Gmail
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-setup-gmail" title="Configure Gmail Tracking">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+              </button>
+              <button class="btn btn-primary" id="btn-create-tracker-app">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                Add Application
+              </button>
+            </div>
           </div>
 
           <div class="kanban-columns-grid">
@@ -748,6 +763,35 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" id="btn-cancel-modal">Cancel</button>
         <button class="btn btn-primary" id="btn-save-modal-app">Save to Kanban</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for Gmail Setup -->
+  <div class="modal-backdrop" id="modal-gmail-setup" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Automatic Gmail Job Tracking</h3>
+        <button class="modal-close-btn" id="btn-close-gmail-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:12.5px;color:var(--text-muted);line-height:1.5;">
+          JobHunter securely connects via local IMAP SSL to automatically track job confirmations, interview invitations, and rejections.
+        </p>
+        <div class="input-field-group">
+          <label class="field-label">Gmail Address</label>
+          <input type="email" id="modal-gmail-email" class="text-input" placeholder="you@gmail.com">
+        </div>
+        <div class="input-field-group">
+          <label class="field-label">Google App Password (16 characters)</label>
+          <input type="password" id="modal-gmail-password" class="text-input" placeholder="xxxx xxxx xxxx xxxx">
+          <span class="field-hint">Generate in Google Account &gt; Security &gt; 2-Step Verification &gt; App Passwords.</span>
+        </div>
+        <div id="gmail-modal-feedback" class="status-alert-box" style="display:none;font-size:12px;padding:8px 10px;border-radius:var(--radius-xs);"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-cancel-gmail-modal">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-gmail-config">Save &amp; Connect</button>
       </div>
     </div>
   </div>

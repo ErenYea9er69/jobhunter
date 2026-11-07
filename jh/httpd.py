@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import db, extension_installer, pipeline, preferences, refit, regions, resume_registry, screening, tracker
+from . import db, extension_installer, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker
 from . import mcp_helpers as h
 from .mcp_helpers import envelope
 from .team import qa
@@ -134,6 +134,10 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/desktop/extension-status":
             data = extension_installer.get_extension_status()
+            return self._send_json(200, envelope(status="ok", data=data))
+
+        if path == "/api/gmail/status":
+            data = gmail_tracker.get_gmail_config()
             return self._send_json(200, envelope(status="ok", data=data))
 
         if path == "/api/preferences":
@@ -301,6 +305,21 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             job, profile = h.job_and_profile(job_id, body.get("title", ""), body.get("company", ""), body.get("description", ""))
             tailored = refit.generate_custom_resume(job, profile)
             return self._send_json(200, envelope(status="ok", data={"tailored_resume": tailored}))
+
+        if path == "/api/gmail/config":
+            em = body.get("email", "")
+            pw = body.get("app_password", "")
+            srv = body.get("imap_server", "imap.gmail.com")
+            port = body.get("imap_port", 993)
+            en = body.get("sync_enabled", True)
+            ok = gmail_tracker.save_gmail_config(em, pw, srv, port, en)
+            return self._send_json(200, envelope(status="ok" if ok else "error", data={"saved": ok}))
+
+        if path == "/api/gmail/sync":
+            mock_msgs = body.get("mock_messages")
+            limit = int(body.get("limit", 40))
+            sync_res = gmail_tracker.fetch_gmail_and_sync(limit=limit, mock_messages=mock_msgs)
+            return self._send_json(200, envelope(status="ok" if sync_res.get("success") else "error", data=sync_res))
 
         if path == "/api/auto-apply/launch":
             url = body.get("url", "http://127.0.0.1:8765")

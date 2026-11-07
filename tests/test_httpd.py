@@ -105,6 +105,34 @@ class TestHttpdHandler(unittest.TestCase):
         self.assertTrue(res["success"])
         self.assertIn("browsers", res["data"])
 
+    def test_gmail_api_endpoints(self):
+        # 1. Status endpoint
+        status, res = self._call("GET", "/api/gmail/status")
+        self.assertEqual(status, 200)
+        self.assertTrue(res["success"])
+        self.assertIn("configured", res["data"])
+
+        # 2. Config endpoint
+        status, cfg_res = self._call("POST", "/api/gmail/config", {
+            "email": "candidate@gmail.com",
+            "app_password": "xxxx yyyy zzzz wwww"
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(cfg_res["success"])
+
+        # 3. Sync endpoint with mock emails
+        status, sync_res = self._call("POST", "/api/gmail/sync", {
+            "mock_messages": [{
+                "subject": "Invitation to Interview at Brex",
+                "sender": "careers@brex.com",
+                "body": "Hi, we are inviting you to schedule an interview for the Backend Engineer position.",
+                "date": "2026-11-07T15:00:00Z"
+            }]
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(sync_res["success"])
+        self.assertTrue(sync_res["data"]["success"])
+
     def test_directory_traversal_blocked(self):
         status, res = self._call("GET", "/../../setup.py")
         self.assertEqual(status, 403)
