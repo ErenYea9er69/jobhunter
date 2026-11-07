@@ -1,3 +1,0 @@
-# Ignore all candidate data, profiles, outputs, backups, and databases
-*
-!.gitignore
