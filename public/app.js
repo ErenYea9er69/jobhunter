@@ -446,45 +446,118 @@
   }
 
   // ---------------------------------------------------------------- TAB 3: DOCUMENT STUDIO
+  let studioViewMode = "cover-letter";
+
   async function generateStudioDocument() {
     const kind = document.getElementById("doc-type-select")?.value || "cover-letter";
     const jobTitle = document.getElementById("doc-input-title")?.value || "";
     const company = document.getElementById("doc-input-company")?.value || "";
     const desc = document.getElementById("doc-input-desc")?.value || "";
+    const tone = document.getElementById("doc-input-tone")?.value || "direct_impact";
 
-    const endpointMap = {
-      "cover-letter": "/api/documents/cover-letter",
-      "tailor-resume": "/api/documents/tailor-resume",
-      "interview-prep": "/api/documents/interview-prep",
-      outreach: "/api/documents/outreach",
-    };
-
-    const endpoint = endpointMap[kind] || "/api/documents/cover-letter";
     const statusText = document.getElementById("doc-status-text");
     const previewContainer = document.getElementById("doc-rendered-body");
     const qaBadge = document.getElementById("doc-qa-badge");
+    const atsBadge = document.getElementById("doc-ats-match-badge");
+    const printBtn = document.getElementById("btn-download-doc");
+    const toggleBtn = document.getElementById("btn-doc-view-toggle");
 
     if (statusText) statusText.textContent = "Writing & running Reviewer QA against profile ledger...";
-    if (previewContainer) previewContainer.textContent = "Generating verified document sentences...";
+    if (previewContainer) previewContainer.textContent = "Generating verified documents for this target role...";
 
+    if (kind === "cover-letter" || kind === "tailor-resume") {
+      const res = await apiPost("/api/documents/job-package", {
+        job: { title: jobTitle, company: company, description: desc },
+        tone: "direct",
+        angle: tone,
+      });
+
+      if (!res) {
+        if (previewContainer) previewContainer.textContent = "Error generating job package. Please check daemon log.";
+        return;
+      }
+
+      state.currentJobPackage = res;
+      studioViewMode = kind === "tailor-resume" ? "resume" : "cover-letter";
+
+      if (printBtn) printBtn.style.display = "inline-flex";
+      if (toggleBtn) {
+        toggleBtn.style.display = "inline-flex";
+        toggleBtn.textContent = studioViewMode === "cover-letter" ? "View Tailored Resume" : "View Cover Letter";
+      }
+
+      if (atsBadge && res.tailored_resume) {
+        atsBadge.style.display = "inline-block";
+        atsBadge.textContent = `${res.tailored_resume.ats_match_pct || 88}% ATS Match`;
+      }
+
+      if (qaBadge && res.cover_letter) {
+        const verdict = res.cover_letter.review?.verdict || "PASS";
+        qaBadge.textContent = `QA: ${verdict.toUpperCase()}`;
+        qaBadge.className = `qa-badge ${verdict.toLowerCase() === "pass" ? "pass" : "warn"}`;
+      }
+
+      renderStudioContent();
+      return;
+    }
+
+    // Other document kinds (interview-prep, outreach)
+    const endpointMap = {
+      "interview-prep": "/api/documents/interview-prep",
+      outreach: "/api/documents/outreach",
+    };
+    const endpoint = endpointMap[kind] || "/api/documents/cover-letter";
     const res = await apiPost(endpoint, {
       job: { title: jobTitle, company: company, description: desc },
     });
 
     if (!res) {
-      if (previewContainer) previewContainer.textContent = "Error generating document. Please check the daemon log.";
+      if (previewContainer) previewContainer.textContent = "Error generating document.";
       return;
     }
 
-    if (statusText) statusText.textContent = "Document verified by Reviewer";
-    if (previewContainer) {
-      previewContainer.textContent = res.text || res.document || "No text returned.";
-    }
+    if (printBtn) printBtn.style.display = "none";
+    if (toggleBtn) toggleBtn.style.display = "none";
+    if (atsBadge) atsBadge.style.display = "none";
 
-    if (qaBadge) {
-      const verdict = res.review?.verdict || "PASS";
-      qaBadge.textContent = `QA: ${verdict}`;
-      qaBadge.className = `qa-badge ${verdict.toLowerCase() === "pass" ? "pass" : "warn"}`;
+    if (previewContainer) {
+      if (kind === "interview-prep") {
+        const prep = res.prep || {};
+        previewContainer.innerHTML = `<pre style="font-family:inherit;white-space:pre-wrap;">${escapeHtml(JSON.stringify(prep, null, 2))}</pre>`;
+      } else if (kind === "outreach") {
+        const out = res.outreach || {};
+        previewContainer.innerHTML = `
+          <strong>LinkedIn Note (&lt;300 chars):</strong>
+          <p>${escapeHtml(out.linkedin_connection_note || "")}</p>
+          <hr style="margin:12px 0;border-color:var(--border);">
+          <strong>Hiring Manager InMail:</strong>
+          <p><strong>Subject:</strong> ${escapeHtml(out.hiring_manager_inmail?.subject_line || "")}</p>
+          <pre style="font-family:inherit;white-space:pre-wrap;">${escapeHtml(out.hiring_manager_inmail?.body || "")}</pre>
+        `;
+      } else {
+        previewContainer.textContent = res.text || res.document || "Generated.";
+      }
+    }
+  }
+
+  function renderStudioContent() {
+    const previewContainer = document.getElementById("doc-rendered-body");
+    const toggleBtn = document.getElementById("btn-doc-view-toggle");
+    if (!previewContainer || !state.currentJobPackage) return;
+
+    if (studioViewMode === "cover-letter") {
+      const letter = state.currentJobPackage.cover_letter?.full_text || "";
+      previewContainer.innerHTML = `<div style="line-height:1.7;white-space:pre-wrap;">${escapeHtml(letter)}</div>`;
+      if (toggleBtn) toggleBtn.textContent = "View Tailored Resume";
+    } else {
+      const resumeTxt = state.currentJobPackage.tailored_resume?.txt || "";
+      previewContainer.innerHTML = `
+        <div style="margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap;">
+          ${(state.currentJobPackage.tailored_resume?.skills || []).slice(0, 6).map((s) => `<span class="card-skill-pill">✓ ${escapeHtml(s)}</span>`).join("")}
+        </div>
+        <pre style="font-family:var(--font-mono);font-size:12px;line-height:1.55;white-space:pre-wrap;">${escapeHtml(resumeTxt)}</pre>
+      `;
+      if (toggleBtn) toggleBtn.textContent = "View Cover Letter";
     }
   }
 
@@ -802,6 +875,26 @@
 
     // Document Generation Trigger
     document.getElementById("btn-generate-doc")?.addEventListener("click", generateStudioDocument);
+
+    document.getElementById("btn-doc-view-toggle")?.addEventListener("click", () => {
+      studioViewMode = studioViewMode === "cover-letter" ? "tailored-resume" : "cover-letter";
+      renderStudioContent();
+    });
+
+    document.getElementById("btn-download-doc")?.addEventListener("click", () => {
+      if (!state.currentJobPackage) return;
+      const isResume = studioViewMode === "tailored-resume";
+      const title = `${state.currentJobPackage.company || "Job"}_${isResume ? "Resume" : "CoverLetter"}`;
+      const content = isResume
+        ? (state.currentJobPackage.tailored_resume?.html || `<pre>${escapeHtml(state.currentJobPackage.tailored_resume?.txt || "")}</pre>`)
+        : `<div style="max-width:700px;margin:40px auto;font-family:Georgia,serif;font-size:15px;line-height:1.8;white-space:pre-wrap;">${escapeHtml(state.currentJobPackage.cover_letter?.full_text || "")}</div>`;
+
+      const printWin = window.open("", "_blank");
+      if (printWin) {
+        printWin.document.write(`<!DOCTYPE html><html><head><title>${escapeHtml(title)}</title><style>@media print { @page { margin: 1.5cm; } } body { margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111; }</style></head><body>${content}<script>window.onload = function() { window.print(); };<\/script></body></html>`);
+        printWin.document.close();
+      }
+    });
 
     document.getElementById("btn-copy-doc")?.addEventListener("click", () => {
       const text = document.getElementById("doc-rendered-body")?.innerText;

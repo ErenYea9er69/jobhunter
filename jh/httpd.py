@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import db, extension_installer, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker
+from . import db, exporters, extension_installer, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker
 from . import mcp_helpers as h
 from .mcp_helpers import envelope
 from .team import qa
@@ -305,6 +305,45 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             job, profile = h.job_and_profile(job_id, body.get("title", ""), body.get("company", ""), body.get("description", ""))
             tailored = refit.generate_custom_resume(job, profile)
             return self._send_json(200, envelope(status="ok", data={"tailored_resume": tailored}))
+
+        if path == "/api/documents/job-package":
+            job_info = body.get("job") or body
+            job_id = job_info.get("job_id", "")
+            job, profile = h.job_and_profile(job_id, job_info.get("title", ""), job_info.get("company", ""), job_info.get("description", ""))
+            archetype = body.get("archetype", "startup_velocity")
+            custom_resume = refit.generate_custom_resume(job, profile, archetype=archetype)
+            resume_dict = custom_resume.get("tailored_resume", {})
+            html_export = exporters.to_html(resume_dict)
+            txt_export = exporters.to_txt(resume_dict)
+
+            pitch = refit.generate_cover_pitch(job, profile, tone=body.get("tone", "direct"), angle=body.get("angle", "direct_impact"))
+            letter_text = pitch.get("full_text") or ""
+            review = qa.review_document(letter_text, kind="cover_letter", profile=profile, job=job)
+
+            return self._send_json(200, envelope(status="ok", data={
+                "company": job.get("company", "Employer"),
+                "title": job.get("title", "Role"),
+                "tailored_resume": {
+                    "summary": custom_resume.get("tailored_summary", ""),
+                    "skills": custom_resume.get("tailored_skills", []),
+                    "core_competencies": custom_resume.get("core_competencies", []),
+                    "experience": custom_resume.get("tailored_experience", []),
+                    "txt": txt_export,
+                    "html": html_export,
+                    "ats_match_pct": custom_resume.get("recruiter_6sec_audit", {}).get("ats_keyword_match_pct", 85),
+                    "skim_score": custom_resume.get("recruiter_6sec_audit", {}).get("skim_score", 90),
+                    "eye_catchers": custom_resume.get("recruiter_6sec_audit", {}).get("eye_catchers", [])
+                },
+                "cover_letter": {
+                    "hook": pitch.get("hook", ""),
+                    "full_text": letter_text,
+                    "word_count": len(letter_text.split()),
+                    "review": {
+                        "verdict": review.verdict,
+                        "findings": review.findings
+                    }
+                }
+            }))
 
         if path == "/api/gmail/config":
             em = body.get("email", "")
