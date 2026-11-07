@@ -163,6 +163,10 @@ def discover_resumes(workspace_path: str | Path) -> list[dict[str, Any]]:
                 dirs[:] = [d for d in dirs if d not in IGNORED_DIRS and not d.startswith(".")]
                 for f in files:
                     fp = Path(root) / f
+                    try:
+                        fp.resolve().relative_to(ws)
+                    except ValueError:
+                        continue
                     ext = fp.suffix.lower()
                     if ext in valid_exts:
                         abs_str = str(fp.resolve())
@@ -190,6 +194,10 @@ def discover_resumes(workspace_path: str | Path) -> list[dict[str, Any]]:
 
     for item in root_entries:
         if not item.is_file():
+            continue
+        try:
+            item.resolve().relative_to(ws)
+        except ValueError:
             continue
         ext = item.suffix.lower()
         if ext not in valid_exts:

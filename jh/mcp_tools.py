@@ -102,6 +102,8 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             if match:
                 db.set_active_resume_profile(match["id"])
         warnings = [] if found else ["No resume files found. Add a PDF, DOCX or TXT resume to the workspace root or a resumes/ folder."]
+        if len(ok) > 1:
+            warnings.append(f"Multiple resumes found ({len(ok)}). Active is '{active}'. Confirm with candidate which one to use.")
         return Result({"found": len(found), "parsed": len(ok), "active_resume": active or "none", "resumes": parsed},
                       warnings, status="ok" if (ok or not found) else "partial")
 
@@ -355,7 +357,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
 
     @tool
     def search_jobs(query: str = "", location: str = "", work_mode: str = "", min_score: int = 0, limit: int = 25,
-                    company_focus: str = "", refresh: bool = False) -> dict[str, Any]:
+                    company_focus: str = "", refresh: bool = False, job_type: str = "") -> dict[str, Any]:
         """Search every enabled source for your region and return compact job cards ranked by fit.
 
         Which sources run depends on your preferences (set_preferences): target countries, remote, disabled sources,
@@ -369,6 +371,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             limit: Cards to return, 1 to 100.
             company_focus: any, avoid_big_names or only_big_names. Empty uses your preference.
             refresh: Skip cached source results.
+            job_type: Full-time, Internship, Contract or Part-time. Empty uses your preference.
         """
         profile = h.resolve_profile(overlay=False, require=False)
         if profile.get("_is_empty") and not query:
@@ -376,7 +379,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         famous = {"avoid_big_names": "hide", "only_big_names": "only", "any": "all"}.get(company_focus, "all")
         limit = h.clamp(limit, 1, 100)
         res = pipeline.search(query=query, location=location, work_mode=work_mode or "Any", min_score=h.clamp(min_score, 0, 100),
-                              famous_mode=famous, profile=profile, force_refresh=refresh, limit=limit)
+                              famous_mode=famous, profile=profile, force_refresh=refresh, limit=limit, job_type=job_type)
         statuses = [{"source": s["source"], "state": s["state"], "count": s.get("count", 0), "ms": s.get("ms", 0),
                      **({"error": s["error"]} if s.get("error") and s["state"] not in ("ok", "cached") else {})}
                     for s in res["sources"] if s["state"] != "disabled" or s.get("error")]

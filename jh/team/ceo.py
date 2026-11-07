@@ -254,9 +254,16 @@ class CEO(ExtraIntents):
     # ---- setup, help, status --------------------------------------------------------------
 
     def _setup(self, m: Mission) -> None:
-        hints = m.hints
-        if hints.get("preferences"):
-            env = self.delegate(m, "ops", "set_preferences", {"updates": hints["preferences"]}, "Apply the preference changes the client gave.")
+        p, hints = m.parsed, m.hints
+        updates = dict(hints.get("preferences") or {})
+        if p.countries and "target_countries" not in updates:
+            updates["target_countries"] = p.countries
+        if p.work_mode and "work_mode" not in updates:
+            updates["work_mode"] = p.work_mode
+        if p.job_types and "job_types" not in updates:
+            updates["job_types"] = p.job_types
+        if updates:
+            env = self.delegate(m, "ops", "set_preferences", {"updates": updates}, "Apply the preference changes the client gave.")
             if env["success"]:
                 m.say("Preferences saved: " + ", ".join(sorted(self._data(env).get("saved", {}))) + ".")
                 m.notes += env.get("warnings", [])
@@ -264,9 +271,14 @@ class CEO(ExtraIntents):
                 m.blocked.append("Preferences were not saved: " + (env.get("error") or {}).get("message", "unknown error"))
         env = self.delegate(m, "ops", "scan_resumes", {}, "Read the client's resume files.")
         d = self._data(env)
+        parsed_list = d.get("resumes") or []
+        ok_resumes = [r for r in parsed_list if r.get("status") == "parsed"]
         if d.get("parsed"):
             n = d["parsed"] if isinstance(d["parsed"], int) else len(d["parsed"])
             m.say(f"Resumes read: {n}. Active resume: {d.get('active_resume')}.")
+            if len(ok_resumes) > 1:
+                names = [r["name"] for r in ok_resumes]
+                m.decisions.append(f"Multiple resumes found ({', '.join(names)}). Which one should be active?")
         else:
             m.decisions.append("No resume was found. Put a PDF, DOCX or TXT resume in the workspace folder, then ask me to set up again.")
         env = self.delegate(m, "ops", "get_preferences", {}, "Show the preferences and which sources will run.")
@@ -275,7 +287,19 @@ class CEO(ExtraIntents):
         if countries:
             m.say("Target countries: " + ", ".join(countries) + ".")
         else:
-            m.decisions.append("Which countries do you want to work in? I use the answer to pick local job sources.")
+            m.decisions.append("Which countries or cities do you want to work in? (e.g. Tunisia, France, Remote)")
+
+        job_types = d.get("job_types") or []
+        if job_types:
+            m.say("Target job types: " + ", ".join(job_types) + ".")
+        else:
+            m.decisions.append("What job type do you want? (Full-time, Internship, Contract, or Part-time)")
+
+        work_mode = d.get("work_mode") or ""
+        if work_mode:
+            m.say("Work mode: " + work_mode + ".")
+        else:
+            m.decisions.append("What work mode do you prefer? (Remote, Hybrid, Onsite, or Any)")
         run = (d.get("sources") or {}).get("will_run") or []
         if run:
             m.say(f"{len(run)} job sources will run for you.")
@@ -335,12 +359,16 @@ class CEO(ExtraIntents):
         env = self.delegate(m, "ops", "get_preferences", {}, "Check where the client wants to work.")
         prefs_data = self._data(env)
         if not prefs_data.get("resolved_target_countries") and not p.location:
-            m.decisions.append("Where do you want to work? Give a country or a city. I searched without one.")
+            m.decisions.append("Where do you want to work? Give a country (e.g. Tunisia), city, or 'Remote'. I searched without one.")
+        if not prefs_data.get("job_types") and not p.job_types:
+            m.decisions.append("What job type do you want? (Full-time or Internship). I searched for all types.")
 
         limit = h.clamp(hints.get("limit") or 10, 1, 25)
+        active_job_type = (p.job_types[0] if p.job_types else "") or ((prefs_data.get("job_types") or [""])[0])
         base = {"query": p.role, "location": p.location, "work_mode": p.work_mode or hints.get("work_mode", ""),
                 "min_score": h.clamp(hints.get("min_score") or 0, 0, 100), "limit": min(100, limit * 3),
-                "company_focus": "avoid_big_names" if p.small else (hints.get("company_focus") or ""), "refresh": False}
+                "company_focus": "avoid_big_names" if p.small else (hints.get("company_focus") or ""), "refresh": False,
+                "job_type": active_job_type}
         relaxed = {"min_score": 0, "company_focus": "any"}
         ladder = [("as asked", {}), ("no score floor, any company size", relaxed)]
         if p.location:

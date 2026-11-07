@@ -114,7 +114,7 @@ def _norm_mode(job):
     return "unknown"
 
 
-def _passes(job, work_mode, location):
+def _passes(job, work_mode, location, pref_types=None):
     jm = _norm_mode(job)
     wm = (work_mode or "any").lower().replace("-", "")
     if wm not in ("any", "") and jm != "unknown":
@@ -201,6 +201,25 @@ def _passes(job, work_mode, location):
 
             if not inc_remote and job_country != "Worldwide" and req_country != "Worldwide" and job_country != req_country:
                 return False
+
+    if pref_types:
+        norm_prefs = [t.lower().replace("-", "") for t in pref_types if t and t != "any"]
+        if norm_prefs:
+            jt_raw = (job.get("job_type") or "").lower()
+            title_raw = (job.get("title") or "").lower()
+            desc_intro = (job.get("description") or "")[:200].lower()
+            hay = f"{jt_raw} {title_raw} {desc_intro}"
+            is_intern = bool(re.search(r"\b(intern|internship|stage|stagiaire|alternance|pfe|co-?op|praktik|apprentice)\b", hay))
+
+            wants_intern = any("intern" in p for p in norm_prefs)
+            wants_fulltime = any("full" in p for p in norm_prefs)
+
+            if wants_intern and not wants_fulltime:
+                if not is_intern:
+                    return False
+            elif wants_fulltime and not wants_intern:
+                if is_intern:
+                    return False
 
     return True
 
@@ -355,7 +374,7 @@ def derive_query(profile):
 LAST_SOURCE_STATUS: dict = {}
 
 
-def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all", profile=None, force_refresh=False, limit=None, on_progress=None, persist_as_pending=False):
+def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all", profile=None, force_refresh=False, limit=None, on_progress=None, persist_as_pending=False, job_type=""):
     t0 = time.time()
     profile = profile if profile is not None else db.get_profile()
     # Personal preferences overlay the resume only for this search. The stored resume is untouched.
@@ -609,13 +628,16 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
 
     # Filter according to requested params for immediate response
     bad_keys = [k.lower().strip() for k in profile.get("excluded_keywords", []) if k and k.strip()]
+    pref_job_types = [t.lower().strip() for t in (profile.get("preferred_job_types") or []) if t and isinstance(t, str)]
+    if job_type and job_type.strip():
+        pref_job_types = [job_type.strip().lower()]
     filtered = []
     for j in merged:
         if famous_mode == "hide" and j.get("is_famous"):
             continue
         if famous_mode == "only" and not j.get("is_famous"):
             continue
-        if not _passes(j, work_mode, location):
+        if not _passes(j, work_mode, location, pref_types=pref_job_types):
             continue
         if min_score and j["score"] < int(min_score):
             continue
@@ -640,6 +662,8 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
                 j_text = f"{j.get('title', '')} {j.get('description', '')}".lower()
                 if any(k in j_text for k in bad_keys):
                     continue
+            if not _passes(j, "Remote", location, pref_types=pref_job_types):
+                continue
             jm = _norm_mode(j)
             if jm == "remote":
                 loc_low = (j.get("location") or "").lower()

@@ -63,7 +63,7 @@ _WORK_MODE = {"Remote": r"\bremote(?:ly)?\b|\bà distance\b|عن بعد", "Hybri
 
 _ROLE = re.compile(
     r"(?:find|search(?: for)?|look(?:ing)? for|hunt(?: for)?|show me|get me|cherche|trouve|recherche)\s+(?:me\s+)?(?:some\s+|any\s+|new\s+|a\s+|an\s+)?"
-    r"(?:small |smaller |local |regional |remote |junior |senior )*(.+?)\s+(?:jobs?|roles?|positions?|openings?|vacancies|offres?|postes?)\b", re.I)
+    r"(?:small |smaller |local |regional |remote |junior |senior )*(.+?)\s+(?:jobs?|roles?|positions?|openings?|vacancies|offres?|postes?|internships?)\b", re.I)
 _ROLE_FR = re.compile(r"\b(?:offres?|postes?|emplois?)\s+(?:de|d['’]|en)\s*(.+?)(?:\s+(?:à|a|au|en|in)\s+[A-ZÀ-Ý]|[.!?]?$)", re.I)
 _ROLE_HIRING = re.compile(r"\bhiring\s+(.+?)(?:\s+(?:in|near|around)\s+[A-Z]|[.!?]?$)", re.I)
 _ROLE_ANY = re.compile(r"\b(?:any|some)\s+(?:remote\s+|new\s+|hybrid\s+|local\s+)?(.+?)\s+(?:jobs?|roles?|positions?|openings?)\b", re.I)
@@ -91,6 +91,12 @@ _STATUS_WORDS = [
     ("interview", r"\b(?:interview|invited me|called me|scheduled)\b"),
     ("applied", r"\b(?:applied|sent|submitted|postul\w+)\b|تقدمت"),
 ]
+_JOB_TYPES: tuple[tuple[str, re.Pattern], ...] = (
+    ("Internship", re.compile(r"\b(?:internships?|interns?|stage|stagiaire|alternance|pfe|co-?op)\b", re.I)),
+    ("Full-time", re.compile(r"\b(?:full-?time|cdi|permanent)\b", re.I)),
+    ("Part-time", re.compile(r"\b(?:part-?time|temps partiel)\b", re.I)),
+    ("Contract", re.compile(r"\b(?:contract(?:or)?|cdd|freelance|freelancing)\b", re.I)),
+)
 _EXPORT_FMT = re.compile(r"\b(pdf|docx|word|txt|text|html)\b", re.I)
 
 
@@ -116,13 +122,14 @@ class Parsed:
     exclude_companies: list[str] = field(default_factory=list)
     countries: list[str] = field(default_factory=list)
     work_mode: str = ""
+    job_types: list[str] = field(default_factory=list)
     export_format: str = ""
     notes: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"intents": self.intents, "role": self.role, "location": self.location, "job_id": self.job_id,
                              "small_employers": self.small, "documents": sorted(self.docs), "notes": self.notes}
-        for k in ("reference", "status", "work_mode", "export_format", "exclude", "exclude_companies", "countries"):
+        for k in ("reference", "status", "work_mode", "job_types", "export_format", "exclude", "exclude_companies", "countries"):
             if getattr(self, k):
                 d[k] = getattr(self, k)
         return d
@@ -249,7 +256,7 @@ def parse(request: str, hints: dict[str, Any] | None = None) -> Parsed:
             if cand and cand.lower() not in _STOP_ROLE and not re.fullmatch(r"(?:small|local|remote|new)", cand, re.I):
                 role = cand
                 break
-    role = _singular(re.sub(r"\b(?:remote|hybrid|small|local)\b", "", role, flags=re.I).strip())
+    role = _singular(re.sub(r"\b(?:remote|hybrid|small|local|full-?time|part-?time|internships?|interns?)\b", "", role, flags=re.I).strip())
     location = str(hints.get("location") or hints.get("country") or "").strip()
     if not location and "hunt" in ordered:
         m = _PLACE.search(text)
@@ -262,6 +269,16 @@ def parse(request: str, hints: dict[str, Any] | None = None) -> Parsed:
             break
     if hints.get("work_mode"):
         p.work_mode = str(hints["work_mode"])
+
+    for jt_name, rx in _JOB_TYPES:
+        if rx.search(text):
+            if jt_name not in p.job_types:
+                p.job_types.append(jt_name)
+    if hints.get("job_types"):
+        h_types = hints["job_types"] if isinstance(hints["job_types"], list) else [hints["job_types"]]
+        for t in h_types:
+            if t and t not in p.job_types:
+                p.job_types.append(t)
     if "track" in ordered:
         for st, rx in _STATUS_WORDS:
             if re.search(rx, low, re.I):
@@ -281,6 +298,10 @@ def parse(request: str, hints: dict[str, Any] | None = None) -> Parsed:
         m = _PLACES_LIST.search(text)
         if m:
             p.countries = _split_items(m.group(1))
+        if not p.countries:
+            m_in = re.search(r"\b(?:in|à|en|au)\s+([A-ZÀ-Ý][\w'’-]+(?:\s+(?:and|et|or|,)\s+[A-ZÀ-Ý][\w'’-]+)*)", text)
+            if m_in:
+                p.countries = _split_items(m_in.group(1))
     if "export" in ordered:
         m = _EXPORT_FMT.search(low)
         fmt = m.group(1).lower() if m else "pdf"
