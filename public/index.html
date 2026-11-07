@@ -438,12 +438,19 @@
               <!-- Founder Cold Email Specific Fields (Dynamic) -->
               <div id="doc-founder-fields" style="display:none;padding:12px;border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:14px;background:var(--bg-muted);">
                 <div class="input-field-group">
-                  <label class="field-label">Founder / CEO Name</label>
-                  <input type="text" id="doc-input-founder-name" class="text-input" placeholder="e.g. Guillermo Rauch, Paul Copplestone">
+                  <label class="field-label">Founder / CEO Name or LinkedIn Profile</label>
+                  <input type="text" id="doc-input-founder-name" class="text-input" placeholder="e.g. Guillermo Rauch or linkedin.com/in/guillermo-rauch">
                 </div>
                 <div class="input-field-group">
-                  <label class="field-label">Founder Email Address (Optional)</label>
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                    <label class="field-label" style="margin-bottom:0;">Founder Email Address</label>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-find-founder-email" style="padding:2px 8px;font-size:11px;" title="Automatically synthesize and verify founder corporate email">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:2px;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                      Find Email
+                    </button>
+                  </div>
                   <input type="email" id="doc-input-founder-email" class="text-input" placeholder="e.g. founder@company.com">
+                  <div id="founder-email-status-pill" style="display:none;font-size:11px;margin-top:4px;color:var(--primary-text);font-weight:600;"></div>
                 </div>
                 <div class="input-field-group">
                   <label class="field-label">Founder Outreach Angle</label>
@@ -487,7 +494,12 @@
 
               <button class="btn btn-primary btn-full" id="btn-generate-doc">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                Generate & Run Reviewer QA
+                Generate &amp; Run Reviewer QA
+              </button>
+
+              <button type="button" class="btn btn-secondary btn-full btn-sm" id="btn-open-email-finder" style="margin-top:10px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                LinkedIn &amp; Corporate Email Finder
               </button>
             </div>
 
@@ -833,6 +845,64 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" id="btn-cancel-gmail-modal">Cancel</button>
         <button class="btn btn-primary" id="btn-save-gmail-config">Save &amp; Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for LinkedIn & Corporate Email Finder -->
+  <div class="modal-backdrop" id="modal-email-finder" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">LinkedIn &amp; Corporate Email Finder</h3>
+        <button class="modal-close-btn" id="btn-close-email-finder-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:12.5px;color:var(--text-muted);line-height:1.5;">
+          Synthesizes verified corporate email patterns, performs live DNS MX validation, and scores deliverability confidence.
+        </p>
+        <div class="input-field-group">
+          <label class="field-label">Target Person Full Name</label>
+          <input type="text" id="finder-input-name" class="text-input" placeholder="e.g. Guillermo Rauch, Patrick Collison, Sarah Connor">
+        </div>
+        <div class="input-field-group">
+          <label class="field-label">Company Name or Domain</label>
+          <input type="text" id="finder-input-company" class="text-input" placeholder="e.g. Vercel, Stripe, Linear, vercel.com">
+        </div>
+        <div class="input-field-group">
+          <label class="field-label">LinkedIn Profile URL (Optional)</label>
+          <input type="text" id="finder-input-linkedin" class="text-input" placeholder="https://www.linkedin.com/in/username">
+        </div>
+        <div class="input-field-group">
+          <label class="field-label">Seniority / Role Category</label>
+          <select id="finder-input-role" class="select-dropdown">
+            <option value="Founder &amp; CEO">Founder / Co-Founder / CEO</option>
+            <option value="Engineering Leader">CTO / VP Engineering / Tech Lead</option>
+            <option value="Recruiter">Technical Recruiter / Talent Lead</option>
+            <option value="Software Engineer">Software Engineer / IC</option>
+          </select>
+        </div>
+        <button class="btn btn-primary btn-full" id="btn-run-email-finder">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          Find &amp; Verify Corporate Email
+        </button>
+
+        <!-- Finder Results Container -->
+        <div id="finder-results-box" style="display:none;margin-top:16px;padding:12px;background:var(--bg-muted);border:1px solid var(--border);border-radius:var(--radius-md);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);">Primary Verified Match</span>
+            <span id="finder-result-badge" class="tag-badge" style="color:var(--primary-text);border-color:var(--primary-border);">96% Confidence</span>
+          </div>
+          <div style="font-size:15px;font-weight:700;font-family:var(--font-mono);margin-bottom:4px;" id="finder-result-email">email@domain.com</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;" id="finder-result-provider">MX Verified: Google Workspace</div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-secondary btn-sm" id="btn-copy-found-email">Copy Email</button>
+            <button class="btn btn-primary btn-sm" id="btn-use-found-email">Draft Founder Cold Email</button>
+          </div>
+          <div style="margin-top:12px;font-size:11px;color:var(--text-muted);" id="finder-other-candidates"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-cancel-email-finder-modal">Close</button>
       </div>
     </div>
   </div>

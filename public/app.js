@@ -1009,6 +1009,139 @@
       if (founderBox) founderBox.style.display = isFounder ? "block" : "none";
     });
 
+    // Inline Finder in Founder Cold Email Form
+    document.getElementById("btn-find-founder-email")?.addEventListener("click", async () => {
+      const founderVal = document.getElementById("doc-input-founder-name")?.value || "";
+      const companyVal = document.getElementById("doc-input-company")?.value || "";
+      const pill = document.getElementById("founder-email-status-pill");
+      const btn = document.getElementById("btn-find-founder-email");
+
+      if (!founderVal && !companyVal) {
+        alert("Please enter a founder name/LinkedIn URL and company name first.");
+        return;
+      }
+      if (btn) btn.textContent = "Searching...";
+
+      const isLinkedIn = founderVal.includes("linkedin.com");
+      const payload = {
+        company: companyVal,
+        role: "Founder & CEO",
+        name: isLinkedIn ? "" : founderVal,
+        linkedin_url: isLinkedIn ? founderVal : "",
+      };
+
+      const res = await apiPost("/api/email-finder/find", payload);
+      if (btn) btn.textContent = "Find Email";
+
+      if (res && res.primary_email) {
+        const emailInput = document.getElementById("doc-input-founder-email");
+        if (emailInput) emailInput.value = res.primary_email;
+        if (pill) {
+          pill.style.display = "block";
+          pill.textContent = `✓ ${res.confidence_pct}% Verified (${res.mail_provider || "Corporate Mail"})`;
+        }
+      } else {
+        if (pill) {
+          pill.style.display = "block";
+          pill.textContent = "Could not verify corporate email. Try full company name.";
+        }
+      }
+    });
+
+    // Email Finder Modal controls
+    document.getElementById("btn-open-email-finder")?.addEventListener("click", () => {
+      const comp = document.getElementById("doc-input-company")?.value || "";
+      const modal = document.getElementById("modal-email-finder");
+      if (comp) {
+        const inp = document.getElementById("finder-input-company");
+        if (inp && !inp.value) inp.value = comp;
+      }
+      if (modal) modal.style.display = "flex";
+    });
+
+    document.getElementById("btn-close-email-finder-modal")?.addEventListener("click", () => {
+      document.getElementById("modal-email-finder").style.display = "none";
+    });
+    document.getElementById("btn-cancel-email-finder-modal")?.addEventListener("click", () => {
+      document.getElementById("modal-email-finder").style.display = "none";
+    });
+
+    document.getElementById("btn-run-email-finder")?.addEventListener("click", async () => {
+      const name = document.getElementById("finder-input-name")?.value || "";
+      const company = document.getElementById("finder-input-company")?.value || "";
+      const linkedin = document.getElementById("finder-input-linkedin")?.value || "";
+      const role = document.getElementById("finder-input-role")?.value || "Founder & CEO";
+      const runBtn = document.getElementById("btn-run-email-finder");
+
+      if (!company && !linkedin && !name) {
+        alert("Please provide at least a company name or LinkedIn profile URL.");
+        return;
+      }
+
+      if (runBtn) {
+        runBtn.disabled = true;
+        runBtn.textContent = "Checking DNS MX & synthesizing patterns...";
+      }
+
+      const res = await apiPost("/api/email-finder/find", {
+        name,
+        company,
+        linkedin_url: linkedin,
+        role,
+      });
+
+      if (runBtn) {
+        runBtn.disabled = false;
+        runBtn.textContent = "Find & Verify Corporate Email";
+      }
+
+      const resultsBox = document.getElementById("finder-results-box");
+      if (res && res.primary_email && resultsBox) {
+        resultsBox.style.display = "block";
+        document.getElementById("finder-result-email").textContent = res.primary_email;
+        document.getElementById("finder-result-badge").textContent = `${res.confidence_pct}% Confidence`;
+        document.getElementById("finder-result-provider").textContent = `Mail Provider: ${res.mail_provider || "Corporate Mail Server"}`;
+
+        const otherList = (res.candidates || []).slice(1);
+        const otherEl = document.getElementById("finder-other-candidates");
+        if (otherEl) {
+          otherEl.innerHTML = otherList.length
+            ? `<strong>Other verified variations:</strong> ${otherList.map((c) => `${escapeHtml(c.email)} (${c.confidence_pct}%)`).join(", ")}`
+            : "";
+        }
+
+        state.lastFoundLead = res;
+      } else {
+        alert(res?.error || "No corporate email could be verified with the provided details.");
+      }
+    });
+
+    document.getElementById("btn-copy-found-email")?.addEventListener("click", () => {
+      const email = document.getElementById("finder-result-email")?.textContent;
+      if (email) {
+        navigator.clipboard.writeText(email);
+        const b = document.getElementById("btn-copy-found-email");
+        if (b) {
+          b.textContent = "✓ Copied";
+          setTimeout(() => (b.textContent = "Copy Email"), 2000);
+        }
+      }
+    });
+
+    document.getElementById("btn-use-found-email")?.addEventListener("click", () => {
+      if (!state.lastFoundLead) return;
+      document.getElementById("modal-email-finder").style.display = "none";
+      switchTab("tab-copilot");
+      document.getElementById("doc-type-select").value = "founder-cold-email";
+      document.getElementById("doc-founder-fields").style.display = "block";
+
+      if (state.lastFoundLead.name) document.getElementById("doc-input-founder-name").value = state.lastFoundLead.name;
+      if (state.lastFoundLead.company) document.getElementById("doc-input-company").value = state.lastFoundLead.company;
+      if (state.lastFoundLead.primary_email) document.getElementById("doc-input-founder-email").value = state.lastFoundLead.primary_email;
+
+      generateStudioDocument();
+    });
+
     document.getElementById("btn-save-gmail-draft")?.addEventListener("click", async () => {
       if (!state.currentFounderOutreach) return;
       const btn = document.getElementById("btn-save-gmail-draft");

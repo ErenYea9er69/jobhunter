@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import db, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker
+from . import db, email_finder, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker
 from . import mcp_helpers as h
 from .mcp_helpers import envelope
 from .team import qa
@@ -374,6 +374,21 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             company = body.get("company", "")
             job_title = body.get("title", "")
             res = founder_outreach.send_cold_email(to_email, subject, mail_body, company=company, job_title=job_title)
+            return self._send_json(200, envelope(status="ok" if res.get("success") else "error", data=res))
+
+        if path == "/api/email-finder/find":
+            name = body.get("name", "")
+            company = body.get("company", "")
+            domain = body.get("domain", "")
+            linkedin_url = body.get("linkedin_url", "")
+            role = body.get("role", "")
+            res = email_finder.find_corporate_email(
+                name=name,
+                company=company,
+                domain=domain,
+                linkedin_url=linkedin_url,
+                role=role,
+            )
             return self._send_json(200, envelope(status="ok" if res.get("success") else "error", data=res))
 
         if path == "/api/gmail/config":

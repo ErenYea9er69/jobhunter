@@ -154,3 +154,14 @@ class TestHttpdHandler(unittest.TestCase):
         self.assertIn("subject_options", res["data"])
         self.assertIn("Linear", res["data"]["body"])
         self.assertIn("mail.google.com", res["data"]["gmail_compose_url"])
+
+    def test_email_finder_endpoint(self):
+        status, res = self._call("POST", "/api/email-finder/find", {
+            "name": "Guillermo Rauch",
+            "company": "Vercel",
+            "role": "CEO",
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(res["success"])
+        self.assertEqual(res["data"]["primary_email"], "guillermo@vercel.com")
+        self.assertEqual(res["data"]["domain"], "vercel.com")
