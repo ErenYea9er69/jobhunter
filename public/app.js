@@ -109,7 +109,10 @@
 
     if (tabId === "tab-tracker") loadApplications();
     if (tabId === "tab-profiles") loadProfiles();
-    if (tabId === "tab-preferences") loadPreferences();
+    if (tabId === "tab-preferences") {
+      loadPreferences();
+      loadAIStatus();
+    }
     if (tabId === "tab-extension") {
       loadExtensionStatus();
       loadAutoApplyQueue();
@@ -1246,6 +1249,208 @@
     loadPreferences();
   }
 
+  // ---------------------------------------------------------------- AI ENGINE & DUAL MODE
+  let aiStateCache = null;
+
+  async function loadAIStatus() {
+    const data = await apiGet("/api/ai/status");
+    if (!data) return;
+    aiStateCache = data;
+
+    const modeBadge = document.getElementById("ai-mode-badge");
+    const providerSelect = document.getElementById("ai-provider-select");
+    const modelSelect = document.getElementById("ai-model-select");
+    const modelCustom = document.getElementById("ai-model-custom");
+    const maskedDisplay = document.getElementById("ai-key-masked-display");
+    const clearBtn = document.getElementById("btn-clear-ai-key");
+
+    const mode = data.mode || "mcp_client";
+    const provider = data.provider || "gemini";
+    const model = data.model || "";
+    const hasKey = !!data.key_configured;
+    const maskedKey = data.masked_key || "";
+
+    // 1. Update Mode Badge
+    if (modeBadge) {
+      modeBadge.className = "mode-badge";
+      if (mode === "direct_api") {
+        modeBadge.classList.add("mode-badge-direct");
+        modeBadge.textContent = `✓ Direct API Active (${provider.toUpperCase()})`;
+      } else if (mode === "mcp_client") {
+        modeBadge.classList.add("mode-badge-mcp");
+        modeBadge.textContent = "⚡ External MCP Host Mode (Claude / Cursor)";
+      } else {
+        modeBadge.classList.add("mode-badge-deterministic");
+        modeBadge.textContent = "⚙ Deterministic Mode";
+      }
+    }
+
+    // 2. Update Provider Select
+    if (providerSelect && provider && provider !== "deterministic" && provider !== "auto") {
+      providerSelect.value = provider;
+    }
+
+    // 3. Populate Models for Active Provider
+    populateModelsForProvider(providerSelect ? providerSelect.value : provider, model);
+
+    // 4. Update Masked Key Display
+    if (maskedDisplay) {
+      if (hasKey) {
+        maskedDisplay.textContent = `Active Key: ${maskedKey}`;
+        maskedDisplay.style.color = "var(--primary-text)";
+      } else {
+        maskedDisplay.textContent = "No custom key stored (MCP / Env mode)";
+        maskedDisplay.style.color = "var(--text-muted)";
+      }
+    }
+
+    if (clearBtn) {
+      clearBtn.disabled = !hasKey && provider === "deterministic";
+    }
+  }
+
+  function populateModelsForProvider(provider, selectedModel) {
+    const modelSelect = document.getElementById("ai-model-select");
+    const modelCustom = document.getElementById("ai-model-custom");
+    if (!modelSelect) return;
+
+    const rec = (aiStateCache && aiStateCache.recommended_models) ? aiStateCache.recommended_models[provider] : null;
+    const defaults = {
+      gemini: ["gemini-3.8-flash", "gemini-3.1-pro", "gemini-3.5-flash"],
+      openai: ["gpt-5-mini", "o3-mini", "gpt-5"],
+      anthropic: ["claude-3-7-sonnet", "claude-3-5-haiku"],
+      deepseek: ["deepseek-chat", "deepseek-reasoner"],
+      groq: ["llama-3.3-70b-versatile", "qwen-2.5-coder-32b"],
+      mistral: ["mistral-large-latest", "pixtral-large-latest"],
+      ollama: ["llama3.3", "qwen2.5-coder"],
+    };
+
+    const models = rec || defaults[provider] || [];
+    modelSelect.innerHTML = "";
+
+    models.forEach((m) => {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m;
+      modelSelect.appendChild(opt);
+    });
+
+    if (selectedModel && models.includes(selectedModel)) {
+      modelSelect.value = selectedModel;
+      if (modelCustom) modelCustom.style.display = "none";
+      modelSelect.style.display = "block";
+    } else if (selectedModel && !models.includes(selectedModel)) {
+      if (modelCustom) {
+        modelCustom.value = selectedModel;
+        modelCustom.style.display = "block";
+        modelSelect.style.display = "none";
+      }
+    } else if (models.length > 0) {
+      modelSelect.value = models[0];
+    }
+  }
+
+  async function saveAIConfig() {
+    const providerSelect = document.getElementById("ai-provider-select");
+    const modelSelect = document.getElementById("ai-model-select");
+    const modelCustom = document.getElementById("ai-model-custom");
+    const keyInput = document.getElementById("ai-key-input");
+    const feedback = document.getElementById("ai-status-feedback");
+
+    const provider = providerSelect?.value || "gemini";
+    let model = modelSelect?.value || "";
+    if (modelCustom && modelCustom.style.display !== "none" && modelCustom.value.trim()) {
+      model = modelCustom.value.trim();
+    }
+    const apiKey = keyInput?.value.trim() || "";
+
+    if (!apiKey) {
+      if (feedback) {
+        feedback.className = "status-alert-box alert-error";
+        feedback.style.display = "block";
+        feedback.textContent = "Please enter an API key to activate Standalone Direct API mode.";
+        setTimeout(() => (feedback.style.display = "none"), 4000);
+      }
+      return;
+    }
+
+    const res = await apiPost("/api/ai/config", { provider, model, api_key: apiKey });
+    if (res && res.success) {
+      if (keyInput) keyInput.value = "";
+      if (feedback) {
+        feedback.className = "status-alert-box alert-success";
+        feedback.style.display = "block";
+        feedback.textContent = `✓ Activated Direct API mode for ${provider.toUpperCase()} (${model || "default model"})!`;
+        setTimeout(() => (feedback.style.display = "none"), 4000);
+      }
+      await loadAIStatus();
+    } else {
+      if (feedback) {
+        feedback.className = "status-alert-box alert-error";
+        feedback.style.display = "block";
+        feedback.textContent = `Failed to save AI configuration: ${res?.error?.message || res?.error || "Unknown error"}`;
+        setTimeout(() => (feedback.style.display = "none"), 4000);
+      }
+    }
+  }
+
+  async function clearAIKey() {
+    if (!confirm("Are you sure you want to clear your stored API key? This will revert JobHunter to External MCP Host Mode (Claude / Cursor).")) {
+      return;
+    }
+    const feedback = document.getElementById("ai-status-feedback");
+    const res = await apiPost("/api/ai/clear-key", {});
+    if (res && res.success) {
+      const keyInput = document.getElementById("ai-key-input");
+      if (keyInput) keyInput.value = "";
+      if (feedback) {
+        feedback.className = "status-alert-box alert-success";
+        feedback.style.display = "block";
+        feedback.textContent = "✓ API key wiped successfully. JobHunter is now in External MCP Host Mode.";
+        setTimeout(() => (feedback.style.display = "none"), 4000);
+      }
+      await loadAIStatus();
+    }
+  }
+
+  async function testAIConnection() {
+    const feedback = document.getElementById("ai-status-feedback");
+    const testBtn = document.getElementById("btn-test-ai-key");
+    if (testBtn) {
+      testBtn.disabled = true;
+      testBtn.textContent = "Testing...";
+    }
+    if (feedback) {
+      feedback.className = "status-alert-box";
+      feedback.style.display = "block";
+      feedback.textContent = "Sending test ping to active AI provider...";
+    }
+
+    const res = await apiPost("/api/ai/test", {});
+    if (testBtn) {
+      testBtn.disabled = false;
+      testBtn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+        Test Connection`;
+    }
+
+    if (res && res.success) {
+      if (feedback) {
+        feedback.className = "status-alert-box alert-success";
+        feedback.style.display = "block";
+        feedback.textContent = `✓ Connection verified! Latency: ${res.latency_ms}ms (${res.provider} / ${res.model})`;
+        setTimeout(() => (feedback.style.display = "none"), 5000);
+      }
+    } else {
+      if (feedback) {
+        feedback.className = "status-alert-box alert-error";
+        feedback.style.display = "block";
+        const errMsg = res?.error?.message || res?.error || "Could not reach provider endpoint.";
+        feedback.textContent = `✗ Connection check failed: ${errMsg}`;
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- TAB 6: AUTO-APPLY HUB
   async function loadExtensionStatus() {
     const data = await apiGet("/api/desktop/extension-status");
@@ -1609,6 +1814,45 @@
       }
     });
 
+    // AI Engine Controls
+    document.getElementById("ai-provider-select")?.addEventListener("change", (e) => {
+      populateModelsForProvider(e.target.value);
+    });
+
+    document.getElementById("btn-toggle-key-visibility")?.addEventListener("click", () => {
+      const inp = document.getElementById("ai-key-input");
+      const btn = document.getElementById("btn-toggle-key-visibility");
+      if (!inp) return;
+      if (inp.type === "password") {
+        inp.type = "text";
+        if (btn) btn.textContent = "Hide";
+      } else {
+        inp.type = "password";
+        if (btn) btn.textContent = "Show";
+      }
+    });
+
+    document.getElementById("btn-toggle-custom-model")?.addEventListener("click", () => {
+      const sel = document.getElementById("ai-model-select");
+      const inp = document.getElementById("ai-model-custom");
+      const btn = document.getElementById("btn-toggle-custom-model");
+      if (!sel || !inp) return;
+      if (inp.style.display === "none") {
+        inp.style.display = "block";
+        sel.style.display = "none";
+        inp.focus();
+        if (btn) btn.textContent = "Presets";
+      } else {
+        inp.style.display = "none";
+        sel.style.display = "block";
+        if (btn) btn.textContent = "Custom";
+      }
+    });
+
+    document.getElementById("btn-save-ai-key")?.addEventListener("click", saveAIConfig);
+    document.getElementById("btn-test-ai-key")?.addEventListener("click", testAIConnection);
+    document.getElementById("btn-clear-ai-key")?.addEventListener("click", clearAIKey);
+
     // Preferences
     document.getElementById("btn-save-preferences")?.addEventListener("click", savePreferences);
 
@@ -1775,6 +2019,7 @@
   initFirstRunWizard();
   loadProfiles();
   loadPreferences();
+  loadAIStatus();
   loadApplications();
   loadGmailStatus();
   runRadarHunt();

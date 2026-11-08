@@ -382,6 +382,18 @@ body {
   border-color: var(--text-dim);
 }
 
+.btn-danger {
+  background: var(--danger-dim);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+.btn-danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: var(--danger);
+  color: #fca5a5;
+}
+
 .btn-sm {
   padding: 5px 10px;
   font-size: 12px;
@@ -1271,6 +1283,67 @@ body {
   background: var(--primary-dim);
   color: var(--primary-text);
   border: 1px solid var(--primary-border);
+}
+
+.status-alert-box.alert-error {
+  background: var(--danger-dim);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.status-alert-box.alert-success {
+  background: var(--primary-dim);
+  color: var(--primary-text);
+  border-color: var(--primary-border);
+}
+
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: all 0.2s ease;
+}
+
+.mode-badge-direct {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.mode-badge-mcp {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.mode-badge-deterministic {
+  background: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+  border: 1px solid rgba(156, 163, 175, 0.4);
+}
+
+.ai-mode-explainer {
+  display: flex;
+  gap: 16px;
+  padding: 14px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  align-items: stretch;
+}
+
+.explainer-col {
+  flex: 1;
+}
+
+.explainer-divider {
+  width: 1px;
+  background: var(--border);
 }
 
 /* ------------------------------------------------------------- TAB 6: AUTO-APPLY HUB */

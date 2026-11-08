@@ -28,7 +28,7 @@ if sys.version_info < (3, 11):
     )
     sys.exit(1)
 
-from jh import config, db, extension_installer, httpd, mcp_configurator, resume_registry, workspace
+from jh import ai_manager, config, db, extension_installer, httpd, mcp_configurator, resume_registry, workspace
 
 
 def parse_args(args: list[str] | None = None) -> argparse.Namespace:
@@ -59,6 +59,39 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         "--setup-only",
         action="store_true",
         help="Initialize SQLite database, folders, and MCP configs, then exit without running server",
+    )
+    parser.add_argument(
+        "--set-key",
+        type=str,
+        default=None,
+        help="Store an API key in SQLite and switch to Direct API mode",
+    )
+    parser.add_argument(
+        "--provider",
+        type=str,
+        default="gemini",
+        help="AI provider to configure (default: gemini; choices: gemini, openai, anthropic, deepseek, groq, mistral, ollama, deterministic)",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Model name to use (default: gemini-3.8-flash, gpt-5-mini, claude-3-7-sonnet, etc.)",
+    )
+    parser.add_argument(
+        "--clear-key",
+        action="store_true",
+        help="Delete stored API keys and return to External MCP / Deterministic mode",
+    )
+    parser.add_argument(
+        "--ai-status",
+        action="store_true",
+        help="Display active AI mode, provider, model, and key status, then exit",
+    )
+    parser.add_argument(
+        "--test-ai",
+        action="store_true",
+        help="Test connection to the configured AI API and exit",
     )
     return parser.parse_args(args)
 
@@ -127,6 +160,40 @@ def main() -> None:
     for m in info["mcp_results"]:
         if m.get("success"):
             sys.stderr.write(f"✓ Connected MCP for {m.get('client')}: {m.get('path')}\n")
+
+    # Handle AI key management
+    if args.set_key:
+        res = ai_manager.set_ai_key(provider=args.provider, api_key=args.set_key, model=args.model)
+        if res.get("success"):
+            sys.stderr.write(f"\n✓ API Key saved for {res.get('provider')} (model: {res.get('model')}). Direct API Mode activated!\n")
+            sys.stderr.write(f"  Masked key: {res.get('masked_key')}\n")
+        else:
+            sys.stderr.write(f"\nERROR saving key: {res.get('error')}\n")
+
+    if args.clear_key:
+        res = ai_manager.clear_ai_key(provider=args.provider if args.provider != "gemini" else None)
+        sys.stderr.write(f"\n✓ API Key(s) cleared from database. Reverted to External MCP / Deterministic Mode.\n")
+
+    if args.test_ai:
+        sys.stderr.write("\nTesting AI API connection...\n")
+        test_res = ai_manager.test_ai_connection()
+        if test_res.get("success"):
+            sys.stderr.write(f"✓ AI Ping Successful! Provider: {test_res.get('provider')}, Model: {test_res.get('model')} (Latency: {test_res.get('latency_ms')}ms)\n")
+        else:
+            sys.stderr.write(f"✗ AI Test Failed: {test_res.get('error')}\n")
+        return
+
+    if args.ai_status:
+        st = ai_manager.get_ai_status()
+        sys.stderr.write("\n" + "-" * 50 + "\n")
+        sys.stderr.write(f"  AI Mode:         {st.get('mode').upper()}\n")
+        sys.stderr.write(f"  Active Provider: {st.get('provider')}\n")
+        sys.stderr.write(f"  Active Model:    {st.get('model') or '(none)'}\n")
+        sys.stderr.write(f"  Key Configured:  {st.get('key_configured')}\n")
+        if st.get("masked_key"):
+            sys.stderr.write(f"  Masked Key:      {st.get('masked_key')}\n")
+        sys.stderr.write("-" * 50 + "\n")
+        return
 
     if args.setup_only:
         sys.stderr.write("\nSetup complete. Exiting (--setup-only).\n")

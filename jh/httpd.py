@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import bigtech_directory, db, email_finder, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker, workspace
+from . import ai_manager, bigtech_directory, db, email_finder, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker, workspace
 from . import mcp_helpers as h
 from .mcp_helpers import envelope
 from .team import qa
@@ -85,6 +85,10 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
         registry = resume_registry.ResumeRegistry(ws_dir)
 
         # 1. API routes
+        if path == "/api/ai/status":
+            st = ai_manager.get_ai_status()
+            return self._send_json(200, envelope(status="ok", data=st))
+
         if path == "/api/resumes/folder-info":
             resumes_dir, guide_path = workspace.ensure_resumes_dir(ws_dir)
             files = []
@@ -210,6 +214,30 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
 
         ws_dir = getattr(self.server, "ws_dir", Path.cwd())
         registry = resume_registry.ResumeRegistry(ws_dir)
+
+        if path == "/api/ai/config":
+            provider = body.get("provider", "gemini")
+            api_key = body.get("api_key", "")
+            model = body.get("model", "")
+            res = ai_manager.set_ai_key(provider=provider, api_key=api_key, model=model)
+            return self._send_json(200 if res.get("success") else 400, envelope(
+                status="ok" if res.get("success") else "error",
+                data=res,
+                error={"code": "config_error", "message": res.get("error")} if not res.get("success") else None,
+            ))
+
+        if path == "/api/ai/clear-key":
+            provider = body.get("provider")
+            res = ai_manager.clear_ai_key(provider=provider)
+            return self._send_json(200, envelope(status="ok", data=res))
+
+        if path == "/api/ai/test":
+            res = ai_manager.test_ai_connection()
+            return self._send_json(200 if res.get("success") else 400, envelope(
+                status="ok" if res.get("success") else "error",
+                data=res,
+                error={"code": "test_failed", "message": res.get("error")} if not res.get("success") else None,
+            ))
 
         if path == "/api/resumes/upload":
             raw_filename = body.get("filename", "")

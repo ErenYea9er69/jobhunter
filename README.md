@@ -34,6 +34,21 @@ chmod +x run.sh
 python3 run.py
 ```
 
+#### Launcher CLI Options:
+```bash
+python run.py [OPTIONS]
+  --port PORT          Port for HTTP daemon (default: 8765)
+  --host HOST          Host to bind to (default: 127.0.0.1)
+  --no-browser         Do not auto-launch Chromium with extension
+  --setup-only         Provision directories, DB, and MCP configs, then exit
+  --set-key KEY        Store API key for Standalone Direct API mode
+  --provider PROVIDER  AI Provider (gemini, openai, anthropic, deepseek, groq, mistral)
+  --model MODEL        Target model (e.g. gemini-3.8-flash, gpt-5-mini, claude-3-7-sonnet)
+  --clear-key          Delete stored API keys and return to MCP mode
+  --ai-status          Display active AI provider, mode, and masked key
+  --test-ai            Test connection to the active AI endpoint and measure latency
+```
+
 #### What happens automatically:
 1. **Candidate Drop Folder Provisioned**: Auto-creates `resumes/` with a `PUT_YOUR_RESUME_HERE.txt` guide. Drop your Word (**`.docx`**), PDF (**`.pdf`**), or Text (**`.txt`**, **`.md`**) resume right into this folder.
 2. **SQLite Database Initialized**: Automatically creates your private local database (`engine.db`) in `~/.jobhunter/` or your workspace.
@@ -41,6 +56,88 @@ python3 run.py
 4. **Web Dashboard Served**: Starts the local HTTP daemon and serves the 5-tab dashboard on `http://127.0.0.1:8765`.
 5. **Browser Extension Loaded**: Detects your installed Chromium browser (Google Chrome, Microsoft Edge, Brave) and launches it with the ATS Autofill extension preloaded (`--load-extension`).
 6. **First-Run Web Drop Wizard**: If no resume exists yet, the web dashboard displays a drag-and-drop wizard allowing you to upload your Word, PDF, or Text resume directly from the browser with instant skill extraction.
+
+---
+
+### 🔀 Dual Execution Modes: External MCP Host vs. Standalone Direct API
+
+JobHunter operates seamlessly in two distinct modes, and you can switch between them at any time:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        MODE 1: EXTERNAL MCP HOST                       │
+│  Zero API keys required in JobHunter!                                  │
+│  Claude Desktop or Cursor runs its own frontier LLM model              │
+│  and talks to JobHunter via MCP stdio tools.                           │
+└────────────────────────────────────┬───────────────────────────────────┘
+                                     │ (Switch dynamically anytime)
+┌────────────────────────────────────▼───────────────────────────────────┐
+│                    MODE 2: STANDALONE DIRECT API                       │
+│  No external AI IDE needed! Clone and supply your own API key.        │
+│  Powers the Web Dashboard & Chrome Extension directly via SQLite.      │
+│  Supports Gemini 3.8 Flash, GPT-5 Mini, Claude 3.7 Sonnet, etc.        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Mode 1: External MCP Host Mode (Zero Keys Needed)
+- If you use **Claude Desktop**, **Cursor**, **Antigravity**, or **Claude Code**, you **do NOT need to supply any API keys**.
+- The AI IDE hosts the conversation and passes context to JobHunter's tools over stdio.
+- All documents, tailoring, and scoring run through JobHunter's strict offline Reviewer QA engine.
+
+#### Mode 2: Standalone Direct API Mode (Web Dashboard & Chrome Extension)
+- If you want to use the Web Dashboard and ATS Autofill extension independently without running Claude Desktop or Cursor, you can supply your API key directly via CLI or Web UI.
+- Your key is stored securely in your private local SQLite database (`engine.db`) and is **never** sent to external telemetry or exposed in logs.
+
+##### Configure via Command Line (Windows, macOS, Linux):
+```bash
+# 1. Activate Google Gemini (Default frontier: gemini-3.8-flash)
+python run.py --set-key YOUR_GEMINI_API_KEY --provider gemini --model gemini-3.8-flash
+
+# 2. Activate OpenAI (Default frontier: gpt-5-mini or o3-mini)
+python run.py --set-key YOUR_OPENAI_API_KEY --provider openai --model gpt-5-mini
+
+# 3. Activate Anthropic Claude (Default frontier: claude-3-7-sonnet)
+python run.py --set-key YOUR_ANTHROPIC_API_KEY --provider anthropic --model claude-3-7-sonnet
+
+# 4. Activate DeepSeek
+python run.py --set-key YOUR_DEEPSEEK_KEY --provider deepseek --model deepseek-chat
+
+# 5. Check active mode & masked key
+python run.py --ai-status
+
+# 6. Test connection latency and endpoint health
+python run.py --test-ai
+```
+
+##### Configure via Web Dashboard:
+1. Open `http://127.0.0.1:8765` in your browser.
+2. Navigate to the **Calibration & Filters** tab.
+3. In the **AI Engine & Dual Execution Mode** card:
+   - Select your provider (**Google Gemini**, **OpenAI**, **Anthropic**, **DeepSeek**, **Groq**, **Mistral**, or local **Ollama**).
+   - Pick a model or enter a custom identifier.
+   - Paste your key and click **Save & Activate**.
+   - Click **Test Connection** to verify round-trip ping and latency.
+
+#### Reverting to MCP Mode / Deleting Your Key:
+You can wipe your stored API key at any time to return JobHunter to External MCP / Deterministic mode:
+```bash
+# Via CLI:
+python run.py --clear-key
+
+# Or via Web Dashboard:
+Click the "Clear Key" button in Tab 5 (Calibration & Filters)
+```
+
+#### 2026 Frontier Models Supported:
+- **Google Gemini**: `gemini-3.8-flash` (recommended default), `gemini-3.1-pro`, `gemini-3.5-flash`
+- **OpenAI**: `gpt-5-mini` (recommended default), `o3-mini`, `gpt-5`
+- **Anthropic**: `claude-3-7-sonnet` (recommended default), `claude-3-5-haiku`
+- **DeepSeek**: `deepseek-chat`, `deepseek-reasoner`
+- **Groq**: `llama-3.3-70b-versatile`, `qwen-2.5-coder-32b`
+- **Mistral**: `mistral-large-latest`
+- **Ollama**: `llama3.3`, `deepseek-r1` (local, zero cloud keys)
+
+---
 
 ---
 

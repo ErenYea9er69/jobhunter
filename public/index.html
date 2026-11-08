@@ -685,6 +685,97 @@
         <!-- TAB 5: CALIBRATION & FILTERS -->
         <section class="tab-panel" id="tab-preferences">
           <div class="calibration-container">
+            <!-- AI Engine & Dual Execution Mode Card -->
+            <div class="calibration-card" id="ai-engine-card" style="margin-bottom: 24px;">
+              <div class="cal-header">
+                <div>
+                  <div style="display:flex;align-items:center;gap:10px;">
+                    <h2 class="card-heading">AI Engine &amp; Dual Execution Mode</h2>
+                    <span id="ai-mode-badge" class="mode-badge mode-badge-mcp">⚡ External MCP Host Mode</span>
+                  </div>
+                  <p class="card-desc" style="margin-top:4px;">
+                    Run standalone with your direct API key (Gemini, OpenAI, Anthropic, DeepSeek, Groq, Mistral, Ollama), or leave unconfigured to let your external MCP client (Claude Desktop / Cursor) drive.
+                  </p>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-test-ai-key" title="Test active AI model connection">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                    Test Connection
+                  </button>
+                  <button type="button" class="btn btn-primary btn-sm" id="btn-save-ai-key">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    Save &amp; Activate
+                  </button>
+                </div>
+              </div>
+
+              <!-- Dual Mode Information Box -->
+              <div class="ai-mode-explainer" id="ai-mode-explainer">
+                <div class="explainer-col" id="col-mcp-info">
+                  <div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:12.5px;color:var(--text-main);">
+                    <span>⚡ Mode 1: External MCP Host (Zero Keys)</span>
+                  </div>
+                  <p style="font-size:12px;color:var(--text-muted);margin-top:4px;line-height:1.45;">
+                    Ideal for Claude Desktop and Cursor. The IDE supplies its own LLM and calls JobHunter tools via stdio. Zero API keys needed in JobHunter.
+                  </p>
+                </div>
+                <div class="explainer-divider"></div>
+                <div class="explainer-col" id="col-api-info">
+                  <div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:12.5px;color:var(--text-main);">
+                    <span>🔑 Mode 2: Standalone Direct API</span>
+                  </div>
+                  <p style="font-size:12px;color:var(--text-muted);margin-top:4px;line-height:1.45;">
+                    Directly powers the standalone Web Dashboard and Chrome Extension without opening Claude or Cursor. Stores securely in local SQLite.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Form Fields Grid -->
+              <div class="cal-form-grid">
+                <div class="input-field-group">
+                  <label class="field-label" for="ai-provider-select">AI Provider</label>
+                  <select id="ai-provider-select" class="select-dropdown">
+                    <option value="gemini" selected>Google Gemini (Recommended: gemini-3.8-flash)</option>
+                    <option value="openai">OpenAI (Recommended: gpt-5-mini, o3-mini)</option>
+                    <option value="anthropic">Anthropic Claude (Recommended: claude-3-7-sonnet)</option>
+                    <option value="deepseek">DeepSeek (deepseek-chat)</option>
+                    <option value="groq">Groq (llama-3.3-70b-versatile)</option>
+                    <option value="mistral">Mistral AI (mistral-large-latest)</option>
+                    <option value="ollama">Ollama (Local LLM)</option>
+                  </select>
+                </div>
+
+                <div class="input-field-group">
+                  <label class="field-label" for="ai-model-select">Target Frontier Model</label>
+                  <div style="display:flex;gap:8px;">
+                    <select id="ai-model-select" class="select-dropdown" style="flex:1;">
+                      <option value="gemini-3.8-flash">gemini-3.8-flash (Latest 2026 default)</option>
+                      <option value="gemini-3.1-pro">gemini-3.1-pro</option>
+                      <option value="gemini-3.5-flash">gemini-3.5-flash</option>
+                    </select>
+                    <input type="text" id="ai-model-custom" class="text-input" placeholder="Type custom model..." style="flex:1;display:none;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-custom-model" title="Toggle custom model input" style="padding:0 8px;">Custom</button>
+                  </div>
+                </div>
+
+                <div class="input-field-group" style="grid-column: 1 / -1;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                    <label class="field-label" for="ai-key-input" style="margin-bottom:0;">API Key</label>
+                    <span id="ai-key-masked-display" style="font-size:12px;font-family:var(--font-mono);color:var(--text-muted);">No key saved</span>
+                  </div>
+                  <div style="display:flex;gap:8px;">
+                    <input type="password" id="ai-key-input" class="text-input" placeholder="Paste your API key (e.g. AIzaSy... or sk-...) to activate Direct API mode" style="flex:1;font-family:var(--font-mono);">
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-key-visibility" style="padding:0 12px;">Show</button>
+                    <button type="button" class="btn btn-danger btn-sm" id="btn-clear-ai-key" title="Clear saved key and revert to MCP Mode">Clear Key</button>
+                  </div>
+                  <span class="field-hint">Stored strictly in local SQLite. To delete your key and return to MCP mode, click "Clear Key" or run <code>python run.py --clear-key</code>.</span>
+                </div>
+              </div>
+
+              <!-- Status Alert Feedback -->
+              <div id="ai-status-feedback" class="status-alert-box" style="display:none;"></div>
+            </div>
+
             <div class="calibration-card">
               <div class="cal-header">
                 <h2 class="card-heading">Search Calibration & Preferences Engine</h2>

@@ -52,6 +52,20 @@ class TestMCPConfigurator(unittest.TestCase):
         self.assertIn("other_tool", data["mcpServers"])
         self.assertIn("jobhunter", data["mcpServers"])
 
+    def test_run_parse_args(self):
+        import run
+        args = run.parse_args(["--set-key", "AIzaTest123", "--provider", "gemini", "--model", "gemini-3.8-flash"])
+        self.assertEqual(args.set_key, "AIzaTest123")
+        self.assertEqual(args.provider, "gemini")
+        self.assertEqual(args.model, "gemini-3.8-flash")
+
+        args_clear = run.parse_args(["--clear-key"])
+        self.assertTrue(args_clear.clear_key)
+
+        args_status = run.parse_args(["--ai-status"])
+        self.assertTrue(args_status.ai_status)
+
+
 
 if __name__ == "__main__":
     unittest.main()
