@@ -8,9 +8,45 @@ By default the AI sees seven CEO tools. The 39 specialist tools sit behind them.
 
 ## Quick start
 
-### One-line Installation with uvx
+### ⚡ 1-Command Turnkey Run (Windows, macOS, Linux)
 
-Run the MCP server directly with zero manual cloning or setup:
+Clone the repository and launch the entire copilot ecosystem (Web Dashboard, ATS Autofill Extension, SQLite database, and MCP bridge) with one command:
+
+```bash
+git clone https://github.com/ErenYea9er69/jobhunter.git
+cd jobhunter
+pip install -r requirements.txt
+```
+
+#### Run on Windows:
+Double-click `run.bat` or execute in PowerShell / CMD:
+```cmd
+run.bat
+# or
+python run.py
+```
+
+#### Run on macOS & Linux:
+```bash
+chmod +x run.sh
+./run.sh
+# or
+python3 run.py
+```
+
+#### What happens automatically:
+1. **Candidate Drop Folder Provisioned**: Auto-creates `resumes/` with a `PUT_YOUR_RESUME_HERE.txt` guide. Drop your Word (**`.docx`**), PDF (**`.pdf`**), or Text (**`.txt`**, **`.md`**) resume right into this folder.
+2. **SQLite Database Initialized**: Automatically creates your private local database (`engine.db`) in `~/.jobhunter/` or your workspace.
+3. **AI Coding Agents Auto-Connected (MCP)**: Auto-detects and writes MCP configuration for **Cursor** (`.cursor/mcp.json`) and **Claude Desktop** so your AI assistant shares the exact same resume facts and tracking database.
+4. **Web Dashboard Served**: Starts the local HTTP daemon and serves the 5-tab dashboard on `http://127.0.0.1:8765`.
+5. **Browser Extension Loaded**: Detects your installed Chromium browser (Google Chrome, Microsoft Edge, Brave) and launches it with the ATS Autofill extension preloaded (`--load-extension`).
+6. **First-Run Web Drop Wizard**: If no resume exists yet, the web dashboard displays a drag-and-drop wizard allowing you to upload your Word, PDF, or Text resume directly from the browser with instant skill extraction.
+
+---
+
+### Alternative: Standalone MCP Server via uvx
+
+If you only want the stdio MCP server without the web dashboard:
 
 ```bash
 uvx --from git+https://github.com/ErenYea9er69/jobhunter jobhunter-mcp

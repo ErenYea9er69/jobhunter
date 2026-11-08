@@ -5,6 +5,7 @@ screening engine, Reviewer QA, and ResumeRegistry without polluting stdout.
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import mimetypes
@@ -16,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import bigtech_directory, db, email_finder, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker
+from . import bigtech_directory, db, email_finder, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker, workspace
 from . import mcp_helpers as h
 from .mcp_helpers import envelope
 from .team import qa
@@ -84,6 +85,26 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
         registry = resume_registry.ResumeRegistry(ws_dir)
 
         # 1. API routes
+        if path == "/api/resumes/folder-info":
+            resumes_dir, guide_path = workspace.ensure_resumes_dir(ws_dir)
+            files = []
+            if resumes_dir.is_dir():
+                for f in resumes_dir.iterdir():
+                    if f.is_file() and f.stem.lower() not in workspace.NON_RESUME_FILENAMES:
+                        if f.suffix.lower() in {".pdf", ".docx", ".txt", ".md"}:
+                            files.append(f.name)
+            res = envelope(
+                status="ok",
+                data={
+                    "resumes_dir": str(resumes_dir),
+                    "guide_path": str(guide_path),
+                    "file_count": len(files),
+                    "files": files,
+                    "supported_formats": [".docx", ".pdf", ".txt", ".md"],
+                },
+            )
+            return self._send_json(200, res)
+
         if path == "/api/extension/status":
             active_name = registry.get_active_variant() or "Default"
             profile = h.resolve_profile(require=False) or {}
@@ -102,12 +123,20 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/profiles":
             profiles = db.list_resume_profiles()
+            if not profiles:
+                registry.scan_and_sync()
+                for var in registry.list_variants():
+                    prof = var.get("profile")
+                    if prof:
+                        prof_id = var.get("id") or f"var_{var.get('name', '').lower().replace(' ', '-')}"
+                        db.save_profile(prof, profile_id=prof_id)
+                profiles = db.list_resume_profiles()
             active = next((p["name"] for p in profiles if p.get("is_active")), None) or registry.get_active_variant()
             res = envelope(
                 status="ok",
                 data={
                     "profiles": profiles,
-                    "active_profile": active or "Default",
+                    "active_profile": active or "",
                     "count": len(profiles),
                 },
             )
@@ -181,6 +210,70 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
 
         ws_dir = getattr(self.server, "ws_dir", Path.cwd())
         registry = resume_registry.ResumeRegistry(ws_dir)
+
+        if path == "/api/resumes/upload":
+            raw_filename = body.get("filename", "")
+            safe_name = os.path.basename(raw_filename).strip()
+            if not safe_name:
+                return self._send_json(400, envelope(status="error", error={"code": "invalid_filename", "message": "Filename is required"}))
+
+            ext = Path(safe_name).suffix.lower()
+            allowed_exts = {".docx", ".pdf", ".txt", ".md"}
+            if ext not in allowed_exts:
+                return self._send_json(400, envelope(status="error", error={"code": "unsupported_format", "message": f"Unsupported format '{ext}'. Allowed: .docx, .pdf, .txt, .md"}))
+
+            resumes_dir, _ = workspace.ensure_resumes_dir(ws_dir)
+            target_path = resumes_dir / safe_name
+
+            if "content_base64" in body and body["content_base64"]:
+                try:
+                    file_bytes = base64.b64decode(body["content_base64"])
+                    target_path.write_bytes(file_bytes)
+                except Exception as e:
+                    return self._send_json(400, envelope(status="error", error={"code": "decode_error", "message": str(e)}))
+            elif "text" in body and body["text"]:
+                target_path.write_text(body["text"], encoding="utf-8")
+            else:
+                return self._send_json(400, envelope(status="error", error={"code": "missing_content", "message": "Resume content is required"}))
+
+            sync = registry.scan_and_sync(force=True)
+            var = registry.get_variant(safe_name)
+            if not var:
+                var = registry.get_variant(Path(safe_name).stem)
+
+            prof_data = var.get("profile") if var else None
+            if prof_data:
+                prof_id = var.get("id") or f"var_{var.get('name', '').lower().replace(' ', '-')}"
+                db.save_profile(prof_data, profile_id=prof_id)
+                if body.get("activate", True):
+                    db.set_active_resume_profile(prof_id)
+                    registry.set_active_variant(var.get("name") or prof_id)
+
+            return self._send_json(200, envelope(status="ok", data={
+                "success": True,
+                "filename": safe_name,
+                "variant": var,
+                "profile": prof_data or {},
+                "active": registry.get_active_variant(),
+            }))
+
+        if path == "/api/resumes/scan":
+            sync = registry.scan_and_sync(force=True)
+            for var in registry.list_variants():
+                prof = var.get("profile")
+                if prof:
+                    prof_id = var.get("id") or f"var_{var.get('name', '').lower().replace(' ', '-')}"
+                    db.save_profile(prof, profile_id=prof_id)
+            profiles = db.list_resume_profiles()
+            active = next((p["name"] for p in profiles if p.get("is_active")), None) or registry.get_active_variant()
+            return self._send_json(200, envelope(status="ok", data={
+                "success": True,
+                "sync": sync,
+                "variants": registry.list_variants(),
+                "profiles": profiles,
+                "active": active,
+                "count": len(profiles),
+            }))
 
         if path == "/api/extension/payload":
             profile = h.resolve_profile(require=False) or {}

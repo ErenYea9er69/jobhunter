@@ -14,3 +14,9 @@ applications.json
 data/
 *.db
 scratch/
+.cursor/
+
+# Personal candidate resumes (never commit user CVs)
+resumes/*
+!resumes/PUT_YOUR_RESUME_HERE.txt
+

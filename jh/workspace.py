@@ -47,6 +47,7 @@ NON_RESUME_FILENAMES = {
     "package",
     "package-lock",
     "tsconfig",
+    "put_your_resume_here",
 }
 
 RESUME_HEURISTIC_WORDS = {
@@ -100,6 +101,53 @@ def ensure_jobhunter_dir(workspace_path: str | Path) -> Path:
             pass
 
     return jh_dir
+
+
+RESUME_GUIDE_TEXT = """================================================================================
+  JobHunter — Candidate Resume & Profile Folder
+================================================================================
+
+Drop your resume file(s) into this folder!
+
+SUPPORTED FORMATS:
+  1. Microsoft Word (.docx)
+  2. Adobe PDF (.pdf)
+  3. Plain Text (.txt, .md)
+
+HOW IT WORKS:
+  - When JobHunter starts (or when you click "Scan Folder" or drop a file in the
+    Web Dashboard at http://127.0.0.1:8765), this directory is scanned.
+  - Your skills, experience, contact details, and career targets are extracted
+    directly into your local, private SQLite database (engine.db).
+  - If you have multiple resumes (e.g. Backend, Frontend, DevOps, ML), you can
+    put all of them here and switch between them in the Web Dashboard or via MCP.
+
+PRIVACY & SAFETY:
+  - All processing stays 100% local on your machine.
+  - Nothing is sent to external servers unless you explicitly configure an AI key.
+================================================================================
+"""
+
+
+def ensure_resumes_dir(workspace_path: str | Path) -> tuple[Path, Path]:
+    """Ensure <workspace>/resumes directory exists and create PUT_YOUR_RESUME_HERE.txt.
+
+    Returns:
+        (resumes_dir_path, guide_file_path)
+    """
+    ws = Path(workspace_path).resolve()
+    resumes_dir = ws / "resumes"
+    resumes_dir.mkdir(parents=True, exist_ok=True)
+
+    guide_path = resumes_dir / "PUT_YOUR_RESUME_HERE.txt"
+    if not guide_path.exists():
+        try:
+            guide_path.write_text(RESUME_GUIDE_TEXT, encoding="utf-8")
+        except OSError:
+            pass
+
+    return resumes_dir, guide_path
+
 
 
 def _clean_variant_name(path: Path) -> str:
@@ -163,6 +211,8 @@ def discover_resumes(workspace_path: str | Path) -> list[dict[str, Any]]:
                 dirs[:] = [d for d in dirs if d not in IGNORED_DIRS and not d.startswith(".")]
                 for f in files:
                     fp = Path(root) / f
+                    if fp.stem.lower() in NON_RESUME_FILENAMES:
+                        continue
                     try:
                         fp.resolve().relative_to(ws)
                     except ValueError:

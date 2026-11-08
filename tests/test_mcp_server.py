@@ -47,7 +47,7 @@ Requirements:
 
 class TestMCPServer(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.ws_path = Path(self.temp_dir.name)
 
         # Create a resume file in the temporary workspace
@@ -64,7 +64,18 @@ class TestMCPServer(unittest.TestCase):
 
     def tearDown(self):
         os.environ.pop("JH_DATA_DIR", None)
-        self.temp_dir.cleanup()
+        import gc
+        import time
+        gc.collect()
+        try:
+            self.temp_dir.cleanup()
+        except PermissionError:
+            time.sleep(0.1)
+            gc.collect()
+            try:
+                self.temp_dir.cleanup()
+            except Exception:
+                pass
 
     def _call_tool(self, name: str, **kwargs):
         # Directly invoke the registered tool function through FastMCP tool manager

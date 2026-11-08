@@ -29,9 +29,10 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 jobhunter-mcp = "mcp_server:main"
+jobhunter = "run:main"
 
 [tool.setuptools]
-py-modules = ["mcp_server", "desktop"]
+py-modules = ["mcp_server", "desktop", "run"]
 
 [tool.setuptools.packages.find]
 include = ["jh*", "prompts*"]

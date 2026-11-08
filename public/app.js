@@ -877,65 +877,289 @@
   }
 
   // ---------------------------------------------------------------- TAB 4: PROFILES
+  // ---------------------------------------------------------------- TAB 4: PROFILES & RESUMES
   async function loadProfiles() {
+    // 1. Fetch drop folder info
+    try {
+      const folderRes = await apiGet("/api/resumes/folder-info");
+      const folderPathEl = document.getElementById("wizard-folder-path");
+      if (folderPathEl && folderRes?.resumes_dir) {
+        folderPathEl.textContent = folderRes.resumes_dir;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // 2. Fetch profiles
     const data = await apiGet("/api/profiles");
     if (!data) return;
 
-    state.activeProfile = data.active;
-    state.profiles = data.variants || [];
+    state.activeProfile = data.active || data.active_profile;
+    state.profiles = data.profiles || data.variants || [];
 
-    const activeNameEl = document.getElementById("active-profile-name");
-    if (activeNameEl) {
-      activeNameEl.textContent = state.activeProfile?.name || "Default Resume";
+    // Manage first-run banner & wizard visibility
+    const bannerEl = document.getElementById("global-onboarding-banner");
+    const hasResumes = state.profiles.length > 0;
+
+    if (bannerEl) {
+      bannerEl.style.display = hasResumes ? "none" : "flex";
     }
 
-    const candNameEl = document.getElementById("profile-cand-name");
-    const candRoleEl = document.getElementById("profile-cand-role");
-    const candEmailEl = document.getElementById("profile-cand-email");
-    const candPhoneEl = document.getElementById("profile-cand-phone");
-    const candLocEl = document.getElementById("profile-cand-location");
-    const candSkillsEl = document.getElementById("profile-skills-cloud");
+    const activeNameEl = document.getElementById("active-profile-name");
+    const activeObj = state.profiles.find((p) => p.is_active || (state.activeProfile && (p.name === state.activeProfile || p.id === state.activeProfile))) || state.profiles[0];
 
-    if (state.activeProfile) {
-      if (candNameEl) candNameEl.textContent = state.activeProfile.name || "Candidate Name";
-      if (candRoleEl) candRoleEl.textContent = state.activeProfile.target_title || "Software Engineer";
-      if (candEmailEl) candEmailEl.textContent = state.activeProfile.email || "email@example.com";
-      if (candPhoneEl) candPhoneEl.textContent = state.activeProfile.phone || "+1 234 567 890";
-      if (candLocEl) candLocEl.textContent = state.activeProfile.location || "Tunisia / Worldwide";
+    if (activeNameEl) {
+      activeNameEl.textContent = activeObj?.name || state.activeProfile || "No Active Resume";
+    }
 
-      if (candSkillsEl) {
-        const skills = state.activeProfile.skills || ["Python", "FastAPI", "React", "PostgreSQL"];
-        candSkillsEl.innerHTML = skills.map((s) => `<span class="profile-skill-tag">${escapeHtml(s)}</span>`).join("");
+    // Candidate details
+    const candName = activeObj?.name || "Candidate Name";
+    const candRole = activeObj?.target_title || "Target Role";
+    const candEmail = activeObj?.email || "email@example.com";
+    const candPhone = activeObj?.phone || "+1 234 567 890";
+    const candLoc = activeObj?.location || "Location Not Set";
+    const coordsStr = `${candLoc} • ${candEmail} • ${candPhone}`;
+
+    ["prof-name", "profile-cand-name"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = candName;
+    });
+
+    ["prof-role", "profile-cand-role"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = candRole;
+    });
+
+    ["prof-coords"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = coordsStr;
+    });
+    ["profile-cand-email"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = candEmail;
+    });
+    ["profile-cand-phone"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = candPhone;
+    });
+    ["profile-cand-location"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = candLoc;
+    });
+
+    // Initials avatar
+    const initials = candName.split(" ").map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "CV";
+    const avatarEl = document.getElementById("prof-avatar");
+    if (avatarEl) avatarEl.textContent = initials;
+
+    // Skills
+    const skills = activeObj?.skills || activeObj?.tags || [];
+    ["prof-skills-container", "profile-skills-cloud"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        if (skills.length === 0) {
+          el.innerHTML = `<span class="placeholder-text" style="font-size:12px;color:var(--text-dim);">No skills extracted yet. Add a resume to extract verified skills.</span>`;
+        } else {
+          el.innerHTML = skills.map((s) => `<span class="profile-skill-tag">${escapeHtml(s)}</span>`).join("");
+        }
+      }
+    });
+
+    // Experience
+    const expItems = activeObj?.experience || [];
+    const expContainer = document.getElementById("prof-exp-container");
+    if (expContainer) {
+      if (expItems.length === 0) {
+        expContainer.innerHTML = `<p class="placeholder-text" style="font-size:12px;color:var(--text-dim);">No experience entries recorded yet.</p>`;
+      } else {
+        expContainer.innerHTML = expItems
+          .map((item) => `
+            <div class="exp-item-card" style="margin-bottom:12px;padding:10px;background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border);">
+              <div style="font-weight:600;font-size:13px;color:var(--text-main);">${escapeHtml(item.title || item.role || "Role")} @ ${escapeHtml(item.company || "Company")}</div>
+              <div style="font-size:11.5px;color:var(--text-dim);margin-bottom:4px;">${escapeHtml(item.period || item.dates || "")}</div>
+              <div style="font-size:12px;color:var(--text-muted);">${escapeHtml(item.summary || (Array.isArray(item.bullets) ? item.bullets.join("; ") : ""))}</div>
+            </div>
+          `)
+          .join("");
       }
     }
 
-    const variantsList = document.getElementById("variants-list-deck");
-    if (variantsList) {
-      variantsList.innerHTML = state.profiles
+    // Variants list
+    ["variants-stack-list", "variants-list-deck"].forEach((id) => {
+      const listEl = document.getElementById(id);
+      if (!listEl) return;
+      if (state.profiles.length === 0) {
+        listEl.innerHTML = `<div class="queue-empty-state" style="padding:16px;text-align:center;color:var(--text-dim);font-size:12.5px;">No resumes discovered yet. Use the dropzone above or copy files into <code>resumes/</code>.</div>`;
+        return;
+      }
+
+      listEl.innerHTML = state.profiles
         .map((v) => {
-          const isActive = state.activeProfile && (v.name === state.activeProfile.name || v.id === state.activeProfile.id);
+          const isActive = v.is_active || (state.activeProfile && (v.name === state.activeProfile || v.id === state.activeProfile));
           return `
           <div class="variant-card ${isActive ? "active-variant" : ""}">
             <div class="variant-info">
               <span class="variant-name">${escapeHtml(v.name || v.target_title || "Resume Variant")}</span>
-              <span class="variant-meta">${escapeHtml(v.filename || "resume.pdf")} • ${v.skills?.length || 0} skills detected</span>
+              <span class="variant-meta">${escapeHtml(v.filename || "resume")} • ${(v.skills || v.tags || []).length} skills</span>
             </div>
             ${
               isActive
                 ? '<span class="active-pill" style="font-size:12px;color:var(--primary-text);font-weight:700;">Active</span>'
-                : `<button class="btn btn-secondary btn-sm btn-activate-variant" data-name="${escapeHtml(v.name)}">Activate</button>`
+                : `<button class="btn btn-secondary btn-sm btn-activate-variant" data-name="${escapeHtml(v.name || v.id)}">Activate</button>`
             }
           </div>
         `;
         })
         .join("");
 
-      variantsList.querySelectorAll(".btn-activate-variant").forEach((btn) => {
+      listEl.querySelectorAll(".btn-activate-variant").forEach((btn) => {
         btn.addEventListener("click", async () => {
           const name = btn.dataset.name;
           await apiPost("/api/profile/activate", { name });
           loadProfiles();
         });
+      });
+    });
+  }
+
+  // First-Run Resume Drag-and-Drop & File Upload
+  async function uploadResumeFile(file) {
+    if (!file) return;
+    const name = file.name || "resume.txt";
+    const ext = name.slice(name.lastIndexOf(".")).toLowerCase();
+    const validExts = [".docx", ".pdf", ".txt", ".md"];
+    if (!validExts.includes(ext)) {
+      alert(`Unsupported file format '${ext}'. Please drop a Word (.docx), PDF (.pdf), or Text (.txt, .md) file.`);
+      return;
+    }
+
+    const dropLoading = document.getElementById("dropzone-loading");
+    const dropContent = document.getElementById("dropzone-content");
+    const successBanner = document.getElementById("wizard-success-banner");
+    const summaryEl = document.getElementById("wizard-parsed-summary");
+
+    if (dropLoading) dropLoading.style.display = "flex";
+    if (dropContent) dropContent.style.display = "none";
+    if (successBanner) successBanner.style.display = "none";
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        let payload = { filename: name, activate: true };
+        const result = e.target.result;
+        if (typeof result === "string" && result.startsWith("data:")) {
+          const commaIdx = result.indexOf(",");
+          payload.content_base64 = result.slice(commaIdx + 1);
+        } else if (typeof result === "string") {
+          payload.text = result;
+        }
+
+        const res = await apiPost("/api/resumes/upload", payload);
+        if (dropLoading) dropLoading.style.display = "none";
+        if (dropContent) dropContent.style.display = "flex";
+
+        if (res && res.success) {
+          const prof = res.profile || {};
+          if (successBanner) successBanner.style.display = "flex";
+          if (summaryEl) {
+            const skillCount = (prof.skills || []).length;
+            summaryEl.textContent = `Parsed '${escapeHtml(name)}': ${escapeHtml(prof.name || "Candidate")} • ${escapeHtml(prof.target_title || "Target Role")} • ${skillCount} verified skills recorded into SQLite.`;
+          }
+          await loadProfiles();
+        } else {
+          alert(`Upload error: ${res?.error?.message || "Could not parse resume file."}`);
+        }
+      } catch (err) {
+        if (dropLoading) dropLoading.style.display = "none";
+        if (dropContent) dropContent.style.display = "flex";
+        alert(`Failed to process resume: ${err.message}`);
+      }
+    };
+
+    if (ext === ".txt" || ext === ".md") {
+      reader.readAsText(file);
+    } else {
+      reader.readAsDataURL(file);
+    }
+  }
+
+  function initFirstRunWizard() {
+    const dropzone = document.getElementById("resume-dropzone");
+    const fileInput = document.getElementById("resume-file-input");
+    const btnBrowse = document.getElementById("btn-browse-file");
+    const btnScan = document.getElementById("btn-wizard-scan");
+    const btnCopy = document.getElementById("btn-copy-folder-path");
+    const btnBannerGo = document.getElementById("btn-banner-go-profile");
+
+    if (btnBrowse && fileInput) {
+      btnBrowse.addEventListener("click", (e) => {
+        e.stopPropagation();
+        fileInput.click();
+      });
+    }
+
+    if (dropzone && fileInput) {
+      dropzone.addEventListener("click", () => fileInput.click());
+
+      ["dragenter", "dragover"].forEach((eventName) => {
+        dropzone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropzone.classList.add("dragover");
+        });
+      });
+
+      ["dragleave", "drop"].forEach((eventName) => {
+        dropzone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropzone.classList.remove("dragover");
+        });
+      });
+
+      dropzone.addEventListener("drop", (e) => {
+        const dt = e.dataTransfer;
+        if (dt && dt.files && dt.files.length > 0) {
+          uploadResumeFile(dt.files[0]);
+        }
+      });
+
+      fileInput.addEventListener("change", () => {
+        if (fileInput.files && fileInput.files.length > 0) {
+          uploadResumeFile(fileInput.files[0]);
+        }
+      });
+    }
+
+    if (btnScan) {
+      btnScan.addEventListener("click", async () => {
+        btnScan.disabled = true;
+        btnScan.textContent = "Scanning...";
+        await apiPost("/api/resumes/scan", {});
+        await loadProfiles();
+        btnScan.disabled = false;
+        btnScan.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> Scan Folder`;
+      });
+    }
+
+    if (btnCopy) {
+      btnCopy.addEventListener("click", () => {
+        const pathEl = document.getElementById("wizard-folder-path");
+        if (pathEl && pathEl.textContent) {
+          navigator.clipboard.writeText(pathEl.textContent);
+          const oldText = btnCopy.innerHTML;
+          btnCopy.textContent = "✓ Copied";
+          setTimeout(() => {
+            btnCopy.innerHTML = oldText;
+          }, 2000);
+        }
+      });
+    }
+
+    if (btnBannerGo) {
+      btnBannerGo.addEventListener("click", () => {
+        const profileTabBtn = document.querySelector(`.nav-link[data-tab="tab-profiles"]`);
+        if (profileTabBtn) profileTabBtn.click();
       });
     }
   }
@@ -1548,6 +1772,7 @@
   // ---------------------------------------------------------------- Init
   initTheme();
   initEvents();
+  initFirstRunWizard();
   loadProfiles();
   loadPreferences();
   loadApplications();

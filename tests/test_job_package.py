@@ -18,10 +18,11 @@ class TestJobPackage(unittest.TestCase):
             "description": "Looking for an engineer experienced in Python, distributed systems, high throughput APIs, and latency optimization.",
         }
 
-        profile = h.resolve_profile(require=False) or {
+        resolved = h.resolve_profile(require=False)
+        profile = resolved if (resolved and resolved.get("experience") and "AI" in resolved.get("skills", [])) else {
             "name": "Alex Candidate",
             "target_title": "Backend Engineer",
-            "skills": ["Python", "PostgreSQL", "Docker", "REST APIs", "Distributed Systems"],
+            "skills": ["Python", "PostgreSQL", "Docker", "REST APIs", "Distributed Systems", "AI", "LLMs"],
             "experience": [
                 {
                     "company": "Previous Tech",
