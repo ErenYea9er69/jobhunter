@@ -54,22 +54,48 @@ def upsert_application(data):
             job_d[k] = data[k]
 
     with db.session() as c:
-        old = c.execute("SELECT status, follow_up_date, created_at FROM applications WHERE id=?", (app_id,)).fetchone()
+        old = c.execute("SELECT * FROM applications WHERE id=?", (app_id,)).fetchone()
         follow = data.get("follow_up_date") or ""
         if not follow and status in FOLLOW_UP_DAYS and (old is None or old["status"] != status):
             follow = (datetime.date.today() + datetime.timedelta(days=FOLLOW_UP_DAYS[status])).isoformat()
-        company = clean_text(data.get("company")) or "Unknown"
-        title = clean_text(data.get("title")) or "Untitled role"
-        location = clean_text(data.get("location", ""))
-        salary = clean_text(data.get("salary", ""))
+        elif not follow and old:
+            follow = old["follow_up_date"] or ""
+
+        if old:
+            company = clean_text(data.get("company")) or old["company"]
+            title = clean_text(data.get("title")) or old["title"]
+            location = clean_text(data.get("location")) if "location" in data else old["location"]
+            salary = clean_text(data.get("salary")) if "salary" in data else old["salary"]
+            notes = data.get("notes") if "notes" in data else old["notes"]
+            job_id = data.get("job_id") if "job_id" in data else old["job_id"]
+            sources_json = json.dumps(data["sources"]) if "sources" in data else (old["sources_json"] or "[]")
+            cover_letter = data.get("cover_letter") if "cover_letter" in data else (old["cover_letter"] or "")
+            tailored_json = json.dumps(data["tailored_resume"]) if "tailored_resume" in data else old["tailored_resume_json"]
+            old_jd = json.loads(old["job_data_json"]) if old["job_data_json"] else {}
+            old_jd.update(job_d)
+            final_job_d = old_jd
+            created_at = old["created_at"]
+        else:
+            company = clean_text(data.get("company")) or "Unknown"
+            title = clean_text(data.get("title")) or "Untitled role"
+            location = clean_text(data.get("location", ""))
+            salary = clean_text(data.get("salary", ""))
+            notes = data.get("notes", "")
+            job_id = data.get("job_id")
+            sources_json = json.dumps(data.get("sources", []))
+            cover_letter = data.get("cover_letter", "")
+            tailored_json = json.dumps(data.get("tailored_resume"))
+            final_job_d = job_d
+            created_at = now
+
         c.execute("""INSERT OR REPLACE INTO applications (id,job_id,company,title,location,salary,status,notes,follow_up_date,
                      sources_json,job_data_json,tailored_resume_json,cover_letter,created_at,updated_at)
                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (app_id, data.get("job_id"), company, title,
-                   location, salary, status, data.get("notes", ""), follow,
-                   json.dumps(data.get("sources", [])), json.dumps(job_d),
-                   json.dumps(data.get("tailored_resume")), data.get("cover_letter", ""),
-                   old["created_at"] if old else now, now))
+                  (app_id, job_id, company, title,
+                   location, salary, status, notes, follow,
+                   sources_json, json.dumps(final_job_d),
+                   tailored_json, cover_letter,
+                   created_at, now))
         if old is None or old["status"] != status:
             c.execute("INSERT INTO status_history (app_id,status,changed_at) VALUES (?,?,?)", (app_id, status, now))
     return app_id
