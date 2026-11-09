@@ -326,3 +326,4 @@ Expected: 665+ tests passing, 0 failures.
 git add tests/test_frontend_assets.py public/ webapp/
 git commit -m "test(frontend): update frontend assets test for 5-route navigation and sync public"
 ```
+

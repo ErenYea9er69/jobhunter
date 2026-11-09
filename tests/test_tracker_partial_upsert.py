@@ -45,3 +45,4 @@ class TestTrackerPartialUpsert(unittest.TestCase):
         self.assertEqual(updated["notes"], "Met founder on LinkedIn")
         self.assertEqual(updated["location"], "Remote")
         self.assertEqual(updated["salary"], "$150k")
+

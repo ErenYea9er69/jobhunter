@@ -116,3 +116,4 @@ class TestProfilesApiSync(unittest.TestCase):
         profs = db.list_resume_profiles()
         active_p = next(x for x in profs if x["is_active"])
         self.assertEqual(active_p["id"], "var_data")
+
