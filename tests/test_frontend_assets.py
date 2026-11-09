@@ -20,9 +20,9 @@ class TestFrontendAssets(unittest.TestCase):
         html = index_file.read_text(encoding="utf-8")
 
         # Verify 5 tabs are present
-        self.assertIn("tab-radar", html)
-        self.assertIn("tab-profiles", html)
-        self.assertIn("tab-tracker", html)
-        self.assertIn("tab-copilot", html)
-        self.assertIn("tab-extension", html)
+        self.assertIn('data-route="jobs"', html)
+        self.assertIn('data-route="applications"', html)
+        self.assertIn('data-route="documents"', html)
+        self.assertIn('data-route="resume"', html)
+        self.assertIn('data-route="settings"', html)
 
