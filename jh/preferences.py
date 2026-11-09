@@ -32,10 +32,14 @@ DEFAULTS: dict[str, Any] = {
     "home_country": "",              # where you live now, e.g. "Tunisia"
     "target_countries": [],          # where you want to work, e.g. ["Tunisia", "France", "Germany"]
     "cities": [],                    # preferred cities, e.g. ["Tunis", "Paris"]
+    "home_cities": [],               # alias for cities
     "work_mode": "",                 # "" keeps the resume value; Any / Remote / Hybrid / Onsite
     "include_worldwide_remote": True,
     "open_to_relocation": False,
     "needs_visa_sponsorship": False,
+    "work_authorized": "",           # yes | no | ""
+    "notice_period": "",             # immediate | 2weeks | 1month | 2months | 3months
+    "submission_mode": "review",     # review | countdown | manual | instant
     "languages": [],                 # languages you work in, e.g. ["English", "French", "Arabic"]
     "target_titles": [],             # roles to search for; the first one is the main target
     "min_salary": 0,                 # yearly figure in salary_currency; 0 means no floor
@@ -56,7 +60,7 @@ DEFAULTS: dict[str, Any] = {
 }
 
 LIST_FIELDS = {
-    "target_countries", "cities", "languages", "target_titles", "job_types", "seniority",
+    "target_countries", "cities", "home_cities", "languages", "target_titles", "job_types", "seniority",
     "excluded_keywords", "excluded_companies", "dream_companies", "enabled_sources", "disabled_sources",
 }
 _MAX_ITEMS = 40
@@ -144,6 +148,10 @@ def validate(updates: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                     warnings.append(f"Unrecognised country '{item}'. It was kept as typed; sources may not match it.")
                     names.append(item)
             clean[key] = names if key == "target_countries" else (names[0] if names else "")
+        elif key in ("cities", "home_cities"):
+            vals = _clean_list(key, value)
+            clean["cities"] = vals
+            clean["home_cities"] = vals
         elif key in LIST_FIELDS:
             vals = _clean_list(key, value)
             if key == "job_types":
@@ -151,6 +159,8 @@ def validate(updates: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             if key == "seniority":
                 vals = [v.lower() for v in vals if v.lower() in SENIORITY]
             clean[key] = vals
+        elif key in ("work_authorized", "notice_period", "submission_mode"):
+            clean[key] = str(value or "").strip()[:_MAX_LEN]
         elif key == "work_mode":
             v = str(value or "").strip().title() if value else ""
             if v and v not in WORK_MODES:
@@ -209,6 +219,10 @@ def load() -> dict[str, Any]:
                         data[k] = v
             except (OSError, ValueError):
                 pass
+        if not data.get("home_cities") and data.get("cities"):
+            data["home_cities"] = list(data["cities"])
+        elif not data.get("cities") and data.get("home_cities"):
+            data["cities"] = list(data["home_cities"])
         _cache.update(path=path, mtime=mtime, data=data)
         return copy.deepcopy(data)
 
@@ -238,6 +252,9 @@ def save(updates: dict[str, Any], merge_lists: bool = False) -> tuple[dict[str, 
         _cache["data"] = None
     _mirror_legacy_settings(current)
     return {k: v for k, v in load().items()}, warnings
+
+
+update = save
 
 
 def _mirror_legacy_settings(prefs: dict[str, Any]) -> None:

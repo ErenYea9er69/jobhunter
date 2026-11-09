@@ -177,7 +177,11 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             prefs = preferences.load()
             prof = h.resolve_profile(require=False) or {}
             targets = regions.resolve_targets(prefs, prof, "")
-            return self._send_json(200, envelope(status="ok", data={"preferences": prefs, "resolved_targets": targets}))
+            res_data = dict(prefs)
+            res_data["home_cities"] = prefs.get("home_cities") or prefs.get("cities", [])
+            res_data["preferences"] = prefs
+            res_data["resolved_targets"] = targets
+            return self._send_json(200, envelope(status="ok", data=res_data))
 
         if path == "/api/jobs/details":
             job_id = query.get("job_id", [""])[0]
