@@ -1,1106 +1,422 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JobHunter — Autonomous AI Job Search & Copilot</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>JobHunter</title>
+  <meta name="description" content="Find jobs, write documents from your own resume, and track every application. Runs on your computer.">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" type="image/svg+xml" href="logo.svg">
+  <link rel="preload" href="fonts/sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
+  <script>
+    try { var t = localStorage.getItem("jobhunter-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
 </head>
 <body>
-  <div class="app-layout">
-    <!-- Sidebar Navigation -->
-    <aside class="sidebar">
-      <div class="brand-block">
-        <div class="brand-symbol">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-          </svg>
-        </div>
-        <div class="brand-text">
-          <span class="brand-title">JobHunter</span>
-          <span class="brand-tagline">Autonomous Copilot v2.4</span>
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false"><defs>
+<symbol id="i-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34" /> <circle cx="11" cy="11" r="8" /></symbol>
+<symbol id="i-map-pin" viewBox="0 0 24 24"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" /> <circle cx="12" cy="10" r="3" /></symbol>
+<symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z" /></symbol>
+<symbol id="i-bookmark-check" viewBox="0 0 24 24"><path d="M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z" /> <path d="m9 10 2 2 4-4" /></symbol>
+<symbol id="i-file-text" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M10 9H8" /> <path d="M16 13H8" /> <path d="M16 17H8" /></symbol>
+<symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /> <circle cx="12" cy="7" r="4" /></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /> <circle cx="12" cy="12" r="3" /></symbol>
+<symbol id="i-send" viewBox="0 0 24 24"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" /> <path d="m21.854 2.147-10.94 10.939" /></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M12 6v6l4 2" /></symbol>
+<symbol id="i-external-link" viewBox="0 0 24 24"><path d="M15 3h6v6" /> <path d="M10 14 21 3" /> <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18" /> <path d="m6 6 12 12" /></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></symbol>
+<symbol id="i-printer" viewBox="0 0 24 24"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /> <path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" /> <rect x="6" y="14" width="12" height="8" rx="1" /></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7" /> <rect x="2" y="4" width="20" height="16" rx="2" /></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 3v12" /> <path d="m17 8-5-5-5 5" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></symbol>
+<symbol id="i-refresh-cw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" /></symbol>
+<symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+<symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></symbol>
+<symbol id="i-ellipsis" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1" /> <circle cx="19" cy="12" r="1" /> <circle cx="5" cy="12" r="1" /></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14" /> <path d="M12 5v14" /></symbol>
+<symbol id="i-trash-2" viewBox="0 0 24 24"><path d="M10 11v6" /> <path d="M14 11v6" /> <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /> <path d="M3 6h18" /> <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></symbol>
+<symbol id="i-keyboard" viewBox="0 0 24 24"><path d="M10 8h.01" /> <path d="M12 12h.01" /> <path d="M14 8h.01" /> <path d="M16 12h.01" /> <path d="M18 8h.01" /> <path d="M6 8h.01" /> <path d="M7 16h10" /> <path d="M8 12h.01" /> <rect width="20" height="16" x="2" y="4" rx="2" /></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /> <path d="M12 2v2" /> <path d="M12 20v2" /> <path d="m4.93 4.93 1.41 1.41" /> <path d="m17.66 17.66 1.41 1.41" /> <path d="M2 12h2" /> <path d="M20 12h2" /> <path d="m6.34 17.66-1.41 1.41" /> <path d="m19.07 4.93-1.41 1.41" /></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></symbol>
+<symbol id="i-key-round" viewBox="0 0 24 24"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z" /> <circle cx="16.5" cy="7.5" r=".5" fill="currentColor" /></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" /> <circle cx="12" cy="12" r="3" /></symbol>
+<symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" /> <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" /> <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" /> <path d="m2 2 20 20" /></symbol>
+<symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7" /> <path d="M19 12H5" /></symbol>
+<symbol id="i-briefcase" viewBox="0 0 24 24"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /> <rect width="20" height="14" x="2" y="6" rx="2" /></symbol>
+<symbol id="i-square-kanban" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /> <path d="M8 7v7" /> <path d="M12 7v4" /> <path d="M16 7v9" /></symbol>
+<symbol id="i-pen-line" viewBox="0 0 24 24"><path d="M13 21h8" /> <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /></symbol>
+<symbol id="i-circle-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <line x1="12" x2="12" y1="8" y2="12" /> <line x1="12" x2="12.01" y1="16" y2="16" /></symbol>
+<symbol id="i-triangle-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /> <path d="M12 9v4" /> <path d="M12 17h.01" /></symbol>
+<symbol id="i-circle-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="m16 9-5.5 5.5L8 12" /></symbol>
+<symbol id="i-loader-circle" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></symbol>
+<symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M12 20h.01" /> <path d="M8.5 16.429a5 5 0 0 1 7 0" /> <path d="M5 12.859a10 10 0 0 1 5.17-2.69" /> <path d="M19 12.859a10 10 0 0 0-2.007-1.523" /> <path d="M2 8.82a15 15 0 0 1 4.177-2.643" /> <path d="M22 8.82a15 15 0 0 0-11.288-3.764" /> <path d="m2 2 20 20" /></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" /></symbol>
+<symbol id="i-list-checks" viewBox="0 0 24 24"><path d="M13 5h8" /> <path d="M13 12h8" /> <path d="M13 19h8" /> <path d="m3 17 2 2 4-4" /> <path d="m3 7 2 2 4-4" /></symbol>
+<symbol id="i-sliders-horizontal" viewBox="0 0 24 24"><path d="M10 5H3" /> <path d="M12 19H3" /> <path d="M14 3v4" /> <path d="M16 17v4" /> <path d="M21 12h-9" /> <path d="M21 19h-5" /> <path d="M21 5h-7" /> <path d="M8 10v4" /> <path d="M8 12H3" /></symbol>
+<symbol id="i-building-2" viewBox="0 0 24 24"><path d="M10 12h4" /> <path d="M10 8h4" /> <path d="M14 21v-3a2 2 0 0 0-4 0v3" /> <path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2" /> <path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16" /></symbol>
+<symbol id="i-calendar" viewBox="0 0 24 24"><path d="M8 2v3" /> <path d="M16 2v3" /> <rect x="3" y="3" width="18" height="18" rx="2" /> <path d="M3 9h18" /></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></symbol>
+<symbol id="i-undo-2" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5" /> <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" /></symbol>
+<symbol id="i-grip-vertical" viewBox="0 0 24 24"><circle cx="9" cy="12" r="1" /> <circle cx="9" cy="5" r="1" /> <circle cx="9" cy="19" r="1" /> <circle cx="15" cy="12" r="1" /> <circle cx="15" cy="5" r="1" /> <circle cx="15" cy="19" r="1" /></symbol>
+<symbol id="i-circle-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /> <path d="M12 17h.01" /></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /> <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></symbol>
+<symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2" /> <line x1="8" x2="16" y1="21" y2="21" /> <line x1="12" x2="12" y1="17" y2="21" /></symbol>
+<symbol id="i-plug" viewBox="0 0 24 24"><path d="M12 22v-5" /> <path d="M15 8V2" /> <path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z" /> <path d="M9 8V2" /></symbol>
+<symbol id="i-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /> <path d="m9 12 2 2 4-4" /></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /> <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></symbol>
+<symbol id="i-file-up" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M12 12v6" /> <path d="m15 15-3-3-3 3" /></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /> <path d="M2 12h20" /></symbol>
+<symbol id="i-layout-list" viewBox="0 0 24 24"><rect width="7" height="7" x="3" y="3" rx="1" /> <rect width="7" height="7" x="3" y="14" rx="1" /> <path d="M14 4h7" /> <path d="M14 9h7" /> <path d="M14 15h7" /> <path d="M14 20h7" /></symbol>
+<symbol id="i-scan-search" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2" /> <path d="M17 3h2a2 2 0 0 1 2 2v2" /> <path d="M21 17v2a2 2 0 0 1-2 2h-2" /> <path d="M7 21H5a2 2 0 0 1-2-2v-2" /> <circle cx="12" cy="12" r="3" /> <path d="m16 16-1.9-1.9" /></symbol>
+<symbol id="i-sun-moon" viewBox="0 0 24 24"><path d="M12 2v2" /> <path d="M14.837 16.385a6 6 0 1 1-7.223-7.222c.624-.147.97.66.715 1.248a4 4 0 0 0 5.26 5.259c.589-.255 1.396.09 1.248.715" /> <path d="M16 12a4 4 0 0 0-4-4" /> <path d="m19 5-1.256 1.256" /> <path d="M20 12h2" /></symbol>
+<symbol id="i-panel-right-open" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /> <path d="M15 3v18" /> <path d="m10 15-3-3 3-3" /></symbol>
+</defs></svg>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="app">
+  <aside class="rail" aria-label="Sidebar">
+    <a class="brand" href="#/jobs" aria-label="JobHunter, go to jobs">
+      <img src="logo.svg" alt="" width="32" height="32">
+      <span class="brand-name">JobHunter</span>
+    </a>
+    <nav aria-label="Main">
+      <ul>
+        <li><a class="nav-item" href="#/jobs" data-route="jobs"><svg class="icon"><use href="#i-search"/></svg>Jobs</a></li>
+        <li><a class="nav-item" href="#/applications" data-route="applications"><svg class="icon"><use href="#i-square-kanban"/></svg>Applications<span class="nav-count" id="nav-count-apps"></span></a></li>
+        <li><a class="nav-item" href="#/documents" data-route="documents"><svg class="icon"><use href="#i-pen-line"/></svg>Documents</a></li>
+        <li><a class="nav-item" href="#/resume" data-route="resume"><svg class="icon"><use href="#i-file-text"/></svg>Resume<span class="nav-count" id="nav-resume-flag"></span></a></li>
+        <li><a class="nav-item" href="#/settings" data-route="settings"><svg class="icon"><use href="#i-settings"/></svg>Settings</a></li>
+      </ul>
+    </nav>
+    <div class="rail-foot">
+      <div class="rail-status" id="rail-status" role="status">
+        <span class="dot" id="rail-dot"></span>
+        <span><strong id="rail-status-title">Checking service</strong><span id="rail-status-text">Data stays on this computer.</span></span>
+      </div>
+      <div class="rail-tools">
+        <button class="btn-rail" id="btn-launch-browser" type="button"><svg class="icon icon-sm"><use href="#i-globe"/></svg>Open browser with extension</button>
+      </div>
+      <div class="rail-tools">
+        <button class="btn-rail" id="btn-theme" type="button"><svg class="icon icon-sm"><use href="#i-sun-moon"/></svg><span id="theme-label">Theme: System</span></button>
+        <button class="btn-rail" id="btn-shortcuts" type="button" aria-label="Keyboard shortcuts"><svg class="icon icon-sm"><use href="#i-keyboard"/></svg></button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main" id="main" tabindex="-1">
+    <header class="page-head">
+      <div>
+        <h1 id="page-title" tabindex="-1">Jobs</h1>
+        <p class="page-sub" id="page-sub"></p>
+      </div>
+      <div class="page-actions" id="page-actions"></div>
+    </header>
+
+    <!-- ============ JOBS ============ -->
+    <section class="view" data-view="jobs" hidden aria-labelledby="page-title">
+      <div class="jobs-tools">
+        <div id="resume-notice"></div>
+        <form id="search-form" class="search-row" role="search" autocomplete="off">
+          <div class="field">
+            <label for="q">Role or keywords</label>
+            <div class="with-icon"><svg class="icon"><use href="#i-search"/></svg><input class="input" id="q" name="q" type="search" placeholder="Backend engineer, data analyst, PFE internship" enterkeyhint="search"></div>
+          </div>
+          <div class="field">
+            <label for="loc">Place</label>
+            <div class="with-icon"><svg class="icon"><use href="#i-map-pin"/></svg><input class="input" id="loc" name="loc" type="text" placeholder="City, country or Remote"></div>
+          </div>
+          <button class="btn btn-primary" id="btn-search" type="submit"><svg class="icon"><use href="#i-search"/></svg><span>Search jobs</span></button>
+        </form>
+        <div class="filters">
+          <button class="btn btn-secondary btn-sm filter-toggle" id="filter-toggle" type="button" aria-expanded="false" aria-controls="filters-body"><svg class="icon icon-sm"><use href="#i-sliders-horizontal"/></svg>Filters<span id="filter-count"></span></button>
+          <div class="filters-body" id="filters-body" hidden>
+            <div class="filter-group"><span class="label" id="lbl-mode">Work mode</span><div class="seg" role="radiogroup" aria-labelledby="lbl-mode" data-filter="mode"></div></div>
+            <div class="filter-group"><span class="label" id="lbl-type">Job type</span><div class="seg" role="radiogroup" aria-labelledby="lbl-type" data-filter="type"></div></div>
+            <div class="filter-group"><span class="label" id="lbl-fit">Minimum fit</span><div class="seg" role="radiogroup" aria-labelledby="lbl-fit" data-filter="fit"></div></div>
+          </div>
         </div>
       </div>
-
-      <nav class="nav-stack">
-        <button class="nav-link active" data-tab="tab-radar">
-          <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <path d="m4.93 4.93 4.24 4.24"></path>
-            <path d="m14.83 9.17 4.24-4.24"></path>
-            <path d="m14.83 14.83 4.24 4.24"></path>
-            <path d="m9.17 14.83-4.24 4.24"></path>
-            <circle cx="12" cy="12" r="4"></circle>
-          </svg>
-          <span>Radar & Discovery</span>
-        </button>
-
-        <button class="nav-link" data-tab="tab-tracker">
-          <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect width="18" height="18" x="3" y="3" rx="2"></rect>
-            <path d="M7 7h3v10H7z"></path>
-            <path d="M14 7h3v6h-3z"></path>
-          </svg>
-          <span>Application Kanban</span>
-        </button>
-
-        <button class="nav-link" data-tab="tab-copilot">
-          <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-            <line x1="10" y1="9" x2="8" y2="9"></line>
-          </svg>
-          <span>Document Studio & Copilot</span>
-        </button>
-
-        <button class="nav-link" data-tab="tab-profiles">
-          <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
-            <circle cx="12" cy="7" r="4"></circle>
-          </svg>
-          <span>Profile & Resumes</span>
-        </button>
-
-        <button class="nav-link" data-tab="tab-preferences">
-          <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
-            <circle cx="12" cy="12" r="3"></circle>
-          </svg>
-          <span>Calibration & Filters</span>
-        </button>
-
-        <button class="nav-link" data-tab="tab-extension">
-          <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect width="20" height="14" x="2" y="3" rx="2"></rect>
-            <line x1="8" y1="21" x2="16" y2="21"></line>
-            <line x1="12" y1="17" x2="12" y2="21"></line>
-          </svg>
-          <span>Auto-Apply & Desktop</span>
-        </button>
-      </nav>
-
-      <div class="sidebar-status-card">
-        <div class="status-indicator-line">
-          <span class="status-pulse"></span>
-          <span class="status-label-text">Local Daemon :8765</span>
+      <section aria-label="Search results">
+        <div class="results-bar" id="results-bar" hidden>
+          <div><span class="count" id="results-count"></span> <span class="meta" id="results-meta"></span></div>
+          <label class="sort">Sort by <select class="select" id="sort" aria-label="Sort results"><option value="score">Best fit</option><option value="date">Newest</option></select></label>
         </div>
-          <div class="status-sub-text">Privacy Protected • Offline SQLite</div>
+        <ul class="job-grid" id="job-list" aria-live="polite"></ul>
+        <div id="job-state"></div>
+      </section>
+    </section>
+
+    <!-- ============ APPLICATIONS ============ -->
+    <section class="view" data-view="applications" hidden aria-labelledby="page-title">
+      <div class="seg stage-tabs" id="stage-tabs" role="group" aria-label="Show stage"></div>
+      <div class="board" id="board"></div>
+      <div id="board-empty"></div>
+      <details class="closed-list" id="closed-wrap" hidden>
+        <summary>Closed <span class="num" id="closed-count"></span></summary>
+        <ul id="closed-list"></ul>
+      </details>
+    </section>
+
+    <!-- ============ DOCUMENTS ============ -->
+    <section class="view" data-view="documents" hidden aria-labelledby="page-title">
+      <div class="studio">
+        <form class="studio-form" id="doc-form" autocomplete="off">
+          <div class="type-groups">
+            <fieldset class="type-group">
+              <legend class="label">For an application</legend>
+              <div class="type-list">
+                <label class="type-opt"><input type="radio" name="doctype" value="cover-letter" checked><span><span class="t">Cover letter</span><span class="d">Short, direct, built from your resume facts</span></span></label>
+                <label class="type-opt"><input type="radio" name="doctype" value="tailor-resume"><span><span class="t">Tailored resume</span><span class="d">Your resume, reordered for this posting</span></span></label>
+                <label class="type-opt"><input type="radio" name="doctype" value="interview-prep"><span><span class="t">Interview prep</span><span class="d">STAR stories drawn from your experience</span></span></label>
+              </div>
+            </fieldset>
+            <fieldset class="type-group">
+              <legend class="label">Reach out first</legend>
+              <div class="type-list">
+                <label class="type-opt"><input type="radio" name="doctype" value="outreach"><span><span class="t">Recruiter message</span><span class="d">LinkedIn note and hiring manager message</span></span></label>
+                <label class="type-opt"><input type="radio" name="doctype" value="founder-cold-email"><span><span class="t">Email to a founder</span><span class="d">Cold email with subject options</span></span></label>
+                <label class="type-opt"><input type="radio" name="doctype" value="linkedin-founder-dm"><span><span class="t">LinkedIn note to a founder</span><span class="d">Connection note under 300 characters</span></span></label>
+                <label class="type-opt"><input type="radio" name="doctype" value="bigtech-hr-referral"><span><span class="t">Big Tech recruiter and referral</span><span class="d">Google, Meta, Amazon and others</span></span></label>
+              </div>
+            </fieldset>
+          </div>
+
+          <div class="sub-fields" id="fields-job">
+            <div class="field"><label for="d-title">Role title</label><input class="input" id="d-title" type="text" placeholder="Senior Backend Engineer"></div>
+            <div class="field"><label for="d-company">Company</label><input class="input" id="d-company" type="text" placeholder="Company name"></div>
+            <div class="field" id="f-angle"><label for="d-angle">Angle</label>
+              <select class="select" id="d-angle">
+                <option value="direct_impact">Direct impact: facts and results</option>
+                <option value="startup_velocity">Startup velocity: speed and autonomy</option>
+                <option value="technical_architect">Technical architect: systems and scale</option>
+                <option value="executive_brief">Executive brief: short and decisive</option>
+              </select>
+            </div>
+            <div class="field"><label for="d-desc">Job description <span class="opt">(optional)</span></label><textarea class="textarea" id="d-desc" placeholder="Paste the requirements. Without them, the document uses your target role."></textarea></div>
+          </div>
+
+          <div class="sub-fields" id="fields-founder" hidden>
+            <div class="field"><label for="d-fname">Founder name or LinkedIn link</label><input class="input" id="d-fname" type="text" placeholder="Name or linkedin.com/in/..."></div>
+            <div class="field" id="f-femail"><label for="d-femail">Founder email <span class="opt">(optional)</span></label><input class="input" id="d-femail" type="email" placeholder="name@company.com"></div>
+            <div class="field"><label for="d-fangle">Angle</label>
+              <select class="select" id="d-fangle">
+                <option value="scale_velocity">Scale velocity: ship fast without hand holding</option>
+                <option value="product_teardown">Product teardown: a specific product insight</option>
+                <option value="domain_obsession">Domain obsession: deep technical fit</option>
+                <option value="direct_impact">Direct impact: proven metrics</option>
+              </select>
+            </div>
+            <div class="field"><label for="d-fobs">One thing you noticed <span class="opt">(optional)</span></label><input class="input" id="d-fobs" type="text" placeholder="Their sync engine, their pricing page, a recent launch"><span class="hint">Name something real. The Reviewer cannot confirm facts about their company.</span></div>
+          </div>
+
+          <div class="sub-fields" id="fields-bigtech" hidden>
+            <div class="field"><label for="d-bcompany">Company</label>
+              <select class="select" id="d-bcompany">
+                <option value="google">Google</option><option value="meta">Meta</option><option value="uber">Uber</option><option value="amazon">Amazon</option>
+                <option value="apple">Apple</option><option value="microsoft">Microsoft</option><option value="netflix">Netflix</option><option value="stripe">Stripe</option>
+              </select>
+            </div>
+            <div class="field"><label for="d-blevel">Level</label>
+              <select class="select" id="d-blevel">
+                <option value="junior">Early career</option><option value="mid" selected>Mid-level</option><option value="senior">Senior</option><option value="staff">Staff or principal</option>
+              </select>
+            </div>
+            <div class="field"><label for="d-breq">Requisition ID <span class="opt">(optional)</span></label><input class="input" id="d-breq" type="text" placeholder="154829"></div>
+            <div class="field"><label for="d-brec">Recruiter name <span class="opt">(optional)</span></label><input class="input" id="d-brec" type="text" placeholder="Leave blank to write to the talent team"></div>
+          </div>
+
+          <p class="using" id="doc-using"></p>
+          <button class="btn btn-primary btn-block" id="btn-generate" type="submit"><svg class="icon"><use href="#i-pen-line"/></svg><span>Write document</span></button>
+
+          <details class="disclosure" id="finder">
+            <summary><svg class="icon"><use href="#i-mail"/></svg>Find someone's work email<svg class="icon"><use href="#i-chevron-down"/></svg></summary>
+            <div class="inner">
+              <div class="field"><label for="fi-name">Full name</label><input class="input" id="fi-name" type="text" placeholder="First and last name"></div>
+              <div class="field"><label for="fi-company">Company or domain</label><input class="input" id="fi-company" type="text" placeholder="stripe.com"></div>
+              <div class="field"><label for="fi-linkedin">LinkedIn link <span class="opt">(optional)</span></label><input class="input" id="fi-linkedin" type="url" placeholder="https://www.linkedin.com/in/..."></div>
+              <div class="field"><label for="fi-role">Their role</label>
+                <select class="select" id="fi-role"><option value="Founder &amp; CEO">Founder or CEO</option><option value="Engineering Leader">CTO or engineering lead</option><option value="Recruiter">Recruiter</option><option value="Software Engineer">Engineer</option></select>
+              </div>
+              <button class="btn btn-secondary" id="btn-find-email" type="button"><svg class="icon"><use href="#i-search"/></svg><span>Find email</span></button>
+              <div id="finder-out" aria-live="polite"></div>
+            </div>
+          </details>
+        </form>
+
+        <section class="studio-out" aria-label="Document preview">
+          <div class="paper-wrap" id="paper-wrap"></div>
+        </section>
       </div>
-    </aside>
+    </section>
 
-    <!-- Main Workspace -->
-    <main class="main-workspace">
-      <!-- Top Cockpit Header -->
-      <header class="topbar-cockpit">
-        <div class="cockpit-left">
-          <h1 class="cockpit-title" id="page-title">Radar & Opportunity Discovery</h1>
-          <div class="cockpit-pills">
-            <div class="active-badge" id="active-profile-pill">
-              <span class="pill-dot"></span>
-              <span class="pill-label">Profile:</span>
-              <strong id="active-profile-name">Default Resume</strong>
-            </div>
-            <div class="location-badge" id="active-geo-pill">
-              <span class="pill-label">Target:</span>
-              <span id="active-geo-val">Tunisia & Worldwide Remote</span>
-            </div>
-          </div>
-        </div>
+    <!-- ============ RESUME ============ -->
+    <section class="view" data-view="resume" hidden aria-labelledby="page-title">
+      <div id="resume-root"></div>
+      <input type="file" id="file-input" accept=".docx,.pdf,.txt,.md" hidden>
+    </section>
 
-        <div class="cockpit-actions">
-          <button class="btn btn-secondary btn-sm" id="btn-theme-toggle" title="Switch Theme (Light / Dark)">
-            <svg class="theme-icon-dark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
-            </svg>
-            <svg class="theme-icon-light" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
-              <circle cx="12" cy="12" r="4"></circle>
-              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
-            </svg>
-            <span id="theme-status-text">Dark</span>
-          </button>
-          <button class="btn btn-secondary btn-sm" id="btn-sync-status">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="23 4 23 10 17 10"></polyline>
-              <polyline points="1 20 1 14 7 14"></polyline>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-            </svg>
-            Sync
-          </button>
-          <button class="btn btn-primary" id="btn-top-launch-copilot">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-            </svg>
-            Launch Browser Copilot
-          </button>
-        </div>
-      </header>
+    <!-- ============ SETTINGS ============ -->
+    <section class="view" data-view="settings" hidden aria-labelledby="page-title">
+      <div class="settings">
+        <nav class="settings-nav" aria-label="Settings sections">
+          <ul id="settings-nav"></ul>
+        </nav>
+        <div>
+          <div class="seg settings-tabs" id="settings-tabs" role="group" aria-label="Settings section"></div>
 
-      <div class="workspace-viewport">
-        <!-- Global Onboarding Notification Banner -->
-        <div class="onboarding-top-banner" id="global-onboarding-banner" style="display: none;">
-          <div class="banner-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
-          </div>
-          <div class="banner-content">
-            <strong>Welcome to JobHunter!</strong> No resume is loaded yet. Drop your Word (<strong>.docx</strong>), PDF (<strong>.pdf</strong>), or Text (<strong>.txt</strong>) resume to unlock autonomous matching and application tailoring.
-          </div>
-          <button class="btn btn-primary btn-sm" id="btn-banner-go-profile">Upload Resume</button>
-        </div>
-
-        <!-- TAB 1: RADAR & DISCOVERY FEED -->
-        <section class="tab-panel active" id="tab-radar">
-          <!-- Search & Filter Controls -->
-          <div class="radar-control-deck">
-            <div class="search-form-row">
-              <div class="input-field-group flex-2">
-                <label class="field-label">Role or Keywords</label>
-                <div class="input-with-icon">
-                  <svg class="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                  </svg>
-                  <input type="text" id="radar-query" class="text-input" placeholder="e.g. Software Engineer, Backend Python, Tech Lead" value="Software Engineer">
+          <!-- Search -->
+          <section class="settings-panel" data-panel="search" aria-labelledby="h-search">
+            <header><h2 id="h-search">Search preferences</h2><p>These shape every search. Changes apply the next time you search.</p></header>
+            <form id="form-search-prefs" class="form-grid">
+              <div class="field"><label for="pref-countries">Countries</label><input class="input" id="pref-countries" type="text" placeholder="Tunisia, France, Germany"><span class="hint">Separate values with commas.</span></div>
+              <div class="field"><label for="pref-cities">Home cities</label><input class="input" id="pref-cities" type="text" placeholder="Tunis, Sfax"></div>
+              <fieldset class="field"><legend class="label">Job types</legend>
+                <div class="checks" id="pref-types">
+                  <label class="check"><input type="checkbox" value="Full-time"> Full-time</label>
+                  <label class="check"><input type="checkbox" value="Internship"> Internship or PFE</label>
+                  <label class="check"><input type="checkbox" value="Contract"> Contract</label>
+                  <label class="check"><input type="checkbox" value="Freelance"> Freelance</label>
                 </div>
+              </fieldset>
+              <div class="field"><label for="pref-mode">Work mode</label>
+                <select class="select" id="pref-mode"><option value="Any">Any</option><option value="Remote">Remote only</option><option value="Hybrid">Hybrid</option><option value="Onsite">Onsite</option></select>
               </div>
-
-              <div class="input-field-group flex-1">
-                <label class="field-label">Location / Geography</label>
-                <div class="input-with-icon">
-                  <svg class="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
-                    <circle cx="12" cy="10" r="3"></circle>
-                  </svg>
-                  <input type="text" id="radar-location" class="text-input" placeholder="e.g. Remote, Tunis, France" value="Tunisia">
-                </div>
+              <div class="field"><label for="pref-excl-co">Companies to skip</label><input class="input" id="pref-excl-co" type="text" placeholder="Globex, SpamCo"></div>
+              <div class="field"><label for="pref-excl-kw">Words to skip</label><input class="input" id="pref-excl-kw" type="text" placeholder="php, wordpress"></div>
+              <div class="field"><label for="pref-dream">Companies you want</label><input class="input" id="pref-dream" type="text" placeholder="Stripe, Mistral"><span class="hint">Roles at these companies rank higher.</span></div>
+              <div class="field"><label for="pref-depth">Search depth</label>
+                <select class="select" id="pref-depth"><option value="quick">Quick: top results only</option><option value="standard">Standard: balanced</option><option value="deep">Deep: slower, more complete</option></select>
               </div>
+              <div class="form-foot"><button class="btn btn-primary" type="submit">Save preferences</button><span id="fb-search" role="status"></span></div>
+            </form>
+          </section>
 
-              <button class="btn btn-primary btn-search-trigger" id="btn-radar-hunt">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-                Hunt Jobs
-              </button>
-            </div>
-
-            <!-- Smart Filter Bar -->
-            <div class="filter-strip-row">
-              <div class="filter-group">
-                <span class="filter-label">Job Type:</span>
-                <div class="pill-group" id="filter-job-types">
-                  <button class="chip-toggle active" data-val="">All Types</button>
-                  <button class="chip-toggle" data-val="Full-time">Full-time</button>
-                  <button class="chip-toggle" data-val="Internship">Internship / PFE</button>
-                  <button class="chip-toggle" data-val="Contract">Contract</button>
-                </div>
-              </div>
-
-              <div class="filter-group">
-                <span class="filter-label">Work Mode:</span>
-                <div class="pill-group" id="filter-work-modes">
-                  <button class="chip-toggle active" data-val="Any">Any Mode</button>
-                  <button class="chip-toggle" data-val="Remote">Remote</button>
-                  <button class="chip-toggle" data-val="Hybrid">Hybrid</button>
-                  <button class="chip-toggle" data-val="Onsite">Onsite</button>
-                </div>
-              </div>
-
-              <div class="filter-group">
-                <span class="filter-label">Fit Floor:</span>
-                <div class="pill-group" id="filter-score-floor">
-                  <button class="chip-toggle active" data-val="0">All</button>
-                  <button class="chip-toggle" data-val="75">75%+</button>
-                  <button class="chip-toggle" data-val="85">85%+</button>
-                  <button class="chip-toggle" data-val="90">90%+</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Split Deck: Left Feed + Right Inspector -->
-          <div class="split-discovery-layout">
-            <!-- Left: Scrollable Feed of Job Cards -->
-            <div class="jobs-feed-column">
-              <div class="feed-summary-bar">
-                <span class="feed-counter" id="jobs-count-text">Ready to scan live market opportunities</span>
-                <div class="feed-sort-wrapper">
-                  <label>Sort:</label>
-                  <select id="radar-sort" class="select-dropdown">
-                    <option value="score">Fit Score (High to Low)</option>
-                    <option value="date">Most Recent</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="jobs-cards-container" id="jobs-cards-container">
-                <div class="empty-feed-card">
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <path d="m10 15 5-3-5-3v6Z"></path>
-                  </svg>
-                  <h2>Begin Opportunity Radar</h2>
-                  <p>Click "Hunt Jobs" above to search across company ATS boards, Keejob, regional feeds, and remote boards.</p>
-                </div>
-              </div>
-            </div>
-
-            <!-- Right: Sticky Job Detail Inspector -->
-            <div class="job-inspector-column" id="job-inspector-column">
-              <div class="inspector-placeholder" id="inspector-placeholder">
-                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                  <polyline points="14 2 14 8 20 8"></polyline>
-                  <line x1="16" y1="13" x2="8" y2="13"></line>
-                  <line x1="16" y1="17" x2="8" y2="17"></line>
-                </svg>
-                <h2>Select an Opportunity</h2>
-                <p>Click any job card on the left to inspect requirements, AI fit rationale, verified skills breakdown, and 1-click tailored application actions.</p>
-              </div>
-
-              <div class="inspector-content" id="inspector-content" style="display:none;">
-                <div class="inspector-header">
-                  <div class="inspector-main-info">
-                    <h2 class="inspector-title" id="ins-job-title">Job Title</h2>
-                    <div class="inspector-sub-info">
-                      <span class="ins-company" id="ins-job-company">Company</span>
-                      <span class="ins-bullet">•</span>
-                      <span class="ins-location" id="ins-job-location">Location</span>
-                      <span class="ins-bullet">•</span>
-                      <span class="ins-source" id="ins-job-source">Source</span>
-                    </div>
-                  </div>
-                  <div class="inspector-score-badge" id="ins-score-badge">95% Fit</div>
-                </div>
-
-                <!-- One-Click Application Action Deck -->
-                <div class="inspector-action-bar">
-                  <button class="btn btn-primary flex-1" id="ins-btn-apply-copilot">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                    </svg>
-                    Apply with Browser Copilot
-                  </button>
-                  <button class="btn btn-secondary" id="ins-btn-queue-apply" title="Queue this job for Auto-Apply">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <polyline points="12 6 12 12 16 14"></polyline>
-                    </svg>
-                    Queue Auto-Apply
-                  </button>
-                  <button class="btn btn-secondary" id="ins-btn-track-app">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
-                    </svg>
-                    Track in Kanban
-                  </button>
-                  <button class="btn btn-secondary" id="ins-btn-open-link" title="Open Job Page">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                      <polyline points="15 3 21 3 21 9"></polyline>
-                      <line x1="10" y1="14" x2="21" y2="3"></line>
-                    </svg>
-                  </button>
-                </div>
-
-                <!-- Secondary Document Generation Shortcuts -->
-                <div class="inspector-tools-strip">
-                  <button class="tool-shortcut-btn" id="ins-btn-draft-letter">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path></svg>
-                    Cover Letter
-                  </button>
-                  <button class="tool-shortcut-btn" id="ins-btn-interview-prep">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                    Interview Prep
-                  </button>
-                  <button class="tool-shortcut-btn" id="ins-btn-tailor-cv">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                    Tailor Resume
-                  </button>
-                </div>
-
-                <!-- Diagnostic Match Tabs -->
-                <div class="inspector-diagnostics-box">
-                  <div class="diag-header">Why You Match:</div>
-                  <div class="diag-skills-row" id="ins-diag-skills"></div>
-                  <div class="diag-notes-text" id="ins-diag-notes"></div>
-                </div>
-
-                <!-- Job Description Section -->
-                <div class="inspector-description-section">
-                  <h3 class="section-subheading">Job Description & Requirements</h3>
-                  <div class="description-body-text" id="ins-job-description"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- TAB 2: APPLICATION KANBAN TRACKER -->
-        <section class="tab-panel" id="tab-tracker">
-          <div class="tracker-header-strip">
-            <div class="funnel-metrics-deck">
-              <div class="metric-card">
-                <span class="metric-number" id="funnel-saved">0</span>
-                <span class="metric-title">Bookmarked</span>
-              </div>
-              <div class="metric-card">
-                <span class="metric-number" id="funnel-queued">0</span>
-                <span class="metric-title">Queued for Auto-Apply</span>
-              </div>
-              <div class="metric-card">
-                <span class="metric-number" id="funnel-applied">0</span>
-                <span class="metric-title">Submitted</span>
-              </div>
-              <div class="metric-card">
-                <span class="metric-number" id="funnel-interview">0</span>
-                <span class="metric-title">Interviews</span>
-              </div>
-              <div class="metric-card">
-                <span class="metric-number" id="funnel-offer">0</span>
-                <span class="metric-title">Offers</span>
-              </div>
-            </div>
-
-            <div class="tracker-header-actions" style="display:flex;align-items:center;gap:8px;">
-              <button class="btn btn-secondary btn-sm" id="btn-sync-gmail" title="Scan Gmail for status updates">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-                  <polyline points="22,6 12,13 2,6"></polyline>
-                </svg>
-                Sync Gmail
-              </button>
-              <button class="btn btn-secondary btn-sm" id="btn-setup-gmail" title="Configure Gmail Tracking">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="3"></circle>
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                </svg>
-              </button>
-              <button class="btn btn-primary" id="btn-create-tracker-app">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                Add Application
-              </button>
-            </div>
-          </div>
-
-          <div class="kanban-columns-grid">
-            <div class="kanban-lane" data-lane="saved">
-              <div class="lane-header">
-                <span class="lane-title">Saved</span>
-                <span class="lane-count-pill" id="count-saved">0</span>
-              </div>
-              <div class="lane-cards-stack" id="lane-saved"></div>
-            </div>
-
-            <div class="kanban-lane" data-lane="queued">
-              <div class="lane-header">
-                <span class="lane-title">Queued Auto-Apply</span>
-                <span class="lane-count-pill" id="count-queued">0</span>
-              </div>
-              <div class="lane-cards-stack" id="lane-queued"></div>
-            </div>
-
-            <div class="kanban-lane" data-lane="applied">
-              <div class="lane-header">
-                <span class="lane-title">Applied</span>
-                <span class="lane-count-pill" id="count-applied">0</span>
-              </div>
-              <div class="lane-cards-stack" id="lane-applied"></div>
-            </div>
-
-            <div class="kanban-lane" data-lane="interview">
-              <div class="lane-header">
-                <span class="lane-title">Interviewing</span>
-                <span class="lane-count-pill" id="count-interview">0</span>
-              </div>
-              <div class="lane-cards-stack" id="lane-interview"></div>
-            </div>
-
-            <div class="kanban-lane" data-lane="offer">
-              <div class="lane-header">
-                <span class="lane-title">Offers</span>
-                <span class="lane-count-pill" id="count-offer">0</span>
-              </div>
-              <div class="lane-cards-stack" id="lane-offer"></div>
-            </div>
-          </div>
-        </section>
-
-        <!-- TAB 3: TRUTHFUL DOCUMENT STUDIO & COPILOT -->
-        <section class="tab-panel" id="tab-copilot">
-          <div class="studio-two-col">
-            <!-- Studio Input Form -->
-            <div class="studio-controls-card">
-              <h2 class="card-heading">Document Studio & Reviewer QA</h2>
-              <p class="card-desc">Every generated sentence is audited by the Reviewer against candidate resume facts before approval. Zero hallucinations guaranteed.</p>
-
-              <div class="input-field-group">
-                <label class="field-label">Document Type</label>
-                <select id="doc-type-select" class="select-dropdown">
-                  <option value="cover-letter">Cover Letter (Direct Impact Pitch)</option>
-                  <option value="founder-cold-email">Cold Email to Startup Founder (YC Style)</option>
-                  <option value="linkedin-founder-dm">LinkedIn Founder Direct Outreach (&lt;300 Chars + InMail)</option>
-                  <option value="bigtech-hr-referral">Big Tech Recruiter &amp; Internal Referral Hub (Google, Meta, Uber...)</option>
-                  <option value="interview-prep">STAR Interview Preparation Guide</option>
-                  <option value="outreach">Recruiter Outreach &amp; LinkedIn Note</option>
-                  <option value="tailor-resume">Tailored Resume Alignment</option>
+          <!-- AI engine -->
+          <section class="settings-panel" data-panel="ai" aria-labelledby="h-ai">
+            <header><h2 id="h-ai">AI engine</h2><p>JobHunter writes through an AI model. Pick how it reaches one.</p></header>
+            <div class="mode-line" id="ai-mode" role="status"></div>
+            <form id="form-ai" class="form-grid">
+              <div class="field"><label for="ai-provider">Provider</label>
+                <select class="select" id="ai-provider">
+                  <option value="gemini">Google Gemini</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic Claude</option>
+                  <option value="deepseek">DeepSeek</option><option value="groq">Groq</option><option value="mistral">Mistral</option><option value="ollama">Ollama (runs on your computer)</option>
                 </select>
               </div>
-
-              <!-- Founder Cold Email Specific Fields (Dynamic) -->
-              <div id="doc-founder-fields" style="display:none;padding:12px;border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:14px;background:var(--bg-muted);">
-                <div class="input-field-group">
-                  <label class="field-label">Founder / CEO Name or LinkedIn Profile</label>
-                  <input type="text" id="doc-input-founder-name" class="text-input" placeholder="e.g. Guillermo Rauch or linkedin.com/in/guillermo-rauch">
-                </div>
-                <div class="input-field-group">
-                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-                    <label class="field-label" style="margin-bottom:0;">Founder Email Address</label>
-                    <button type="button" class="btn btn-secondary btn-sm" id="btn-find-founder-email" style="padding:2px 8px;font-size:11px;" title="Automatically synthesize and verify founder corporate email">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:2px;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                      Find Email
-                    </button>
-                  </div>
-                  <input type="email" id="doc-input-founder-email" class="text-input" placeholder="e.g. founder@company.com">
-                  <div id="founder-email-status-pill" style="display:none;font-size:11px;margin-top:4px;color:var(--primary-text);font-weight:600;"></div>
-                </div>
-                <div class="input-field-group">
-                  <label class="field-label">Founder Outreach Angle</label>
-                  <select id="doc-input-founder-angle" class="select-dropdown">
-                    <option value="scale_velocity">Scale Velocity (Ship fast without handholding)</option>
-                    <option value="product_teardown">Product Teardown (Specific product / UX insight)</option>
-                    <option value="domain_obsession">Domain Obsession (Deep technical alignment)</option>
-                    <option value="direct_impact">Direct Impact (Proven metrics & revenue)</option>
-                  </select>
-                </div>
-                <div class="input-field-group">
-                  <label class="field-label">Product / Architecture Insight (Optional)</label>
-                  <input type="text" id="doc-input-founder-obs" class="text-input" placeholder="e.g. your connection pooling or real-time sync engine">
-                </div>
+              <div class="field"><label for="ai-model">Model</label>
+                <select class="select" id="ai-model"></select>
+                <input class="input" id="ai-model-custom" type="text" placeholder="Type a model name" aria-label="Custom model name" hidden>
+                <button class="text-btn" type="button" id="ai-model-toggle" style="justify-self:start">Use a different model name</button>
               </div>
-
-              <!-- Big Tech Recruiter & Referral Specific Fields (Dynamic) -->
-              <div id="doc-bigtech-fields" style="display:none;padding:12px;border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:14px;background:var(--bg-muted);">
-                <div class="input-field-group">
-                  <label class="field-label">Target Big Tech Enterprise</label>
-                  <select id="doc-input-bigtech-company" class="select-dropdown">
-                    <option value="google">Google (L3 - L6)</option>
-                    <option value="meta">Meta (E3 - E6)</option>
-                    <option value="uber">Uber (L3 - L6)</option>
-                    <option value="amazon">Amazon (L4 - L7)</option>
-                    <option value="apple">Apple (ICT2 - ICT5)</option>
-                    <option value="microsoft">Microsoft (L59 - L65)</option>
-                    <option value="netflix">Netflix (Senior / Staff)</option>
-                    <option value="stripe">Stripe (L2 - L5)</option>
-                  </select>
-                </div>
-                <div class="input-field-group">
-                  <label class="field-label">Job Requisition ID / Job Number (Optional)</label>
-                  <input type="text" id="doc-input-bigtech-req" class="text-input" placeholder="e.g. 154829 or Req-9921">
-                </div>
-                <div class="input-field-group">
-                  <label class="field-label">Recruiter or Contact Name (Optional)</label>
-                  <input type="text" id="doc-input-bigtech-recruiter" class="text-input" placeholder="e.g. Jennifer Miller or leave blank for team talent">
-                </div>
-                <div class="input-field-group">
-                  <label class="field-label">Target Leveling Tier</label>
-                  <select id="doc-input-bigtech-level" class="select-dropdown">
-                    <option value="mid">Mid-level (Google L4 / Meta E4 / Uber L4)</option>
-                    <option value="senior">Senior (Google L5 / Meta E5 / Uber L5)</option>
-                    <option value="junior">Early Career (Google L3 / Meta E3 / Uber L3)</option>
-                    <option value="staff">Staff / Principal (Google L6 / Meta E6 / Uber L6)</option>
-                  </select>
-                </div>
+              <div class="field"><label for="ai-key">API key</label>
+                <div class="field-row"><input class="input mono" id="ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a key to use your own account"><button class="btn btn-secondary btn-icon" type="button" id="ai-key-eye" aria-label="Show key" aria-pressed="false"><svg class="icon"><use href="#i-eye"/></svg></button></div>
+                <span class="hint" id="ai-key-hint">No key stored.</span>
               </div>
-
-              <div class="input-field-group">
-                <label class="field-label">Target Role Title</label>
-                <input type="text" id="doc-input-title" class="text-input" placeholder="e.g. Senior Backend Engineer" value="Software Engineer">
+              <div class="form-foot">
+                <button class="btn btn-primary" type="submit" id="btn-ai-save">Save and use this key</button>
+                <button class="btn btn-secondary" type="button" id="btn-ai-test"><svg class="icon"><use href="#i-play"/></svg><span>Test connection</span></button>
+                <button class="btn btn-danger" type="button" id="btn-ai-clear">Remove key</button>
               </div>
+              <div id="fb-ai" role="status"></div>
+            </form>
+          </section>
 
-              <div class="input-field-group">
-                <label class="field-label">Company Name</label>
-                <input type="text" id="doc-input-company" class="text-input" placeholder="e.g. Vermeg, Stripe, Adyen" value="Vermeg">
+          <!-- Autofill -->
+          <section class="settings-panel" data-panel="autofill" aria-labelledby="h-auto">
+            <header><h2 id="h-auto">Autofill answers</h2><p>The browser extension uses these on application forms. It never guesses a legal answer: if you leave one on "Ask me", it stops and asks you on the page.</p></header>
+            <form id="form-autofill" class="form-grid">
+              <div class="field"><label for="auto-auth">Are you legally authorized to work in the target country?</label>
+                <select class="select" id="auto-auth"><option value="">Ask me each time</option><option value="yes">Yes</option><option value="no">No</option></select>
               </div>
-
-              <div class="input-field-group">
-                <label class="field-label">Tone / Angle</label>
-                <select id="doc-input-tone" class="select-dropdown">
-                  <option value="direct_impact">Direct Impact (Facts & Results)</option>
-                  <option value="startup_velocity">Startup Velocity (Speed & Autonomy)</option>
-                  <option value="technical_architect">Technical Architect (Systems & Scale)</option>
-                  <option value="executive_brief">Executive Brief (Concise & Decisive)</option>
-                </select>
+              <div class="field"><label for="auto-visa">Do you need visa sponsorship?</label>
+                <select class="select" id="auto-visa"><option value="">Ask me each time</option><option value="no">No</option><option value="yes">Yes</option></select>
               </div>
-
-              <div class="input-field-group">
-                <label class="field-label">Job Description / Requirements (Optional)</label>
-                <textarea id="doc-input-desc" class="textarea-input" rows="4" placeholder="Paste specific requirements or leave blank to use candidate profile target..."></textarea>
+              <div class="field"><label for="auto-notice">Availability</label>
+                <select class="select" id="auto-notice"><option value="">Ask me each time</option><option value="immediate">Available immediately</option><option value="2weeks">2 weeks notice</option><option value="1month">1 month notice</option></select>
               </div>
+              <fieldset class="field"><legend class="label">When the form is filled</legend>
+                <div class="seg" role="radiogroup" aria-label="Submission mode" id="auto-mode"></div>
+                <span class="hint" id="auto-mode-hint"></span>
+              </fieldset>
+              <div class="form-foot"><button class="btn btn-primary" type="submit">Save answers</button><span id="fb-auto" role="status"></span></div>
+            </form>
+            <hr class="sep">
+            <header><h2 style="font-size:var(--text-md)">Try the question solver</h2><p>Paste a screening question. See the answer the extension would give, built from your resume.</p></header>
+            <form id="form-solve" class="form-grid">
+              <div class="field"><label for="solve-q">Employer question</label><textarea class="textarea" id="solve-q" placeholder="How many years of professional experience do you have with Python?"></textarea></div>
+              <div class="form-foot"><button class="btn btn-secondary" type="submit" id="btn-solve"><svg class="icon"><use href="#i-play"/></svg><span>Answer this question</span></button></div>
+              <div id="solve-out" aria-live="polite"></div>
+            </form>
+          </section>
 
-              <button class="btn btn-primary btn-full" id="btn-generate-doc">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                Generate &amp; Run Reviewer QA
-              </button>
+          <!-- Gmail -->
+          <section class="settings-panel" data-panel="gmail" aria-labelledby="h-gmail">
+            <header><h2 id="h-gmail">Gmail tracking</h2><p>JobHunter reads confirmation, interview and rejection emails to move applications for you. Use a Google app password, not your main password.</p></header>
+            <div class="mode-line" id="gmail-state" role="status"></div>
+            <form id="form-gmail" class="form-grid">
+              <div class="field"><label for="gm-email">Gmail address</label><input class="input" id="gm-email" type="email" autocomplete="email" placeholder="you@gmail.com"></div>
+              <div class="field"><label for="gm-pass">App password</label><input class="input mono" id="gm-pass" type="password" autocomplete="off" placeholder="xxxx xxxx xxxx xxxx"><span class="hint">Create one in your Google account under Security, then App passwords.</span></div>
+              <div class="form-foot"><button class="btn btn-primary" type="submit">Save and connect</button><button class="btn btn-secondary" type="button" id="btn-gmail-sync2"><svg class="icon"><use href="#i-refresh-cw"/></svg><span>Check now</span></button><span id="fb-gmail" role="status"></span></div>
+            </form>
+          </section>
 
-              <button type="button" class="btn btn-secondary btn-full btn-sm" id="btn-open-email-finder" style="margin-top:10px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                LinkedIn &amp; Corporate Email Finder
-              </button>
+          <!-- Browser -->
+          <section class="settings-panel" data-panel="browser" aria-labelledby="h-browser">
+            <header><h2 id="h-browser">Browser and extension</h2><p>Open a Chromium browser with the JobHunter extension already loaded and signed in to your local service.</p></header>
+            <div><button class="btn btn-primary" id="btn-launch2" type="button"><svg class="icon"><use href="#i-globe"/></svg><span>Open browser with extension</span></button></div>
+            <div>
+              <h3 style="font-size:var(--text-md);margin-block-end:var(--s2)">Browsers found on this computer</h3>
+              <ul class="browser-list" id="browser-list"></ul>
             </div>
-
-            <!-- Studio Output & Verification Box -->
-            <div class="studio-output-card">
-              <div class="output-header-bar">
-                <div class="output-title-wrapper" style="display:flex;align-items:center;gap:8px;">
-                  <span class="output-label">Approved Output</span>
-                  <span class="qa-badge pass" id="doc-qa-badge">Reviewer QA: PASS</span>
-                  <span class="tag-badge" id="doc-ats-match-badge" style="display:none;color:var(--primary-text);border-color:var(--primary-border);">92% ATS Match</span>
-                </div>
-                <div class="output-actions-cluster" style="display:flex;align-items:center;gap:6px;">
-                  <button class="btn btn-secondary btn-sm" id="btn-doc-view-toggle" style="display:none;">View Resume</button>
-                  <button class="btn btn-secondary btn-sm" id="btn-download-doc" style="display:none;" title="Print or save as PDF">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                    Print / PDF
-                  </button>
-                  <a class="btn btn-secondary btn-sm" id="btn-open-gmail-compose" style="display:none;text-decoration:none;" target="_blank" rel="noopener noreferrer" title="Open directly in Gmail with prefilled body and subject">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-                    Open in Gmail
-                  </a>
-                  <button class="btn btn-secondary btn-sm" id="btn-save-gmail-draft" style="display:none;" title="Save directly to connected Gmail Drafts">
-                    Save Draft
-                  </button>
-                  <button class="btn btn-secondary btn-sm" id="btn-copy-doc">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
-                    Copy
-                  </button>
-                </div>
-              </div>
-
-              <div class="doc-rendered-body" id="doc-rendered-body">
-                <p class="placeholder-text">Click "Generate & Run Reviewer QA" on the left to produce a truthful, verified draft tailored to the employer.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- TAB 4: PROFILE & RESUME VARIANTS -->
-        <section class="tab-panel" id="tab-profiles">
-          <!-- First-Run Resume Onboarding Wizard -->
-          <div class="first-run-wizard-card" id="first-run-wizard">
-            <div class="wizard-header">
-              <div class="wizard-badge-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-              </div>
-              <div class="wizard-title-block">
-                <h2 class="wizard-title">Candidate Resume & Drop Folder Setup</h2>
-                <p class="wizard-desc">Drop your resume below or place it into your local folder. Supports Microsoft Word (<strong>.docx</strong>), Adobe PDF (<strong>.pdf</strong>), and Text (<strong>.txt, .md</strong>).</p>
-              </div>
-              <div class="wizard-actions">
-                <button class="btn btn-secondary btn-sm" id="btn-wizard-scan">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                  Scan Folder
-                </button>
-              </div>
-            </div>
-
-            <!-- Drag & Drop Zone -->
-            <div class="resume-dropzone" id="resume-dropzone">
-              <input type="file" id="resume-file-input" accept=".docx,.pdf,.txt,.md" style="display: none;" />
-              <div class="dropzone-content" id="dropzone-content">
-                <div class="dropzone-icon">
-                  <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                </div>
-                <div class="dropzone-text">
-                  <span class="dropzone-primary">Drag & drop your Word (.docx), PDF (.pdf), or Text (.txt) resume here, or <button type="button" class="btn-link" id="btn-browse-file">browse files</button></span>
-                  <span class="dropzone-formats">JobHunter automatically parses skills, experience, and contact data into SQLite.</span>
-                </div>
-              </div>
-              <div class="dropzone-loading" id="dropzone-loading" style="display: none;">
-                <div class="spinner"></div>
-                <span>Parsing resume and grounding facts in SQLite...</span>
-              </div>
-            </div>
-
-            <!-- Folder Path Reference Bar -->
-            <div class="wizard-folder-bar">
-              <span class="folder-bar-label">Local Drop Folder:</span>
-              <code class="folder-path-code" id="wizard-folder-path">.../resumes</code>
-              <button class="btn btn-ghost btn-sm" id="btn-copy-folder-path" title="Copy folder path to clipboard">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                Copy Path
-              </button>
-            </div>
-
-            <!-- Success Alert Banner -->
-            <div class="wizard-success-banner" id="wizard-success-banner" style="display: none;">
-              <div class="success-icon">✓</div>
-              <div class="success-body">
-                <strong>Resume parsed & activated!</strong>
-                <span id="wizard-parsed-summary">Loaded candidate facts successfully.</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="profile-dashboard-grid">
-            <!-- Candidate Master Card -->
-            <div class="profile-card">
-              <div class="profile-hero">
-                <div class="avatar-circle" id="prof-avatar">JD</div>
-                <div class="hero-meta">
-                  <h2 class="candidate-name" id="prof-name">Candidate Name</h2>
-                  <div class="candidate-role" id="prof-role">Target Role</div>
-                  <div class="candidate-coords" id="prof-coords">Location • Email • Phone</div>
-                </div>
-              </div>
-
-              <div class="skills-categorized-section">
-                <h3 class="section-subheading">Verified Skills & Core Stack</h3>
-                <div class="skills-chips-flow" id="prof-skills-container"></div>
-              </div>
-
-              <div class="experience-timeline-section">
-                <h3 class="section-subheading">Professional Experience Timeline</h3>
-                <div class="experience-items-list" id="prof-exp-container"></div>
-              </div>
-            </div>
-
-            <!-- Resume Variants Manager -->
-            <div class="variants-management-card">
-              <div class="variants-card-header">
-                <h2 class="card-heading">Available Resume Variants</h2>
-                <button class="btn btn-secondary btn-sm" id="btn-rescan-workspace">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                  Scan Folder
-                </button>
-              </div>
-              <p class="card-desc">Activate the resume variant that fits your target search. The active resume provides the verified facts for scoring and document tailoring.</p>
-
-              <div class="variants-stack-list" id="variants-stack-list"></div>
-            </div>
-          </div>
-        </section>
-
-        <!-- TAB 5: CALIBRATION & FILTERS -->
-        <section class="tab-panel" id="tab-preferences">
-          <div class="calibration-container">
-            <!-- AI Engine & Dual Execution Mode Card -->
-            <div class="calibration-card" id="ai-engine-card" style="margin-bottom: 24px;">
-              <div class="cal-header">
-                <div>
-                  <div style="display:flex;align-items:center;gap:10px;">
-                    <h2 class="card-heading">AI Engine &amp; Dual Execution Mode</h2>
-                    <span id="ai-mode-badge" class="mode-badge mode-badge-mcp">⚡ External MCP Host Mode</span>
-                  </div>
-                  <p class="card-desc" style="margin-top:4px;">
-                    Run standalone with your direct API key (Gemini, OpenAI, Anthropic, DeepSeek, Groq, Mistral, Ollama), or leave unconfigured to let your external MCP client (Claude Desktop / Cursor) drive.
-                  </p>
-                </div>
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <button type="button" class="btn btn-secondary btn-sm" id="btn-test-ai-key" title="Test active AI model connection">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                    Test Connection
-                  </button>
-                  <button type="button" class="btn btn-primary btn-sm" id="btn-save-ai-key">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                    Save &amp; Activate
-                  </button>
-                </div>
-              </div>
-
-              <!-- Dual Mode Information Box -->
-              <div class="ai-mode-explainer" id="ai-mode-explainer">
-                <div class="explainer-col" id="col-mcp-info">
-                  <div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:12.5px;color:var(--text-main);">
-                    <span>⚡ Mode 1: External MCP Host (Zero Keys)</span>
-                  </div>
-                  <p style="font-size:12px;color:var(--text-muted);margin-top:4px;line-height:1.45;">
-                    Ideal for Claude Desktop and Cursor. The IDE supplies its own LLM and calls JobHunter tools via stdio. Zero API keys needed in JobHunter.
-                  </p>
-                </div>
-                <div class="explainer-divider"></div>
-                <div class="explainer-col" id="col-api-info">
-                  <div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:12.5px;color:var(--text-main);">
-                    <span>🔑 Mode 2: Standalone Direct API</span>
-                  </div>
-                  <p style="font-size:12px;color:var(--text-muted);margin-top:4px;line-height:1.45;">
-                    Directly powers the standalone Web Dashboard and Chrome Extension without opening Claude or Cursor. Stores securely in local SQLite.
-                  </p>
-                </div>
-              </div>
-
-              <!-- Form Fields Grid -->
-              <div class="cal-form-grid">
-                <div class="input-field-group">
-                  <label class="field-label" for="ai-provider-select">AI Provider</label>
-                  <select id="ai-provider-select" class="select-dropdown">
-                    <option value="gemini" selected>Google Gemini (Recommended: gemini-3.8-flash)</option>
-                    <option value="openai">OpenAI (Recommended: gpt-5-mini, o3-mini)</option>
-                    <option value="anthropic">Anthropic Claude (Recommended: claude-3-7-sonnet)</option>
-                    <option value="deepseek">DeepSeek (deepseek-chat)</option>
-                    <option value="groq">Groq (llama-3.3-70b-versatile)</option>
-                    <option value="mistral">Mistral AI (mistral-large-latest)</option>
-                    <option value="ollama">Ollama (Local LLM)</option>
-                  </select>
-                </div>
-
-                <div class="input-field-group">
-                  <label class="field-label" for="ai-model-select">Target Frontier Model</label>
-                  <div style="display:flex;gap:8px;">
-                    <select id="ai-model-select" class="select-dropdown" style="flex:1;">
-                      <option value="gemini-3.8-flash">gemini-3.8-flash (Latest 2026 default)</option>
-                      <option value="gemini-3.1-pro">gemini-3.1-pro</option>
-                      <option value="gemini-3.5-flash">gemini-3.5-flash</option>
-                    </select>
-                    <input type="text" id="ai-model-custom" class="text-input" placeholder="Type custom model..." style="flex:1;display:none;">
-                    <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-custom-model" title="Toggle custom model input" style="padding:0 8px;">Custom</button>
-                  </div>
-                </div>
-
-                <div class="input-field-group" style="grid-column: 1 / -1;">
-                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-                    <label class="field-label" for="ai-key-input" style="margin-bottom:0;">API Key</label>
-                    <span id="ai-key-masked-display" style="font-size:12px;font-family:var(--font-mono);color:var(--text-muted);">No key saved</span>
-                  </div>
-                  <div style="display:flex;gap:8px;">
-                    <input type="password" id="ai-key-input" class="text-input" placeholder="Paste your API key (e.g. AIzaSy... or sk-...) to activate Direct API mode" style="flex:1;font-family:var(--font-mono);">
-                    <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-key-visibility" style="padding:0 12px;">Show</button>
-                    <button type="button" class="btn btn-danger btn-sm" id="btn-clear-ai-key" title="Clear saved key and revert to MCP Mode">Clear Key</button>
-                  </div>
-                  <span class="field-hint">Stored strictly in local SQLite. To delete your key and return to MCP mode, click "Clear Key" or run <code>python run.py --clear-key</code>.</span>
-                </div>
-              </div>
-
-              <!-- Status Alert Feedback -->
-              <div id="ai-status-feedback" class="status-alert-box" style="display:none;"></div>
-            </div>
-
-            <div class="calibration-card">
-              <div class="cal-header">
-                <h2 class="card-heading">Search Calibration & Preferences Engine</h2>
-                <button class="btn btn-primary" id="btn-save-preferences">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                  Save Preferences
-                </button>
-              </div>
-              <p class="card-desc">Preferences in <code>.jobhunter/preferences.json</code> control which local job boards run and how opportunities are ranked.</p>
-
-              <div class="cal-form-grid">
-                <div class="input-field-group">
-                  <label class="field-label">Target Countries (comma separated)</label>
-                  <input type="text" id="pref-target-countries" class="text-input" placeholder="e.g. Tunisia, France, Germany">
-                  <span class="field-hint">Picks local national boards (Keejob for Tunisia, HelloWork for France, etc.)</span>
-                </div>
-
-                <div class="input-field-group">
-                  <label class="field-label">Home Country & Preferred Cities</label>
-                  <input type="text" id="pref-home-cities" class="text-input" placeholder="e.g. Tunis, Sfax, Paris">
-                </div>
-
-                <div class="input-field-group">
-                  <label class="field-label">Preferred Job Types</label>
-                  <div class="checkbox-row" id="pref-job-types-row">
-                    <label class="checkbox-label"><input type="checkbox" value="Full-time" checked> Full-time</label>
-                    <label class="checkbox-label"><input type="checkbox" value="Internship"> Internship / PFE</label>
-                    <label class="checkbox-label"><input type="checkbox" value="Contract"> Contract / Freelance</label>
-                    <label class="checkbox-label"><input type="checkbox" value="Part-time"> Part-time</label>
-                  </div>
-                </div>
-
-                <div class="input-field-group">
-                  <label class="field-label">Default Work Mode</label>
-                  <select id="pref-work-mode" class="select-dropdown">
-                    <option value="Any">Any Mode (Remote, Hybrid, Onsite)</option>
-                    <option value="Remote">Remote Only</option>
-                    <option value="Hybrid">Hybrid</option>
-                    <option value="Onsite">Onsite</option>
-                  </select>
-                </div>
-
-                <div class="input-field-group">
-                  <label class="field-label">Excluded Companies (never show)</label>
-                  <input type="text" id="pref-excluded-companies" class="text-input" placeholder="e.g. Globex, SpamCo">
-                </div>
-
-                <div class="input-field-group">
-                  <label class="field-label">Excluded Keywords (hide technologies you dislike)</label>
-                  <input type="text" id="pref-excluded-keywords" class="text-input" placeholder="e.g. php, wordpress, legacy">
-                </div>
-
-                <div class="input-field-group">
-                  <label class="field-label">Dream Companies (boost fit score)</label>
-                  <input type="text" id="pref-dream-companies" class="text-input" placeholder="e.g. Google, Vermeg, Stripe, Mistral">
-                </div>
-
-                <div class="input-field-group">
-                  <label class="field-label">Search Depth</label>
-                  <select id="pref-search-depth" class="select-dropdown">
-                    <option value="standard">Standard (Balanced speed & depth)</option>
-                    <option value="quick">Quick (Top results only)</option>
-                    <option value="deep">Deep (Comprehensive multi-query variant)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div id="pref-status-feedback" class="status-alert-box" style="display:none;"></div>
-            </div>
-          </div>
-        </section>
-
-        <!-- TAB 6: AUTO-APPLY & DESKTOP HUB -->
-        <section class="tab-panel" id="tab-extension">
-          <div class="extension-view-grid">
-            <!-- Auto-Apply Dispatcher & Queue Card -->
-            <div class="hub-card hub-card-span-2">
-              <div class="hub-card-header">
-                <div class="hub-icon-box">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                </div>
-                <div class="hub-card-header-info">
-                  <h2 class="card-heading">Auto-Apply Application Dispatcher</h2>
-                  <p class="card-desc">AI agent automatically iterates through queued jobs, autofills ATS applications (Greenhouse, Lever, Ashby, Workday), and answers screening questions.</p>
-                </div>
-                <div class="hub-card-header-actions">
-                  <button class="btn btn-primary" id="btn-run-auto-apply-queue">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                    </svg>
-                    Run Auto-Apply on Queued Jobs
-                  </button>
-                </div>
-              </div>
-
-              <!-- Queued Applications Table / List -->
-              <div class="auto-apply-queue-container">
-                <div class="queue-toolbar">
-                  <span class="queue-count-badge" id="auto-apply-queue-badge">0 Applications Queued</span>
-                  <span class="queue-hint-text">Add opportunities from the Radar or Kanban to automate submissions</span>
-                </div>
-                <div class="auto-apply-queue-list" id="auto-apply-queue-list">
-                  <div class="queue-empty-state">
-                    <p>No jobs queued for auto-apply yet. Find high-match jobs in Radar & Discovery and click <strong>"Queue Auto-Apply"</strong>.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Auto-Apply Settings & Work Authorization -->
-            <div class="hub-card">
-              <h2 class="card-heading">Work Authorization & Auto-Fill Rules</h2>
-              <p class="card-desc">Rules used by the copilot to answer legal compliance and availability questions on ATS forms.</p>
-
-              <div class="cal-form-grid" style="margin-top:14px;">
-                <div class="input-field-group">
-                  <label class="field-label">Legally Authorized to Work in Target Location?</label>
-                  <select id="auto-work-auth" class="select-dropdown">
-                    <option value="yes" selected>Yes — Legally Authorized</option>
-                    <option value="no">No</option>
-                  </select>
-                </div>
-
-                <div class="input-field-group">
-                  <label class="field-label">Will you require Visa Sponsorship?</label>
-                  <select id="auto-visa-sponsorship" class="select-dropdown">
-                    <option value="no" selected>No — Do not require sponsorship</option>
-                    <option value="yes">Yes — Require sponsorship</option>
-                  </select>
-                </div>
-
-                <div class="input-field-group">
-                  <label class="field-label">Notice Period / Availability</label>
-                  <select id="auto-notice-period" class="select-dropdown">
-                    <option value="immediate" selected>Immediately Available</option>
-                    <option value="2weeks">2 Weeks</option>
-                    <option value="1month">1 Month</option>
-                  </select>
-                </div>
-
-                <div class="input-field-group">
-                  <label class="field-label">Submission Mode</label>
-                  <select id="auto-submission-mode" class="select-dropdown">
-                    <option value="supervised" selected>Supervised (Autofills + 1-Click to Confirm)</option>
-                    <option value="autonomous">Autonomous (5s countdown timer auto-submit)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <!-- 1-Click Launch Box -->
-            <div class="hub-card">
-              <div class="hub-card-header">
-                <div class="hub-icon-box">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                </div>
-                <div>
-                  <h2 class="card-heading">1-Click ATS Browser Launcher</h2>
-                  <p class="card-desc">Launch Chromium with the JobHunter Copilot extension loaded and authenticated.</p>
-                </div>
-              </div>
-
-              <div class="hub-launch-cta">
-                <button class="btn btn-primary btn-large btn-full" id="btn-hub-launch-browser">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="3" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                  Launch Edge / Chrome with Copilot
-                </button>
-              </div>
-
-              <div class="detected-browsers-block">
-                <h3 class="section-subheading">Detected Chromium Installations:</h3>
-                <ul class="browsers-bullet-list" id="hub-browsers-list"></ul>
-              </div>
-            </div>
-
-            <!-- Live Screening Solver Testbed -->
-            <div class="hub-card hub-card-span-2">
-              <h2 class="card-heading">Interactive Screening Question Solver</h2>
-              <p class="card-desc">Test how the in-browser copilot answers custom employer questions using facts from your verified profile.</p>
-
-              <div class="input-field-group">
-                <label class="field-label">Employer Question</label>
-                <input type="text" id="hub-test-question" class="text-input" placeholder="e.g. How many years of experience do you have with Python and FastAPI?" value="How many years of professional experience do you have with Python and REST APIs?">
-              </div>
-
-              <button class="btn btn-secondary" id="btn-test-solve">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="m10 15 5-3-5-3v6Z"></path></svg>
-                Solve Question with Reviewer QA
-              </button>
-
-              <div class="test-solution-box" id="hub-test-answer-box">
-                <span class="placeholder-text">Click "Solve Question" above to preview truthful generated answers.</span>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-    </main>
-  </div>
-
-  <!-- Modal for New Tracker Application -->
-  <div class="modal-backdrop" id="modal-new-app" style="display:none;">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3 class="modal-title">Track Application</h3>
-        <button class="modal-close-btn" id="btn-close-app-modal">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="input-field-group">
-          <label class="field-label">Company Name</label>
-          <input type="text" id="modal-app-company" class="text-input" placeholder="e.g. Vermeg, Stripe">
-        </div>
-        <div class="input-field-group">
-          <label class="field-label">Job Title</label>
-          <input type="text" id="modal-app-title" class="text-input" placeholder="e.g. Backend Software Engineer">
-        </div>
-        <div class="input-field-group">
-          <label class="field-label">Application URL (Optional)</label>
-          <input type="text" id="modal-app-url" class="text-input" placeholder="https://...">
-        </div>
-        <div class="input-field-group">
-          <label class="field-label">Status Stage</label>
-          <select id="modal-app-status" class="select-dropdown">
-            <option value="saved">Bookmarked / Saved</option>
-            <option value="queued">Queued for Auto-Apply</option>
-            <option value="applied">Applied</option>
-            <option value="interview">Interviewing</option>
-            <option value="offer">Offer Received</option>
-          </select>
+          </section>
         </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="btn-cancel-modal">Cancel</button>
-        <button class="btn btn-primary" id="btn-save-modal-app">Save to Kanban</button>
-      </div>
+    </section>
+  </main>
+</div>
+
+<nav class="tabbar" aria-label="Main">
+  <a href="#/jobs" data-route="jobs"><svg class="icon"><use href="#i-search"/></svg>Jobs</a>
+  <a href="#/applications" data-route="applications"><svg class="icon"><use href="#i-square-kanban"/></svg>Applications</a>
+  <a href="#/documents" data-route="documents"><svg class="icon"><use href="#i-pen-line"/></svg>Documents</a>
+  <a href="#/resume" data-route="resume"><svg class="icon"><use href="#i-file-text"/></svg>Resume<span class="tab-dot" id="tab-resume-dot" hidden></span></a>
+  <a href="#/settings" data-route="settings"><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
+</nav>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<dialog id="job-drawer" class="drawer" aria-label="Job details"><div id="job-detail"></div></dialog>
+
+<dialog id="dlg-confirm" aria-labelledby="dlg-confirm-title">
+  <form method="dialog" class="dialog-body">
+    <h2 id="dlg-confirm-title"></h2>
+    <p id="dlg-confirm-text"></p>
+    <div class="dialog-foot">
+      <button class="btn btn-secondary" value="cancel" id="dlg-confirm-cancel">Keep it</button>
+      <button class="btn btn-danger-solid" value="ok" id="dlg-confirm-ok">Remove</button>
     </div>
-  </div>
+  </form>
+</dialog>
 
-  <!-- Modal for Gmail Setup -->
-  <div class="modal-backdrop" id="modal-gmail-setup" style="display:none;">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3 class="modal-title">Automatic Gmail Job Tracking</h3>
-        <button class="modal-close-btn" id="btn-close-gmail-modal">&times;</button>
-      </div>
-      <div class="modal-body">
-        <p style="font-size:12.5px;color:var(--text-muted);line-height:1.5;">
-          JobHunter securely connects via local IMAP SSL to automatically track job confirmations, interview invitations, and rejections.
-        </p>
-        <div class="input-field-group">
-          <label class="field-label">Gmail Address</label>
-          <input type="email" id="modal-gmail-email" class="text-input" placeholder="you@gmail.com">
-        </div>
-        <div class="input-field-group">
-          <label class="field-label">Google App Password (16 characters)</label>
-          <input type="password" id="modal-gmail-password" class="text-input" placeholder="xxxx xxxx xxxx xxxx">
-          <span class="field-hint">Generate in Google Account &gt; Security &gt; 2-Step Verification &gt; App Passwords.</span>
-        </div>
-        <div id="gmail-modal-feedback" class="status-alert-box" style="display:none;font-size:12px;padding:8px 10px;border-radius:var(--radius-xs);"></div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="btn-cancel-gmail-modal">Cancel</button>
-        <button class="btn btn-primary" id="btn-save-gmail-config">Save &amp; Connect</button>
-      </div>
-    </div>
-  </div>
+<dialog id="dlg-keys" aria-labelledby="dlg-keys-title">
+  <form method="dialog" class="dialog-body">
+    <h2 id="dlg-keys-title">Keyboard shortcuts</h2>
+    <ul class="kbd-list">
+      <li><span>Focus the search box</span><kbd>/</kbd></li>
+      <li><span>Next job</span><kbd>j</kbd></li>
+      <li><span>Previous job</span><kbd>k</kbd></li>
+      <li><span>Save the selected job</span><kbd>s</kbd></li>
+      <li><span>Apply to the selected job</span><kbd>a</kbd></li>
+      <li><span>Go to Jobs, Applications, Documents</span><span><kbd>g</kbd> then <kbd>j</kbd> <kbd>a</kbd> <kbd>d</kbd></span></li>
+      <li><span>Show this list</span><kbd>?</kbd></li>
+    </ul>
+    <div class="dialog-foot"><button class="btn btn-primary" value="close">Close</button></div>
+  </form>
+</dialog>
 
-  <!-- Modal for LinkedIn & Corporate Email Finder -->
-  <div class="modal-backdrop" id="modal-email-finder" style="display:none;">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3 class="modal-title">LinkedIn &amp; Corporate Email Finder</h3>
-        <button class="modal-close-btn" id="btn-close-email-finder-modal">&times;</button>
-      </div>
-      <div class="modal-body">
-        <p style="font-size:12.5px;color:var(--text-muted);line-height:1.5;">
-          Synthesizes verified corporate email patterns, performs live DNS MX validation, and scores deliverability confidence.
-        </p>
-        <div class="input-field-group">
-          <label class="field-label">Target Person Full Name</label>
-          <input type="text" id="finder-input-name" class="text-input" placeholder="e.g. Guillermo Rauch, Patrick Collison, Sarah Connor">
-        </div>
-        <div class="input-field-group">
-          <label class="field-label">Company Name or Domain</label>
-          <input type="text" id="finder-input-company" class="text-input" placeholder="e.g. Vercel, Stripe, Linear, vercel.com">
-        </div>
-        <div class="input-field-group">
-          <label class="field-label">LinkedIn Profile URL (Optional)</label>
-          <input type="text" id="finder-input-linkedin" class="text-input" placeholder="https://www.linkedin.com/in/username">
-        </div>
-        <div class="input-field-group">
-          <label class="field-label">Seniority / Role Category</label>
-          <select id="finder-input-role" class="select-dropdown">
-            <option value="Founder &amp; CEO">Founder / Co-Founder / CEO</option>
-            <option value="Engineering Leader">CTO / VP Engineering / Tech Lead</option>
-            <option value="Recruiter">Technical Recruiter / Talent Lead</option>
-            <option value="Software Engineer">Software Engineer / IC</option>
-          </select>
-        </div>
-        <button class="btn btn-primary btn-full" id="btn-run-email-finder">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          Find &amp; Verify Corporate Email
-        </button>
+<div class="drop-overlay" id="drop-overlay" hidden><div>Drop your resume to add it</div></div>
 
-        <!-- Finder Results Container -->
-        <div id="finder-results-box" style="display:none;margin-top:16px;padding:12px;background:var(--bg-muted);border:1px solid var(--border);border-radius:var(--radius-md);">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-            <span style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);">Primary Verified Match</span>
-            <span id="finder-result-badge" class="tag-badge" style="color:var(--primary-text);border-color:var(--primary-border);">96% Confidence</span>
-          </div>
-          <div style="font-size:15px;font-weight:700;font-family:var(--font-mono);margin-bottom:4px;" id="finder-result-email">email@domain.com</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;" id="finder-result-provider">MX Verified: Google Workspace</div>
-          <div style="display:flex;gap:8px;">
-            <button class="btn btn-secondary btn-sm" id="btn-copy-found-email">Copy Email</button>
-            <button class="btn btn-primary btn-sm" id="btn-use-found-email">Draft Founder Cold Email</button>
-          </div>
-          <div style="margin-top:12px;font-size:11px;color:var(--text-muted);" id="finder-other-candidates"></div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="btn-cancel-email-finder-modal">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <script src="app.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

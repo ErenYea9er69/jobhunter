@@ -53,9 +53,83 @@ python run.py [OPTIONS]
 1. **Candidate Drop Folder Provisioned**: Auto-creates `resumes/` with a `PUT_YOUR_RESUME_HERE.txt` guide. Drop your Word (**`.docx`**), PDF (**`.pdf`**), or Text (**`.txt`**, **`.md`**) resume right into this folder.
 2. **SQLite Database Initialized**: Automatically creates your private local database (`engine.db`) in `~/.jobhunter/` or your workspace.
 3. **AI Coding Agents Auto-Connected (MCP)**: Auto-detects and writes MCP configuration for **Cursor** (`.cursor/mcp.json`) and **Claude Desktop** so your AI assistant shares the exact same resume facts and tracking database.
-4. **Web Dashboard Served**: Starts the local HTTP daemon and serves the 5-tab dashboard on `http://127.0.0.1:8765`.
+4. **Web Dashboard Served**: Starts the local HTTP daemon and serves the 6-tab autonomous dashboard on `http://127.0.0.1:8765`.
 5. **Browser Extension Loaded**: Detects your installed Chromium browser (Google Chrome, Microsoft Edge, Brave) and launches it with the ATS Autofill extension preloaded (`--load-extension`).
 6. **First-Run Web Drop Wizard**: If no resume exists yet, the web dashboard displays a drag-and-drop wizard allowing you to upload your Word, PDF, or Text resume directly from the browser with instant skill extraction.
+
+---
+
+### 🖥️ Modern Web Dashboard & Visual Workspace
+
+JobHunter includes a responsive, dark/light themed single-page web application running locally on `http://127.0.0.1:8765`. The interface uses a black, gray and white theme with small green, amber and red score colors. See `DESIGN.md` and `UI-CHANGES.md`:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                          JOBHUNTER DASHBOARD                           │
+├───────────────┬───────────────────────────────┬────────────────────────┤
+│ TAB 1: RADAR  │ TAB 2: PIPELINE KANBAN        │ TAB 3: DOCUMENT STUDIO │
+│ Opportunity   │ 5-Stage Visual Funnel         │ 100% Truthful QA       │
+│ Discovery     │ Saved → Applied → Interview   │ Cover Letters & Pitch  │
+├───────────────┼───────────────────────────────┼────────────────────────┤
+│ TAB 4: PROFILE│ TAB 5: AI & CALIBRATION       │ TAB 6: AUTO-APPLY HUB  │
+│ Resume Drop   │ Dual Engine (MCP vs API)      │ ATS Extension Dispatch │
+│ & Variants    │ 2026 Frontier Models          │ 1-Click Browser Launch │
+└───────────────┴───────────────────────────────┴────────────────────────┘
+```
+
+#### Tab 1: Radar & Opportunity Discovery
+- **Multi-Source Aggregation**: Real-time unified search across 100+ platforms (Company Greenhouse/Ashby/Lever boards, Y Combinator, Hacker News, regional national sites, and remote boards).
+- **Match Scoring Engine (0-100%)**: Every posting is ranked strictly against the candidate's verified skills, experience level, and target preferences.
+- **Smart Filters**: Filter instantaneously by Work Mode (Remote, Hybrid, Onsite), Job Type (Full-time, Internship/PFE, Contract), and Score Floor.
+- **1-Click Queue Auto-Apply**: Queue promising opportunities directly into the Auto-Apply batch runner.
+
+#### Tab 2: Application Kanban Pipeline
+- **Visual Funnel Tracking**: 5 automated progression lanes: `Saved` → `Queued Auto-Apply` → `Applied` → `Interviewing` → `Offers`.
+- **Gmail Sync Integration**: 1-click sync scans your connected inbox for ATS confirmations, interview invitations, and status updates, automatically transitioning opportunities across lanes without manual entry.
+- **Application Analytics**: Tracks submission velocity, response rates, and active interview conversions.
+
+#### Tab 3: Truthful Document Studio & Copilot
+- **Multi-Format Document Generation**:
+  - **Cover Letters**: Direct-impact, metrics-driven pitches tailored to the job description.
+  - **YC-Style Founder Cold Emails**: High-converting, short pitches with an automated **Founder Corporate Email Finder** that synthesizes and verifies executive email formats.
+  - **Big Tech Recruiter & Internal Referrals**: Calibrated for levels and terminology at Google (L3-L6), Meta (E3-E6), Uber, Amazon, Apple, Microsoft, Netflix, and Stripe.
+  - **STAR Interview Guides**: Complete preparation matrices with Situation, Task, Action, and Result outlines grounded in your actual work history.
+- **Reviewer QA Badge**: Every generated paragraph is audited sentence-by-sentence against candidate resume facts before approval. Unsupported claims are rejected or flagged with zero hallucinations.
+- **Direct Export**: 1-click Copy, Print to PDF, or "Open in Gmail" prefilled draft.
+
+#### Tab 4: Candidate Profile & Resume Variants
+- **Master Profile Display**: Visual hero card showing extracted coordinates, verified skills chips, and reverse-chronological professional timeline.
+- **First-Run Drop Folder & Drag-and-Drop Web Wizard**: Upload Word (**`.docx`**), PDF (**`.pdf`**), or Text (**`.txt`**, **`.md`**) resumes directly in the browser or drop them into `resumes/`.
+- **Variant Management**: Switch between specialized resume variants (e.g. Backend vs AI Engineer) with one click; all ranking and generation immediately recalibrate.
+
+#### Tab 5: Search Calibration & AI Dual Engine
+- **Target Filtering**: Configure target countries (e.g., Tunisia, France, Germany, Worldwide Remote), preferred cities, work mode, and search depth.
+- **Dream & Excluded Companies**: Boost priority for dream employers; permanently blacklist companies and unwanted technologies.
+- **AI Engine Control Deck**: Live mode badge (`Direct API Active` vs `External MCP Host Mode`), provider selector, 2026 frontier model picker, masked key display, latency test, and 1-click key wipe.
+
+#### Tab 6: Auto-Apply & Desktop Hub
+- **Queue Dispatcher**: Automatically iterates through queued applications and launches the autofill sequence.
+- **Work Authorization & Visa Compliance**: Sets deterministic rules for legal authorization, sponsorship requirements, and notice period.
+- **1-Click Chromium Launcher**: Detects your installed Chrome, Edge, or Brave browser and boots it with the JobHunter extension active.
+
+---
+
+### 🧩 Chrome ATS Autofill Extension
+
+Located in `extension/`, the JobHunter extension turns your browser into an automated job application copilot:
+
+- **Manifest V3 Architecture**: Fast, lightweight, and operates entirely against your local daemon (`http://127.0.0.1:8765`).
+- **Supported ATS Platforms**:
+  - Greenhouse (`boards.greenhouse.io`)
+  - Lever (`jobs.lever.co`)
+  - Ashby (`jobs.ashbyhq.com`)
+  - Workday (`*.myworkdayjobs.com`)
+  - SmartRecruiters, Recruitee, Workable, and custom employer career portals.
+- **Smart Form Autofill**: Instantly populates personal coordinates, resume attachments, LinkedIn, GitHub, portfolio URLs, and work authorization disclosures.
+- **Grounded Screening Question Solver**: Intercepts custom employer questions (e.g., *"Describe a time you solved an architectural bottleneck"*, *"What is your experience with Kubernetes?"*) and formulates accurate answers drawn solely from candidate facts in SQLite.
+- **Review panel**: A panel on the page lists every filled field with an Undo, lists fields that need you, and never submits unless you chose countdown mode.
+
+---
 
 ---
 

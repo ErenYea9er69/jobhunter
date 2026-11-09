@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>JobHunter</title>
+  <meta name="description" content="Find jobs, write documents from your own resume, and track every application. Runs on your computer.">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" type="image/svg+xml" href="logo.svg">
+  <link rel="preload" href="fonts/sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    try { var t = localStorage.getItem("jobhunter-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false"><defs>
+<symbol id="i-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34" /> <circle cx="11" cy="11" r="8" /></symbol>
+<symbol id="i-map-pin" viewBox="0 0 24 24"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" /> <circle cx="12" cy="10" r="3" /></symbol>
+<symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z" /></symbol>
+<symbol id="i-bookmark-check" viewBox="0 0 24 24"><path d="M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z" /> <path d="m9 10 2 2 4-4" /></symbol>
+<symbol id="i-file-text" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M10 9H8" /> <path d="M16 13H8" /> <path d="M16 17H8" /></symbol>
+<symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /> <circle cx="12" cy="7" r="4" /></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /> <circle cx="12" cy="12" r="3" /></symbol>
+<symbol id="i-send" viewBox="0 0 24 24"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" /> <path d="m21.854 2.147-10.94 10.939" /></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M12 6v6l4 2" /></symbol>
+<symbol id="i-external-link" viewBox="0 0 24 24"><path d="M15 3h6v6" /> <path d="M10 14 21 3" /> <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18" /> <path d="m6 6 12 12" /></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></symbol>
+<symbol id="i-printer" viewBox="0 0 24 24"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /> <path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" /> <rect x="6" y="14" width="12" height="8" rx="1" /></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7" /> <rect x="2" y="4" width="20" height="16" rx="2" /></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 3v12" /> <path d="m17 8-5-5-5 5" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></symbol>
+<symbol id="i-refresh-cw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" /></symbol>
+<symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+<symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></symbol>
+<symbol id="i-ellipsis" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1" /> <circle cx="19" cy="12" r="1" /> <circle cx="5" cy="12" r="1" /></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14" /> <path d="M12 5v14" /></symbol>
+<symbol id="i-trash-2" viewBox="0 0 24 24"><path d="M10 11v6" /> <path d="M14 11v6" /> <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /> <path d="M3 6h18" /> <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></symbol>
+<symbol id="i-keyboard" viewBox="0 0 24 24"><path d="M10 8h.01" /> <path d="M12 12h.01" /> <path d="M14 8h.01" /> <path d="M16 12h.01" /> <path d="M18 8h.01" /> <path d="M6 8h.01" /> <path d="M7 16h10" /> <path d="M8 12h.01" /> <rect width="20" height="16" x="2" y="4" rx="2" /></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /> <path d="M12 2v2" /> <path d="M12 20v2" /> <path d="m4.93 4.93 1.41 1.41" /> <path d="m17.66 17.66 1.41 1.41" /> <path d="M2 12h2" /> <path d="M20 12h2" /> <path d="m6.34 17.66-1.41 1.41" /> <path d="m19.07 4.93-1.41 1.41" /></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></symbol>
+<symbol id="i-key-round" viewBox="0 0 24 24"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z" /> <circle cx="16.5" cy="7.5" r=".5" fill="currentColor" /></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" /> <circle cx="12" cy="12" r="3" /></symbol>
+<symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" /> <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" /> <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" /> <path d="m2 2 20 20" /></symbol>
+<symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7" /> <path d="M19 12H5" /></symbol>
+<symbol id="i-briefcase" viewBox="0 0 24 24"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /> <rect width="20" height="14" x="2" y="6" rx="2" /></symbol>
+<symbol id="i-square-kanban" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /> <path d="M8 7v7" /> <path d="M12 7v4" /> <path d="M16 7v9" /></symbol>
+<symbol id="i-pen-line" viewBox="0 0 24 24"><path d="M13 21h8" /> <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /></symbol>
+<symbol id="i-circle-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <line x1="12" x2="12" y1="8" y2="12" /> <line x1="12" x2="12.01" y1="16" y2="16" /></symbol>
+<symbol id="i-triangle-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /> <path d="M12 9v4" /> <path d="M12 17h.01" /></symbol>
+<symbol id="i-circle-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="m16 9-5.5 5.5L8 12" /></symbol>
+<symbol id="i-loader-circle" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></symbol>
+<symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M12 20h.01" /> <path d="M8.5 16.429a5 5 0 0 1 7 0" /> <path d="M5 12.859a10 10 0 0 1 5.17-2.69" /> <path d="M19 12.859a10 10 0 0 0-2.007-1.523" /> <path d="M2 8.82a15 15 0 0 1 4.177-2.643" /> <path d="M22 8.82a15 15 0 0 0-11.288-3.764" /> <path d="m2 2 20 20" /></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" /></symbol>
+<symbol id="i-list-checks" viewBox="0 0 24 24"><path d="M13 5h8" /> <path d="M13 12h8" /> <path d="M13 19h8" /> <path d="m3 17 2 2 4-4" /> <path d="m3 7 2 2 4-4" /></symbol>
+<symbol id="i-sliders-horizontal" viewBox="0 0 24 24"><path d="M10 5H3" /> <path d="M12 19H3" /> <path d="M14 3v4" /> <path d="M16 17v4" /> <path d="M21 12h-9" /> <path d="M21 19h-5" /> <path d="M21 5h-7" /> <path d="M8 10v4" /> <path d="M8 12H3" /></symbol>
+<symbol id="i-building-2" viewBox="0 0 24 24"><path d="M10 12h4" /> <path d="M10 8h4" /> <path d="M14 21v-3a2 2 0 0 0-4 0v3" /> <path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2" /> <path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16" /></symbol>
+<symbol id="i-calendar" viewBox="0 0 24 24"><path d="M8 2v3" /> <path d="M16 2v3" /> <rect x="3" y="3" width="18" height="18" rx="2" /> <path d="M3 9h18" /></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></symbol>
+<symbol id="i-undo-2" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5" /> <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" /></symbol>
+<symbol id="i-grip-vertical" viewBox="0 0 24 24"><circle cx="9" cy="12" r="1" /> <circle cx="9" cy="5" r="1" /> <circle cx="9" cy="19" r="1" /> <circle cx="15" cy="12" r="1" /> <circle cx="15" cy="5" r="1" /> <circle cx="15" cy="19" r="1" /></symbol>
+<symbol id="i-circle-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /> <path d="M12 17h.01" /></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /> <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></symbol>
+<symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2" /> <line x1="8" x2="16" y1="21" y2="21" /> <line x1="12" x2="12" y1="17" y2="21" /></symbol>
+<symbol id="i-plug" viewBox="0 0 24 24"><path d="M12 22v-5" /> <path d="M15 8V2" /> <path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z" /> <path d="M9 8V2" /></symbol>
+<symbol id="i-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /> <path d="m9 12 2 2 4-4" /></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /> <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></symbol>
+<symbol id="i-file-up" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M12 12v6" /> <path d="m15 15-3-3-3 3" /></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /> <path d="M2 12h20" /></symbol>
+<symbol id="i-layout-list" viewBox="0 0 24 24"><rect width="7" height="7" x="3" y="3" rx="1" /> <rect width="7" height="7" x="3" y="14" rx="1" /> <path d="M14 4h7" /> <path d="M14 9h7" /> <path d="M14 15h7" /> <path d="M14 20h7" /></symbol>
+<symbol id="i-scan-search" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2" /> <path d="M17 3h2a2 2 0 0 1 2 2v2" /> <path d="M21 17v2a2 2 0 0 1-2 2h-2" /> <path d="M7 21H5a2 2 0 0 1-2-2v-2" /> <circle cx="12" cy="12" r="3" /> <path d="m16 16-1.9-1.9" /></symbol>
+<symbol id="i-sun-moon" viewBox="0 0 24 24"><path d="M12 2v2" /> <path d="M14.837 16.385a6 6 0 1 1-7.223-7.222c.624-.147.97.66.715 1.248a4 4 0 0 0 5.26 5.259c.589-.255 1.396.09 1.248.715" /> <path d="M16 12a4 4 0 0 0-4-4" /> <path d="m19 5-1.256 1.256" /> <path d="M20 12h2" /></symbol>
+<symbol id="i-panel-right-open" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /> <path d="M15 3v18" /> <path d="m10 15-3-3 3-3" /></symbol>
+</defs></svg>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="app">
+  <aside class="rail" aria-label="Sidebar">
+    <a class="brand" href="#/jobs" aria-label="JobHunter, go to jobs">
+      <img src="logo.svg" alt="" width="32" height="32">
+      <span class="brand-name">JobHunter</span>
+    </a>
+    <nav aria-label="Main">
+      <ul>
+        <li><a class="nav-item" href="#/jobs" data-route="jobs"><svg class="icon"><use href="#i-search"/></svg>Jobs</a></li>
+        <li><a class="nav-item" href="#/applications" data-route="applications"><svg class="icon"><use href="#i-square-kanban"/></svg>Applications<span class="nav-count" id="nav-count-apps"></span></a></li>
+        <li><a class="nav-item" href="#/documents" data-route="documents"><svg class="icon"><use href="#i-pen-line"/></svg>Documents</a></li>
+        <li><a class="nav-item" href="#/resume" data-route="resume"><svg class="icon"><use href="#i-file-text"/></svg>Resume<span class="nav-count" id="nav-resume-flag"></span></a></li>
+        <li><a class="nav-item" href="#/settings" data-route="settings"><svg class="icon"><use href="#i-settings"/></svg>Settings</a></li>
+      </ul>
+    </nav>
+    <div class="rail-foot">
+      <div class="rail-status" id="rail-status" role="status">
+        <span class="dot" id="rail-dot"></span>
+        <span><strong id="rail-status-title">Checking service</strong><span id="rail-status-text">Data stays on this computer.</span></span>
+      </div>
+      <div class="rail-tools">
+        <button class="btn-rail" id="btn-launch-browser" type="button"><svg class="icon icon-sm"><use href="#i-globe"/></svg>Open browser with extension</button>
+      </div>
+      <div class="rail-tools">
+        <button class="btn-rail" id="btn-theme" type="button"><svg class="icon icon-sm"><use href="#i-sun-moon"/></svg><span id="theme-label">Theme: System</span></button>
+        <button class="btn-rail" id="btn-shortcuts" type="button" aria-label="Keyboard shortcuts"><svg class="icon icon-sm"><use href="#i-keyboard"/></svg></button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main" id="main" tabindex="-1">
+    <header class="page-head">
+      <div>
+        <h1 id="page-title" tabindex="-1">Jobs</h1>
+        <p class="page-sub" id="page-sub"></p>
+      </div>
+      <div class="page-actions" id="page-actions"></div>
+    </header>
+
+    <!-- ============ JOBS ============ -->
+    <section class="view" data-view="jobs" hidden aria-labelledby="page-title">
+      <div class="jobs-tools">
+        <div id="resume-notice"></div>
+        <form id="search-form" class="search-row" role="search" autocomplete="off">
+          <div class="field">
+            <label for="q">Role or keywords</label>
+            <div class="with-icon"><svg class="icon"><use href="#i-search"/></svg><input class="input" id="q" name="q" type="search" placeholder="Backend engineer, data analyst, PFE internship" enterkeyhint="search"></div>
+          </div>
+          <div class="field">
+            <label for="loc">Place</label>
+            <div class="with-icon"><svg class="icon"><use href="#i-map-pin"/></svg><input class="input" id="loc" name="loc" type="text" placeholder="City, country or Remote"></div>
+          </div>
+          <button class="btn btn-primary" id="btn-search" type="submit"><svg class="icon"><use href="#i-search"/></svg><span>Search jobs</span></button>
+        </form>
+        <div class="filters">
+          <button class="btn btn-secondary btn-sm filter-toggle" id="filter-toggle" type="button" aria-expanded="false" aria-controls="filters-body"><svg class="icon icon-sm"><use href="#i-sliders-horizontal"/></svg>Filters<span id="filter-count"></span></button>
+          <div class="filters-body" id="filters-body" hidden>
+            <div class="filter-group"><span class="label" id="lbl-mode">Work mode</span><div class="seg" role="radiogroup" aria-labelledby="lbl-mode" data-filter="mode"></div></div>
+            <div class="filter-group"><span class="label" id="lbl-type">Job type</span><div class="seg" role="radiogroup" aria-labelledby="lbl-type" data-filter="type"></div></div>
+            <div class="filter-group"><span class="label" id="lbl-fit">Minimum fit</span><div class="seg" role="radiogroup" aria-labelledby="lbl-fit" data-filter="fit"></div></div>
+          </div>
+        </div>
+      </div>
+      <section aria-label="Search results">
+        <div class="results-bar" id="results-bar" hidden>
+          <div><span class="count" id="results-count"></span> <span class="meta" id="results-meta"></span></div>
+          <label class="sort">Sort by <select class="select" id="sort" aria-label="Sort results"><option value="score">Best fit</option><option value="date">Newest</option></select></label>
+        </div>
+        <ul class="job-grid" id="job-list" aria-live="polite"></ul>
+        <div id="job-state"></div>
+      </section>
+    </section>
+
+    <!-- ============ APPLICATIONS ============ -->
+    <section class="view" data-view="applications" hidden aria-labelledby="page-title">
+      <div class="seg stage-tabs" id="stage-tabs" role="group" aria-label="Show stage"></div>
+      <div class="board" id="board"></div>
+      <div id="board-empty"></div>
+      <details class="closed-list" id="closed-wrap" hidden>
+        <summary>Closed <span class="num" id="closed-count"></span></summary>
+        <ul id="closed-list"></ul>
+      </details>
+    </section>
+
+    <!-- ============ DOCUMENTS ============ -->
+    <section class="view" data-view="documents" hidden aria-labelledby="page-title">
+      <div class="studio">
+        <form class="studio-form" id="doc-form" autocomplete="off">
+          <div class="type-groups">
+            <fieldset class="type-group">
+              <legend class="label">For an application</legend>
+              <div class="type-list">
+                <label class="type-opt"><input type="radio" name="doctype" value="cover-letter" checked><span><span class="t">Cover letter</span><span class="d">Short, direct, built from your resume facts</span></span></label>
+                <label class="type-opt"><input type="radio" name="doctype" value="tailor-resume"><span><span class="t">Tailored resume</span><span class="d">Your resume, reordered for this posting</span></span></label>
+                <label class="type-opt"><input type="radio" name="doctype" value="interview-prep"><span><span class="t">Interview prep</span><span class="d">STAR stories drawn from your experience</span></span></label>
+              </div>
+            </fieldset>
+            <fieldset class="type-group">
+              <legend class="label">Reach out first</legend>
+              <div class="type-list">
+                <label class="type-opt"><input type="radio" name="doctype" value="outreach"><span><span class="t">Recruiter message</span><span class="d">LinkedIn note and hiring manager message</span></span></label>
+                <label class="type-opt"><input type="radio" name="doctype" value="founder-cold-email"><span><span class="t">Email to a founder</span><span class="d">Cold email with subject options</span></span></label>
+                <label class="type-opt"><input type="radio" name="doctype" value="linkedin-founder-dm"><span><span class="t">LinkedIn note to a founder</span><span class="d">Connection note under 300 characters</span></span></label>
+                <label class="type-opt"><input type="radio" name="doctype" value="bigtech-hr-referral"><span><span class="t">Big Tech recruiter and referral</span><span class="d">Google, Meta, Amazon and others</span></span></label>
+              </div>
+            </fieldset>
+          </div>
+
+          <div class="sub-fields" id="fields-job">
+            <div class="field"><label for="d-title">Role title</label><input class="input" id="d-title" type="text" placeholder="Senior Backend Engineer"></div>
+            <div class="field"><label for="d-company">Company</label><input class="input" id="d-company" type="text" placeholder="Company name"></div>
+            <div class="field" id="f-angle"><label for="d-angle">Angle</label>
+              <select class="select" id="d-angle">
+                <option value="direct_impact">Direct impact: facts and results</option>
+                <option value="startup_velocity">Startup velocity: speed and autonomy</option>
+                <option value="technical_architect">Technical architect: systems and scale</option>
+                <option value="executive_brief">Executive brief: short and decisive</option>
+              </select>
+            </div>
+            <div class="field"><label for="d-desc">Job description <span class="opt">(optional)</span></label><textarea class="textarea" id="d-desc" placeholder="Paste the requirements. Without them, the document uses your target role."></textarea></div>
+          </div>
+
+          <div class="sub-fields" id="fields-founder" hidden>
+            <div class="field"><label for="d-fname">Founder name or LinkedIn link</label><input class="input" id="d-fname" type="text" placeholder="Name or linkedin.com/in/..."></div>
+            <div class="field" id="f-femail"><label for="d-femail">Founder email <span class="opt">(optional)</span></label><input class="input" id="d-femail" type="email" placeholder="name@company.com"></div>
+            <div class="field"><label for="d-fangle">Angle</label>
+              <select class="select" id="d-fangle">
+                <option value="scale_velocity">Scale velocity: ship fast without hand holding</option>
+                <option value="product_teardown">Product teardown: a specific product insight</option>
+                <option value="domain_obsession">Domain obsession: deep technical fit</option>
+                <option value="direct_impact">Direct impact: proven metrics</option>
+              </select>
+            </div>
+            <div class="field"><label for="d-fobs">One thing you noticed <span class="opt">(optional)</span></label><input class="input" id="d-fobs" type="text" placeholder="Their sync engine, their pricing page, a recent launch"><span class="hint">Name something real. The Reviewer cannot confirm facts about their company.</span></div>
+          </div>
+
+          <div class="sub-fields" id="fields-bigtech" hidden>
+            <div class="field"><label for="d-bcompany">Company</label>
+              <select class="select" id="d-bcompany">
+                <option value="google">Google</option><option value="meta">Meta</option><option value="uber">Uber</option><option value="amazon">Amazon</option>
+                <option value="apple">Apple</option><option value="microsoft">Microsoft</option><option value="netflix">Netflix</option><option value="stripe">Stripe</option>
+              </select>
+            </div>
+            <div class="field"><label for="d-blevel">Level</label>
+              <select class="select" id="d-blevel">
+                <option value="junior">Early career</option><option value="mid" selected>Mid-level</option><option value="senior">Senior</option><option value="staff">Staff or principal</option>
+              </select>
+            </div>
+            <div class="field"><label for="d-breq">Requisition ID <span class="opt">(optional)</span></label><input class="input" id="d-breq" type="text" placeholder="154829"></div>
+            <div class="field"><label for="d-brec">Recruiter name <span class="opt">(optional)</span></label><input class="input" id="d-brec" type="text" placeholder="Leave blank to write to the talent team"></div>
+          </div>
+
+          <p class="using" id="doc-using"></p>
+          <button class="btn btn-primary btn-block" id="btn-generate" type="submit"><svg class="icon"><use href="#i-pen-line"/></svg><span>Write document</span></button>
+
+          <details class="disclosure" id="finder">
+            <summary><svg class="icon"><use href="#i-mail"/></svg>Find someone's work email<svg class="icon"><use href="#i-chevron-down"/></svg></summary>
+            <div class="inner">
+              <div class="field"><label for="fi-name">Full name</label><input class="input" id="fi-name" type="text" placeholder="First and last name"></div>
+              <div class="field"><label for="fi-company">Company or domain</label><input class="input" id="fi-company" type="text" placeholder="stripe.com"></div>
+              <div class="field"><label for="fi-linkedin">LinkedIn link <span class="opt">(optional)</span></label><input class="input" id="fi-linkedin" type="url" placeholder="https://www.linkedin.com/in/..."></div>
+              <div class="field"><label for="fi-role">Their role</label>
+                <select class="select" id="fi-role"><option value="Founder &amp; CEO">Founder or CEO</option><option value="Engineering Leader">CTO or engineering lead</option><option value="Recruiter">Recruiter</option><option value="Software Engineer">Engineer</option></select>
+              </div>
+              <button class="btn btn-secondary" id="btn-find-email" type="button"><svg class="icon"><use href="#i-search"/></svg><span>Find email</span></button>
+              <div id="finder-out" aria-live="polite"></div>
+            </div>
+          </details>
+        </form>
+
+        <section class="studio-out" aria-label="Document preview">
+          <div class="paper-wrap" id="paper-wrap"></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ============ RESUME ============ -->
+    <section class="view" data-view="resume" hidden aria-labelledby="page-title">
+      <div id="resume-root"></div>
+      <input type="file" id="file-input" accept=".docx,.pdf,.txt,.md" hidden>
+    </section>
+
+    <!-- ============ SETTINGS ============ -->
+    <section class="view" data-view="settings" hidden aria-labelledby="page-title">
+      <div class="settings">
+        <nav class="settings-nav" aria-label="Settings sections">
+          <ul id="settings-nav"></ul>
+        </nav>
+        <div>
+          <div class="seg settings-tabs" id="settings-tabs" role="group" aria-label="Settings section"></div>
+
+          <!-- Search -->
+          <section class="settings-panel" data-panel="search" aria-labelledby="h-search">
+            <header><h2 id="h-search">Search preferences</h2><p>These shape every search. Changes apply the next time you search.</p></header>
+            <form id="form-search-prefs" class="form-grid">
+              <div class="field"><label for="pref-countries">Countries</label><input class="input" id="pref-countries" type="text" placeholder="Tunisia, France, Germany"><span class="hint">Separate values with commas.</span></div>
+              <div class="field"><label for="pref-cities">Home cities</label><input class="input" id="pref-cities" type="text" placeholder="Tunis, Sfax"></div>
+              <fieldset class="field"><legend class="label">Job types</legend>
+                <div class="checks" id="pref-types">
+                  <label class="check"><input type="checkbox" value="Full-time"> Full-time</label>
+                  <label class="check"><input type="checkbox" value="Internship"> Internship or PFE</label>
+                  <label class="check"><input type="checkbox" value="Contract"> Contract</label>
+                  <label class="check"><input type="checkbox" value="Freelance"> Freelance</label>
+                </div>
+              </fieldset>
+              <div class="field"><label for="pref-mode">Work mode</label>
+                <select class="select" id="pref-mode"><option value="Any">Any</option><option value="Remote">Remote only</option><option value="Hybrid">Hybrid</option><option value="Onsite">Onsite</option></select>
+              </div>
+              <div class="field"><label for="pref-excl-co">Companies to skip</label><input class="input" id="pref-excl-co" type="text" placeholder="Globex, SpamCo"></div>
+              <div class="field"><label for="pref-excl-kw">Words to skip</label><input class="input" id="pref-excl-kw" type="text" placeholder="php, wordpress"></div>
+              <div class="field"><label for="pref-dream">Companies you want</label><input class="input" id="pref-dream" type="text" placeholder="Stripe, Mistral"><span class="hint">Roles at these companies rank higher.</span></div>
+              <div class="field"><label for="pref-depth">Search depth</label>
+                <select class="select" id="pref-depth"><option value="quick">Quick: top results only</option><option value="standard">Standard: balanced</option><option value="deep">Deep: slower, more complete</option></select>
+              </div>
+              <div class="form-foot"><button class="btn btn-primary" type="submit">Save preferences</button><span id="fb-search" role="status"></span></div>
+            </form>
+          </section>
+
+          <!-- AI engine -->
+          <section class="settings-panel" data-panel="ai" aria-labelledby="h-ai">
+            <header><h2 id="h-ai">AI engine</h2><p>JobHunter writes through an AI model. Pick how it reaches one.</p></header>
+            <div class="mode-line" id="ai-mode" role="status"></div>
+            <form id="form-ai" class="form-grid">
+              <div class="field"><label for="ai-provider">Provider</label>
+                <select class="select" id="ai-provider">
+                  <option value="gemini">Google Gemini</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic Claude</option>
+                  <option value="deepseek">DeepSeek</option><option value="groq">Groq</option><option value="mistral">Mistral</option><option value="ollama">Ollama (runs on your computer)</option>
+                </select>
+              </div>
+              <div class="field"><label for="ai-model">Model</label>
+                <select class="select" id="ai-model"></select>
+                <input class="input" id="ai-model-custom" type="text" placeholder="Type a model name" aria-label="Custom model name" hidden>
+                <button class="text-btn" type="button" id="ai-model-toggle" style="justify-self:start">Use a different model name</button>
+              </div>
+              <div class="field"><label for="ai-key">API key</label>
+                <div class="field-row"><input class="input mono" id="ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a key to use your own account"><button class="btn btn-secondary btn-icon" type="button" id="ai-key-eye" aria-label="Show key" aria-pressed="false"><svg class="icon"><use href="#i-eye"/></svg></button></div>
+                <span class="hint" id="ai-key-hint">No key stored.</span>
+              </div>
+              <div class="form-foot">
+                <button class="btn btn-primary" type="submit" id="btn-ai-save">Save and use this key</button>
+                <button class="btn btn-secondary" type="button" id="btn-ai-test"><svg class="icon"><use href="#i-play"/></svg><span>Test connection</span></button>
+                <button class="btn btn-danger" type="button" id="btn-ai-clear">Remove key</button>
+              </div>
+              <div id="fb-ai" role="status"></div>
+            </form>
+          </section>
+
+          <!-- Autofill -->
+          <section class="settings-panel" data-panel="autofill" aria-labelledby="h-auto">
+            <header><h2 id="h-auto">Autofill answers</h2><p>The browser extension uses these on application forms. It never guesses a legal answer: if you leave one on "Ask me", it stops and asks you on the page.</p></header>
+            <form id="form-autofill" class="form-grid">
+              <div class="field"><label for="auto-auth">Are you legally authorized to work in the target country?</label>
+                <select class="select" id="auto-auth"><option value="">Ask me each time</option><option value="yes">Yes</option><option value="no">No</option></select>
+              </div>
+              <div class="field"><label for="auto-visa">Do you need visa sponsorship?</label>
+                <select class="select" id="auto-visa"><option value="">Ask me each time</option><option value="no">No</option><option value="yes">Yes</option></select>
+              </div>
+              <div class="field"><label for="auto-notice">Availability</label>
+                <select class="select" id="auto-notice"><option value="">Ask me each time</option><option value="immediate">Available immediately</option><option value="2weeks">2 weeks notice</option><option value="1month">1 month notice</option></select>
+              </div>
+              <fieldset class="field"><legend class="label">When the form is filled</legend>
+                <div class="seg" role="radiogroup" aria-label="Submission mode" id="auto-mode"></div>
+                <span class="hint" id="auto-mode-hint"></span>
+              </fieldset>
+              <div class="form-foot"><button class="btn btn-primary" type="submit">Save answers</button><span id="fb-auto" role="status"></span></div>
+            </form>
+            <hr class="sep">
+            <header><h2 style="font-size:var(--text-md)">Try the question solver</h2><p>Paste a screening question. See the answer the extension would give, built from your resume.</p></header>
+            <form id="form-solve" class="form-grid">
+              <div class="field"><label for="solve-q">Employer question</label><textarea class="textarea" id="solve-q" placeholder="How many years of professional experience do you have with Python?"></textarea></div>
+              <div class="form-foot"><button class="btn btn-secondary" type="submit" id="btn-solve"><svg class="icon"><use href="#i-play"/></svg><span>Answer this question</span></button></div>
+              <div id="solve-out" aria-live="polite"></div>
+            </form>
+          </section>
+
+          <!-- Gmail -->
+          <section class="settings-panel" data-panel="gmail" aria-labelledby="h-gmail">
+            <header><h2 id="h-gmail">Gmail tracking</h2><p>JobHunter reads confirmation, interview and rejection emails to move applications for you. Use a Google app password, not your main password.</p></header>
+            <div class="mode-line" id="gmail-state" role="status"></div>
+            <form id="form-gmail" class="form-grid">
+              <div class="field"><label for="gm-email">Gmail address</label><input class="input" id="gm-email" type="email" autocomplete="email" placeholder="you@gmail.com"></div>
+              <div class="field"><label for="gm-pass">App password</label><input class="input mono" id="gm-pass" type="password" autocomplete="off" placeholder="xxxx xxxx xxxx xxxx"><span class="hint">Create one in your Google account under Security, then App passwords.</span></div>
+              <div class="form-foot"><button class="btn btn-primary" type="submit">Save and connect</button><button class="btn btn-secondary" type="button" id="btn-gmail-sync2"><svg class="icon"><use href="#i-refresh-cw"/></svg><span>Check now</span></button><span id="fb-gmail" role="status"></span></div>
+            </form>
+          </section>
+
+          <!-- Browser -->
+          <section class="settings-panel" data-panel="browser" aria-labelledby="h-browser">
+            <header><h2 id="h-browser">Browser and extension</h2><p>Open a Chromium browser with the JobHunter extension already loaded and signed in to your local service.</p></header>
+            <div><button class="btn btn-primary" id="btn-launch2" type="button"><svg class="icon"><use href="#i-globe"/></svg><span>Open browser with extension</span></button></div>
+            <div>
+              <h3 style="font-size:var(--text-md);margin-block-end:var(--s2)">Browsers found on this computer</h3>
+              <ul class="browser-list" id="browser-list"></ul>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<nav class="tabbar" aria-label="Main">
+  <a href="#/jobs" data-route="jobs"><svg class="icon"><use href="#i-search"/></svg>Jobs</a>
+  <a href="#/applications" data-route="applications"><svg class="icon"><use href="#i-square-kanban"/></svg>Applications</a>
+  <a href="#/documents" data-route="documents"><svg class="icon"><use href="#i-pen-line"/></svg>Documents</a>
+  <a href="#/resume" data-route="resume"><svg class="icon"><use href="#i-file-text"/></svg>Resume<span class="tab-dot" id="tab-resume-dot" hidden></span></a>
+  <a href="#/settings" data-route="settings"><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
+</nav>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<dialog id="job-drawer" class="drawer" aria-label="Job details"><div id="job-detail"></div></dialog>
+
+<dialog id="dlg-confirm" aria-labelledby="dlg-confirm-title">
+  <form method="dialog" class="dialog-body">
+    <h2 id="dlg-confirm-title"></h2>
+    <p id="dlg-confirm-text"></p>
+    <div class="dialog-foot">
+      <button class="btn btn-secondary" value="cancel" id="dlg-confirm-cancel">Keep it</button>
+      <button class="btn btn-danger-solid" value="ok" id="dlg-confirm-ok">Remove</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-keys" aria-labelledby="dlg-keys-title">
+  <form method="dialog" class="dialog-body">
+    <h2 id="dlg-keys-title">Keyboard shortcuts</h2>
+    <ul class="kbd-list">
+      <li><span>Focus the search box</span><kbd>/</kbd></li>
+      <li><span>Next job</span><kbd>j</kbd></li>
+      <li><span>Previous job</span><kbd>k</kbd></li>
+      <li><span>Save the selected job</span><kbd>s</kbd></li>
+      <li><span>Apply to the selected job</span><kbd>a</kbd></li>
+      <li><span>Go to Jobs, Applications, Documents</span><span><kbd>g</kbd> then <kbd>j</kbd> <kbd>a</kbd> <kbd>d</kbd></span></li>
+      <li><span>Show this list</span><kbd>?</kbd></li>
+    </ul>
+    <div class="dialog-foot"><button class="btn btn-primary" value="close">Close</button></div>
+  </form>
+</dialog>
+
+<div class="drop-overlay" id="drop-overlay" hidden><div>Drop your resume to add it</div></div>
+
+<script src="app.js"></script>
+</body>
+</html>
