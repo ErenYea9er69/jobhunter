@@ -140,6 +140,7 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
                 status="ok",
                 data={
                     "profiles": profiles,
+                    "active": active or "",
                     "active_profile": active or "",
                     "count": len(profiles),
                 },
@@ -377,8 +378,28 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/profile/activate":
             name = body.get("name", "")
-            success = registry.set_active_variant(name)
-            return self._send_json(200, envelope(status="ok" if success else "error", data={"active_profile": name, "success": success}))
+            pid = body.get("id")
+            var = registry.get_variant(pid) if pid else None
+            if not var and name:
+                var = registry.get_variant(name)
+            target_id = (var.get("id") if var else None) or pid or name
+            activated_in_db = False
+            try:
+                db.set_active_resume_profile(target_id)
+                activated_in_db = True
+            except Exception:
+                for p in db.list_resume_profiles():
+                    if p.get("name") == name or p.get("id") == target_id:
+                        try:
+                            db.set_active_resume_profile(p["id"])
+                            activated_in_db = True
+                            break
+                        except Exception:
+                            pass
+            reg_name = (var.get("name") if var else None) or name or target_id
+            success_reg = registry.set_active_variant(reg_name) if reg_name else False
+            success = activated_in_db or success_reg
+            return self._send_json(200, envelope(status="ok" if success else "error", data={"active_profile": reg_name, "active": reg_name, "success": success}))
 
         if path == "/api/desktop/launch-browser-extension":
             browser = body.get("browser", "auto")

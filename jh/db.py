@@ -597,12 +597,23 @@ def list_resume_profiles():
         try:
             d = json.loads(r["data_json"])
             skills = d.get("skills", [])
-            years = d.get("years_of_experience", 0)
-            exp_count = len(d.get("experience", []))
+            experience = d.get("experience", [])
+            email = d.get("email", "")
+            phone = d.get("phone", "")
+            location = d.get("location", "")
+            linkedin = d.get("linkedin", "")
+            github = d.get("github", "")
+            website = d.get("website", "")
+            years = d.get("total_experience_years") or d.get("years_of_experience", 0)
+            exp_count = len(experience)
             work_mode = d.get("work_mode", "Any")
             min_salary = d.get("min_salary", 0)
+            raw_fn = d.get("filename") or d.get("_source_file", "")
+            filename = os.path.basename(raw_fn) if raw_fn else ""
         except Exception:
             skills = []
+            experience = []
+            email = phone = location = linkedin = github = website = filename = ""
             years = 0
             exp_count = 0
             work_mode = "Any"
@@ -624,7 +635,17 @@ def list_resume_profiles():
             "updated_at": r["updated_at"],
             "skills_count": len(skills),
             "top_skills": skills[:6],
+            "skills": skills,
+            "experience": experience,
+            "email": email,
+            "phone": phone,
+            "location": location,
+            "linkedin": linkedin,
+            "github": github,
+            "website": website,
+            "filename": filename,
             "years_of_experience": years,
+            "experience_years": years,
             "experience_count": exp_count,
             "work_mode": work_mode,
             "min_salary": min_salary
