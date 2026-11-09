@@ -64,12 +64,55 @@ RESUME_HEURISTIC_WORDS = {
 }
 
 
+def is_jobhunter_workspace(path: str | Path) -> bool:
+    """Check if the given directory is an active JobHunter workspace.
+
+    A directory is a JobHunter workspace if:
+    - It contains a .jobhunter/ directory
+    - It contains a resumes/ directory
+    - It is the JobHunter repository itself (contains jh/ and mcp_server.py)
+    - It contains any resume documents
+    """
+    p = Path(path).resolve()
+    if not p.is_dir():
+        return False
+    if (p / ".jobhunter").is_dir():
+        return True
+    if (p / "resumes").is_dir():
+        return True
+    if (p / "jh").is_dir() and (p / "mcp_server.py").is_file():
+        return True
+    try:
+        for ext in ("*.pdf", "*.docx", "*.txt"):
+            for f in p.glob(ext):
+                if f.stem.lower() not in NON_RESUME_FILENAMES:
+                    return True
+    except OSError:
+        pass
+    return False
+
+
 def detect_workspace() -> Path:
-    """Determine workspace root from JH_WORKSPACE environment variable or current directory."""
+    """Determine workspace root.
+
+    Priority:
+    1. JH_WORKSPACE environment variable (if set and points to an existing directory).
+    2. Current working directory (os.getcwd()), IF it is an active JobHunter workspace.
+    3. BASE_DIR (the JobHunter repository root).
+    """
     env_ws = os.environ.get("JH_WORKSPACE")
     if env_ws and os.path.isdir(env_ws):
         return Path(env_ws).resolve()
-    return Path(os.getcwd()).resolve()
+
+    cwd = Path(os.getcwd()).resolve()
+    if is_jobhunter_workspace(cwd):
+        return cwd
+
+    from . import config
+    if getattr(config, "BASE_DIR", None) and os.path.isdir(config.BASE_DIR):
+        return Path(config.BASE_DIR).resolve()
+
+    return cwd
 
 
 def ensure_jobhunter_dir(workspace_path: str | Path) -> Path:

@@ -40,6 +40,7 @@ def register_team(mcp: Any, tool: Callable, registry: dict[str, Callable], store
         Args:
             request: What the client asked, in their words.
             hints: Optional structured details so nothing is guessed. Keys: intent, reference, role, location, country, job_id, work_mode,
+                mode ('step_by_step' to ask questions at each stage, or 'auto' to run automatically),
                 limit (jobs to return, up to 25), min_score, company_focus, small_employers (true to favour small and local
                 employers), verify_live (false to skip link checks), polish (true to get a writing work order for the
                 cover letter), track (false to not add the application to the tracker), archetype, text and kind (a draft to

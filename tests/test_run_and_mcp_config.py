@@ -52,6 +52,23 @@ class TestMCPConfigurator(unittest.TestCase):
         self.assertIn("other_tool", data["mcpServers"])
         self.assertIn("jobhunter", data["mcpServers"])
 
+    def test_register_with_antigravity_custom_path(self):
+        fake_ag_dir = self.ws / "fake_gemini" / "config"
+        fake_ag_dir.mkdir(parents=True)
+        config_file = fake_ag_dir / "mcp_config.json"
+        config_file.write_text(json.dumps({"mcpServers": {"rea": {"command": "node"}}}), encoding="utf-8")
+
+        res = mcp_configurator.register_with_antigravity(
+            str(self.ws),
+            python_exe=sys.executable,
+            target_path=str(config_file),
+        )
+        self.assertTrue(res["success"])
+        data = json.loads(config_file.read_text(encoding="utf-8"))
+        self.assertIn("rea", data["mcpServers"])
+        self.assertIn("jobhunter", data["mcpServers"])
+        self.assertEqual(data["mcpServers"]["jobhunter"]["env"]["JH_WORKSPACE"], str(self.ws))
+
     def test_run_parse_args(self):
         import run
         args = run.parse_args(["--set-key", "AIzaTest123", "--provider", "gemini", "--model", "gemini-3.8-flash"])

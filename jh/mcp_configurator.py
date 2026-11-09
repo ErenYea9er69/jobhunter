@@ -30,6 +30,12 @@ def get_default_claude_desktop_path() -> Path:
         return home / ".config" / "Claude" / "claude_desktop_config.json"
 
 
+def get_default_antigravity_config_path() -> Path:
+    """Returns the path to ~/.gemini/config/mcp_config.json."""
+    home = Path.home()
+    return home / ".gemini" / "config" / "mcp_config.json"
+
+
 def get_mcp_config_dict(workspace_dir: str | Path, python_exe: str | None = None) -> dict[str, Any]:
     """Generates the standard MCP server connection dict for this repository."""
     ws = str(Path(workspace_dir).resolve())
@@ -128,6 +134,48 @@ def register_with_cursor(
         }
 
 
+def register_with_antigravity(
+    workspace_dir: str | Path,
+    python_exe: str | None = None,
+    target_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Registers JobHunter in the Antigravity configuration file (~/.gemini/config/mcp_config.json)."""
+    config_file = Path(target_path).resolve() if target_path else get_default_antigravity_config_path()
+    cfg_dict = get_mcp_config_dict(workspace_dir, python_exe)
+
+    try:
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        existing_data: dict[str, Any] = {}
+        if config_file.exists():
+            try:
+                existing_data = json.loads(config_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                log.warning("Could not read existing Antigravity config: %s", e)
+                existing_data = {}
+
+        if not isinstance(existing_data, dict):
+            existing_data = {}
+
+        mcp_servers = existing_data.setdefault("mcpServers", {})
+        mcp_servers["jobhunter"] = cfg_dict
+
+        config_file.write_text(json.dumps(existing_data, indent=2), encoding="utf-8")
+        return {
+            "success": True,
+            "path": str(config_file),
+            "client": "Antigravity",
+            "server_name": "jobhunter",
+        }
+    except Exception as e:
+        log.error("Failed to update Antigravity configuration: %s", e)
+        return {
+            "success": False,
+            "error": str(e),
+            "path": str(config_file),
+            "client": "Antigravity",
+        }
+
+
 def auto_register_all(workspace_dir: str | Path) -> list[dict[str, Any]]:
     """Attempts automatic registration for all detected AI clients and returns a report."""
     results = []
@@ -147,6 +195,19 @@ def auto_register_all(workspace_dir: str | Path) -> list[dict[str, Any]]:
             "client": "Claude Desktop",
             "reason": "Claude Desktop folder not detected",
             "path": str(claude_path),
+        })
+
+    # 3. Antigravity config
+    ag_path = get_default_antigravity_config_path()
+    if ag_path.parent.exists():
+        res_ag = register_with_antigravity(workspace_dir)
+        results.append(res_ag)
+    else:
+        results.append({
+            "success": False,
+            "client": "Antigravity",
+            "reason": "Antigravity config directory not detected",
+            "path": str(ag_path),
         })
 
     return results

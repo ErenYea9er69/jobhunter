@@ -122,6 +122,7 @@ class Mission:
     stats: dict = field(default_factory=dict)
     t0: float = field(default_factory=time.monotonic)
     budget: float = 50.0
+    mode: str = ""
 
     def say(self, line: str) -> None:
         self.facts.append(line)
@@ -158,6 +159,22 @@ def coerce_hints(hints: Any) -> dict[str, Any]:
         except ValueError:
             return {}
     return {}
+
+
+def detect_execution_mode(request: str, hints: dict) -> str:
+    """Detect whether the client chose 'step_by_step' or 'auto'."""
+    mode_hint = str(hints.get("mode") or "").strip().lower()
+    if mode_hint in ("step_by_step", "step-by-step", "step", "step_by_step_mode", "guided"):
+        return "step_by_step"
+    if mode_hint in ("auto", "auto_run", "autorun", "all"):
+        return "auto"
+
+    req_lower = request.lower()
+    if re.search(r"\b(?:step[- ]by[- ]step|one step at a time|ask me (?:questions|first)|guided)\b", req_lower):
+        return "step_by_step"
+    if re.search(r"\b(?:auto(?:matically)?(?: run)?|run everything|do everything|all at once|end[- ]to[- ]end)\b", req_lower):
+        return "auto"
+    return ""
 
 
 # ------------------------------------------------------------------ the CEO
@@ -205,7 +222,9 @@ class CEO(ExtraIntents):
     def run(self, request: str, hints: Optional[dict] = None) -> dict[str, Any]:
         hints = coerce_hints(hints)
         p = self._understand(request, hints)
-        m = Mission(id=missions.new_id(), request=request, parsed=p, hints=hints, budget=float(h.clamp(hints.get("budget_s") or 50, 10, 110)))
+        mode = detect_execution_mode(request, hints)
+        m = Mission(id=missions.new_id(), request=request, parsed=p, hints=hints,
+                    budget=float(h.clamp(hints.get("budget_s") or 50, 10, 110)), mode=mode)
         handlers = {"setup": self._setup, "hunt": self._hunt, "apply": self._apply_flow, "interview": self._interview,
                     "outreach": self._outreach, "skills": self._skills, "status": self._status,
                     "recheck": self._recheck, "help": self._help, "explain": self._explain, "track": self._track,
@@ -852,6 +871,22 @@ class CEO(ExtraIntents):
         else:
             headline = "Done."
         m.summary["review_stats"] = dict(m.stats)
+        if m.mode == "step_by_step":
+            m.summary["mode"] = "step_by_step"
+            if m.jobs and not any("Which job" in d for d in m.decisions):
+                m.decisions.append("Which job do you want to target next? You can say 'the first one' or give a job id.")
+        elif m.mode == "auto":
+            m.summary["mode"] = "auto"
+        else:
+            m.summary["mode"] = "unspecified"
+            is_exploratory = bool(set(m.parsed.intents) & {"hunt", "setup", "help", "unclear"})
+            if is_exploratory:
+                mode_prompt = "Do you want to proceed step by step or auto run everything? (Step by step is recommended so I ask you questions at each stage and do not guess anything.)"
+                mode_step = "Choose 'step by step' to answer questions at each stage without guessing, or 'auto run' to run everything automatically."
+                if (m.jobs or m.decisions) and not any("step by step" in d.lower() for d in m.decisions):
+                    m.decisions.append(mode_prompt)
+                if not any("step by step" in s.lower() for s in m.next_steps):
+                    m.next_steps.insert(0, mode_step)
         report = self._report_text(m, status, headline)
         brief_text = brief_mod.build(headline=headline, status=status, jobs=m.jobs, removed=m.removed, docs=m.docs, decisions=m.decisions,
                                      blocked=m.blocked, insights=m.insights, not_verified=m.not_verified, next_steps=m.next_steps, facts=m.facts)
