@@ -1,10 +1,14 @@
 """Application tracker, watchlist, and the prepare-application bundle."""
 import datetime
 import json
+import logging
+import threading
 import time
 
 from . import db, sources as src, refit, ats
 from .util import days_since, now_iso, clean_text
+
+log = logging.getLogger("jobhunter.tracker")
 
 STATUSES = ["saved", "queued", "applied", "interview", "offer", "rejected"]  # "rejected" is the Archived column in the UI
 FOLLOW_UP_DAYS = {"applied": 7, "interview": 3, "offer": 2}
@@ -99,6 +103,93 @@ def upsert_application(data):
         if old is None or old["status"] != status:
             c.execute("INSERT INTO status_history (app_id,status,changed_at) VALUES (?,?,?)", (app_id, status, now))
     return app_id
+
+
+def auto_tailor_application(app_id: str, profile: dict | None = None, background: bool = True):
+    """Automatically tailor a resume variant and generate a cover letter for a saved application.
+
+    If background=True, runs asynchronously on a daemon thread so the save action returns instantly (Option A).
+    Updates applications.tailored_resume_json and cover_letter in SQLite, and registers the tailored variant.
+    """
+    def _run():
+        try:
+            with db.session() as c:
+                row = c.execute("SELECT * FROM applications WHERE id=?", (app_id,)).fetchone()
+            if not row:
+                return
+
+            # Check if tailored assets already exist
+            if row["tailored_resume_json"] and row["cover_letter"]:
+                return
+
+            # Reconstruct job dict
+            job = json.loads(row["job_data_json"]) if row["job_data_json"] else {}
+            if not job or len(job.get("description", "")) < 30:
+                if row["job_id"]:
+                    stored_job = db.get_job(row["job_id"])
+                    if stored_job:
+                        job = dict(stored_job)
+            if not job:
+                job = {
+                    "id": row["job_id"] or app_id,
+                    "title": row["title"],
+                    "company": row["company"],
+                    "location": row["location"],
+                    "salary": row["salary"],
+                    "description": row["notes"] or f"{row['title']} at {row['company']}"
+                }
+
+            # Resolve profile
+            prof = profile
+            if not prof or prof.get("_is_empty"):
+                prof = db.get_profile()
+            if not prof or prof.get("_is_empty"):
+                active_profiles = db.list_resume_profiles()
+                for p in active_profiles:
+                    if p.get("is_active"):
+                        raw_data = p.get("data") or p
+                        if isinstance(raw_data, str):
+                            raw_data = json.loads(raw_data)
+                        prof = raw_data
+                        break
+            if not prof or prof.get("_is_empty"):
+                return
+
+            # Generate custom resume & cover letter
+            custom = refit.generate_custom_resume(job, prof)
+            tailored_resume = custom.get("tailored_resume") or custom
+            pitch = refit.generate_cover_pitch(job, prof)
+            cover_letter = pitch.get("full_text") or ""
+
+            now = now_iso()
+            with db.session() as c:
+                c.execute(
+                    "UPDATE applications SET tailored_resume_json=?, cover_letter=?, updated_at=? WHERE id=?",
+                    (json.dumps(tailored_resume), cover_letter, now, app_id)
+                )
+
+            # Register tailored variant into resume_profiles for UI & extension
+            comp = row["company"] or "Tailored"
+            tit = row["title"] or "Role"
+            var_name = f"{comp} - {tit}"
+            var_id = f"var_tailored_{app_id.replace('-', '_')}"
+            tailored_profile = dict(tailored_resume)
+            tailored_profile["_profile_id"] = var_id
+            tailored_profile["_profile_name"] = var_name
+            tailored_profile["source_job_id"] = row["job_id"] or ""
+            tailored_profile["source_company"] = comp
+            tailored_profile["source_job_title"] = tit
+            db.save_profile(tailored_profile, profile_id=var_id)
+        except Exception as e:
+            log.warning("Auto-tailoring failed for application %s: %s", app_id, e)
+
+    if background:
+        th = threading.Thread(target=_run, daemon=True, name=f"jh-tailor-{app_id}")
+        th.start()
+        return th
+    else:
+        _run()
+        return None
 
 
 def delete_application(app_id):

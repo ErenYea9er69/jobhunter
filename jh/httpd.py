@@ -374,6 +374,8 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/applications":
             app_id = tracker.upsert_application(body)
+            if body.get("status") == "saved":
+                tracker.auto_tailor_application(app_id, background=True)
             return self._send_json(200, envelope(status="ok", data={"application_id": app_id}))
 
         if path == "/api/profile/activate":

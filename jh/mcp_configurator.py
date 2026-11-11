@@ -46,6 +46,7 @@ def get_mcp_config_dict(workspace_dir: str | Path, python_exe: str | None = None
         "args": [server_script],
         "env": {
             "JH_WORKSPACE": ws,
+            "PYTHONIOENCODING": "utf-8",
         },
     }
 

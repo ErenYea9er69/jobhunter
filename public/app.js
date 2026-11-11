@@ -796,7 +796,16 @@
       if (existing.status === status || status === "saved") return existing;
       await apiPost("/api/applications", { id: existing.id, status });
     } else {
-      await apiPost("/api/applications", { title: j.title || "", company: j.company || "", url: jobUrl(j), status });
+      await apiPost("/api/applications", {
+        title: j.title || "",
+        company: j.company || "",
+        location: j.location || "",
+        salary: j.salary || "",
+        url: jobUrl(j),
+        status,
+        job_id: j.id || j.job_key || "",
+        job_data: j
+      });
     }
     await reloadApps();
     return findApp(j);
@@ -817,7 +826,7 @@
     try {
       await saveJob(j, "saved");
       refreshJobViews();
-      toast("Saved to Applications.", { action: { label: "View", run: () => go("applications") } });
+      toast("Saved! Tailoring resume & cover letter...", { action: { label: "View", run: () => go("applications") } });
     } catch (e) { toast(e.message, { kind: "bad" }); }
   }
 
@@ -972,12 +981,18 @@
   }
 
   function appCardHtml(a) {
+    const hasTailored = Boolean(a.tailored_resume || a.cover_letter);
+    const tailoredBadge = hasTailored
+      ? `<span class="badge" title="Tailored resume and cover letter ready">${icon("file-text", "icon-sm")} Tailored Ready</span>`
+      : (a.status === "saved" ? `<span class="badge" style="opacity:0.75" title="Tailoring in background...">${icon("refresh-cw", "icon-sm")} Tailoring...</span>` : "");
     return `<article class="app-card" draggable="true" data-id="${esc(a.id)}">
       <div class="app-title" dir="auto">${esc(a.title || "Untitled role")}</div>
       <div class="app-co" dir="auto">${esc(a.company || "Company not listed")}</div>
+      ${tailoredBadge ? `<div style="margin-block:var(--s1)">${tailoredBadge}</div>` : ""}
       ${noteHtml(a.notes)}
       <div class="app-actions">
         <span class="menu-wrap"><button class="btn btn-secondary btn-sm" type="button" data-move aria-haspopup="menu" aria-expanded="false">Move to${icon("chevron-down", "icon-sm")}</button></span>
+        ${hasTailored ? `<button class="btn btn-quiet btn-sm" type="button" data-view-tailored="${esc(a.id)}">${icon("file-text", "icon-sm")}<span>Docs</span></button>` : ""}
         ${a.url ? `<span class="grow"><a class="btn btn-quiet btn-sm btn-icon" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" aria-label="Open posting for ${esc(a.title || "this role")}">${icon("external-link", "icon-sm")}</a></span>` : ""}
       </div>
     </article>`;
@@ -1144,6 +1159,22 @@
     });
 
     byId("board").addEventListener("click", (e) => {
+      const v = e.target.closest("[data-view-tailored]");
+      if (v) {
+        const id = v.dataset.viewTailored;
+        const a = state.apps.find((x) => String(x.id) === String(id));
+        if (a) {
+          byId("d-title").value = a.title || "";
+          byId("d-company").value = a.company || "";
+          const desc = (a.job_data && a.job_data.description) || a.notes || "";
+          byId("d-desc").value = desc;
+          if (a.cover_letter) {
+            renderDoc({ text: a.cover_letter, kind: "cover-letter", title: `Cover letter for ${a.company}` });
+          }
+          go("documents");
+        }
+        return;
+      }
       const mv = e.target.closest("[data-move]");
       if (mv) {
         const id = mv.closest(".app-card").dataset.id;

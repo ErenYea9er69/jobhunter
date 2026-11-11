@@ -389,9 +389,12 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
                 warnings.append("No source returned jobs. Check source_health, your network, or widen the query.")
             else:
                 warnings.append("Sources returned jobs but your filters removed them. Try lower min_score, a wider location, or company_focus 'any'.")
+        from . import scoring
+        detected_roles = scoring.derive_target_roles(profile) if profile and not profile.get("_is_empty") else []
         data = {"query": res["query"], "count": res["count"], "total_found": res["total_stored"], "jobs": h.cards(res["jobs"], limit),
                 "coverage": res["coverage"], "sources": statuses, "elapsed_ms": res["elapsed_ms"],
-                "fallback_notice": res.get("fallback_notice", ""), "profile_used": bool(not res.get("profile_empty"))}
+                "fallback_notice": res.get("fallback_notice", ""), "profile_used": bool(not res.get("profile_empty")),
+                "detected_target_roles": detected_roles}
         return Result(data, warnings, [s["source"] for s in statuses if s["state"] in ("ok", "cached")], "partial" if res.get("partial") else "ok")
 
     @tool
@@ -907,6 +910,8 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         if existing:
             data["tailored_resume"], data["cover_letter"] = existing.get("tailored_resume"), existing.get("cover_letter", "")
         app_id = tracker.upsert_application(data)
+        if status == "saved":
+            tracker.auto_tailor_application(app_id, background=True)
         app = next(a for a in tracker.list_applications() if a["id"] == app_id)
         return {"application": {k: app[k] for k in ("id", "company", "title", "status", "follow_up_date", "url", "notes")},
                 "updated_existing": bool(existing)}
