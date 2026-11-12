@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import ai_manager, bigtech_directory, db, email_finder, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, screening, tracker, workspace
+from . import ai_manager, bigtech_directory, db, email_finder, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, save_flow, screening, tracker, workspace
 from . import mcp_helpers as h
 from .mcp_helpers import envelope
 from .team import qa
@@ -85,6 +85,8 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
         registry = resume_registry.ResumeRegistry(ws_dir)
 
         # 1. API routes
+        if path == "/health":
+            return self._send_json(200, {"status": "ok", "time": db.now_iso()})
         if path == "/api/ai/status":
             st = ai_manager.get_ai_status()
             return self._send_json(200, envelope(status="ok", data=st))
@@ -207,6 +209,42 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             companies = bigtech_directory.list_bigtech_companies()
             return self._send_json(200, envelope(status="ok", data={"companies": companies}))
 
+        if path == "/api/radar/status":
+            from . import radar
+            r_state = db.get_radar_state()
+            with db.session() as c:
+                unread = c.execute("SELECT COUNT(*) FROM jobs WHERE is_new=1").fetchone()[0]
+            return self._send_json(200, envelope(status="ok", data={
+                "status": r_state.get("status", "idle"),
+                "interval_seconds": r_state.get("interval_seconds", 600),
+                "failure_count": r_state.get("failure_count", 0),
+                "last_poll_at": r_state.get("last_poll_at"),
+                "next_poll_at": r_state.get("next_poll_at"),
+                "last_error": r_state.get("last_error", ""),
+                "unread_count": unread,
+                "radar_state": r_state,
+            }))
+
+        if path == "/api/radar/events":
+            from . import radar
+            evt = radar.get_latest_event()
+            return self._send_json(200, envelope(status="ok", data={"event": evt}))
+
+        if path == "/api/refresh/status":
+            from . import refresh_scheduler
+            res = refresh_scheduler.get_all_refresh_status()
+            return self._send_json(200, envelope(status="ok", data=res))
+
+        if path == "/api/cleanup/status":
+            res = db.get_cleanup_status()
+            with db.session() as c:
+                warning_jobs = c.execute("""
+                    SELECT id, title, company, location, delete_at FROM jobs
+                    WHERE freshness_state='expired' AND keep_flag=0 AND delete_at IS NOT NULL
+                """).fetchall()
+            res["warning_jobs"] = [dict(j) for j in warning_jobs]
+            return self._send_json(200, envelope(status="ok", data=res))
+
         # 2. Static files from public/
         self._serve_static(path)
 
@@ -219,6 +257,36 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
 
         ws_dir = getattr(self.server, "ws_dir", Path.cwd())
         registry = resume_registry.ResumeRegistry(ws_dir)
+
+        if path == "/api/radar/ack":
+            from . import radar
+            job_ids = body.get("job_ids") or []
+            affected = radar.ack_radar_jobs(job_ids=job_ids)
+            return self._send_json(200, envelope(status="ok", data={"acknowledged": True, "count": affected}))
+
+        if path == "/api/refresh":
+            from . import refresh_scheduler
+            source = body.get("source")
+            force = bool(body.get("force", False))
+            res = refresh_scheduler.run_refresh(source=source, force=force)
+            return self._send_json(200, envelope(status="ok", data=res))
+
+        if path == "/api/cleanup/keep":
+            from . import lifecycle
+            job_ids = body.get("job_ids") or []
+            kept = lifecycle.keep_jobs(job_ids)
+            return self._send_json(200, envelope(status="ok", data={"kept_count": kept}))
+
+        if path == "/api/cleanup/ack":
+            db.ack_deletions()
+            return self._send_json(200, envelope(status="ok", data={"acknowledged": True}))
+
+        if path == "/api/jobs/check-liveness":
+            from . import lifecycle
+            url = body.get("url") or ""
+            job_id = body.get("job_id")
+            res = lifecycle.liveness_check(url=url, job_id=job_id)
+            return self._send_json(200, envelope(status="ok", data=res))
 
         if path == "/api/ai/config":
             provider = body.get("provider", "gemini")
@@ -372,10 +440,45 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             app_id = tracker.upsert_application(app_data)
             return self._send_json(200, envelope(status="ok", data={"application_id": app_id}))
 
+        if path == "/api/jobs/save":
+            job_id = body.get("job_id") or body.get("id") or body.get("key")
+            force = bool(body.get("force", False))
+            confirm_closed = bool(body.get("confirm_closed", False))
+            background = bool(body.get("background", False))
+            if not job_id and not body.get("title"):
+                return self._send_json(400, envelope(status="error", error={"code": "missing_job", "message": "job_id or job payload required"}))
+            res = save_flow.handle_save_job(body if not job_id else job_id, force=force, confirm_closed=confirm_closed, background=background)
+            if res.get("status") == "needs_confirm":
+                return self._send_json(200, envelope(status="needs_confirm", data=res))
+            if res.get("status") == "low_fit":
+                return self._send_json(200, envelope(status="low_fit", data=res))
+            return self._send_json(200, envelope(status="ok", data=res))
+
+        if path == "/api/jobs/dismiss":
+            job_id = body.get("job_id") or body.get("id") or ""
+            reason = body.get("reason", "")
+            if not job_id:
+                return self._send_json(400, envelope(status="error", error={"code": "missing_job_id", "message": "job_id is required"}))
+            res = save_flow.handle_dismiss_job(job_id, reason)
+            return self._send_json(200, envelope(status="ok", data=res))
+
+        if path == "/api/generate":
+            job_id = body.get("job_id") or body.get("id") or ""
+            force = bool(body.get("force", True))
+            if not job_id:
+                return self._send_json(400, envelope(status="error", error={"code": "missing_job_id", "message": "job_id is required"}))
+            # Rule 4 & Decision D: Generate on save only
+            if not save_flow.is_job_saved(job_id):
+                return self._send_json(400, envelope(status="error", error={"code": "not_saved", "message": "Resume and cover letter generation is only allowed for saved jobs. Please save the job first."}))
+            res = save_flow.handle_save_job(job_id, force=force)
+            return self._send_json(200, envelope(status="ok", data=res))
+
         if path == "/api/applications":
-            app_id = tracker.upsert_application(body)
             if body.get("status") == "saved":
-                tracker.auto_tailor_application(app_id, background=True)
+                res = save_flow.handle_save_job(body, force=body.get("force", False), confirm_closed=body.get("confirm_closed", False), background=True)
+                app_id = res.get("application_id")
+                return self._send_json(200, envelope(status="ok", data={"application_id": app_id, "save_flow": res}))
+            app_id = tracker.upsert_application(body)
             return self._send_json(200, envelope(status="ok", data={"application_id": app_id}))
 
         if path == "/api/profile/activate":

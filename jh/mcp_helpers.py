@@ -68,19 +68,32 @@ def make_tool_decorator(mcp: Any) -> Callable:
     def tool(fn: Callable) -> Callable:
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
+            from . import home, db
+            home.ensure_home_dirs()
+            db.init_db()
             cid, t0 = correlation_id(), time.time()
+            first_notice = home.get_first_reply_notice()
             try:
                 out = fn(*args, **kwargs)
                 res = out if isinstance(out, Result) else Result(data=out if isinstance(out, dict) else {"result": out})
-                env = envelope(res.status, res.data, res.warnings, res.sources, cid)
+                warnings = list(res.warnings)
+                if first_notice and first_notice not in warnings:
+                    warnings.insert(0, first_notice)
+                env = envelope(res.status, res.data, warnings, res.sources, cid)
                 outcome = res.status
             except ToolError as e:
-                env = envelope("error", warnings=[str(e)], cid=cid,
+                warnings = [str(e)]
+                if first_notice:
+                    warnings.insert(0, first_notice)
+                env = envelope("error", warnings=warnings, cid=cid,
                                error={"code": e.code, "message": str(e), "hint": e.hint})
                 outcome = "error"
             except Exception as e:  # never leak a traceback to the model
                 log.exception("Tool %s failed", fn.__name__)
-                env = envelope("error", warnings=[f"{fn.__name__} failed: {str(e)[:160]}"], cid=cid,
+                warnings = [f"{fn.__name__} failed: {str(e)[:160]}"]
+                if first_notice:
+                    warnings.insert(0, first_notice)
+                env = envelope("error", warnings=warnings, cid=cid,
                                error={"code": "internal_error", "message": str(e)[:160], "hint": "Check the server log."})
                 outcome = "error"
             try:

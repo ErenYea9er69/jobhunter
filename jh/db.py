@@ -9,10 +9,10 @@ import threading
 import uuid
 
 from . import config
-from .util import now_iso, parse_salary, annualize, clean_text, clean_job_type
+from .util import now_iso, parse_salary, annualize, clean_text, clean_job_type, parse_date
 
 _init_lock = threading.Lock()
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 EMPTY_PROFILE = {
     "name": "", "email": "", "phone": "", "location": "", "linkedin": "", "github": "",
@@ -162,8 +162,8 @@ def classify_job(j):
     # 6. Salary parsing
     sal_info = parse_salary(j.get("salary"))
     ann = annualize(sal_info) if sal_info else None
-    min_sal = float(ann[0]) if ann else 0.0
-    max_sal = float(ann[1]) if ann else 0.0
+    min_sal = float(ann[0]) if ann else float(j.get("min_salary") or 0.0)
+    max_sal = float(ann[1]) if ann else float(j.get("max_salary") or 0.0)
 
     # 7. Industry
     ind = "Tech & Software"
@@ -208,6 +208,8 @@ def classify_job(j):
 
 
 def connect():
+    if config.DB_PATH:
+        os.makedirs(os.path.dirname(os.path.abspath(config.DB_PATH)), exist_ok=True)
     conn = sqlite3.connect(config.DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -345,6 +347,208 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_country ON search_jobs(country)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_best_prof ON search_jobs(best_profile_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_resume_profiles_live ON resume_profiles(is_live)")
+
+        # ------------------------------------------------------------- Phase B2: Upgrade v5 schema
+        # 1. Profile migration
+        prof_cols = _columns(c, "profile")
+        for col, col_type in [
+            ("roles", "TEXT DEFAULT ''"),
+            ("years", "REAL DEFAULT 0"),
+            ("skills", "TEXT DEFAULT ''"),
+            ("resume_path", "TEXT DEFAULT ''"),
+        ]:
+            if col not in prof_cols:
+                c.execute(f"ALTER TABLE profile ADD COLUMN {col} {col_type}")
+
+        # Backfill profile row 1 columns if data JSON exists
+        prof_row = c.execute("SELECT id, data, roles FROM profile WHERE id=1").fetchone()
+        if prof_row and prof_row["data"] and not prof_row["roles"]:
+            try:
+                p_data = json.loads(prof_row["data"])
+                p_roles = json.dumps(p_data.get("target_roles") or [])
+                p_skills = json.dumps(p_data.get("skills") or [])
+                p_years = float(p_data.get("years_of_experience") or 0)
+                p_path = str(p_data.get("resume_path") or "")
+                c.execute("UPDATE profile SET roles=?, years=?, skills=?, resume_path=? WHERE id=1", (p_roles, p_years, p_skills, p_path))
+            except Exception:
+                pass
+
+        # 2. Applications migration
+        app_cols = _columns(c, "applications")
+        for col, col_type in [
+            ("resume_path", "TEXT DEFAULT ''"),
+            ("cover_letter_path", "TEXT DEFAULT ''"),
+            ("fit_score", "INTEGER DEFAULT 0"),
+            ("grounding_result", "TEXT DEFAULT ''"),
+        ]:
+            if col not in app_cols:
+                c.execute(f"ALTER TABLE applications ADD COLUMN {col} {col_type}")
+
+        # 3. session_state
+        c.execute("""CREATE TABLE IF NOT EXISTS session_state (
+            id INTEGER PRIMARY KEY,
+            current_state TEXT DEFAULT '',
+            last_tool TEXT DEFAULT '',
+            updated_at TEXT NOT NULL
+        )""")
+
+        # 4. view_filters
+        c.execute("""CREATE TABLE IF NOT EXISTS view_filters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT DEFAULT 'default',
+            job_style TEXT DEFAULT '',
+            roles TEXT DEFAULT '',
+            work_mode TEXT DEFAULT '',
+            locations TEXT DEFAULT '',
+            relocation INTEGER DEFAULT 0,
+            visa_need INTEGER DEFAULT 0,
+            visa_countries TEXT DEFAULT '',
+            min_salary REAL DEFAULT 0,
+            currency TEXT DEFAULT 'USD',
+            period TEXT DEFAULT 'year',
+            contract_types TEXT DEFAULT '',
+            seniority TEXT DEFAULT '',
+            company_sizes TEXT DEFAULT '',
+            industries TEXT DEFAULT '',
+            excluded_companies TEXT DEFAULT '',
+            excluded_keywords TEXT DEFAULT '',
+            posting_age INTEGER DEFAULT 30,
+            show_unknown_salary INTEGER DEFAULT 1,
+            updated_at TEXT NOT NULL
+        )""")
+
+        # 5. jobs (unified lifecycle table)
+        c.execute("""CREATE TABLE IF NOT EXISTS jobs (
+            id TEXT PRIMARY KEY,
+            job_key TEXT UNIQUE,
+            title TEXT NOT NULL,
+            company TEXT NOT NULL,
+            location TEXT DEFAULT '',
+            work_mode TEXT DEFAULT '',
+            source TEXT DEFAULT '',
+            url TEXT DEFAULT '',
+            url_hash TEXT DEFAULT '',
+            fingerprint TEXT DEFAULT '',
+            description TEXT DEFAULT '',
+            score INTEGER DEFAULT 0,
+            fit_score INTEGER DEFAULT 0,
+            opportunity_score INTEGER DEFAULT 0,
+            found_at TEXT DEFAULT '',
+            first_seen_at TEXT DEFAULT '',
+            last_seen_at TEXT DEFAULT '',
+            is_new INTEGER DEFAULT 1,
+            seen_by_user INTEGER DEFAULT 0,
+            repost_count INTEGER DEFAULT 0,
+            possible_duplicate INTEGER DEFAULT 0,
+            freshness_state TEXT DEFAULT 'active',
+            delete_at TEXT DEFAULT NULL,
+            keep_flag INTEGER DEFAULT 0,
+            closed_checked_at TEXT DEFAULT NULL,
+            job_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        jobs_cols = _columns(c, "jobs")
+        for col, col_type in [
+            ("source", "TEXT DEFAULT ''"),
+            ("url_hash", "TEXT DEFAULT ''"),
+            ("fingerprint", "TEXT DEFAULT ''"),
+            ("found_at", "TEXT DEFAULT ''"),
+            ("first_seen_at", "TEXT DEFAULT ''"),
+            ("last_seen_at", "TEXT DEFAULT ''"),
+            ("is_new", "INTEGER DEFAULT 1"),
+            ("seen_by_user", "INTEGER DEFAULT 0"),
+            ("repost_count", "INTEGER DEFAULT 0"),
+            ("possible_duplicate", "INTEGER DEFAULT 0"),
+            ("freshness_state", "TEXT DEFAULT 'active'"),
+            ("delete_at", "TEXT DEFAULT NULL"),
+            ("keep_flag", "INTEGER DEFAULT 0"),
+            ("closed_checked_at", "TEXT DEFAULT NULL"),
+            ("category", "TEXT DEFAULT ''"),
+            ("job_type", "TEXT DEFAULT ''"),
+            ("seniority", "TEXT DEFAULT ''"),
+            ("country", "TEXT DEFAULT ''"),
+            ("min_salary", "REAL DEFAULT 0"),
+            ("max_salary", "REAL DEFAULT 0"),
+            ("company_size", "TEXT DEFAULT ''"),
+            ("industry", "TEXT DEFAULT ''"),
+            ("visa_sponsor", "INTEGER DEFAULT 0"),
+            ("skills_text", "TEXT DEFAULT ''"),
+        ]:
+            if col not in jobs_cols:
+                c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {col_type}")
+
+        # 6. job_sources
+        c.execute("""CREATE TABLE IF NOT EXISTS job_sources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            source TEXT NOT NULL,
+            url TEXT NOT NULL,
+            url_hash TEXT NOT NULL,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_job_sources_url_hash ON job_sources(url_hash)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_job_sources_job_id ON job_sources(job_id)")
+
+        # 7. tombstones
+        c.execute("""CREATE TABLE IF NOT EXISTS tombstones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url_hash TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            deleted_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_tombstones_hash ON tombstones(url_hash)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_tombstones_fp ON tombstones(fingerprint)")
+
+        # 8. deletions_log
+        c.execute("""CREATE TABLE IF NOT EXISTS deletions_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            count INTEGER NOT NULL,
+            deleted_at TEXT NOT NULL,
+            acknowledged INTEGER DEFAULT 0
+        )""")
+
+        # 9. radar_state
+        c.execute("""CREATE TABLE IF NOT EXISTS radar_state (
+            id INTEGER PRIMARY KEY,
+            last_poll_at TEXT DEFAULT NULL,
+            next_poll_at TEXT DEFAULT NULL,
+            interval_seconds INTEGER DEFAULT 600,
+            failure_count INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'idle',
+            last_error TEXT DEFAULT ''
+        )""")
+        c.execute("INSERT OR IGNORE INTO radar_state (id, status) VALUES (1, 'idle')")
+
+        # 10. refresh_state
+        c.execute("""CREATE TABLE IF NOT EXISTS refresh_state (
+            source TEXT PRIMARY KEY,
+            last_run_at TEXT DEFAULT NULL,
+            ttl_seconds INTEGER DEFAULT 43200,
+            last_new_ratio REAL DEFAULT 0.0,
+            last_total INTEGER DEFAULT 0,
+            last_new INTEGER DEFAULT 0
+        )""")
+
+        # 11. dismissals
+        c.execute("""CREATE TABLE IF NOT EXISTS dismissals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_dismissals_job_id ON dismissals(job_id)")
+
+        # Indexes on jobs
+        c.execute("CREATE INDEX IF NOT EXISTS idx_jobs_fingerprint ON jobs(fingerprint)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_jobs_url_hash ON jobs(url_hash)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_jobs_freshness ON jobs(freshness_state)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_jobs_delete_at ON jobs(delete_at)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_jobs_is_new ON jobs(is_new)")
+
+        # Default settings
+        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('cleanup_grace_hours', '24')")
 
         c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
@@ -484,8 +688,9 @@ def get_profile(profile_id=None):
         if not row:
             legacy = c.execute("SELECT data FROM profile WHERE id=1").fetchone()
             if not legacy:
-                return json.loads(json.dumps(EMPTY_PROFILE))
-            raw_data = legacy["data"]
+                raw_data = json.dumps(EMPTY_PROFILE)
+            else:
+                raw_data = legacy["data"]
         else:
             raw_data = row["data_json"]
 
@@ -579,7 +784,14 @@ def save_profile(data, profile_id=None):
             """, (pid, pname, target_title, json.dumps(target_roles), json.dumps(tags), json.dumps(data), is_active, is_master, is_live, iso_now, iso_now))
 
         if is_active or is_master or pid == "master":
-            c.execute("INSERT OR REPLACE INTO profile (id, data, updated_at) VALUES (1, ?, ?)", (json.dumps(data), iso_now))
+            roles_val = json.dumps(target_roles) if isinstance(target_roles, list) else str(target_roles or "")
+            skills_val = json.dumps(skills) if isinstance(skills, list) else str(skills or "")
+            years_val = float(data.get("years_of_experience") or 0)
+            resume_path_val = str(data.get("resume_path") or "")
+            c.execute("""
+                INSERT OR REPLACE INTO profile (id, data, updated_at, roles, years, skills, resume_path)
+                VALUES (1, ?, ?, ?, ?, ?, ?)
+            """, (json.dumps(data), iso_now, roles_val, years_val, skills_val, resume_path_val))
     return get_profile(pid)
 
 
@@ -892,24 +1104,31 @@ def get_job(job_id):
     key = (job_id or "").strip()
     if not key:
         return None
-    with session() as c:
-        for table in ("search_jobs", "pending_search_jobs"):
-            row = c.execute(f"SELECT job_json FROM {table} WHERE job_key=?", (key,)).fetchone()
-            if row:
+    try:
+        with session() as c:
+            for table in ("search_jobs", "pending_search_jobs"):
                 try:
-                    return json.loads(row["job_json"])
-                except Exception:
-                    return None
+                    row = c.execute(f"SELECT job_json FROM {table} WHERE job_key=?", (key,)).fetchone()
+                    if row:
+                        try:
+                            return json.loads(row["job_json"])
+                        except Exception:
+                            return None
+                except sqlite3.OperationalError:
+                    continue
+    except Exception:
+        return None
     return None
 
 
-def replace_search_jobs(jobs, query="", location="", sources=None, clear_existing=True):
+def replace_search_jobs(jobs, query="", location="", sources=None, clear_existing=True, conn=None):
     """Store search jobs with extracted categories into DB.
     If clear_existing is True, deletes old search jobs first (explicit query replacement).
     Otherwise, upserts jobs into the existing database cache so prior discoveries are preserved.
     """
     now = now_iso()
-    with session() as c:
+
+    def _execute(c):
         if clear_existing:
             c.execute("DELETE FROM search_jobs")
         for j in jobs:
@@ -947,6 +1166,12 @@ def replace_search_jobs(jobs, query="", location="", sources=None, clear_existin
                      (id, query, location, total_count, sources_json, updated_at)
                      VALUES (1, ?, ?, ?, ?, ?)""",
                   (query, location, total_now, json.dumps(sources or []), now))
+
+    if conn is not None:
+        _execute(conn)
+    else:
+        with session() as c:
+            _execute(c)
 
 
 
@@ -1374,5 +1599,766 @@ def set_auto_search_settings(enabled=True, interval_hours=5.0):
         c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('bg_search_enabled', ?)", ("1" if enabled else "0",))
         c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('bg_search_interval_hours', ?)", (str(interval_hours),))
     return get_auto_search_settings()
+
+
+# =====================================================================
+# Phase B2 Database Helpers
+# =====================================================================
+
+def get_session_state():
+    """Retrieve current conversation/session state."""
+    with session() as c:
+        row = c.execute("SELECT current_state, last_tool, updated_at FROM session_state WHERE id=1").fetchone()
+        if row:
+            return dict(row)
+        return {"current_state": "idle", "last_tool": "", "updated_at": now_iso()}
+
+
+def set_session_state(current_state, last_tool=""):
+    """Update current conversation/session state."""
+    iso = now_iso()
+    with session() as c:
+        c.execute("""
+            INSERT INTO session_state (id, current_state, last_tool, updated_at)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                current_state=excluded.current_state,
+                last_tool=CASE WHEN excluded.last_tool != '' THEN excluded.last_tool ELSE session_state.last_tool END,
+                updated_at=excluded.updated_at
+        """, (current_state, last_tool, iso))
+    return get_session_state()
+
+
+DEFAULT_VIEW_FILTERS = {
+    "job_style": "",
+    "roles": [],
+    "work_mode": "any",
+    "locations": [],
+    "relocation": False,
+    "visa_need": False,
+    "visa_countries": [],
+    "min_salary": 0,
+    "currency": "USD",
+    "period": "year",
+    "contract_types": [],
+    "seniority": [],
+    "company_sizes": [],
+    "industries": [],
+    "excluded_companies": [],
+    "excluded_keywords": [],
+    "posting_age": 30,
+    "show_unknown_salary": True,
+}
+
+
+def get_view_filters(session_id="default"):
+    """Retrieve current view filters for a session."""
+    with session() as c:
+        row = c.execute("SELECT * FROM view_filters WHERE session_id=? ORDER BY id DESC LIMIT 1", (session_id,)).fetchone()
+        if not row:
+            res = dict(DEFAULT_VIEW_FILTERS)
+            res["session_id"] = session_id
+            return res
+        d = dict(row)
+        for list_col in ("roles", "locations", "visa_countries", "contract_types", "seniority", "company_sizes", "industries", "excluded_companies", "excluded_keywords"):
+            val = d.get(list_col)
+            if isinstance(val, str) and val.strip():
+                try:
+                    d[list_col] = json.loads(val)
+                except Exception:
+                    d[list_col] = [x.strip() for x in val.split(",") if x.strip()]
+            elif not isinstance(val, list):
+                d[list_col] = []
+        d["relocation"] = bool(d.get("relocation"))
+        d["visa_need"] = bool(d.get("visa_need"))
+        d["show_unknown_salary"] = bool(d.get("show_unknown_salary"))
+        return d
+
+
+def save_view_filters(filters, session_id="default"):
+    """Save or update view filters for a session."""
+    d = dict(DEFAULT_VIEW_FILTERS)
+    d.update(filters)
+    d["session_id"] = session_id
+    iso_now = now_iso()
+
+    def _ser(v):
+        if isinstance(v, (list, tuple, set)):
+            return json.dumps(list(v))
+        return str(v or "")
+
+    with session() as c:
+        existing = c.execute("SELECT id FROM view_filters WHERE session_id=?", (session_id,)).fetchone()
+        if existing:
+            c.execute("""
+                UPDATE view_filters SET
+                    job_style=?, roles=?, work_mode=?, locations=?, relocation=?,
+                    visa_need=?, visa_countries=?, min_salary=?, currency=?, period=?,
+                    contract_types=?, seniority=?, company_sizes=?, industries=?,
+                    excluded_companies=?, excluded_keywords=?, posting_age=?,
+                    show_unknown_salary=?, updated_at=?
+                WHERE id=?
+            """, (
+                d.get("job_style", ""),
+                _ser(d.get("roles", [])),
+                d.get("work_mode", "any"),
+                _ser(d.get("locations", [])),
+                1 if d.get("relocation") else 0,
+                1 if d.get("visa_need") else 0,
+                _ser(d.get("visa_countries", [])),
+                float(d.get("min_salary") or 0),
+                d.get("currency", "USD"),
+                d.get("period", "year"),
+                _ser(d.get("contract_types", [])),
+                _ser(d.get("seniority", [])),
+                _ser(d.get("company_sizes", [])),
+                _ser(d.get("industries", [])),
+                _ser(d.get("excluded_companies", [])),
+                _ser(d.get("excluded_keywords", [])),
+                int(d.get("posting_age") or 30),
+                1 if d.get("show_unknown_salary", True) else 0,
+                iso_now,
+                existing["id"],
+            ))
+        else:
+            c.execute("""
+                INSERT INTO view_filters (
+                    session_id, job_style, roles, work_mode, locations, relocation,
+                    visa_need, visa_countries, min_salary, currency, period,
+                    contract_types, seniority, company_sizes, industries,
+                    excluded_companies, excluded_keywords, posting_age,
+                    show_unknown_salary, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                session_id,
+                d.get("job_style", ""),
+                _ser(d.get("roles", [])),
+                d.get("work_mode", "any"),
+                _ser(d.get("locations", [])),
+                1 if d.get("relocation") else 0,
+                1 if d.get("visa_need") else 0,
+                _ser(d.get("visa_countries", [])),
+                float(d.get("min_salary") or 0),
+                d.get("currency", "USD"),
+                d.get("period", "year"),
+                _ser(d.get("contract_types", [])),
+                _ser(d.get("seniority", [])),
+                _ser(d.get("company_sizes", [])),
+                _ser(d.get("industries", [])),
+                _ser(d.get("excluded_companies", [])),
+                _ser(d.get("excluded_keywords", [])),
+                int(d.get("posting_age") or 30),
+                1 if d.get("show_unknown_salary", True) else 0,
+                iso_now,
+            ))
+    return get_view_filters(session_id)
+
+
+def get_radar_state():
+    """Retrieve LinkedIn Radar state singleton."""
+    with session() as c:
+        row = c.execute("SELECT * FROM radar_state WHERE id=1").fetchone()
+        if row:
+            return dict(row)
+        return {
+            "id": 1,
+            "last_poll_at": None,
+            "next_poll_at": None,
+            "interval_seconds": 600,
+            "failure_count": 0,
+            "status": "idle",
+            "last_error": ""
+        }
+
+
+def update_radar_state(**kwargs):
+    """Update fields in radar_state."""
+    valid_cols = {"last_poll_at", "next_poll_at", "interval_seconds", "failure_count", "status", "last_error"}
+    updates = {k: v for k, v in kwargs.items() if k in valid_cols}
+    if not updates:
+        return get_radar_state()
+    set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+    vals = list(updates.values())
+    with session() as c:
+        c.execute(f"UPDATE radar_state SET {set_clause} WHERE id=1", vals)
+    return get_radar_state()
+
+
+def get_refresh_states():
+    """Retrieve refresh state for all non-Radar sources."""
+    with session() as c:
+        rows = c.execute("SELECT * FROM refresh_state ORDER BY source ASC").fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_refresh_state(source):
+    """Retrieve refresh state for a specific source."""
+    with session() as c:
+        row = c.execute("SELECT * FROM refresh_state WHERE source=?", (source,)).fetchone()
+        if row:
+            return dict(row)
+        return {
+            "source": source,
+            "last_run_at": None,
+            "ttl_seconds": 43200,
+            "last_new_ratio": 0.0,
+            "last_total": 0,
+            "last_new": 0
+        }
+
+
+def update_refresh_state(source, **kwargs):
+    """Update or insert refresh state for a source."""
+    curr = get_refresh_state(source)
+    curr.update(kwargs)
+    with session() as c:
+        c.execute("""
+            INSERT INTO refresh_state (source, last_run_at, ttl_seconds, last_new_ratio, last_total, last_new)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source) DO UPDATE SET
+                last_run_at=excluded.last_run_at,
+                ttl_seconds=excluded.ttl_seconds,
+                last_new_ratio=excluded.last_new_ratio,
+                last_total=excluded.last_total,
+                last_new=excluded.last_new
+        """, (
+            source,
+            curr.get("last_run_at"),
+            int(curr.get("ttl_seconds") or 43200),
+            float(curr.get("last_new_ratio") or 0.0),
+            int(curr.get("last_total") or 0),
+            int(curr.get("last_new") or 0),
+        ))
+    return get_refresh_state(source)
+
+
+def add_dismissal(job_id, reason):
+    """Record a user dismissal for a job."""
+    iso_now = now_iso()
+    with session() as c:
+        c.execute("INSERT INTO dismissals (job_id, reason, created_at) VALUES (?, ?, ?)", (str(job_id), str(reason), iso_now))
+        c.execute("UPDATE jobs SET seen_by_user=1 WHERE id=? OR job_key=?", (str(job_id), str(job_id)))
+
+
+def get_dismissals(job_id=None):
+    """Get dismissals list."""
+    with session() as c:
+        if job_id:
+            rows = c.execute("SELECT * FROM dismissals WHERE job_id=? ORDER BY id DESC", (str(job_id),)).fetchall()
+        else:
+            rows = c.execute("SELECT * FROM dismissals ORDER BY id DESC").fetchall()
+        return [dict(r) for r in rows]
+
+
+def count_dismissals():
+    """Count total dismissals."""
+    with session() as c:
+        row = c.execute("SELECT COUNT(*) as c FROM dismissals").fetchone()
+        return row["c"] if row else 0
+
+
+def add_tombstone(url_hash, fingerprint, conn=None):
+    """Add a tombstone record for a permanently deleted job."""
+    iso_now = now_iso()
+    if conn is not None:
+        conn.execute("INSERT INTO tombstones (url_hash, fingerprint, deleted_at) VALUES (?, ?, ?)", (url_hash or "", fingerprint or "", iso_now))
+    else:
+        with session() as c:
+            c.execute("INSERT INTO tombstones (url_hash, fingerprint, deleted_at) VALUES (?, ?, ?)", (url_hash or "", fingerprint or "", iso_now))
+
+
+def is_tombstoned(url_hash="", fingerprint=""):
+    """Check if a job has been deleted and tombstoned."""
+    if not url_hash and not fingerprint:
+        return False
+    with session() as c:
+        if url_hash and fingerprint:
+            row = c.execute("SELECT 1 FROM tombstones WHERE url_hash=? OR fingerprint=? LIMIT 1", (url_hash, fingerprint)).fetchone()
+        elif url_hash:
+            row = c.execute("SELECT 1 FROM tombstones WHERE url_hash=? LIMIT 1", (url_hash,)).fetchone()
+        else:
+            row = c.execute("SELECT 1 FROM tombstones WHERE fingerprint=? LIMIT 1", (fingerprint,)).fetchone()
+        return bool(row)
+
+
+def log_deletion(count):
+    """Log a batch cleanup deletion count."""
+    if count <= 0:
+        return None
+    iso_now = now_iso()
+    with session() as c:
+        c.execute("INSERT INTO deletions_log (count, deleted_at, acknowledged) VALUES (?, ?, 0)", (int(count), iso_now))
+
+
+def get_last_deletion():
+    """Get most recent deletions log entry."""
+    with session() as c:
+        row = c.execute("SELECT * FROM deletions_log ORDER BY id DESC LIMIT 1").fetchone()
+        return dict(row) if row else None
+
+
+def ack_deletions():
+    """Acknowledge all pending deletion notifications."""
+    with session() as c:
+        c.execute("UPDATE deletions_log SET acknowledged=1 WHERE acknowledged=0")
+
+
+def get_cleanup_status():
+    """Get current cleanup, warning, and deletion stats."""
+    grace_hours = int(get_setting("cleanup_grace_hours", "24"))
+    with session() as c:
+        unack = c.execute("SELECT SUM(count) as total FROM deletions_log WHERE acknowledged=0").fetchone()
+        unack_count = unack["total"] if unack and unack["total"] else 0
+
+        warn_count = c.execute("""
+            SELECT COUNT(*) as c FROM jobs 
+            WHERE freshness_state='expired' AND keep_flag=0 AND delete_at IS NOT NULL
+        """).fetchone()
+        warning_count = warn_count["c"] if warn_count else 0
+
+        tombstone_count = c.execute("SELECT COUNT(*) as c FROM tombstones").fetchone()
+        t_count = tombstone_count["c"] if tombstone_count else 0
+
+    return {
+        "grace_hours": grace_hours,
+        "warning_count": warning_count,
+        "recently_deleted": unack_count,
+        "tombstones_count": t_count,
+    }
+
+
+def ingest_job(j, conn=None):
+    """
+    Ingest a single job with lifecycle management (dedup, merge, repost, tombstones, freshness).
+    Returns dict: {"status": "inserted"|"merged"|"repost"|"tombstoned", "job_id": str, "is_new": bool}
+    """
+    if not isinstance(j, dict):
+        return None
+    from . import dedup
+
+    clean_job_dict(j)
+    title = clean_text(j.get("title") or "")
+    company = clean_text(j.get("company") or "")
+    if not title or not company:
+        return None
+
+    location = clean_text(j.get("location") or "")
+    work_mode = clean_text(j.get("work_mode") or "")
+    url = clean_text(j.get("url") or j.get("link") or "")
+    source_name = j.get("source") or (j.get("source_names", [""])[0] if j.get("source_names") else "Search")
+
+    # Calculate hashes
+    url_hash = dedup.build_url_hash(url, linkedin_id=j.get("linkedin_id", ""))
+    fingerprint = dedup.build_fingerprint(company, title, location, work_mode)
+
+    # Tombstone check: permanent deleted jobs never return as new
+    if is_tombstoned(url_hash=url_hash, fingerprint=fingerprint):
+        return {"status": "tombstoned", "job_id": None, "is_new": False}
+
+    iso_now = now_iso()
+    c_meta = classify_job(j)
+    work_mode = c_meta["work_mode"] or work_mode
+    category = c_meta["category"]
+    job_type = c_meta["job_type"]
+    seniority = c_meta["seniority"]
+    country = c_meta["country"]
+    min_sal = float(c_meta["min_salary"] or j.get("min_salary") or 0)
+    max_sal = float(c_meta["max_salary"] or j.get("max_salary") or 0)
+    industry = c_meta["industry"]
+    skills_text = c_meta.get("skills_text", "")
+    is_famous = 1 if c_meta.get("is_famous") else 0
+    is_startup = 1 if c_meta.get("is_startup") else 0
+    visa_sponsor = 1 if (c_meta.get("h1b") or j.get("visa_sponsor") or j.get("h1b")) else 0
+    company_size = j.get("company_size") or ("startup" if is_startup else ("enterprise" if is_famous else "midsize"))
+    score = int(j.get("score") or 0)
+    opp_score = int(j.get("opportunity_score") or score)
+    fit_score = int(j.get("fit_score") or score)
+
+    # Freshness state
+    posted_at = j.get("posted_at") or ""
+    age_days = 0.0
+    if posted_at:
+        d = parse_date(posted_at)
+        if d:
+            age_days = max(0.0, (datetime.datetime.now(datetime.timezone.utc) - d).total_seconds() / 86400.0)
+
+    if age_days > 60:
+        freshness_state = "expired"
+    elif age_days >= 30:
+        freshness_state = "stale"
+    else:
+        freshness_state = "active"
+
+    def _execute(c):
+        existing_job = None
+        # 1. Exact match by url_hash in job_sources
+        if url_hash:
+            src_row = c.execute("SELECT job_id FROM job_sources WHERE url_hash=?", (url_hash,)).fetchone()
+            if src_row:
+                existing_job = c.execute("SELECT * FROM jobs WHERE id=?", (src_row["job_id"],)).fetchone()
+
+        # 2. Exact match by fingerprint in jobs
+        if not existing_job and fingerprint:
+            existing_job = c.execute("SELECT * FROM jobs WHERE fingerprint=?", (fingerprint,)).fetchone()
+
+        if existing_job:
+            job_id = existing_job["id"]
+            new_repost_count = (existing_job["repost_count"] or 0) + 1
+            if url_hash:
+                c.execute("""
+                    INSERT INTO job_sources (job_id, source, url, url_hash, first_seen_at, last_seen_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(url_hash) DO UPDATE SET
+                        last_seen_at=excluded.last_seen_at
+                """, (job_id, source_name, url, url_hash, iso_now, iso_now))
+
+            c.execute("""
+                UPDATE jobs SET
+                    last_seen_at=?, repost_count=?, is_new=0, updated_at=?
+                WHERE id=?
+            """, (iso_now, new_repost_count, iso_now, job_id))
+
+            return {"status": "merged", "job_id": job_id, "is_new": False}
+
+        # 3. Close match (80-90% title similarity at same company)
+        possible_dup = 0
+        same_co_jobs = c.execute("SELECT id, title, company FROM jobs WHERE LOWER(company) LIKE ?", (f"%{company.lower()[:8]}%",)).fetchall()
+        for cand in same_co_jobs:
+            sim = dedup.title_similarity(cand["title"], title)
+            if 0.80 <= sim < 1.0:
+                possible_dup = 1
+                break
+
+        # 4. Insert new job
+        new_id = str(j.get("id") or uuid.uuid4())
+        job_key = j.get("job_key") or j.get("id") or (dedup.job_key(j) if hasattr(dedup, "job_key") else new_id[:16])
+        existing_by_key = c.execute("SELECT id FROM jobs WHERE job_key=?", (job_key,)).fetchone()
+        if existing_by_key and existing_by_key["id"] != new_id:
+            job_key = f"{job_key}_{new_id[:6]}"
+        c.execute("""
+            INSERT INTO jobs (
+                id, job_key, title, company, location, work_mode, source, url, url_hash,
+                fingerprint, description, score, fit_score, opportunity_score, found_at,
+                first_seen_at, last_seen_at, is_new, seen_by_user, repost_count,
+                possible_duplicate, freshness_state, delete_at, keep_flag, closed_checked_at,
+                job_json, created_at, updated_at, category, job_type, seniority, country,
+                min_salary, max_salary, company_size, industry, visa_sponsor, skills_text
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?,
+                ?, ?, 1, 0, 0,
+                ?, ?, NULL, 0, NULL,
+                ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?
+            )
+        """, (
+            new_id, job_key, title, company, location, work_mode, source_name, url, url_hash,
+            fingerprint, clean_text(j.get("description") or ""), score, fit_score, opp_score, iso_now,
+            iso_now, iso_now,
+            possible_dup, freshness_state,
+            json.dumps(j), iso_now, iso_now, category, job_type, seniority, country,
+            min_sal, max_sal, company_size, industry, visa_sponsor, skills_text
+        ))
+
+        if url_hash:
+            c.execute("""
+                INSERT OR IGNORE INTO job_sources (job_id, source, url, url_hash, first_seen_at, last_seen_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (new_id, source_name, url, url_hash, iso_now, iso_now))
+
+        return {"status": "inserted", "job_id": new_id, "is_new": True}
+
+    if conn is not None:
+        return _execute(conn)
+    with session() as c:
+        return _execute(c)
+
+
+def store_jobs(jobs, query="", location=""):
+    """Store raw jobs into jobs table and search_jobs cache with lifecycle deduplication."""
+    inserted = 0
+    merged = 0
+    tombstoned = 0
+    with session() as c:
+        for j in jobs:
+            res = ingest_job(j, conn=c)
+            if not res:
+                continue
+            if res["status"] == "inserted":
+                inserted += 1
+            elif res["status"] == "merged":
+                merged += 1
+            elif res["status"] == "tombstoned":
+                tombstoned += 1
+        replace_search_jobs(jobs, query=query, location=location, clear_existing=False, conn=c)
+    return {"inserted": inserted, "merged": merged, "tombstoned": tombstoned, "total": len(jobs)}
+
+
+def query_jobs(view_filters=None, session_id="default"):
+    """
+    Applies hard filters in SQL and soft preferences in ranking score.
+    Never deletes rows. Excludes expired jobs and returns them in closing_soon.
+    Returns count removed by each filter and evaluates the [10, 300] usable gate.
+    """
+    filters = get_view_filters(session_id)
+    if view_filters and isinstance(view_filters, dict):
+        filters.update(view_filters)
+
+    # 1. Candidate jobs from DB
+    with session() as c:
+        rows = c.execute("SELECT * FROM jobs ORDER BY opportunity_score DESC, score DESC").fetchall()
+        if not rows:
+            s_rows = c.execute("SELECT * FROM search_jobs").fetchall()
+            for sr in s_rows:
+                try:
+                    jd = json.loads(sr["job_json"])
+                    ingest_job(jd, conn=c)
+                except Exception:
+                    pass
+            rows = c.execute("SELECT * FROM jobs ORDER BY opportunity_score DESC, score DESC").fetchall()
+
+    candidate_jobs = []
+    closing_soon = []
+
+    for r in rows:
+        j_dict = json.loads(r["job_json"])
+        j_dict["id"] = r["id"]
+        j_dict["job_key"] = r["job_key"]
+        j_dict["title"] = r["title"]
+        j_dict["company"] = r["company"]
+        j_dict["location"] = r["location"]
+        j_dict["work_mode"] = r["work_mode"]
+        j_dict["freshness_state"] = r["freshness_state"]
+        j_dict["delete_at"] = r["delete_at"]
+        j_dict["keep_flag"] = bool(r["keep_flag"])
+        j_dict["is_new"] = bool(r["is_new"])
+        j_dict["repost_count"] = r["repost_count"]
+        j_dict["possible_duplicate"] = bool(r["possible_duplicate"])
+        j_dict["min_salary"] = r["min_salary"]
+        j_dict["max_salary"] = r["max_salary"]
+        j_dict["category"] = r["category"]
+        j_dict["seniority"] = r["seniority"]
+        j_dict["job_type"] = r["job_type"]
+        j_dict["industry"] = r["industry"]
+        j_dict["company_size"] = r["company_size"]
+        j_dict["score"] = r["score"]
+        j_dict["opportunity_score"] = r["opportunity_score"]
+
+        is_expired = (r["freshness_state"] == "expired" or (r["delete_at"] is not None and not r["keep_flag"]))
+        if is_expired:
+            closing_soon.append(j_dict)
+        else:
+            candidate_jobs.append(j_dict)
+
+    # 2. Hard filters
+    roles_filter = [r.lower().strip() for r in (filters.get("roles") or []) if r and r.strip()]
+    wm_filter = (filters.get("work_mode") or "any").lower().strip()
+    locs_filter = [l.lower().strip() for l in (filters.get("locations") or []) if l and l.strip()]
+    relocation = bool(filters.get("relocation"))
+    visa_need = bool(filters.get("visa_need"))
+    visa_countries = [c.lower().strip() for c in (filters.get("visa_countries") or []) if c and c.strip()]
+    min_sal = float(filters.get("min_salary") or 0)
+    show_unknown_salary = bool(filters.get("show_unknown_salary", True))
+    contract_types = [c.lower().strip() for c in (filters.get("contract_types") or []) if c and c.strip()]
+    excluded_cos = [c.lower().strip() for c in (filters.get("excluded_companies") or []) if c and c.strip()]
+    excluded_kws = [k.lower().strip() for k in (filters.get("excluded_keywords") or []) if k and k.strip()]
+    posting_age = int(filters.get("posting_age") or 30)
+
+    def _check_role(j):
+        if not roles_filter:
+            return True
+        hay = f"{j.get('title', '')} {j.get('category', '')} {j.get('skills_text', '')}".lower()
+        return any(r in hay for r in roles_filter)
+
+    def _check_work_mode(j):
+        if not wm_filter or wm_filter in ("any", "all"):
+            return True
+        j_wm = (j.get("work_mode") or "").lower()
+        j_loc = (j.get("location") or "").lower()
+        if "remote" in wm_filter:
+            return "remote" in j_wm or "remote" in j_loc or j.get("country") == "worldwide"
+        if "hybrid" in wm_filter:
+            return "hybrid" in j_wm or "hybrid" in j_loc
+        if "onsite" in wm_filter:
+            return "remote" not in j_wm and "hybrid" not in j_wm
+        return True
+
+    def _check_location(j):
+        if not locs_filter or relocation:
+            return True
+        j_loc = (j.get("location") or "").lower()
+        j_wm = (j.get("work_mode") or "").lower()
+        if "remote" in j_wm or "remote" in j_loc or j.get("country") == "worldwide":
+            return True
+        return any(loc in j_loc for loc in locs_filter)
+
+    def _check_visa(j):
+        if not visa_need:
+            return True
+        if j.get("visa_sponsor") or j.get("h1b"):
+            return True
+        desc = (j.get("description") or "").lower()
+        if any(term in desc for term in ["visa sponsorship", "h-1b", "h1b", "sponsorship available"]):
+            return True
+        if visa_countries:
+            j_loc = (j.get("location") or "").lower()
+            return any(vc in j_loc for vc in visa_countries)
+        return False
+
+    def _check_salary(j):
+        if min_sal <= 0:
+            return True
+        has_sal = (j.get("max_salary", 0) > 0 or j.get("min_salary", 0) > 0)
+        if has_sal:
+            sal_val = j.get("max_salary") or j.get("min_salary") or 0
+            return sal_val >= min_sal
+        return show_unknown_salary
+
+    def _check_contract_type(j):
+        if not contract_types:
+            return True
+        j_jt = (j.get("job_type") or "").lower()
+        j_ti = (j.get("title") or "").lower()
+        for ct in contract_types:
+            if ct in j_jt or ct in j_ti:
+                return True
+        return False
+
+    def _check_excluded_companies(j):
+        if not excluded_cos:
+            return True
+        comp = (j.get("company") or "").lower()
+        return not any(ec in comp for ec in excluded_cos)
+
+    def _check_excluded_keywords(j):
+        if not excluded_kws:
+            return True
+        hay = f"{j.get('title', '')} {j.get('description', '')}".lower()
+        return not any(kw in hay for kw in excluded_kws)
+
+    def _check_posting_age(j):
+        if posting_age <= 0:
+            return True
+        posted = j.get("posted_at")
+        if not posted:
+            return True
+        d = parse_date(posted)
+        if not d:
+            return True
+        age = max(0.0, (datetime.datetime.now(datetime.timezone.utc) - d).total_seconds() / 86400.0)
+        return age <= posting_age
+
+    # 3. Removed counts
+    removed_counts = {
+        "roles": sum(1 for j in candidate_jobs if not _check_role(j)) if roles_filter else 0,
+        "work_mode": sum(1 for j in candidate_jobs if not _check_work_mode(j)) if (wm_filter and wm_filter not in ("any", "all")) else 0,
+        "location": sum(1 for j in candidate_jobs if not _check_location(j)) if (locs_filter and not relocation) else 0,
+        "visa": sum(1 for j in candidate_jobs if not _check_visa(j)) if visa_need else 0,
+        "salary": sum(1 for j in candidate_jobs if not _check_salary(j)) if min_sal > 0 else 0,
+        "contract_types": sum(1 for j in candidate_jobs if not _check_contract_type(j)) if contract_types else 0,
+        "excluded_companies": sum(1 for j in candidate_jobs if not _check_excluded_companies(j)) if excluded_cos else 0,
+        "excluded_keywords": sum(1 for j in candidate_jobs if not _check_excluded_keywords(j)) if excluded_kws else 0,
+        "posting_age": sum(1 for j in candidate_jobs if not _check_posting_age(j)) if posting_age > 0 else 0,
+    }
+
+    # 4. Filter
+    matching_jobs = []
+    for j in candidate_jobs:
+        if not _check_role(j):
+            continue
+        if not _check_work_mode(j):
+            continue
+        if not _check_location(j):
+            continue
+        if not _check_visa(j):
+            continue
+        if not _check_salary(j):
+            continue
+        if not _check_contract_type(j):
+            continue
+        if not _check_excluded_companies(j):
+            continue
+        if not _check_excluded_keywords(j):
+            continue
+        if not _check_posting_age(j):
+            continue
+
+        has_sal = (j.get("max_salary", 0) > 0 or j.get("min_salary", 0) > 0)
+        if not has_sal:
+            j["unknown_salary"] = True
+
+        matching_jobs.append(j)
+
+    # 5. Soft preferences ranking
+    sen_prefs = [s.lower().strip() for s in (filters.get("seniority") or []) if s and s.strip()]
+    size_prefs = [s.lower().strip() for s in (filters.get("company_sizes") or []) if s and s.strip()]
+    ind_prefs = [i.lower().strip() for i in (filters.get("industries") or []) if i and i.strip()]
+
+    for j in matching_jobs:
+        base_score = float(j.get("opportunity_score") or j.get("score") or 0)
+        rank_score = base_score
+
+        if sen_prefs:
+            j_sen = (j.get("seniority") or "").lower()
+            j_ti = (j.get("title") or "").lower()
+            if any(sp in j_sen or sp in j_ti for sp in sen_prefs):
+                rank_score += 15.0
+
+        if size_prefs:
+            j_sz = (j.get("company_size") or "").lower()
+            if any(sp in j_sz for sp in size_prefs):
+                rank_score += 10.0
+
+        if ind_prefs:
+            j_ind = (j.get("industry") or "").lower()
+            if any(ip in j_ind for ip in ind_prefs):
+                rank_score += 10.0
+
+        j["rank_score"] = round(rank_score, 1)
+
+    matching_jobs.sort(key=lambda j: (j.get("rank_score", 0), j.get("score", 0)), reverse=True)
+
+    # 6. Usable Gate: [10, 300]
+    total_count = len(matching_jobs)
+    if 10 <= total_count <= 300:
+        usable_gate = {
+            "usable": True,
+            "status": "ok",
+            "count": total_count,
+            "message": f"{total_count} matches found, within the optimal 10-300 range.",
+            "suggestion": None,
+            "actions": ["open_ui", "browse_jobs"]
+        }
+    elif total_count < 10:
+        usable_gate = {
+            "usable": False,
+            "status": "too_few",
+            "count": total_count,
+            "message": f"Only {total_count} matches found (below minimum threshold of 10).",
+            "suggestion": "Offer to loosen one filter (such as role, work mode, or salary), or run a wider search or refresh.",
+            "actions": ["loosen_filter", "wider_search", "run_refresh"]
+        }
+    else:
+        usable_gate = {
+            "usable": False,
+            "status": "too_many",
+            "count": total_count,
+            "message": f"{total_count} matches found (exceeds recommended threshold of 300).",
+            "suggestion": "Offer to tighten filters by minimum salary, seniority, or specific locations.",
+            "actions": ["tighten_salary", "tighten_seniority", "tighten_location"]
+        }
+
+    return {
+        "jobs": matching_jobs,
+        "count": total_count,
+        "total_active_pool": len(candidate_jobs),
+        "closing_soon": closing_soon,
+        "closing_soon_count": len(closing_soon),
+        "removed_counts": removed_counts,
+        "usable_gate": usable_gate,
+        "view_filters": filters,
+    }
+
+
 
 

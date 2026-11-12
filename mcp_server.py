@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import warnings
 from pathlib import Path
@@ -53,45 +54,64 @@ Work like this:
 8. Before the client acts on a job or sends a document, call ceo_recheck.
 9. ceo_plan previews a request. ceo_delegate sends one task to one employee. ceo_team lists the team. ceo_status shows past work and the Reviewer's record.
 10. Speak to the client in plain lines: the answer first, short sentences, no em dashes, no praise of the question, and no closing offer of more help or recap. Drafts you write for the client follow the style guide in ceo_team (with_prompts=true). The Reviewer warns about machine-sounding phrases (robotic_style). Rewrite each flagged phrase with a fact from the resume, then submit the draft again.
+11. Guided flow: start with jh_start. Ask questions in rounds, with at most 7 questions per round. Offer recommended defaults. The answer any is valid.
+12. Broad search, narrow view: search needs only a job style. Narrow filters apply at query time on the database.
+13. LinkedIn Radar: always on in the background, for LinkedIn only. It watches for new postings and counts matches to active filters.
+14. Refresh: runs on demand for other sources, with a 15-minute cooldown and adaptive timing.
+15. Clean history: duplicates merge into one row with all source links. Reposts are not new. Deleted jobs leave tombstones. Expired jobs delete after a 24-hour warning.
+16. Save flow: generate tailored resumes and cover letters only after the client saves a job. Score fit first. If below 60, show real gaps and interview talking points.
+17. Grounding: every claim must trace to the master resume. Never invent facts.
+18. Human review: the client reviews and edits every document. Never submit an application automatically.
 
 The client's resume is the only source of facts about the candidate. Never invent any."""
 
 
 def init_workspace_and_engine(ws_path: str = "") -> tuple[OutputStore, str]:
     """Start-up: configure paths, open the database, parse resumes, restore the active resume."""
+    from jh import home
     ws = Path(ws_path).resolve() if ws_path else workspace.detect_workspace()
     log.info("Workspace: %s", ws)
-    jh_dir = config.configure_mcp_environment(str(ws))
-    workspace.ensure_jobhunter_dir(ws)
-    store = OutputStore(jh_dir)
-    db.init_db()
 
-    registry = ResumeRegistry(ws)
-    sync = registry.scan_and_sync()
-    log.info("Resumes: %s parsed, %s cached", sync.get("parsed_count", 0), sync.get("cached_count", 0))
-    variants = registry.list_variants()
-    for var in variants:
-        prof = var.get("profile")
-        if prof:
-            db.save_profile(prof, profile_id=var.get("id") or f"var_{var.get('name', '').lower().replace(' ', '-')}")
+    if os.environ.get("JH_DATA_DIR"):
+        jh_dir = config.configure_mcp_environment(str(ws))
+        workspace.ensure_jobhunter_dir(ws)
+        store = OutputStore(jh_dir)
+        db.init_db()
 
-    profiles = db.list_resume_profiles()
-    wanted = registry.get_active_variant()
-    match = next((p for p in profiles if wanted and wanted.lower() in (p["name"].lower(), p["id"].lower())), None) or (profiles[0] if profiles else None)
-    if match:
-        db.set_active_resume_profile(match["id"])
-        registry.set_active_variant(match["name"])
-        log.info("Active resume: %s", match["name"])
-    else:
-        log.info("No resumes found. Add a PDF, DOCX or TXT resume to the workspace.")
+        registry = ResumeRegistry(ws)
+        sync = registry.scan_and_sync()
+        log.info("Resumes: %s parsed, %s cached", sync.get("parsed_count", 0), sync.get("cached_count", 0))
+        variants = registry.list_variants()
+        for var in variants:
+            prof = var.get("profile")
+            if prof:
+                db.save_profile(prof, profile_id=var.get("id") or f"var_{var.get('name', '').lower().replace(' ', '-')}")
 
-    imported = store.import_legacy_applications()
-    if imported:
-        log.info("Imported %d application(s) from the old applications.json", imported)
+        profiles = db.list_resume_profiles()
+        wanted = registry.get_active_variant()
+        match = next((p for p in profiles if wanted and wanted.lower() in (p["name"].lower(), p["id"].lower())), None) or (profiles[0] if profiles else None)
+        if match:
+            db.set_active_resume_profile(match["id"])
+            registry.set_active_variant(match["name"])
+            log.info("Active resume: %s", match["name"])
+        else:
+            log.info("No resumes found. Add a PDF, DOCX or TXT resume to the workspace.")
 
-    from jh import tracker, source_registry
-    record_startup(workspace=str(ws), resume_count=len(profiles), app_count=len(tracker.list_applications()),
-                   source_count=len(source_registry.catalog()))
+        imported = store.import_legacy_applications()
+        if imported:
+            log.info("Imported %d application(s) from the old applications.json", imported)
+
+        from jh import tracker, source_registry
+        record_startup(workspace=str(ws), resume_count=len(profiles), app_count=len(tracker.list_applications()),
+                       source_count=len(source_registry.catalog()))
+        return store, str(ws)
+
+    # Isolated production mode: never write to user's project
+    home_dir = home.get_home()
+    config.WORKSPACE_DIR = str(ws)
+    config.DATA_DIR = str(home_dir / "data")
+    config.DB_PATH = str(home_dir / "data" / "engine.db")
+    store = OutputStore(home_dir / "outputs")
     return store, str(ws)
 
 

@@ -11,7 +11,11 @@ from ..mcp_helpers import Result, ToolError
 from . import missions, qa, roles, safety
 from .ceo import CEO, RELAY_RULES
 
-TEAM_TOOLS = ("ceo_run", "ceo_plan", "ceo_delegate", "ceo_submit_work", "ceo_recheck", "ceo_status", "ceo_team")
+JH_TOOLS = (
+    "jh_start", "jh_load_resume", "jh_confirm_profile", "jh_set_filters",
+    "jh_search", "jh_query", "jh_refresh", "jh_open_ui", "jh_status", "jh_feedback"
+)
+TEAM_TOOLS = ("ceo_run", "ceo_plan", "ceo_delegate", "ceo_submit_work", "ceo_recheck", "ceo_status", "ceo_team") + JH_TOOLS
 
 _DOC_KINDS = {"cover_letter", "resume", "answer", "outreach", "other"}
 
@@ -222,5 +226,59 @@ def register_team(mcp: Any, tool: Callable, registry: dict[str, Callable], store
         """
         return {"company": "A small job-search company. The client talks to the CEO. The CEO briefs the team. The Reviewer checks everything.",
                 "employees": roles.describe(ws, with_prompts=with_prompts), "relay_rules": list(RELAY_RULES)}
+
+    # ------------------------------------------------------------- V5 Core Flow Tools
+    from .. import v5_tools
+
+    @tool
+    def jh_start(prompt: str = "", intent: str = "", session_id: str = "default") -> dict[str, Any]:
+        """Step 1 & 2: Entry point for any job-related prompt. Sets up isolated workspace, loads saved profile and view filters, detects intent, and returns the first guided question."""
+        return v5_tools.jh_start(prompt=prompt, intent=intent, session_id=session_id)
+
+    @tool
+    def jh_load_resume(resume_path: str = "", raw_text: str = "", profile_id: str = "master") -> dict[str, Any]:
+        """Step 3: Load, parse, and extract skills, target roles, and experience from a resume file or raw text into candidate profile."""
+        return v5_tools.jh_load_resume(resume_path=resume_path, raw_text=raw_text, profile_id=profile_id)
+
+    @tool
+    def jh_confirm_profile(confirmed: bool = True, overrides: Optional[dict[str, Any]] = None, profile_id: str = "master") -> dict[str, Any]:
+        """Step 3: Confirm or update extracted profile details and activate it for fit scoring."""
+        return v5_tools.jh_confirm_profile(confirmed=confirmed, overrides=overrides, profile_id=profile_id)
+
+    @tool
+    def jh_set_filters(filters: dict[str, Any], session_id: str = "default") -> dict[str, Any]:
+        """Step 4: Set or update query-time view filters with clash detection and round-based checks."""
+        return v5_tools.jh_set_filters(filters=filters, session_id=session_id)
+
+    @tool
+    def jh_search(job_style: str = "", region: str = "", force_refresh: bool = False, session_id: str = "default") -> dict[str, Any]:
+        """Step 5 & 6: Broad search by job style and optional region. Scrapes all sources broadly and stores all results in DB with lifecycle deduplication. Blocks only if job style is missing."""
+        return v5_tools.jh_search(job_style=job_style, region=region, force_refresh=force_refresh, session_id=session_id)
+
+    @tool
+    def jh_query(filters: Optional[dict[str, Any]] = None, session_id: str = "default") -> dict[str, Any]:
+        """Step 7: Query stored jobs using view filters without re-scraping. Hard filters hide, soft preferences rank, expired jobs returned in closing_soon."""
+        return v5_tools.jh_query(filters=filters, session_id=session_id)
+
+    @tool
+    def jh_refresh(source: str = "", force: bool = False) -> dict[str, Any]:
+        """Background lane: Trigger on-demand refresh for non-Radar sources respecting TTL and forced cooldown."""
+        return v5_tools.jh_refresh(source=source, force=force)
+
+    @tool
+    def jh_open_ui(port: int = 8765, host: str = "127.0.0.1") -> dict[str, Any]:
+        """Step 8: Start the web UI server if down, verify health endpoint, find next free port if occupied, start LinkedIn Radar worker, and open browser."""
+        return v5_tools.jh_open_ui(port=port, host=host)
+
+    @tool
+    def jh_status() -> dict[str, Any]:
+        """Inspect full JobHunter state: workspace path, session state, radar, refresh states, cleanup status, and stored job count."""
+        return v5_tools.jh_status()
+
+    @tool
+    def jh_feedback(job_id: str = "", action: str = "dismiss", reason: str = "",
+                    exclude_company: str = "", exclude_keyword: str = "", session_id: str = "default") -> dict[str, Any]:
+        """Step 10: Record user feedback (dismissal, reasons, exclusions) with automatic tuning suggestion after 5 dismissals."""
+        return v5_tools.jh_feedback(job_id=job_id, action=action, reason=reason, exclude_company=exclude_company, exclude_keyword=exclude_keyword, session_id=session_id)
 
     return ceo

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -24,10 +25,15 @@ MANIFEST_FILENAME = "resume_manifest.json"
 class ResumeRegistry:
     """Manages discovered resume variants and tracks incremental parsing manifests."""
 
-    def __init__(self, workspace_path: str | Path) -> None:
+    def __init__(self, workspace_path: str | Path, data_dir: Optional[str | Path] = None) -> None:
         self.workspace_path = Path(workspace_path).resolve()
-        self.data_dir = self.workspace_path / ".jobhunter"
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        if data_dir:
+            self.data_dir = Path(data_dir).resolve()
+        elif os.environ.get("JH_DATA_DIR"):
+            self.data_dir = Path(os.environ["JH_DATA_DIR"]).resolve()
+        else:
+            from . import home
+            self.data_dir = home.get_home() / "data"
         self.manifest_path = self.data_dir / MANIFEST_FILENAME
         self._manifest: dict[str, Any] = self._load_manifest()
 

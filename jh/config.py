@@ -10,9 +10,11 @@ WORKSPACE_DIR = os.environ.get("JH_WORKSPACE", "")
 if WORKSPACE_DIR:
     WORKSPACE_DIR = os.path.abspath(WORKSPACE_DIR)
 
-# Data directory lives in the user's home folder (~/.jobhunter) by default,
-# and is fully configurable via the JH_DATA_DIR environment variable.
-DEFAULT_DATA_DIR = os.path.join(os.path.expanduser("~"), ".jobhunter")
+def _get_default_data_dir() -> str:
+    from . import home
+    return str(home.get_home() / "data")
+
+DEFAULT_DATA_DIR = _get_default_data_dir()
 JOBHUNTER_DIR = os.path.join(WORKSPACE_DIR, ".jobhunter") if WORKSPACE_DIR else ""
 DATA_DIR = os.environ.get("JH_DATA_DIR") or DEFAULT_DATA_DIR
 DB_PATH = os.path.join(DATA_DIR, "engine.db")
@@ -29,7 +31,8 @@ def _ensure_data_dir() -> None:
     except Exception:
         pass
 
-_ensure_data_dir()
+if os.environ.get("JH_DATA_DIR"):
+    _ensure_data_dir()
 
 # Search behavior
 SEARCH_WORKERS = 16

@@ -38,13 +38,20 @@ class FileStore:
         self.backups_dir = self.jh_dir / "backups"
         self._lock = threading.Lock()
 
-        # Ensure base directories exist
-        self.jh_dir.mkdir(parents=True, exist_ok=True)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.profiles_dir.mkdir(parents=True, exist_ok=True)
-        self.backups_dir.mkdir(parents=True, exist_ok=True)
-        for cat in OUTPUT_CATEGORIES:
-            (self.output_dir / cat).mkdir(parents=True, exist_ok=True)
+        # Ensure base directories exist if path already exists or running under test data dir
+        if self.jh_dir.exists() or os.environ.get("JH_DATA_DIR"):
+            self._ensure_dirs()
+
+    def _ensure_dirs(self) -> None:
+        try:
+            self.jh_dir.mkdir(parents=True, exist_ok=True)
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            self.profiles_dir.mkdir(parents=True, exist_ok=True)
+            self.backups_dir.mkdir(parents=True, exist_ok=True)
+            for cat in OUTPUT_CATEGORIES:
+                (self.output_dir / cat).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
 
     # ------------------------------------------------------------ atomic file IO
 

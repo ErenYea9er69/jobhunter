@@ -20,6 +20,76 @@ def canonical_url(url):
         return url or ""
 
 
+def build_url_hash(url: str, linkedin_id: str = "") -> str:
+    """Build url_hash from the LinkedIn job id when it exists, and from a normalized URL otherwise."""
+    lid = (linkedin_id or "").strip()
+    u = url or ""
+    if not lid and ("linkedin.com" in u.lower() or "linkedin" in u.lower()):
+        m = re.search(r"(?:currentJobId=|/jobs/view/|jobId=)(\d+)", u)
+        if m:
+            lid = m.group(1)
+    if lid:
+        return f"li:{lid}"
+    canon = canonical_url(u).lower().rstrip("/")
+    if not canon:
+        return ""
+    return hashlib.sha256(canon.encode()).hexdigest()[:24]
+
+
+_SENIORITY_RE = re.compile(
+    r"\b(senior|sr\.?|junior|jr\.?|lead|staff|principal|intern|internship|associate|head of|vp|vice president|director|entry level|mid level|manager|consultant|architect)\b",
+    re.I,
+)
+
+
+def normalize_title_for_fingerprint(title: str) -> str:
+    """Title without seniority words and punctuation."""
+    t = (title or "").lower()
+    t = _SENIORITY_RE.sub(" ", t)
+    t = re.sub(r"[^\w\s]", " ", t)
+    tokens = [tok for tok in t.split() if tok]
+    return " ".join(tokens)
+
+
+def normalize_city(location: str) -> str:
+    loc = (location or "").lower()
+    if any(w in loc for w in ("remote", "anywhere", "worldwide", "global", "virtual")):
+        return "remote"
+    first = loc.split(",")[0].split("/")[0].strip()
+    return re.sub(r"[^\w]", "", first)[:20]
+
+
+def build_fingerprint(company: str, title: str, location: str = "", work_mode: str = "") -> str:
+    """Build fingerprint from the lowercase company, title without seniority words and punctuation, city, and work mode."""
+    norm_co = normalize_company(company)
+    norm_ti = normalize_title_for_fingerprint(title)
+    city = normalize_city(location)
+    mode = (work_mode or "").lower().strip()
+    if "remote" in mode or "remote" in city:
+        mode = "remote"
+        city = "remote"
+    elif "hybrid" in mode:
+        mode = "hybrid"
+    elif not mode:
+        mode = "onsite"
+    base = f"{norm_co}|{norm_ti}|{city}|{mode}"
+    return hashlib.sha256(base.encode()).hexdigest()[:24]
+
+
+def title_similarity(t1: str, t2: str) -> float:
+    """Similarity between two job titles from 0.0 to 1.0."""
+    k1 = normalize_title_for_fingerprint(t1)
+    k2 = normalize_title_for_fingerprint(t2)
+    if k1 == k2:
+        return 1.0
+    if not k1 or not k2:
+        return 0.0
+    import difflib
+    ratio = difflib.SequenceMatcher(None, k1, k2).ratio()
+    jacc = _jaccard(k1, k2)
+    return max(ratio, jacc)
+
+
 def _title_key(title):
     t = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", (title or "").lower())
     t = re.split(r"\s+[-–—|@]\s+(?=[a-z]*\s*(?:remote|hybrid|onsite|us|uk|emea|eu|worldwide)\b)", t)[0]

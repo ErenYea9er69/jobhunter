@@ -618,7 +618,7 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
     if persist_as_pending:
         db.store_pending_jobs(merged, query=query)
     else:
-        db.replace_search_jobs(merged, query=query, location=location, sources=statuses, clear_existing=False)
+        db.store_jobs(merged, query=query, location=location)
 
     # Trigger continuous background enrichment for all remaining jobs
     try:
