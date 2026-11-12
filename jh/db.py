@@ -2117,12 +2117,26 @@ def query_jobs(view_filters=None, session_id="default"):
                     pass
             rows = c.execute("SELECT * FROM jobs ORDER BY opportunity_score DESC, score DESC").fetchall()
 
+        src_rows = c.execute("SELECT job_id, source FROM job_sources WHERE source IS NOT NULL").fetchall()
+        sources_map = {}
+        for sr in src_rows:
+            jid = sr["job_id"]
+            sname = sr["source"]
+            if jid not in sources_map:
+                sources_map[jid] = []
+            if sname and sname not in sources_map[jid]:
+                sources_map[jid].append(sname)
+
     candidate_jobs = []
     closing_soon = []
 
     for r in rows:
         j_dict = json.loads(r["job_json"])
         j_dict["id"] = r["id"]
+        j_sources = sources_map.get(r["id"]) or ([r["source"]] if ("source" in r.keys() and r["source"]) else [])
+        if not j_sources and j_dict.get("source"):
+            j_sources = [j_dict["source"]]
+        j_dict["sources"] = j_sources
         j_dict["job_key"] = r["job_key"]
         j_dict["title"] = r["title"]
         j_dict["company"] = r["company"]

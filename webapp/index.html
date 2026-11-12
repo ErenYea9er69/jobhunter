@@ -72,6 +72,10 @@
 <symbol id="i-scan-search" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2" /> <path d="M17 3h2a2 2 0 0 1 2 2v2" /> <path d="M21 17v2a2 2 0 0 1-2 2h-2" /> <path d="M7 21H5a2 2 0 0 1-2-2v-2" /> <circle cx="12" cy="12" r="3" /> <path d="m16 16-1.9-1.9" /></symbol>
 <symbol id="i-sun-moon" viewBox="0 0 24 24"><path d="M12 2v2" /> <path d="M14.837 16.385a6 6 0 1 1-7.223-7.222c.624-.147.97.66.715 1.248a4 4 0 0 0 5.26 5.259c.589-.255 1.396.09 1.248.715" /> <path d="M16 12a4 4 0 0 0-4-4" /> <path d="m19 5-1.256 1.256" /> <path d="M20 12h2" /></symbol>
 <symbol id="i-panel-right-open" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /> <path d="M15 3v18" /> <path d="m10 15-3-3 3-3" /></symbol>
+<symbol id="i-radar" viewBox="0 0 24 24"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.24"/><path d="M12 18h.01"/><path d="M17.99 11.66A6 6 0 0 1 15.77 16.6"/><circle cx="12" cy="12" r="2"/><path d="m13.41 10.59 5.66-5.66"/></symbol>
+<symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></symbol>
+<symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></symbol>
+<symbol id="i-shield-alert" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
 </defs></svg>
 <a class="skip-link" href="#main">Skip to content</a>
 
@@ -91,7 +95,7 @@
       </ul>
     </nav>
     <div class="rail-foot">
-      <div class="rail-status" id="rail-status" role="status">
+      <div class="rail-status" id="rail-status" role="button" tabindex="0" aria-haspopup="dialog" aria-label="System and Radar Status" title="Click to view System & Radar status">
         <span class="dot" id="rail-dot"></span>
         <span><strong id="rail-status-title">Checking service</strong><span id="rail-status-text">Data stays on this computer.</span></span>
       </div>
@@ -106,12 +110,32 @@
   </aside>
 
   <main class="main" id="main" tabindex="-1">
+    <!-- Lifecycle Grace Deletion Warning Banner -->
+    <div class="banner-lifecycle" id="banner-lifecycle" hidden role="alert">
+      <div class="banner-content">
+        <svg class="icon text-amber"><use href="#i-hourglass"/></svg>
+        <span id="banner-lifecycle-text">0 jobs expiring in 24 hours.</span>
+      </div>
+      <div class="banner-actions">
+        <button class="btn btn-secondary btn-sm" id="btn-lifecycle-keep" type="button">Keep these</button>
+        <button class="btn btn-quiet btn-sm" id="btn-lifecycle-review" type="button">Review</button>
+        <button class="btn btn-icon btn-sm" id="btn-lifecycle-ack" type="button" aria-label="Dismiss banner"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      </div>
+    </div>
+
     <header class="page-head">
       <div>
         <h1 id="page-title" tabindex="-1">Jobs</h1>
         <p class="page-sub" id="page-sub"></p>
       </div>
-      <div class="page-actions" id="page-actions"></div>
+      <div class="page-actions" id="page-actions">
+        <button class="btn btn-secondary btn-sm btn-radar" id="btn-radar-header" type="button" aria-label="LinkedIn Radar" title="LinkedIn Radar: Live watcher">
+          <span class="radar-dot" id="radar-header-dot"></span>
+          <svg class="icon icon-sm"><use href="#i-radar"/></svg>
+          <span>Radar</span>
+          <span class="badge badge-accent" id="radar-header-badge" hidden>0</span>
+        </button>
+      </div>
     </header>
 
     <!-- ============ JOBS ============ -->
@@ -132,13 +156,38 @@
         <div class="filters">
           <button class="btn btn-secondary btn-sm filter-toggle" id="filter-toggle" type="button" aria-expanded="false" aria-controls="filters-body"><svg class="icon icon-sm"><use href="#i-sliders-horizontal"/></svg>Filters<span id="filter-count"></span></button>
           <div class="filters-body" id="filters-body" hidden>
-            <div class="filter-group"><span class="label" id="lbl-mode">Work mode</span><div class="seg" role="radiogroup" aria-labelledby="lbl-mode" data-filter="mode"></div></div>
-            <div class="filter-group"><span class="label" id="lbl-type">Job type</span><div class="seg" role="radiogroup" aria-labelledby="lbl-type" data-filter="type"></div></div>
+            <div class="filter-group"><span class="label" id="lbl-mode">Work mode <span class="filter-removed-badge" id="badge-removed-mode" hidden></span></span><div class="seg" role="radiogroup" aria-labelledby="lbl-mode" data-filter="mode"></div></div>
+            <div class="filter-group"><span class="label" id="lbl-type">Job type <span class="filter-removed-badge" id="badge-removed-type" hidden></span></span><div class="seg" role="radiogroup" aria-labelledby="lbl-type" data-filter="type"></div></div>
+            <div class="filter-group"><span class="label" id="lbl-sen">Seniority <span class="filter-removed-badge" id="badge-removed-seniority" hidden></span></span><div class="seg" role="radiogroup" aria-labelledby="lbl-sen" data-filter="seniority"></div></div>
+            <div class="filter-group">
+              <span class="label" id="lbl-sal">Minimum salary <span class="filter-removed-badge" id="badge-removed-salary" hidden></span></span>
+              <div class="filter-salary-row">
+                <input class="input input-sm" id="flt-salary" type="number" step="5000" placeholder="e.g. 100000" style="max-width: 140px;">
+                <label class="check check-sm"><input type="checkbox" id="flt-unknown-sal" checked> Include unlisted</label>
+              </div>
+            </div>
             <div class="filter-group"><span class="label" id="lbl-fit">Minimum fit</span><div class="seg" role="radiogroup" aria-labelledby="lbl-fit" data-filter="fit"></div></div>
           </div>
         </div>
       </div>
       <section aria-label="Search results">
+        <!-- Usability Warning Banner (<10 or >300 matches) -->
+        <div class="banner-usability" id="banner-usability" hidden role="alert">
+          <div class="banner-content">
+            <svg class="icon" id="usability-icon"><use href="#i-circle-alert"/></svg>
+            <span id="usability-message"></span>
+          </div>
+          <div class="banner-actions" id="usability-actions"></div>
+        </div>
+
+        <!-- Closing Soon Accordion -->
+        <details class="closing-soon-wrap" id="closing-soon-wrap" hidden>
+          <summary>
+            <span class="cs-head"><svg class="icon text-amber"><use href="#i-hourglass"/></svg>Closing soon (in 24h grace period) <span class="badge" id="closing-soon-count">0</span></span>
+          </summary>
+          <ul class="closing-soon-list" id="closing-soon-list"></ul>
+        </details>
+
         <div class="results-bar" id="results-bar" hidden>
           <div><span class="count" id="results-count"></span> <span class="meta" id="results-meta"></span></div>
           <label class="sort">Sort by <select class="select" id="sort" aria-label="Sort results"><option value="score">Best fit</option><option value="date">Newest</option></select></label>
@@ -413,6 +462,211 @@
     </ul>
     <div class="dialog-foot"><button class="btn btn-primary" value="close">Close</button></div>
   </form>
+</dialog>
+
+<dialog id="dlg-closed-confirm" aria-labelledby="closed-confirm-title">
+  <div class="dialog-body">
+    <div class="dialog-header">
+      <svg class="icon text-amber"><use href="#i-shield-alert"/></svg>
+      <h2 id="closed-confirm-title">Posting Appears Closed</h2>
+    </div>
+    <p>This job posting appears closed or unavailable on the employer site (404, expired, or removed).</p>
+    <p class="mute">Tailored resume and cover letter generation will only proceed if confirmed.</p>
+    <div class="dialog-foot">
+      <button class="btn btn-secondary" id="btn-closed-skip" type="button">Skip</button>
+      <button class="btn btn-primary" id="btn-closed-confirm" type="button">Yes, generate anyway</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-low-fit" aria-labelledby="low-fit-title" class="dlg-lg">
+  <div class="dialog-body">
+    <div class="dialog-header">
+      <svg class="icon text-amber"><use href="#i-circle-alert"/></svg>
+      <h2 id="low-fit-title">Low Fit Score (<span id="low-fit-score">0</span>%)</h2>
+    </div>
+    <p id="low-fit-msg">Fit score is below the 60 threshold. Review the gap analysis before saving:</p>
+    
+    <div class="gap-report-content">
+      <div class="gap-section">
+        <h3>Missing Requirements</h3>
+        <ul class="gap-list" id="low-fit-gaps"></ul>
+      </div>
+      <div class="gap-section">
+        <h3>Interview Talking Track</h3>
+        <div class="talking-track" id="low-fit-track"></div>
+      </div>
+      <div class="gap-section" id="low-fit-add-true-sec">
+        <h3>Add This If True (Resume Boost)</h3>
+        <ul class="gap-list" id="low-fit-add-true"></ul>
+      </div>
+    </div>
+
+    <div class="dialog-foot">
+      <button class="btn btn-secondary" id="btn-low-fit-skip" type="button">Skip job</button>
+      <button class="btn btn-primary" id="btn-low-fit-save" type="button">Save anyway</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-dismiss-reasons" aria-labelledby="dismiss-reasons-title">
+  <div class="dialog-body">
+    <div class="dialog-header">
+      <svg class="icon"><use href="#i-x"/></svg>
+      <h2 id="dismiss-reasons-title">Dismiss posting</h2>
+    </div>
+    <p class="mute">Why are you dismissing this job? Select a reason to tune recommendations:</p>
+    <div class="chip-list" id="dismiss-chips">
+      <button type="button" class="chip-btn" data-reason="Location"><svg class="icon icon-sm"><use href="#i-map-pin"/></svg> Location / Commute</button>
+      <button type="button" class="chip-btn" data-reason="Pay"><svg class="icon icon-sm"><use href="#i-sliders-horizontal"/></svg> Pay / Salary</button>
+      <button type="button" class="chip-btn" data-reason="Role"><svg class="icon icon-sm"><use href="#i-file-text"/></svg> Role / Scope</button>
+      <button type="button" class="chip-btn" data-reason="Seniority"><svg class="icon icon-sm"><use href="#i-user"/></svg> Seniority level</button>
+      <button type="button" class="chip-btn" data-reason="Other"><svg class="icon icon-sm"><use href="#i-ellipsis"/></svg> Other</button>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-quiet" id="btn-dismiss-cancel" type="button">Cancel</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-filter-proposal" aria-labelledby="filter-proposal-title">
+  <div class="dialog-body">
+    <div class="dialog-header">
+      <svg class="icon text-primary"><use href="#i-sparkles"/></svg>
+      <h2 id="filter-proposal-title">Filter Tuning Recommendation</h2>
+    </div>
+    <p id="filter-proposal-message"></p>
+    <div class="dialog-foot">
+      <button class="btn btn-quiet" id="btn-proposal-dismiss" type="button">Keep current filters</button>
+      <button class="btn btn-primary" id="btn-proposal-apply" type="button">Update view filters</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-review-studio" class="studio-dialog" aria-labelledby="studio-title">
+  <div class="studio-body">
+    <div class="studio-head">
+      <div class="studio-meta">
+        <h2 id="studio-title">Human Review Studio</h2>
+        <span class="studio-sub" id="studio-sub"></span>
+      </div>
+      <div class="studio-head-actions">
+        <div class="fit-gauge" id="studio-fit-gauge"><span id="studio-fit-val">85%</span> fit</div>
+        <button class="btn btn-quiet btn-icon" id="btn-studio-close" type="button" aria-label="Close studio"><svg class="icon"><use href="#i-x"/></svg></button>
+      </div>
+    </div>
+    
+    <div class="studio-grid">
+      <!-- Left: Job Posting -->
+      <section class="studio-pane pane-posting" aria-labelledby="h-pane-post">
+        <div class="pane-head">
+          <h3 id="h-pane-post"><svg class="icon icon-sm"><use href="#i-file-text"/></svg> Job Description</h3>
+          <span class="badge" id="studio-post-meta"></span>
+        </div>
+        <div class="pane-content" id="studio-post-body"></div>
+      </section>
+
+      <!-- Right: Tailored Materials -->
+      <section class="studio-pane pane-materials" aria-labelledby="h-pane-docs">
+        <div class="pane-head">
+          <div class="seg" role="tablist" id="studio-doc-tabs">
+            <button type="button" role="tab" aria-selected="true" data-doc-tab="resume">Tailored Resume</button>
+            <button type="button" role="tab" aria-selected="false" data-doc-tab="cover">Cover Letter</button>
+          </div>
+          <button class="btn btn-quiet btn-sm" id="btn-studio-toggle-edit" type="button"><svg class="icon icon-sm"><use href="#i-sliders-horizontal"/></svg><span id="lbl-studio-edit">Edit draft</span></button>
+        </div>
+        <div class="pane-content" id="studio-doc-preview"></div>
+        <textarea class="studio-editor input" id="studio-doc-editor" hidden spellcheck="false"></textarea>
+      </section>
+    </div>
+
+    <div class="studio-foot">
+      <div class="foot-left">
+        <button class="btn btn-quiet text-danger" id="btn-studio-reject" type="button"><svg class="icon icon-sm"><use href="#i-trash-2"/></svg><span>Reject with feedback</span></button>
+      </div>
+      <div class="foot-right">
+        <button class="btn btn-secondary" id="btn-studio-save-edit" type="button" hidden>Save edits</button>
+        <button class="btn btn-secondary" id="btn-studio-accept" type="button"><svg class="icon icon-sm"><use href="#i-check"/></svg><span>Accept & Approve</span></button>
+        <button class="btn btn-primary" id="btn-studio-apply" type="button"><svg class="icon icon-sm"><use href="#i-send"/></svg><span>Apply with extension</span></button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-reject-feedback" aria-labelledby="reject-title">
+  <div class="dialog-body">
+    <div class="dialog-header">
+      <svg class="icon text-danger"><use href="#i-trash-2"/></svg>
+      <h2 id="reject-title">Reject Tailored Draft</h2>
+    </div>
+    <p class="mute">Please provide feedback on why this draft was rejected to improve future drafts:</p>
+    <div class="field">
+      <textarea class="input" id="reject-feedback-text" rows="3" placeholder="e.g. Needs more emphasis on distributed systems, tone was too casual..."></textarea>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-quiet" id="btn-reject-cancel" type="button">Cancel</button>
+      <button class="btn btn-danger-solid" id="btn-reject-confirm" type="button">Confirm rejection</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-system-status" class="drawer status-drawer" aria-labelledby="status-drawer-title">
+  <div class="drawer-bar">
+    <button class="btn btn-quiet btn-icon" id="btn-status-drawer-close" type="button" aria-label="Close status"><svg class="icon"><use href="#i-x"/></svg></button>
+    <h2 id="status-drawer-title" style="font-size:var(--text-md);margin:0;display:inline-flex;align-items:center;gap:var(--s2)"><svg class="icon"><use href="#i-radar"/></svg>System & Background Status</h2>
+  </div>
+  <div class="drawer-body" style="padding:var(--s5);display:grid;gap:var(--s5)">
+    <!-- Section 1: LinkedIn Radar (Always on) -->
+    <section class="status-card" aria-labelledby="h-radar-status">
+      <div class="status-card-header" style="display:flex;justify-content:space-between;align-items:center">
+        <h3 id="h-radar-status" style="margin:0;display:flex;align-items:center;gap:var(--s2)">
+          <span class="radar-dot" id="status-radar-dot"></span>
+          LinkedIn Radar (Always on)
+        </h3>
+        <span class="badge" id="status-radar-state-badge">Idle</span>
+      </div>
+      <div class="status-card-body" style="display:grid;gap:var(--s2);margin-block:var(--s3);font-size:var(--text-sm)">
+        <div><strong>Last gentle poll:</strong> <span id="status-radar-last-poll">Never</span></div>
+        <div><strong>Next poll:</strong> <span id="status-radar-next-poll">In ~15 minutes</span></div>
+        <div><strong>Matches for active view:</strong> <span id="status-radar-matches">0</span></div>
+        <div id="status-radar-warning-wrap" class="text-amber" hidden>
+          <svg class="icon icon-sm"><use href="#i-shield-alert"/></svg>
+          <span id="status-radar-warning-text"></span>
+        </div>
+      </div>
+      <div class="status-card-actions">
+        <button class="btn btn-secondary btn-sm" id="btn-status-radar-ack" type="button">Acknowledge new matches</button>
+      </div>
+    </section>
+
+    <!-- Section 2: Non-LinkedIn Source Schedules -->
+    <section class="status-card" aria-labelledby="h-refresh-status">
+      <div class="status-card-header" style="display:flex;justify-content:space-between;align-items:center">
+        <h3 id="h-refresh-status" style="margin:0;display:flex;align-items:center;gap:var(--s2)">
+          <svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg>
+          Source Refresh Schedules
+        </h3>
+        <button class="btn btn-primary btn-sm" id="btn-status-refresh-now" type="button">Refresh now</button>
+      </div>
+      <p class="mute" style="font-size:var(--text-xs);margin-block:var(--s2)">Sources refresh automatically based on adaptive TTL. 15-minute cooldown between forced refreshes.</p>
+      <div class="status-table-wrap" style="overflow-x:auto">
+        <table class="status-table" style="width:100%;font-size:var(--text-xs);border-collapse:collapse">
+          <thead>
+            <tr style="border-bottom:1px solid var(--line);text-align:left;color:var(--ink-soft)">
+              <th style="padding:var(--s2)">Source</th>
+              <th style="padding:var(--s2)">Last Run</th>
+              <th style="padding:var(--s2)">TTL</th>
+              <th style="padding:var(--s2)">Next Due</th>
+              <th style="padding:var(--s2)">Status</th>
+            </tr>
+          </thead>
+          <tbody id="status-sources-tbody">
+            <!-- populated by JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
 </dialog>
 
 <div class="drop-overlay" id="drop-overlay" hidden><div>Drop your resume to add it</div></div>

@@ -48,7 +48,11 @@ def get_desktop_dir() -> Path:
                 return p.resolve()
 
     # 3. Standard fallback
-    standard = Path.home() / "Desktop"
+    try:
+        standard = Path.home() / "Desktop"
+    except Exception:
+        fallback_base = os.environ.get("USERPROFILE") or os.environ.get("HOME") or "."
+        standard = Path(fallback_base) / "Desktop"
     return standard.resolve()
 
 
@@ -66,15 +70,21 @@ def get_home() -> Path:
         return Path(env_home.strip()).resolve()
 
     # 2. ~/.jobmcp/config.json
-    cfg_file = Path.home() / ".jobmcp" / "config.json"
-    if cfg_file.is_file():
-        try:
+    try:
+        home_dir = Path.home()
+    except Exception:
+        fallback_base = os.environ.get("USERPROFILE") or os.environ.get("HOME") or "."
+        home_dir = Path(fallback_base)
+
+    try:
+        cfg_file = home_dir / ".jobmcp" / "config.json"
+        if cfg_file.is_file():
             data = json.loads(cfg_file.read_text(encoding="utf-8"))
             candidate = data.get("home") or data.get("data_dir")
             if candidate and str(candidate).strip():
                 return Path(str(candidate).strip()).resolve()
-        except Exception:
-            pass
+    except Exception:
+        pass
 
     # 3. Desktop/jobmcp
     desktop = get_desktop_dir()

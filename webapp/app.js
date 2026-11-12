@@ -76,8 +76,14 @@
     searching: false,
     query: "",
     place: "",
-    filters: { mode: "", type: "", fit: 0 },
+    filters: { mode: "", type: "", fit: 0, min_salary: 0, seniority: "", show_unknown_salary: true },
     sort: "score",
+    radar: { running: false, status: "idle", matches: 0, failureCount: 0, interval: 900 },
+    cleanup: { expiringSoonCount: 0, expiringJobs: [], lastDeletedCount: 0, unacknowledgedDeletions: 0 },
+    closingSoon: [],
+    countsRemoved: {},
+    usableGate: { status: "usable", message: "" },
+    refreshStatus: { sources: [], minRemainingSeconds: 0 },
     apps: [],
     appsLoaded: false,
     stageTab: "saved",
@@ -422,6 +428,7 @@
   const MODES = [["", "Any"], ["Remote", "Remote"], ["Hybrid", "Hybrid"], ["Onsite", "On site"]];
   const TYPES = [["", "Any"], ["Full-time", "Full-time"], ["Internship", "Internship"], ["Contract", "Contract"], ["Freelance", "Freelance"]];
   const FITS = [[0, "Any"], [60, "60+"], [75, "75+"], [85, "85+"]];
+  const SENIORITIES = [["", "Any"], ["junior", "Early"], ["mid", "Mid"], ["senior", "Senior"], ["lead", "Lead/Staff"]];
   const desktopQuery = window.matchMedia("(min-width: 1000px)");
 
   let searchCtl = null;
@@ -453,16 +460,295 @@
   }
 
   function renderFilterSegs() {
-    const defs = { mode: MODES, type: TYPES, fit: FITS };
+    const defs = { mode: MODES, type: TYPES, fit: FITS, seniority: SENIORITIES };
     $$(".seg[data-filter]").forEach((seg) => {
       const key = seg.dataset.filter;
+      if (!defs[key]) return;
       seg.innerHTML = defs[key].map(([v, label]) => {
-        const on = String(state.filters[key]) === String(v);
+        const on = String(state.filters[key] || "") === String(v);
         return `<button type="button" role="radio" aria-checked="${on}" data-v="${esc(v)}">${esc(label)}</button>`;
       }).join("");
     });
-    const n = (state.filters.mode ? 1 : 0) + (state.filters.type ? 1 : 0) + (state.filters.fit ? 1 : 0);
+    const n = (state.filters.mode ? 1 : 0) + (state.filters.type ? 1 : 0) + (state.filters.fit ? 1 : 0) + (state.filters.seniority ? 1 : 0) + (state.filters.min_salary ? 1 : 0);
     byId("filter-count").textContent = n ? " (" + n + ")" : "";
+  }
+
+  function updateFilterBadges() {
+    const counts = state.countsRemoved || {};
+    const map = {
+      mode: "badge-removed-mode",
+      type: "badge-removed-type",
+      seniority: "badge-removed-seniority",
+      salary: "badge-removed-salary",
+    };
+    for (const [key, elId] of Object.entries(map)) {
+      const el = byId(elId);
+      if (!el) continue;
+      const count = counts[key] || 0;
+      if (count > 0) {
+        el.textContent = `(${count} removed)`;
+        el.hidden = false;
+      } else {
+        el.hidden = true;
+      }
+    }
+  }
+
+  function updateUsabilityBanner() {
+    const banner = byId("banner-usability");
+    if (!banner) return;
+    const count = state.jobs.length;
+    const searched = state.searched;
+
+    if (!searched) {
+      banner.hidden = true;
+      return;
+    }
+
+    const msgEl = byId("usability-message");
+    const actionsEl = byId("usability-actions");
+    if (!msgEl || !actionsEl) return;
+
+    if (count < 10) {
+      banner.className = "banner-usability few";
+      banner.hidden = false;
+      msgEl.textContent = `Only ${count} match${count === 1 ? "" : "es"} found (optimal range: 10–300). Loosen one filter or refresh sources.`;
+      actionsEl.innerHTML = `
+        ${state.filters.min_salary ? `<button class="btn btn-secondary btn-sm" id="btn-loosen-sal" type="button">Clear min salary</button>` : ""}
+        ${state.filters.mode ? `<button class="btn btn-secondary btn-sm" id="btn-loosen-mode" type="button">Set mode to Any</button>` : ""}
+        <button class="btn btn-quiet btn-sm" id="btn-usability-refresh" type="button">Refresh now</button>
+      `;
+      const btnSal = byId("btn-loosen-sal");
+      if (btnSal) btnSal.addEventListener("click", () => {
+        state.filters.min_salary = 0;
+        const fltSal = byId("flt-salary");
+        if (fltSal) fltSal.value = "";
+        loadJobsQuery();
+      });
+      const btnMode = byId("btn-loosen-mode");
+      if (btnMode) btnMode.addEventListener("click", () => {
+        state.filters.mode = "";
+        renderFilterSegs();
+        loadJobsQuery();
+      });
+      const btnRef = byId("btn-usability-refresh");
+      if (btnRef) btnRef.addEventListener("click", onManualRefreshClick);
+    } else if (count > 300) {
+      banner.className = "banner-usability many";
+      banner.hidden = false;
+      msgEl.textContent = `Over 300 matches found (${count} total). Tighten your salary or seniority filter to focus on top matches.`;
+      actionsEl.innerHTML = `
+        <button class="btn btn-secondary btn-sm" id="btn-tighten-sen" type="button">Filter to Senior</button>
+        <button class="btn btn-secondary btn-sm" id="btn-tighten-sal" type="button">Set $120k+ min</button>
+      `;
+      const btnSen = byId("btn-tighten-sen");
+      if (btnSen) btnSen.addEventListener("click", () => {
+        state.filters.seniority = "senior";
+        renderFilterSegs();
+        loadJobsQuery();
+      });
+      const btnSal = byId("btn-tighten-sal");
+      if (btnSal) btnSal.addEventListener("click", () => {
+        state.filters.min_salary = 120000;
+        const fltSal = byId("flt-salary");
+        if (fltSal) fltSal.value = "120000";
+        loadJobsQuery();
+      });
+    } else {
+      banner.hidden = true;
+    }
+  }
+
+  function renderClosingSoon() {
+    const wrap = byId("closing-soon-wrap");
+    if (!wrap) return;
+    const list = state.closingSoon || [];
+    if (!list.length) {
+      wrap.hidden = true;
+      return;
+    }
+    wrap.hidden = false;
+    const badge = byId("closing-soon-count");
+    if (badge) badge.textContent = String(list.length);
+    const ul = byId("closing-soon-list");
+    if (!ul) return;
+    ul.innerHTML = list.map((j) => {
+      const hours = j.hours_remaining != null ? Math.round(j.hours_remaining) : 24;
+      return `
+        <li class="closing-soon-item">
+          <div class="cs-info">
+            <strong>${esc(j.title)}</strong>
+            <span class="meta">at ${esc(j.company)}</span>
+            <span class="cs-countdown">${icon("hourglass", "icon-sm")} Expiring in ~${hours}h</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" type="button" data-act="keep-job" data-id="${esc(j.id)}">Keep job</button>
+        </li>
+      `;
+    }).join("");
+  }
+
+  /* ------------------------------------------------------------ V5 Refresh Scheduler & Status */
+  let cooldownTimerInterval = null;
+
+  async function pollRefreshStatus() {
+    try {
+      const data = await apiGet("/api/refresh/status");
+      if (!data) return;
+      state.refreshStatus = {
+        sources: data.sources || [],
+        minRemainingSeconds: data.min_remaining_seconds || 0,
+        checkedAt: data.checked_at,
+      };
+      if (state.refreshStatus.minRemainingSeconds > 0 && !cooldownTimerInterval) {
+        startCooldownTimer();
+      }
+      updateCooldownUI();
+      renderSystemStatusDrawer();
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function startCooldownTimer() {
+    if (cooldownTimerInterval) clearInterval(cooldownTimerInterval);
+    cooldownTimerInterval = setInterval(() => {
+      if (state.refreshStatus && state.refreshStatus.minRemainingSeconds > 0) {
+        state.refreshStatus.minRemainingSeconds -= 1;
+        updateCooldownUI();
+      } else {
+        clearInterval(cooldownTimerInterval);
+        cooldownTimerInterval = null;
+        updateCooldownUI();
+      }
+    }, 1000);
+  }
+
+  function formatDuration(seconds) {
+    if (!seconds || seconds <= 0) return "0s";
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
+  function updateCooldownUI() {
+    const rem = (state.refreshStatus && state.refreshStatus.minRemainingSeconds) || 0;
+    const btnDrawer = byId("btn-status-refresh-now");
+    const btnUsability = byId("btn-usability-refresh");
+
+    if (rem > 0) {
+      const text = `Cooldown (${formatDuration(rem)})`;
+      if (btnDrawer) {
+        btnDrawer.disabled = true;
+        btnDrawer.textContent = text;
+      }
+      if (btnUsability) {
+        btnUsability.disabled = true;
+        btnUsability.textContent = text;
+      }
+    } else {
+      if (btnDrawer) {
+        btnDrawer.disabled = false;
+        btnDrawer.textContent = "Refresh now";
+      }
+      if (btnUsability) {
+        btnUsability.disabled = false;
+        btnUsability.textContent = "Refresh now";
+      }
+    }
+  }
+
+  function renderSystemStatusDrawer() {
+    const dlg = byId("dlg-system-status");
+    if (!dlg || !dlg.open) return;
+
+    // 1. Radar
+    const rDot = byId("status-radar-dot");
+    const rBadge = byId("status-radar-state-badge");
+    const rLast = byId("status-radar-last-poll");
+    const rNext = byId("status-radar-next-poll");
+    const rMatches = byId("status-radar-matches");
+    const rWarnWrap = byId("status-radar-warning-wrap");
+    const rWarnText = byId("status-radar-warning-text");
+
+    if (rDot) {
+      rDot.className = "radar-dot";
+      if (!state.radar.running) rDot.classList.add("off");
+      else if (state.radar.failureCount >= 3 || state.radar.status === "warning") rDot.classList.add("warning");
+    }
+
+    if (rBadge) {
+      rBadge.textContent = state.radar.status === "warning" ? "Warning (Backoff)" : (state.radar.running ? "Active" : "Idle");
+      rBadge.className = "badge" + (state.radar.status === "warning" ? " badge-warning" : (state.radar.running ? " badge-accent" : ""));
+    }
+
+    if (rLast) rLast.textContent = state.radar.lastPoll ? daysAgo(state.radar.lastPoll) : "Never";
+    if (rNext) {
+      if (state.radar.running) {
+        rNext.textContent = state.radar.nextPoll ? daysAgo(state.radar.nextPoll) : "In ~10–20 min";
+      } else {
+        rNext.textContent = "Worker not started";
+      }
+    }
+    if (rMatches) rMatches.textContent = `${state.radar.matches || 0} match(es)`;
+
+    if (rWarnWrap && rWarnText) {
+      if (state.radar.failureCount >= 3 || state.radar.status === "warning") {
+        rWarnWrap.hidden = false;
+        rWarnText.textContent = `LinkedIn rate limit or 429 encountered. Backoff delay active (${state.radar.failureCount} sequential retries).`;
+      } else {
+        rWarnWrap.hidden = true;
+      }
+    }
+
+    // 2. Sources Table
+    const tbody = byId("status-sources-tbody");
+    if (tbody && state.refreshStatus && state.refreshStatus.sources) {
+      tbody.innerHTML = state.refreshStatus.sources.map((s) => {
+        const ttlHours = s.ttl_seconds ? `${Math.round(s.ttl_seconds / 3600)}h` : "12h";
+        const lastRunText = s.last_run_at ? daysAgo(s.last_run_at) : "Never";
+        let statusBadge = "";
+        if (s.in_cooldown) {
+          statusBadge = `<span class="badge badge-cooldown">Cooldown</span>`;
+        } else if (s.is_due) {
+          statusBadge = `<span class="badge badge-warning">Due</span>`;
+        } else {
+          statusBadge = `<span class="badge">Fresh (${s.last_new || 0} new)</span>`;
+        }
+        return `
+          <tr>
+            <td style="padding:var(--s2);font-weight:600">${esc(s.source)}</td>
+            <td style="padding:var(--s2);color:var(--ink-soft)">${esc(lastRunText)}</td>
+            <td style="padding:var(--s2)">${ttlHours}</td>
+            <td style="padding:var(--s2)">${s.is_due ? "Now" : "In schedule"}</td>
+            <td style="padding:var(--s2)">${statusBadge}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+  }
+
+  async function onManualRefreshClick() {
+    try {
+      toast("Refreshing non-LinkedIn sources in background...", { kind: "info" });
+      const res = await apiPost("/api/refresh", { force: true });
+      if (res && res.status === "cooldown") {
+        toast(res.message, { kind: "bad" });
+        if (res.cooldown_remaining_seconds) {
+          if (!state.refreshStatus) state.refreshStatus = {};
+          state.refreshStatus.minRemainingSeconds = res.cooldown_remaining_seconds;
+          startCooldownTimer();
+        }
+        return;
+      }
+      toast(`Refresh complete. ${res.inserted || 0} new jobs stored across ${((res.refreshed_sources) || []).length} sources.`);
+      await pollRefreshStatus();
+      if (state.refreshStatus.minRemainingSeconds > 0) startCooldownTimer();
+      await loadJobsQuery();
+      renderSystemStatusDrawer();
+    } catch (e) {
+      toast("Refresh failed: " + e.message, { kind: "bad" });
+    }
   }
 
   function visibleJobs() {
@@ -506,7 +792,8 @@
       ? (app.status === "saved" ? `<button class="btn btn-quiet btn-sm" type="button" disabled>${icon("bookmark-check", "icon-sm")}<span>Saved</span></button>` : "")
       : `<button class="btn btn-quiet btn-sm" type="button" data-act="save" data-key="${esc(key)}">${icon("bookmark", "icon-sm")}<span>Save</span></button>`;
     const copy = url ? `<button class="btn btn-quiet btn-sm btn-icon" type="button" data-act="copy-link" data-key="${esc(key)}" aria-label="Copy posting link">${icon("link", "icon-sm")}</button>` : "";
-    return `${apply}${save}${copy}<button class="btn btn-quiet btn-sm go" type="button" data-act="details" data-key="${esc(key)}">Details${icon("chevron-right", "icon-sm")}</button>`;
+    const dismiss = `<button class="btn btn-quiet btn-sm btn-icon" type="button" data-act="dismiss" data-key="${esc(key)}" aria-label="Dismiss job" title="Dismiss">${icon("x", "icon-sm")}</button>`;
+    return `${apply}${save}${copy}${dismiss}<button class="btn btn-quiet btn-sm go" type="button" data-act="details" data-key="${esc(key)}">Details${icon("chevron-right", "icon-sm")}</button>`;
   }
 
   function jobCardHtml(item) {
@@ -516,13 +803,25 @@
     const top = typeof j.score === "number" && j.score >= 90;
     const loc = j.location || "";
     const wm = j.work_mode && !loc.toLowerCase().includes(String(j.work_mode).toLowerCase()) ? j.work_mode : "";
+
+    // V5 Card Fields
+    const dupBadge = j.possible_duplicate ? `<span class="badge badge-duplicate" title="80-90% title similarity to an existing posting">${icon("circle-alert", "icon-sm")}Possible duplicate</span>` : "";
+    const sources = (Array.isArray(j.sources) && j.sources.length) ? j.sources : (j.source ? [j.source] : []);
+    const sourceBadges = sources.map(s => `<span class="badge badge-source">${esc(s)}</span>`).join("");
+    const hasSalary = Boolean(j.salary || j.min_salary || j.max_salary);
+    const salBadge = !hasSalary ? `<span class="badge badge-sal-missing">No salary listed</span>` : "";
+    const fitReason = (j.match_reasons && j.match_reasons[0]) || j.fit_reason || "";
+    const risks = j.risk_factors || j.risks || [];
+    const riskLine = risks.length ? `<div class="jc-risk"><svg class="icon icon-sm"><use href="#i-shield-alert"/></svg><span>${esc(risks.join(" • "))}</span></div>` : "";
+
     const meta = [
       top ? `<span class="badge hot">Top fit</span>` : "",
       isNew ? `<span class="badge new">New</span>` : "",
+      sourceBadges,
       loc ? `<span dir="auto">${esc(loc)}</span>` : "",
       wm ? `<span>${esc(wm)}</span>` : "",
       j.job_type ? `<span>${esc(j.job_type)}</span>` : "",
-      j.salary ? `<span>${esc(j.salary)}</span>` : "",
+      j.salary ? `<span>${esc(j.salary)}</span>` : salBadge,
       j.posted_days_ago != null ? `<span>${esc(daysAgo(j.posted_days_ago))}</span>` : "",
     ].filter(Boolean).join("");
     const sk = (j.matched_skills || []).slice(0, 4);
@@ -535,9 +834,11 @@
           <span class="jc-co" dir="auto">${esc(j.company || "Company not listed")}</span>
           <h2 class="jc-title" dir="auto"><button class="job-open" type="button" data-key="${esc(key)}" aria-haspopup="dialog">${esc(j.title || "Untitled role")}</button></h2>
         </div>
-        <div class="jc-badges">${scoreBadge(j.score)}</div>
+        <div class="jc-badges">${scoreBadge(j.score)}${dupBadge}</div>
       </div>
       ${meta ? `<div class="jc-meta">${meta}</div>` : ""}
+      ${fitReason ? `<div class="jc-fit-reason">${icon("sparkles", "icon-sm")}<span>${esc(fitReason)}</span></div>` : ""}
+      ${riskLine}
       ${sn ? `<p class="jc-desc" dir="auto">${esc(sn)}</p>` : ""}
       ${sk.length ? `<p class="jc-skills" aria-label="Skills from your resume"><span class="sr-only">From your resume: </span>${sk.map((s) => `<span class="mk">${esc(s)}</span>`).join("")}${more > 0 ? `<span class="jc-more">+${more}</span>` : ""}</p>` : ""}
       <div class="jc-actions">${cardActions(j, key)}</div>
@@ -578,7 +879,13 @@
     }
     bar.hidden = false;
     byId("results-count").textContent = items.length + (items.length === 1 ? " job" : " jobs");
-    byId("results-meta").textContent = hidden > 0 ? hidden + " hidden by filters" : "";
+    let totalRemoved = 0;
+    if (state.countsRemoved) {
+      totalRemoved = Object.values(state.countsRemoved).reduce((a, b) => a + (Number(b) || 0), 0);
+    }
+    const clientHidden = state.jobs.length - items.length;
+    const totalHidden = totalRemoved + clientHidden;
+    byId("results-meta").textContent = totalHidden > 0 ? totalHidden + " hidden by filters" : "";
     if (!items.length) {
       list.innerHTML = "";
       st.innerHTML = `<div class="empty"><h2>Filters hide all ${state.jobs.length} jobs</h2><p>Loosen a filter to see them.</p><button class="btn btn-secondary" type="button" data-clear-filters>Clear filters</button></div>`;
@@ -615,6 +922,7 @@
     const saveBtn = app && app.status === "saved"
       ? `<button class="btn btn-secondary" type="button" disabled>${icon("bookmark-check")}<span>Saved</span></button>`
       : app ? "" : `<button class="btn btn-secondary" type="button" data-act="save" data-key="${esc(state.selectedId)}">${icon("bookmark")}<span>Save</span></button>`;
+    const dismissBtn = `<button class="btn btn-quiet" type="button" data-act="dismiss" data-key="${esc(state.selectedId)}">${icon("x")}<span>Dismiss</span></button>`;
     const applyBtn = inPipeline
       ? `<a class="btn btn-secondary" href="#/applications">${icon("square-kanban")}<span>${esc(STAGE_LABEL[app.status] || "Tracked")} in Applications</span></a>`
       : `<button class="btn btn-primary" type="button" data-act="apply" data-key="${esc(state.selectedId)}"${url ? "" : " disabled"}>${icon("send")}<span>Apply with extension</span></button>`;
@@ -655,7 +963,7 @@
       </div>
       <div class="drawer-body">
         <header class="detail-head"><div class="dh-top"><span class="avatar lg" aria-hidden="true">${esc(initialOf(j.company))}</span>${scoreBadge(j.score)}</div><h2 id="drawer-title" dir="auto">${esc(j.title || "Untitled role")}</h2><div class="detail-meta">${meta}</div></header>
-        <div class="detail-actions">${applyBtn}${saveBtn}${url ? `<a class="btn btn-quiet" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><span>Open posting</span>${icon("external-link")}</a>` : ""}</div>
+        <div class="detail-actions">${applyBtn}${saveBtn}${dismissBtn}${url ? `<a class="btn btn-quiet" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><span>Open posting</span>${icon("external-link")}</a>` : ""}</div>
         <section class="detail-section" aria-labelledby="h-fit"><h3 id="h-fit">Why it fits</h3>${fitBlock}${matchedBlock}</section>
         <section class="detail-section" aria-labelledby="h-post"><h3 id="h-post">Posting</h3>
           ${post ? `<div class="posting-wrap"><div class="posting sweep" dir="auto">${post.html}</div></div>${post.count ? `<p class="legend">${post.count} ${post.count === 1 ? "term" : "terms"} from your resume ${post.count === 1 ? "is" : "are"} highlighted.</p>` : ""}` : `<p>This job came without a description.${url ? " Open the posting to read it." : ""}</p>`}
@@ -742,6 +1050,7 @@
       state.jobs = (d && d.jobs) || [];
       state.searched = true;
       persistSearch();
+      try { await loadJobsQuery(); } catch (qe) { /* fallback to d.jobs */ }
     } catch (e) {
       if (e.name === "AbortError") toast("Search stopped.");
       else searchError = e;
@@ -754,6 +1063,161 @@
     if (location.hash !== "#/jobs") history.replaceState(null, "", "#/jobs");
     renderJobs();
     syncSelection();
+  }
+
+  /* ------------------------------------------------------------ V5 View Query & Filtering */
+  async function loadJobsQuery() {
+    try {
+      const payload = {
+        filters: {
+          job_style: state.query || "tech jobs",
+          work_mode: state.filters.mode || "any",
+          contract_types: state.filters.type ? [state.filters.type] : [],
+          min_salary: state.filters.min_salary || 0,
+          seniority: state.filters.seniority ? [state.filters.seniority] : [],
+          locations: state.place ? [state.place] : [],
+          show_unknown_salary: state.filters.show_unknown_salary !== false,
+        },
+        sort_by: state.sort === "date" ? "date" : "rank",
+        limit: 100,
+      };
+      const res = await apiPost("/api/jobs/query", payload);
+      if (res && res.results) {
+        state.jobs = res.results;
+        state.closingSoon = res.closing_soon || [];
+        state.countsRemoved = res.counts_removed || {};
+        state.usableGate = res.gate || { status: "usable", message: "" };
+        state.searched = true;
+        renderJobs();
+        if (typeof renderClosingSoon === "function") renderClosingSoon();
+        if (typeof updateFilterBadges === "function") updateFilterBadges();
+        if (typeof updateUsabilityBanner === "function") updateUsabilityBanner();
+      }
+    } catch (e) {
+      console.warn("Could not query jobs via V5 API:", e);
+    }
+  }
+
+  /* ------------------------------------------------------------ V5 Header Radar & Lifecycle */
+  async function pollRadarStatus() {
+    try {
+      const data = await apiGet("/api/radar/status");
+      if (!data) return;
+      state.radar = {
+        running: !!data.running,
+        status: data.status || "idle",
+        matches: data.active_filter_matches || 0,
+        failureCount: data.failure_count || 0,
+        lastPoll: data.last_poll_at,
+        nextPoll: data.next_poll_at,
+      };
+      updateRadarHeaderUI();
+    } catch (e) {
+      /* ignore offline errors */
+    }
+  }
+
+  function updateRadarHeaderUI() {
+    const btn = byId("btn-radar-header");
+    if (!btn) return;
+    const dot = byId("radar-header-dot");
+    const badge = byId("radar-header-badge");
+
+    if (dot) {
+      dot.className = "radar-dot";
+      if (!state.radar.running) dot.classList.add("off");
+      else if (state.radar.failureCount >= 3 || state.radar.status === "warning") dot.classList.add("warning");
+    }
+
+    if (badge) {
+      if (state.radar.matches > 0) {
+        badge.textContent = String(state.radar.matches);
+        badge.hidden = false;
+        btn.setAttribute("title", `LinkedIn Radar: ${state.radar.matches} new match(es) found. Click to acknowledge.`);
+      } else {
+        badge.hidden = true;
+        btn.setAttribute("title", state.radar.running ? "LinkedIn Radar: Watching for new matches" : "LinkedIn Radar: Idle");
+      }
+    }
+  }
+
+  async function onRadarHeaderClick() {
+    const prevMatches = state.radar.matches;
+    try {
+      await apiPost("/api/radar/ack");
+      state.radar.matches = 0;
+      updateRadarHeaderUI();
+      if (prevMatches > 0) {
+        toast(`Acknowledged ${prevMatches} new radar job(s). Loading view...`);
+      }
+      await loadJobsQuery();
+    } catch (e) {
+      toast("Could not acknowledge radar jobs: " + e.message, { kind: "bad" });
+    }
+  }
+
+  async function pollCleanupStatus() {
+    try {
+      const data = await apiGet("/api/cleanup/status");
+      if (!data) return;
+      state.cleanup = {
+        graceHours: data.grace_hours || 24,
+        expiringSoonCount: data.expiring_soon_count || 0,
+        expiringJobs: data.expiring_jobs || [],
+        lastDeletedCount: data.last_deleted_count || 0,
+        unacknowledgedDeletions: data.unacknowledged_deletions || 0,
+      };
+      updateLifecycleBannerUI();
+      if (data.unacknowledged_deletions > 0 && data.last_deleted_count > 0) {
+        toast(`${data.last_deleted_count} expired job(s) reached the grace period and were cleaned up. Tombstones recorded.`, {
+          action: { label: "Dismiss", run: () => apiPost("/api/cleanup/ack") }
+        });
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function updateLifecycleBannerUI() {
+    const banner = byId("banner-lifecycle");
+    if (!banner) return;
+    const count = state.cleanup.expiringSoonCount;
+    if (count > 0) {
+      const text = byId("banner-lifecycle-text");
+      if (text) {
+        const minHours = state.cleanup.expiringJobs.length ? Math.min(...state.cleanup.expiringJobs.map(j => j.hours_remaining || 24)) : 24;
+        text.textContent = `${count} job${count === 1 ? "" : "s"} expiring in ${Math.round(minHours)} hour${Math.round(minHours) === 1 ? "" : "s"}. Expired postings will be removed after the grace period.`;
+      }
+      banner.hidden = false;
+    } else {
+      banner.hidden = true;
+    }
+  }
+
+  async function onKeepExpiringJobs() {
+    try {
+      const ids = state.cleanup.expiringJobs.map(j => j.id);
+      if (!ids.length) return;
+      await apiPost("/api/cleanup/keep", { job_ids: ids });
+      state.cleanup.expiringSoonCount = 0;
+      state.cleanup.expiringJobs = [];
+      updateLifecycleBannerUI();
+      toast("Saved expiring jobs. They will not be deleted.");
+      await loadJobsQuery();
+    } catch (e) {
+      toast("Could not keep jobs: " + e.message, { kind: "bad" });
+    }
+  }
+
+  async function onAckLifecycleBanner() {
+    try {
+      await apiPost("/api/cleanup/ack");
+      const banner = byId("banner-lifecycle");
+      if (banner) banner.hidden = true;
+    } catch (e) {
+      const banner = byId("banner-lifecycle");
+      if (banner) banner.hidden = true;
+    }
   }
 
   function setFieldError(input, msg) {
@@ -820,14 +1284,128 @@
     byId("main").scrollTop = main;
   }
 
-  async function onSave(key) {
+  let pendingSaveJob = null;
+  let pendingDismissJob = null;
+  let activeProposal = null;
+
+  async function onSave(key, opts) {
+    opts = opts || {};
     const j = jobByKey(key != null ? key : state.selectedId);
     if (!j) return;
+    pendingSaveJob = j;
+
+    const payload = {
+      job_id: j.id || j.job_key,
+      id: j.id || j.job_key,
+      title: j.title || "",
+      company: j.company || "",
+      location: j.location || "",
+      salary: j.salary || "",
+      url: jobUrl(j),
+      force: !!opts.force,
+      confirm_closed: !!opts.confirm_closed,
+      job_data: j
+    };
+
     try {
-      await saveJob(j, "saved");
+      toast("Evaluating fit and posting status...", { kind: "info" });
+      const res = await apiPost("/api/jobs/save", payload);
+      if (!res) return;
+
+      if (res.status === "needs_confirm") {
+        const dlg = byId("dlg-closed-confirm");
+        if (dlg) dlg.showModal();
+        return;
+      }
+
+      if (res.status === "low_fit") {
+        const dlg = byId("dlg-low-fit");
+        if (dlg) {
+          const scoreEl = byId("low-fit-score");
+          if (scoreEl) scoreEl.textContent = String(res.fit_score || 0);
+
+          const gapsEl = byId("low-fit-gaps");
+          const gaps = (res.gap_report && res.gap_report.missing_requirements) || [];
+          if (gapsEl) {
+            gapsEl.innerHTML = gaps.length ? gaps.map((g) => `<li>${esc(g)}</li>`).join("") : "<li>No specific skills missing</li>";
+          }
+
+          const trackEl = byId("low-fit-track");
+          const tracks = (res.gap_report && res.gap_report.talking_track) || [];
+          if (trackEl) {
+            trackEl.innerHTML = tracks.length ? tracks.map((t) => `<p>${esc(t)}</p>`).join("") : "<p>Emphasize rapid adaptability and related toolchains.</p>";
+          }
+
+          const addTrueEl = byId("low-fit-add-true");
+          const addTrueSec = byId("low-fit-add-true-sec");
+          const addList = (res.gap_report && res.gap_report.add_this_if_true) || [];
+          if (addTrueEl && addTrueSec) {
+            if (addList.length) {
+              addTrueSec.hidden = false;
+              addTrueEl.innerHTML = addList.map((a) => `<li>${esc(a)}</li>`).join("");
+            } else {
+              addTrueSec.hidden = true;
+            }
+          }
+
+          dlg.showModal();
+        }
+        return;
+      }
+
+      // Success
+      pendingSaveJob = null;
+      await reloadApps();
       refreshJobViews();
-      toast("Saved! Tailoring resume & cover letter...", { action: { label: "View", run: () => go("applications") } });
-    } catch (e) { toast(e.message, { kind: "bad" }); }
+      toast("Saved! Tailored resume & cover letter generated in outputs/.", {
+        action: { label: "View in Applications", run: () => go("applications") }
+      });
+    } catch (e) {
+      toast("Could not save job: " + e.message, { kind: "bad" });
+    }
+  }
+
+  function openDismissDialog(key) {
+    const j = jobByKey(key != null ? key : state.selectedId);
+    if (!j) return;
+    pendingDismissJob = j;
+    const dlg = byId("dlg-dismiss-reasons");
+    if (dlg) dlg.showModal();
+  }
+
+  async function onDismiss(reason) {
+    const dlg = byId("dlg-dismiss-reasons");
+    if (dlg) dlg.close();
+    if (!pendingDismissJob) return;
+
+    const j = pendingDismissJob;
+    const jid = j.id || j.job_key;
+    try {
+      const res = await apiPost("/api/jobs/dismiss", { job_id: jid, reason: reason || "Other" });
+      state.jobs = state.jobs.filter((x) => (x.id || x.job_key) !== jid);
+      renderJobs();
+      syncSelection();
+      toast(`Dismissed posting (${reason || "Other"}).`);
+
+      if (res && res.proposal) {
+        showFilterProposal(res.proposal);
+      }
+    } catch (e) {
+      toast("Could not dismiss job: " + e.message, { kind: "bad" });
+    } finally {
+      pendingDismissJob = null;
+    }
+  }
+
+  function showFilterProposal(proposal) {
+    activeProposal = proposal;
+    const dlg = byId("dlg-filter-proposal");
+    if (!dlg) return;
+    const msgEl = byId("filter-proposal-message");
+    if (msgEl) {
+      msgEl.textContent = proposal.message || "Based on your recent dismissals, tuning view filters could improve matching jobs.";
+    }
+    dlg.showModal();
   }
 
   async function onApply(key) {
@@ -870,16 +1448,61 @@
       const key = b.closest(".seg").dataset.filter;
       state.filters[key] = key === "fit" ? Number(b.dataset.v) : b.dataset.v;
       renderFilterSegs();
-      renderJobs();
-      syncSelectionAfterFilter();
+      if (state.searched) {
+        loadJobsQuery();
+      } else {
+        renderJobs();
+        syncSelectionAfterFilter();
+      }
     });
-    byId("sort").addEventListener("change", (e) => { state.sort = e.target.value; renderJobs(); });
+
+    const fltSalary = byId("flt-salary");
+    if (fltSalary) {
+      fltSalary.addEventListener("change", (e) => {
+        state.filters.min_salary = Math.max(0, Number(e.target.value) || 0);
+        renderFilterSegs();
+        if (state.searched) loadJobsQuery();
+      });
+    }
+
+    const fltUnknownSal = byId("flt-unknown-sal");
+    if (fltUnknownSal) {
+      fltUnknownSal.addEventListener("change", (e) => {
+        state.filters.show_unknown_salary = e.target.checked;
+        if (state.searched) loadJobsQuery();
+      });
+    }
+
+    const closingWrap = byId("closing-soon-wrap");
+    if (closingWrap) {
+      closingWrap.addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-act='keep-job']");
+        if (!btn) return;
+        const id = Number(btn.dataset.id);
+        if (!id) return;
+        try {
+          await apiPost("/api/cleanup/keep", { job_ids: [id] });
+          toast("Job saved and protected from deletion.");
+          await loadJobsQuery();
+          await pollCleanupStatus();
+        } catch (err) {
+          toast("Could not keep job: " + err.message, { kind: "bad" });
+        }
+      });
+    }
+
+    byId("sort").addEventListener("change", (e) => {
+      state.sort = e.target.value;
+      if (state.searched) loadJobsQuery();
+      else renderJobs();
+    });
 
     byId("job-list").addEventListener("click", (e) => {
       const act = e.target.closest("[data-act]");
       if (act) {
         const key = act.dataset.key;
         if (act.dataset.act === "save") onSave(key);
+        else if (act.dataset.act === "dismiss") openDismissDialog(key);
         else if (act.dataset.act === "apply") onApply(key);
         else if (act.dataset.act === "details") selectJob(key);
         else if (act.dataset.act === "copy-link") {
@@ -913,7 +1536,12 @@
       const st = e.target.closest("[data-step]");
       if (st) { stepSelection(Number(st.dataset.step)); return; }
       const a = e.target.closest("[data-act]");
-      if (a) { if (a.dataset.act === "save") onSave(a.dataset.key); else if (a.dataset.act === "apply") onApply(a.dataset.key); return; }
+      if (a) {
+        if (a.dataset.act === "save") onSave(a.dataset.key);
+        else if (a.dataset.act === "dismiss") { dlg.close(); openDismissDialog(a.dataset.key); }
+        else if (a.dataset.act === "apply") onApply(a.dataset.key);
+        return;
+      }
       const w = e.target.closest("[data-doc]");
       if (w) {
         const j = currentJob();
@@ -923,6 +1551,77 @@
         go("documents");
       }
     });
+
+    // V5 Dialog Wire-ups
+    const closedDlg = byId("dlg-closed-confirm");
+    if (closedDlg) {
+      closeOnBackdrop(closedDlg);
+      const btnSkip = byId("btn-closed-skip");
+      if (btnSkip) btnSkip.addEventListener("click", () => { closedDlg.close(); pendingSaveJob = null; });
+      const btnConf = byId("btn-closed-confirm");
+      if (btnConf) btnConf.addEventListener("click", () => {
+        closedDlg.close();
+        if (pendingSaveJob) {
+          onSave(jobKey(pendingSaveJob), { confirm_closed: true });
+        }
+      });
+    }
+
+    const lowFitDlg = byId("dlg-low-fit");
+    if (lowFitDlg) {
+      closeOnBackdrop(lowFitDlg);
+      const btnSkip = byId("btn-low-fit-skip");
+      if (btnSkip) btnSkip.addEventListener("click", () => { lowFitDlg.close(); pendingSaveJob = null; });
+      const btnSave = byId("btn-low-fit-save");
+      if (btnSave) btnSave.addEventListener("click", () => {
+        lowFitDlg.close();
+        if (pendingSaveJob) {
+          onSave(jobKey(pendingSaveJob), { force: true, confirm_closed: true });
+        }
+      });
+    }
+
+    const dismissDlg = byId("dlg-dismiss-reasons");
+    if (dismissDlg) {
+      closeOnBackdrop(dismissDlg);
+      const btnCancel = byId("btn-dismiss-cancel");
+      if (btnCancel) btnCancel.addEventListener("click", () => { dismissDlg.close(); pendingDismissJob = null; });
+      const chipList = byId("dismiss-chips");
+      if (chipList) chipList.addEventListener("click", (e) => {
+        const chip = e.target.closest(".chip-btn");
+        if (chip) onDismiss(chip.dataset.reason);
+      });
+    }
+
+    const proposalDlg = byId("dlg-filter-proposal");
+    if (proposalDlg) {
+      closeOnBackdrop(proposalDlg);
+      const btnDismiss = byId("btn-proposal-dismiss");
+      if (btnDismiss) btnDismiss.addEventListener("click", () => { proposalDlg.close(); activeProposal = null; });
+      const btnApply = byId("btn-proposal-apply");
+      if (btnApply) btnApply.addEventListener("click", () => {
+        proposalDlg.close();
+        if (activeProposal) {
+          if (activeProposal.type === "salary") {
+            state.filters.min_salary = Math.max(state.filters.min_salary || 0, 100000);
+            const fltSal = byId("flt-salary");
+            if (fltSal) fltSal.value = String(state.filters.min_salary);
+          } else if (activeProposal.type === "work_mode") {
+            state.filters.mode = "Remote";
+            renderFilterSegs();
+          } else if (activeProposal.type === "seniority") {
+            state.filters.seniority = "senior";
+            renderFilterSegs();
+          } else {
+            const body = byId("filters-body");
+            if (body) body.hidden = false;
+          }
+          activeProposal = null;
+          toast("Updated view filters based on feedback.");
+          loadJobsQuery();
+        }
+      });
+    }
 
     const cached = ssGet("jh-search");
     if (cached && Array.isArray(cached.jobs)) {
@@ -981,21 +1680,231 @@
   }
 
   function appCardHtml(a) {
-    const hasTailored = Boolean(a.tailored_resume || a.cover_letter);
+    const hasTailored = Boolean(a.tailored_resume || a.cover_letter || a.tailored_resume_text || a.cover_letter_text || a.resume_path);
+    const scoreVal = a.fit_score || a.score || 0;
+    const tier = tierOf(scoreVal);
+    const fitBadge = scoreVal > 0
+      ? `<span class="score" data-tier="${tier}">${Math.round(scoreVal)}% fit</span>`
+      : "";
+
     const tailoredBadge = hasTailored
-      ? `<span class="badge" title="Tailored resume and cover letter ready">${icon("file-text", "icon-sm")} Tailored Ready</span>`
-      : (a.status === "saved" ? `<span class="badge" style="opacity:0.75" title="Tailoring in background...">${icon("refresh-cw", "icon-sm")} Tailoring...</span>` : "");
+      ? `<span class="badge badge-accent" title="Tailored resume and cover letter ready">${icon("file-text", "icon-sm")} Tailored Ready</span>`
+      : (a.status === "saved" ? `<span class="badge" style="opacity:0.75" title="Tailoring in background...">${icon("refresh-cw", "icon-sm spin")} Tailoring...</span>` : "");
+
+    const isSavedLane = a.status === "saved";
+    const reviewBtn = isSavedLane
+      ? `<button class="btn btn-secondary btn-sm" type="button" data-act="review-studio" data-id="${esc(a.id)}">${icon("file-text", "icon-sm")}<span>Review Studio</span></button>`
+      : (hasTailored ? `<button class="btn btn-quiet btn-sm" type="button" data-act="review-studio" data-id="${esc(a.id)}">${icon("file-text", "icon-sm")}<span>Docs</span></button>` : "");
+
+    const applyExtBtn = (isSavedLane || a.status === "queued") && a.url
+      ? `<button class="btn btn-primary btn-sm" type="button" data-act="apply-ext" data-id="${esc(a.id)}">${icon("send", "icon-sm")}<span>Apply</span></button>`
+      : "";
+
     return `<article class="app-card" draggable="true" data-id="${esc(a.id)}">
-      <div class="app-title" dir="auto">${esc(a.title || "Untitled role")}</div>
+      <div class="jc-top" style="margin-block-end:var(--s1)">
+        <div class="app-title" dir="auto">${esc(a.title || "Untitled role")}</div>
+        ${fitBadge}
+      </div>
       <div class="app-co" dir="auto">${esc(a.company || "Company not listed")}</div>
       ${tailoredBadge ? `<div style="margin-block:var(--s1)">${tailoredBadge}</div>` : ""}
       ${noteHtml(a.notes)}
       <div class="app-actions">
         <span class="menu-wrap"><button class="btn btn-secondary btn-sm" type="button" data-move aria-haspopup="menu" aria-expanded="false">Move to${icon("chevron-down", "icon-sm")}</button></span>
-        ${hasTailored ? `<button class="btn btn-quiet btn-sm" type="button" data-view-tailored="${esc(a.id)}">${icon("file-text", "icon-sm")}<span>Docs</span></button>` : ""}
+        ${reviewBtn}
+        ${applyExtBtn}
         ${a.url ? `<span class="grow"><a class="btn btn-quiet btn-sm btn-icon" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" aria-label="Open posting for ${esc(a.title || "this role")}">${icon("external-link", "icon-sm")}</a></span>` : ""}
       </div>
     </article>`;
+  }
+
+  /* ------------------------------------------------------------ V5 Human Review Studio */
+  let activeStudioApp = null;
+  let activeStudioDocTab = "resume";
+  let studioIsEditing = false;
+
+  function openReviewStudio(appId) {
+    const a = state.apps.find((x) => String(x.id) === String(appId));
+    if (!a) return;
+    activeStudioApp = a;
+    studioIsEditing = false;
+    activeStudioDocTab = "resume";
+
+    const dlg = byId("dlg-review-studio");
+    if (!dlg) return;
+
+    byId("studio-title").textContent = `${a.title || "Untitled role"} at ${a.company || "Company"}`;
+    byId("studio-sub").textContent = [a.location, a.salary, a.url ? "Employer site" : ""].filter(Boolean).join(" • ");
+
+    const scoreVal = a.fit_score || a.score || 0;
+    const gaugeEl = byId("studio-fit-gauge");
+    const gaugeVal = byId("studio-fit-val");
+    if (gaugeVal) gaugeVal.textContent = `${Math.round(scoreVal)}%`;
+    if (gaugeEl) gaugeEl.style.borderColor = scoreVal >= 80 ? "var(--good)" : "var(--accent)";
+
+    const jd = a.job_data || {};
+    const postBody = byId("studio-post-body");
+    const postMeta = byId("studio-post-meta");
+    if (postMeta) postMeta.textContent = a.location || "Full-time";
+
+    let postHtml = "";
+    if (jd.description || a.description) {
+      const desc = jd.description || a.description;
+      const matched = jd.matched_skills || profileTerms();
+      postHtml = markText(desc, matched).html;
+    } else {
+      postHtml = `<p class="mute">No description stored for this posting. Open the original link to review.</p>`;
+    }
+    if (postBody) postBody.innerHTML = postHtml;
+
+    const docTabs = byId("studio-doc-tabs");
+    if (docTabs) {
+      $$("button[data-doc-tab]", docTabs).forEach((b) => b.setAttribute("aria-selected", String(b.dataset.docTab === activeStudioDocTab)));
+    }
+
+    renderStudioDoc();
+
+    const btnSaveEdit = byId("btn-studio-save-edit");
+    if (btnSaveEdit) btnSaveEdit.hidden = true;
+    const lblEdit = byId("lbl-studio-edit");
+    if (lblEdit) lblEdit.textContent = "Edit draft";
+
+    dlg.showModal();
+  }
+
+  function getStudioDocContent() {
+    if (!activeStudioApp) return "";
+    const a = activeStudioApp;
+    if (activeStudioDocTab === "resume") {
+      return a.tailored_resume_text || (typeof a.tailored_resume === "string" ? a.tailored_resume : JSON.stringify(a.tailored_resume || {}, null, 2)) || "No tailored resume generated yet.";
+    } else {
+      return a.cover_letter_text || a.cover_letter || "No cover letter generated yet.";
+    }
+  }
+
+  function renderStudioDoc() {
+    const content = getStudioDocContent();
+    const previewEl = byId("studio-doc-preview");
+    const editorEl = byId("studio-doc-editor");
+
+    if (studioIsEditing) {
+      if (previewEl) previewEl.hidden = true;
+      if (editorEl) {
+        editorEl.hidden = false;
+        editorEl.value = content;
+        editorEl.focus();
+      }
+    } else {
+      if (editorEl) editorEl.hidden = true;
+      if (previewEl) {
+        previewEl.hidden = false;
+        const terms = profileTerms();
+        previewEl.innerHTML = markText(content, terms).html;
+      }
+    }
+  }
+
+  async function onStudioSaveEdit() {
+    if (!activeStudioApp) return;
+    const editorEl = byId("studio-doc-editor");
+    if (!editorEl) return;
+    const newText = editorEl.value;
+    const a = activeStudioApp;
+    if (activeStudioDocTab === "resume") {
+      a.tailored_resume_text = newText;
+    } else {
+      a.cover_letter_text = newText;
+      a.cover_letter = newText;
+    }
+    try {
+      await apiPost("/api/applications", {
+        id: a.id,
+        cover_letter: a.cover_letter_text,
+        job_data: a.job_data
+      });
+      toast("Saved draft edits.");
+      studioIsEditing = false;
+      const btnSave = byId("btn-studio-save-edit");
+      if (btnSave) btnSave.hidden = true;
+      const lblEdit = byId("lbl-studio-edit");
+      if (lblEdit) lblEdit.textContent = "Edit draft";
+      renderStudioDoc();
+    } catch (e) {
+      toast("Could not save edits: " + e.message, { kind: "bad" });
+    }
+  }
+
+  async function onStudioAccept() {
+    if (!activeStudioApp) return;
+    const a = activeStudioApp;
+    try {
+      a.review_approved = true;
+      a.notes = (a.notes ? a.notes + "\n" : "") + "[Review Approved] Tailored materials accepted by user.";
+      await apiPost("/api/applications", {
+        id: a.id,
+        notes: a.notes,
+        status: a.status
+      });
+      toast("Tailored materials approved for use! Ready to apply with extension.");
+      const dlg = byId("dlg-review-studio");
+      if (dlg) dlg.close();
+      renderApps();
+    } catch (e) {
+      toast("Error accepting draft: " + e.message, { kind: "bad" });
+    }
+  }
+
+  function onStudioReject() {
+    const rejectDlg = byId("dlg-reject-feedback");
+    if (rejectDlg) {
+      const txt = byId("reject-feedback-text");
+      if (txt) txt.value = "";
+      rejectDlg.showModal();
+    }
+  }
+
+  async function onConfirmReject() {
+    const rejectDlg = byId("dlg-reject-feedback");
+    if (rejectDlg) rejectDlg.close();
+    if (!activeStudioApp) return;
+    const txt = byId("reject-feedback-text");
+    const feedback = (txt && txt.value ? txt.value : "Draft rejected during human review").trim();
+    const a = activeStudioApp;
+    try {
+      a.notes = (a.notes ? a.notes + "\n" : "") + `[Review Rejected] ${feedback}`;
+      await apiPost("/api/applications", {
+        id: a.id,
+        notes: a.notes
+      });
+      toast("Rejection logged with feedback. You can regenerate or edit.");
+      const dlg = byId("dlg-review-studio");
+      if (dlg) dlg.close();
+      renderApps();
+    } catch (e) {
+      toast("Could not log rejection: " + e.message, { kind: "bad" });
+    }
+  }
+
+  async function onApplyWithExtension(appId) {
+    const a = state.apps.find((x) => String(x.id) === String(appId || (activeStudioApp && activeStudioApp.id)));
+    if (!a || !a.url) {
+      toast("No posting link available to apply.", { kind: "bad" });
+      return;
+    }
+    try {
+      toast("Opening posting with extension. Matching fields from approved profile...", { kind: "info" });
+      await apiPost("/api/auto-apply/launch", { url: a.url });
+
+      if (a.status === "saved") {
+        await moveApp(a.id, "queued", true);
+      }
+      toast("Extension launched. Fields filled automatically (user submits manually per Rule 8).", {
+        action: { label: "View", run: () => go("applications") }
+      });
+      const studioDlg = byId("dlg-review-studio");
+      if (studioDlg && studioDlg.open) studioDlg.close();
+    } catch (e) {
+      toast("Could not launch extension: " + e.message, { kind: "bad" });
+    }
   }
 
   function renderApps() {
@@ -1159,6 +2068,16 @@
     });
 
     byId("board").addEventListener("click", (e) => {
+      const rs = e.target.closest("[data-act='review-studio']");
+      if (rs) {
+        openReviewStudio(rs.dataset.id);
+        return;
+      }
+      const ap = e.target.closest("[data-act='apply-ext']");
+      if (ap) {
+        onApplyWithExtension(ap.dataset.id);
+        return;
+      }
       const v = e.target.closest("[data-view-tailored]");
       if (v) {
         const id = v.dataset.viewTailored;
@@ -1192,6 +2111,55 @@
           .finally(() => l.removeAttribute("aria-busy"));
       }
     });
+
+    // Human Review Studio wire-up
+    const studioDlg = byId("dlg-review-studio");
+    if (studioDlg) {
+      closeOnBackdrop(studioDlg);
+      const btnClose = byId("btn-studio-close");
+      if (btnClose) btnClose.addEventListener("click", () => studioDlg.close());
+      const btnAccept = byId("btn-studio-accept");
+      if (btnAccept) btnAccept.addEventListener("click", onStudioAccept);
+      const btnReject = byId("btn-studio-reject");
+      if (btnReject) btnReject.addEventListener("click", onStudioReject);
+      const btnApply = byId("btn-studio-apply");
+      if (btnApply) btnApply.addEventListener("click", () => onApplyWithExtension());
+
+      const docTabs = byId("studio-doc-tabs");
+      if (docTabs) {
+        docTabs.addEventListener("click", (e) => {
+          const btn = e.target.closest("button[data-doc-tab]");
+          if (!btn) return;
+          activeStudioDocTab = btn.dataset.docTab;
+          $$("button[data-doc-tab]", docTabs).forEach((b) => b.setAttribute("aria-selected", String(b === btn)));
+          renderStudioDoc();
+        });
+      }
+
+      const btnToggleEdit = byId("btn-studio-toggle-edit");
+      if (btnToggleEdit) {
+        btnToggleEdit.addEventListener("click", () => {
+          studioIsEditing = !studioIsEditing;
+          const btnSave = byId("btn-studio-save-edit");
+          if (btnSave) btnSave.hidden = !studioIsEditing;
+          const lbl = byId("lbl-studio-edit");
+          if (lbl) lbl.textContent = studioIsEditing ? "Cancel edit" : "Edit draft";
+          renderStudioDoc();
+        });
+      }
+
+      const btnSaveEdit = byId("btn-studio-save-edit");
+      if (btnSaveEdit) btnSaveEdit.addEventListener("click", onStudioSaveEdit);
+    }
+
+    const rejectDlg = byId("dlg-reject-feedback");
+    if (rejectDlg) {
+      closeOnBackdrop(rejectDlg);
+      const btnCancel = byId("btn-reject-cancel");
+      if (btnCancel) btnCancel.addEventListener("click", () => rejectDlg.close());
+      const btnConfirm = byId("btn-reject-confirm");
+      if (btnConfirm) btnConfirm.addEventListener("click", onConfirmReject);
+    }
 
     byId("closed-list").addEventListener("click", (e) => {
       const b = e.target.closest("[data-reopen]");
@@ -2197,8 +3165,68 @@
     byId("btn-shortcuts").addEventListener("click", () => byId("dlg-keys").showModal());
     byId("btn-launch-browser").addEventListener("click", (e) => launchBrowser(e.currentTarget));
     byId("job-state").addEventListener("click", () => {});
+    
+    // V5 Header Radar and Lifecycle listeners
+    const radarBtn = byId("btn-radar-header");
+    if (radarBtn) radarBtn.addEventListener("click", onRadarHeaderClick);
+    const keepBtn = byId("btn-lifecycle-keep");
+    if (keepBtn) keepBtn.addEventListener("click", onKeepExpiringJobs);
+    const ackBtn = byId("btn-lifecycle-ack");
+    if (ackBtn) ackBtn.addEventListener("click", onAckLifecycleBanner);
+    const reviewBtn = byId("btn-lifecycle-review");
+    if (reviewBtn) reviewBtn.addEventListener("click", () => {
+      const closingWrap = byId("closing-soon-wrap");
+      if (closingWrap) {
+        closingWrap.open = true;
+        closingWrap.scrollIntoView({ behavior: "smooth" });
+      }
+    });
+
+    // V5 System Status Drawer listener
+    const statusDrawer = byId("dlg-system-status");
+    const railStatus = byId("rail-status");
+    if (railStatus && statusDrawer) {
+      closeOnBackdrop(statusDrawer);
+      const openStatus = () => {
+        statusDrawer.showModal();
+        pollRadarStatus();
+        pollRefreshStatus();
+        renderSystemStatusDrawer();
+      };
+      railStatus.addEventListener("click", openStatus);
+      railStatus.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openStatus();
+        }
+      });
+      const btnClose = byId("btn-status-drawer-close");
+      if (btnClose) btnClose.addEventListener("click", () => statusDrawer.close());
+      const btnAck = byId("btn-status-radar-ack");
+      if (btnAck) btnAck.addEventListener("click", async () => {
+        await onRadarHeaderClick();
+        renderSystemStatusDrawer();
+      });
+      const btnRefreshNow = byId("btn-status-refresh-now");
+      if (btnRefreshNow) btnRefreshNow.addEventListener("click", onManualRefreshClick);
+    }
+
+    pollRadarStatus();
+    pollCleanupStatus();
+    pollRefreshStatus();
+    setInterval(pollRadarStatus, 25000);
+    setInterval(pollCleanupStatus, 60000);
+    setInterval(pollRefreshStatus, 45000);
+
     window.addEventListener("hashchange", onRoute);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden && state.online === false) checkStatus(); });
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        if (state.online === false) checkStatus();
+        pollRadarStatus();
+        pollCleanupStatus();
+        pollRefreshStatus();
+      }
+    });
     desktopQuery.addEventListener("change", () => { if (state.route === "jobs") syncSelection(); });
 
     // Draw the first screen at once, then fill it with data.

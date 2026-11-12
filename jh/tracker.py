@@ -2,6 +2,7 @@
 import datetime
 import json
 import logging
+import os
 import threading
 import time
 
@@ -21,6 +22,38 @@ def _row_to_app(c, r):
     overdue = bool(fu and fu < datetime.date.today().isoformat() and r["status"] in ("applied", "interview"))
     jd = json.loads(r["job_data_json"]) if r["job_data_json"] else {}
     score = jd.get("score") or jd.get("fit_score") or (jd.get("ranking", {}) or {}).get("fit") or 0
+
+    keys = r.keys()
+    fit_score = r["fit_score"] if ("fit_score" in keys and r["fit_score"] is not None) else score
+    resume_path = r["resume_path"] if ("resume_path" in keys) else None
+    cover_path = r["cover_letter_path"] if ("cover_letter_path" in keys) else None
+    grounding_result = r["grounding_result"] if ("grounding_result" in keys) else None
+
+    tailored_text = ""
+    if resume_path and os.path.exists(resume_path):
+        try:
+            with open(resume_path, "r", encoding="utf-8") as f:
+                tailored_text = f.read()
+        except Exception:
+            pass
+    elif r["tailored_resume_json"]:
+        try:
+            tr = json.loads(r["tailored_resume_json"])
+            if isinstance(tr, str):
+                tailored_text = tr
+            elif isinstance(tr, dict):
+                tailored_text = json.dumps(tr, indent=2)
+        except Exception:
+            pass
+
+    cover_text = r["cover_letter"] or ""
+    if not cover_text and cover_path and os.path.exists(cover_path):
+        try:
+            with open(cover_path, "r", encoding="utf-8") as f:
+                cover_text = f.read()
+        except Exception:
+            pass
+
     return {
         "id": r["id"], "job_id": r["job_id"], "company": r["company"], "title": r["title"], "location": r["location"],
         "salary": r["salary"], "status": r["status"], "notes": r["notes"], "follow_up_date": fu,
@@ -33,6 +66,12 @@ def _row_to_app(c, r):
         "interview_date": jd.get("interview_date") or "",
         "url": jd.get("url") or (json.loads(r["sources_json"])[0].get("url") if r["sources_json"] and json.loads(r["sources_json"]) else ""),
         "score": int(score) if score else 0,
+        "fit_score": int(fit_score) if fit_score else int(score or 0),
+        "resume_path": resume_path,
+        "cover_letter_path": cover_path,
+        "grounding_result": grounding_result,
+        "tailored_resume_text": tailored_text,
+        "cover_letter_text": cover_text,
         "tailored_resume": json.loads(r["tailored_resume_json"]) if r["tailored_resume_json"] else None,
         "cover_letter": r["cover_letter"], "created_at": r["created_at"], "updated_at": r["updated_at"],
         "history": hist, "days_in_stage": round(since, 1) if since is not None else 0, "overdue": overdue,

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from . import workspace
-from .util import file_sha256, now_iso, slugify
+from .util import file_sha256, now_iso, slugify, stable_id
 
 log = logging.getLogger("jobhunter.registry")
 
@@ -29,12 +29,15 @@ class ResumeRegistry:
         self.workspace_path = Path(workspace_path).resolve()
         if data_dir:
             self.data_dir = Path(data_dir).resolve()
+            self.manifest_path = self.data_dir / MANIFEST_FILENAME
         elif os.environ.get("JH_DATA_DIR"):
             self.data_dir = Path(os.environ["JH_DATA_DIR"]).resolve()
+            self.manifest_path = self.data_dir / MANIFEST_FILENAME
         else:
             from . import home
             self.data_dir = home.get_home() / "data"
-        self.manifest_path = self.data_dir / MANIFEST_FILENAME
+            ws_key = stable_id(str(self.workspace_path))
+            self.manifest_path = self.data_dir / f"resume_manifest_{ws_key}.json"
         self._manifest: dict[str, Any] = self._load_manifest()
 
     def _load_manifest(self) -> dict[str, Any]:
