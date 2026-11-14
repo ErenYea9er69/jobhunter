@@ -13,7 +13,8 @@ from .ceo import CEO, RELAY_RULES
 
 JH_TOOLS = (
     "jh_start", "jh_load_resume", "jh_confirm_profile", "jh_set_filters",
-    "jh_search", "jh_query", "jh_refresh", "jh_open_ui", "jh_status", "jh_feedback"
+    "jh_search", "jh_query", "jh_refresh", "jh_open_ui", "jh_status", "jh_feedback",
+    "jh_set_method", "jh_find_contacts", "jh_build_resume", "jh_draft_email"
 )
 TEAM_TOOLS = ("ceo_run", "ceo_plan", "ceo_delegate", "ceo_submit_work", "ceo_recheck", "ceo_status", "ceo_team") + JH_TOOLS
 
@@ -280,5 +281,25 @@ def register_team(mcp: Any, tool: Callable, registry: dict[str, Callable], store
                     exclude_company: str = "", exclude_keyword: str = "", session_id: str = "default") -> dict[str, Any]:
         """Step 10: Record user feedback (dismissal, reasons, exclusions) with automatic tuning suggestion after 5 dismissals."""
         return v5_tools.jh_feedback(job_id=job_id, action=action, reason=reason, exclude_company=exclude_company, exclude_keyword=exclude_keyword, session_id=session_id)
+
+    @tool
+    def jh_set_method(method: str = "modern", session_id: str = "default") -> dict[str, Any]:
+        """Modern vs Classic: Choose outreach first (default) or classic job board flow."""
+        return v5_tools.jh_set_method(method=method, session_id=session_id)
+
+    @tool
+    def jh_find_contacts(signal_id_or_company: str, target_role: str = "") -> dict[str, Any]:
+        """Modern Step 12: Find up to 3 decision makers (Found, Pattern, Guess) or alternative routes for outreach."""
+        return v5_tools.jh_find_contacts(signal_id_or_company=signal_id_or_company, target_role=target_role)
+
+    @tool
+    def jh_build_resume(company: str, role: str, signal_id: str = "") -> dict[str, Any]:
+        """Modern Step 13: Build or retrieve single grounded 1-page PDF resume <= 200 KB in jobmcp/outputs/."""
+        return v5_tools.jh_build_resume(company=company, role=role, signal_id=signal_id)
+
+    @tool
+    def jh_draft_email(contact_id: str, signal_id: str = "", resume_path: str = "") -> dict[str, Any]:
+        """Modern Step 13: Draft human 3-4 line outreach email with slop linting and attachment policy."""
+        return v5_tools.jh_draft_email(contact_id=contact_id, signal_id=signal_id, resume_path=resume_path)
 
     return ceo

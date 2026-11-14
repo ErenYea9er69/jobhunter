@@ -212,18 +212,72 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/radar/status":
             from . import radar
             r_state = db.get_radar_state()
+            active_method = config.get_method()
+            filters = db.get_view_filters()
             with db.session() as c:
-                unread = c.execute("SELECT COUNT(*) FROM jobs WHERE is_new=1").fetchone()[0]
+                unread_jobs = c.execute("SELECT COUNT(*) FROM jobs WHERE is_new=1").fetchone()[0]
+                unread_signals = c.execute("SELECT COUNT(*) FROM signals WHERE is_new=1").fetchone()[0]
+                hiring_count = c.execute("SELECT COUNT(*) FROM signals WHERE is_new=1 AND type='hiring_post'").fetchone()[0]
+                funding_count = c.execute("SELECT COUNT(*) FROM signals WHERE is_new=1 AND type='funding'").fetchone()[0]
+
+            matching_signals = db.get_new_signals_count(view_filters=filters)
+            new_count = matching_signals if active_method == "modern" else unread_jobs
+
             return self._send_json(200, envelope(status="ok", data={
+                "method": active_method,
                 "status": r_state.get("status", "idle"),
                 "interval_seconds": r_state.get("interval_seconds", 600),
                 "failure_count": r_state.get("failure_count", 0),
                 "last_poll_at": r_state.get("last_poll_at"),
                 "next_poll_at": r_state.get("next_poll_at"),
                 "last_error": r_state.get("last_error", ""),
-                "unread_count": unread,
+                "new_count": new_count,
+                "unread_count": new_count,
+                "unread_jobs": unread_jobs,
+                "unread_signals": unread_signals,
+                "new_by_type": {
+                    "hiring_post": hiring_count,
+                    "funding": funding_count,
+                },
                 "radar_state": r_state,
             }))
+
+        if path == "/api/signals":
+            status_param = query.get("status", [""])[0] or None
+            type_param = query.get("type", [""])[0] or None
+            limit_param = int(query.get("limit", [100])[0])
+            apply_filters = query.get("apply_filters", ["true"])[0].lower() in ("true", "1", "yes")
+            filters = db.get_view_filters() if apply_filters else None
+            signals_list = db.get_signals(limit=limit_param, status=status_param, view_filters=filters, sig_type=type_param)
+            return self._send_json(200, envelope(status="ok", data={"signals": signals_list, "count": len(signals_list)}))
+
+        if path == "/api/briefs":
+            company_param = query.get("company", [""])[0]
+            sig_param = query.get("signal_id", [""])[0]
+            target = sig_param or company_param
+            brief = db.get_company_brief(target) if target else None
+            return self._send_json(200, envelope(status="ok", data={"brief": brief}))
+
+        if path == "/api/contacts":
+            company_param = query.get("company", [""])[0]
+            sig_param = query.get("signal_id", [""])[0]
+            contacts_list = db.get_contacts(signal_id=sig_param, company=company_param)
+            return self._send_json(200, envelope(status="ok", data={"contacts": contacts_list, "count": len(contacts_list)}))
+
+        if path == "/api/outreach/today":
+            from . import outreach_ledger
+            cap_info = outreach_ledger.check_daily_cap()
+            sent_list = db.get_outreach_today()
+            return self._send_json(200, envelope(status="ok", data={"cap": cap_info, "sent_today": sent_list, "count": len(sent_list)}))
+
+        if path == "/api/outreach/queue":
+            queue_list = db.get_outreach_queue()
+            return self._send_json(200, envelope(status="ok", data={"queue": queue_list, "count": len(queue_list)}))
+
+        if path == "/api/outreach/report":
+            from . import outreach_ledger
+            rep = outreach_ledger.generate_weekly_report()
+            return self._send_json(200, envelope(status="ok", data=rep))
 
         if path == "/api/radar/events":
             from . import radar
@@ -261,8 +315,15 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/radar/ack":
             from . import radar
             job_ids = body.get("job_ids") or []
-            affected = radar.ack_radar_jobs(job_ids=job_ids)
-            return self._send_json(200, envelope(status="ok", data={"acknowledged": True, "count": affected}))
+            signal_ids = body.get("signal_ids") or []
+            affected_jobs = radar.ack_radar_jobs(job_ids=job_ids)
+            affected_signals = db.ack_signals(signal_ids=signal_ids or None)
+            return self._send_json(200, envelope(status="ok", data={
+                "acknowledged": True,
+                "count": affected_jobs + affected_signals,
+                "jobs_acked": affected_jobs,
+                "signals_acked": affected_signals,
+            }))
 
         if path == "/api/refresh":
             from . import refresh_scheduler
@@ -298,6 +359,45 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
                 data=res,
                 error={"code": "config_error", "message": res.get("error")} if not res.get("success") else None,
             ))
+
+        if path == "/api/contacts/find":
+            from . import contacts
+            target = body.get("target") or body.get("signal_id") or body.get("company") or ""
+            target_role = body.get("target_role") or ""
+            company_size = body.get("company_size")
+            try:
+                res = contacts.find_contacts(target, target_role=target_role, company_size=company_size)
+                return self._send_json(200, envelope(status="ok", data=res))
+            except Exception as e:
+                return self._send_json(400, envelope(status="error", error={"code": "contact_search_error", "message": str(e)}))
+
+        if path == "/api/contacts/delete":
+            from . import contacts
+            cid = body.get("id") or body.get("contact_id") or ""
+            if not cid:
+                return self._send_json(400, envelope(status="error", error={"code": "bad_request", "message": "Missing contact id"}))
+            deleted = contacts.delete_contact_and_history(cid)
+            return self._send_json(200, envelope(status="ok", data={"deleted": deleted, "id": cid}))
+
+        if path == "/api/outreach/mark_sent":
+            from . import outreach_ledger
+            oid = body.get("outreach_id") or body.get("contact_id") or ""
+            is_fu = bool(body.get("is_follow_up", False))
+            try:
+                res = outreach_ledger.mark_outreach_sent(oid, is_follow_up=is_fu)
+                return self._send_json(200, envelope(status="ok", data=res))
+            except Exception as e:
+                return self._send_json(400, envelope(status="error", error={"code": "mark_sent_error", "message": str(e)}))
+
+        if path == "/api/outreach/reply":
+            from . import outreach_ledger
+            oid = body.get("outreach_id") or body.get("contact_id") or ""
+            sentiment = body.get("sentiment", "positive")
+            try:
+                res = outreach_ledger.record_reply(oid, sentiment=sentiment)
+                return self._send_json(200, envelope(status="ok", data=res))
+            except Exception as e:
+                return self._send_json(400, envelope(status="error", error={"code": "record_reply_error", "message": str(e)}))
 
         if path == "/api/ai/clear-key":
             provider = body.get("provider")
@@ -694,6 +794,25 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             browser = body.get("browser", "auto")
             res = extension_installer.launch_browser_with_extension(url=url, browser_type=browser)
             return self._send_json(200, envelope(status="ok" if res.get("success") else "error", data=res))
+
+        self._send_json(404, envelope(status="error", error={"code": "not_found", "message": f"Path '{path}' not found"}))
+
+    # ------------------------------------------------------------ DELETE Dispatch
+    def do_DELETE(self) -> None:
+        _ensure_db()
+        parsed = urlparse(self.path)
+        path = parsed.path
+        query = parse_qs(parsed.query)
+
+        if path == "/api/contacts" or path.startswith("/api/contacts/"):
+            from . import contacts
+            cid = query.get("id", [""])[0]
+            if not cid and len(path.split("/")) > 3:
+                cid = path.split("/")[3]
+            if not cid:
+                return self._send_json(400, envelope(status="error", error={"code": "bad_request", "message": "Missing contact id"}))
+            deleted = contacts.delete_contact_and_history(cid)
+            return self._send_json(200, envelope(status="ok", data={"deleted": deleted, "id": cid}))
 
         self._send_json(404, envelope(status="error", error={"code": "not_found", "message": f"Path '{path}' not found"}))
 

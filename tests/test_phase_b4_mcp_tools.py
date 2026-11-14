@@ -16,6 +16,7 @@ def isolated_db(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", str(test_db))
     os.makedirs(test_home / "data", exist_ok=True)
     db.init_db()
+    config.set_method("classic")
     return test_db
 
 

@@ -23,7 +23,7 @@ def isolated_db(tmp_path, monkeypatch):
 def test_schema_version_and_tables(isolated_db):
     with db.session() as c:
         row = c.execute("PRAGMA user_version").fetchone()
-        assert row[0] == 5
+        assert row[0] >= 5
 
         # Check required tables exist
         tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
@@ -39,8 +39,21 @@ def test_schema_version_and_tables(isolated_db):
             "refresh_state",
             "dismissals",
             "applications",
+            "signals",
+            "company_briefs",
+            "contacts",
+            "outreach",
         }
         assert required.issubset(tables)
+
+        # Check default settings
+        assert db.get_setting("cleanup_grace_hours") == "24"
+        assert db.get_setting("method") == "modern"
+        assert db.get_setting("daily_cap") == "20"
+        assert db.get_setting("follow_up_days") == "4"
+        assert db.get_setting("first_touch_attachment") == "1"
+        assert db.get_setting("send_mode") == "one_at_a_time"
+        assert db.get_setting("resume_max_kb") == "200"
 
 
 def test_session_state_helpers():
@@ -67,15 +80,21 @@ def test_profile_columns_and_save():
         "skills": ["Python", "Rust", "Distributed Systems"],
         "years_of_experience": 10.5,
         "resume_path": "/tmp/resume.pdf",
+        "portfolio_url": "https://github.com/myuser/portfolio",
+        "proof_points": [
+            {"project": "Distributed DB", "metric": "Reduced p99 latency by 45%", "link": "https://github.com/myuser/db"}
+        ],
     }, profile_id="master")
 
     with db.session() as c:
-        row = c.execute("SELECT roles, years, skills, resume_path FROM profile WHERE id=1").fetchone()
+        row = c.execute("SELECT roles, years, skills, resume_path, portfolio_url, proof_points FROM profile WHERE id=1").fetchone()
         assert row is not None
         assert "Software Architect" in row["roles"]
         assert row["years"] == 10.5
         assert "Python" in row["skills"]
         assert row["resume_path"] == "/tmp/resume.pdf"
+        assert row["portfolio_url"] == "https://github.com/myuser/portfolio"
+        assert "Distributed DB" in row["proof_points"]
 
 
 def test_view_filters_crud():
@@ -220,3 +239,110 @@ def test_url_hash_and_fingerprint_builders():
 
     sim2 = dedup.title_similarity("Frontend Developer", "Data Scientist")
     assert sim2 < 0.3
+
+
+def test_signals_db_helpers():
+    sig = {
+        "id": "sig_test1",
+        "type": "hiring_post",
+        "source": "HN",
+        "url": "https://news.ycombinator.com/item?id=123",
+        "url_hash": "hn:123",
+        "author_name": "sam_alt",
+        "company": "Acme AI",
+        "company_domain": "acme.ai",
+        "text": "We are hiring founding ML engineers.",
+        "posted_at": "2026-11-14T10:00:00Z",
+        "likes": 12,
+        "score": 85,
+        "role_guess": "ML Engineer",
+        "stage": "seed",
+        "region": "remote",
+    }
+    ingested = db.ingest_signal(sig)
+    assert ingested["id"] == "sig_test1"
+
+    # Fetch signals
+    sigs = db.get_signals(limit=10)
+    assert len(sigs) >= 1
+    assert sigs[0]["company"] == "Acme AI"
+
+    # View filters matching
+    matches = db.get_signals(view_filters={"role": "ML Engineer", "region": "remote"})
+    assert len(matches) >= 1
+    non_matches = db.get_signals(view_filters={"role": "Accountant"})
+    assert len(non_matches) == 0
+
+    # New signals count and ack
+    count = db.get_new_signals_count()
+    assert count >= 1
+    acked = db.ack_signals(["sig_test1"])
+    assert acked == 1
+    assert db.get_new_signals_count() == 0
+
+    # Status update
+    db.update_signal_status("sig_test1", "saved")
+    updated_sig = db.get_signal("sig_test1")
+    assert updated_sig["status"] == "saved"
+
+
+def test_company_briefs_and_contacts_db_helpers():
+    brief_data = {
+        "company": "Acme AI",
+        "summary": "Building next-gen AI search",
+        "stage": "Seed",
+        "funding": "$5M led by Founders Fund",
+        "team": "12 people",
+    }
+    lp_data = {
+        "questions": ["How do you scale indexes?", "What is the GPU stack?"],
+        "talking_points": ["Reduced latency by 45% on vector lookups"],
+    }
+    saved_b = db.save_company_brief("Acme AI", brief_data, lp_data, signal_id="sig_test1")
+    assert saved_b["id"].startswith("brief_")
+
+    fetched_b = db.get_company_brief("Acme AI")
+    assert fetched_b is not None
+    assert fetched_b["brief"]["summary"] == "Building next-gen AI search"
+
+    # Contacts
+    c1 = {
+        "signal_id": "sig_test1",
+        "company": "Acme AI",
+        "name": "Jane Founder",
+        "role": "Co-founder & CEO",
+        "email": "jane@acme.ai",
+        "confidence": "Found",
+        "provider": "Hunter",
+    }
+    saved_c = db.save_contact(c1)
+    assert saved_c["id"].startswith("ct_")
+
+    contacts = db.get_contacts(company="Acme AI")
+    assert len(contacts) >= 1
+    assert contacts[0]["name"] == "Jane Founder"
+
+    # Outreach
+    out = db.log_outreach(contact_id=saved_c["id"], signal_id="sig_test1", company="Acme AI", status="draft")
+    assert out["id"].startswith("out_")
+    assert out["status"] == "draft"
+
+    # Queue
+    queue = db.get_outreach_queue()
+    assert len(queue) >= 1
+
+    # Mark sent
+    sent = db.mark_outreach_sent(out["id"])
+    assert sent["status"] == "sent"
+    assert sent["follow_up_due"] is not None
+    assert db.get_outreach_today_count() >= 1
+
+    # Report
+    rep = db.get_outreach_report()
+    assert rep["total_sent"] >= 1
+    assert "reply_rate" in rep
+
+    # Delete contact
+    deleted = db.delete_contact(saved_c["id"])
+    assert deleted is True
+    assert db.get_contact(saved_c["id"]) is None

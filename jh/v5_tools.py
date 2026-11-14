@@ -66,6 +66,43 @@ def check_filter_clashes(filters: dict[str, Any]) -> list[str]:
 
     return warnings
 
+def jh_set_method(method: str = "modern", session_id: str = "default") -> dict[str, Any]:
+    """Step 4: Set active job hunting method: 'modern' (outreach first, default) or 'classic' (job boards & apply).
+    Preserves all existing data across switches.
+    """
+    clean = config.set_method(method)
+    db.set_session_state(f"method_{clean}", last_tool="jh_set_method")
+    if clean == "modern":
+        msg = (
+            "Switched to Modern method: outreach first. Catch fresh hiring posts and seed funding news, "
+            "find decision-maker emails, and send a short human email before the crowd applies. "
+            "All Classic job board data and applications remain intact."
+        )
+        next_tool = "jh_start"
+    else:
+        msg = (
+            "Switched to Classic method: job boards and Apply button. "
+            "Broad search, view filters, and tailored resume & cover letter generation. "
+            "All Modern signals, company briefs, and outreach records remain intact."
+        )
+        next_tool = "jh_search"
+
+    return {
+        "status": "ok",
+        "step": 4,
+        "message_for_user": msg,
+        "ask_user": None,
+        "options": {
+            "method": clean,
+            "choices": ["modern", "classic"],
+            "recommended": "modern"
+        },
+        "next_tool": next_tool,
+        "data": {
+            "method": clean,
+        }
+    }
+
 
 def jh_start(prompt: str = "", intent: str = "", session_id: str = "default") -> dict[str, Any]:
     """Step 1 & 2: Entry point for any job-related prompt. Sets up isolated workspace, loads saved profile and view filters, detects intent, and returns the first guided question."""
@@ -76,7 +113,9 @@ def jh_start(prompt: str = "", intent: str = "", session_id: str = "default") ->
     p_lower = (prompt or "").lower().strip()
     detected_intent = intent or "new_search"
     if not intent and p_lower:
-        if any(w in p_lower for w in ["status", "health", "how many", "state"]):
+        if any(w in p_lower for w in ["switch method", "change method", "set method", "toggle method"]):
+            detected_intent = "switch_method"
+        elif any(w in p_lower for w in ["status", "health", "how many", "state"]):
             detected_intent = "status"
         elif any(w in p_lower for w in ["filter", "salary", "remote", "criteria", "set filter"]):
             detected_intent = "edit_filters"
@@ -85,6 +124,26 @@ def jh_start(prompt: str = "", intent: str = "", session_id: str = "default") ->
         elif any(w in p_lower for w in ["tailor", "cover letter", "resume", "regenerate"]):
             detected_intent = "regenerate"
 
+    # Branch on switch_method
+    if detected_intent == "switch_method":
+        curr = config.get_method()
+        alt = "classic" if curr == "modern" else "modern"
+        return {
+            "status": "needs_input",
+            "step": "method_choice",
+            "message_for_user": f"Active method is '{curr.capitalize()}'. Switching methods preserves all stored jobs, signals, and outreach records.",
+            "ask_user": f"Would you like to switch to '{alt.capitalize()}' method, or stay with '{curr.capitalize()}'?",
+            "options": {
+                "choices": [alt, curr],
+                "recommended": alt,
+            },
+            "next_tool": "jh_set_method",
+            "data": {
+                "current_method": curr,
+                "target_method": alt,
+            }
+        }
+
     # Branch on status intent
     if detected_intent == "status":
         return jh_status()
@@ -92,6 +151,7 @@ def jh_start(prompt: str = "", intent: str = "", session_id: str = "default") ->
     # Load saved profile and view filters
     saved_filters = db.get_view_filters(session_id)
     profile = db.get_profile()
+    active_method = config.get_method()
 
     has_saved_filters = bool(saved_filters.get("job_style") or saved_filters.get("roles") or saved_filters.get("min_salary"))
     has_profile = bool(not profile.get("_is_empty") and profile.get("target_title"))
@@ -100,7 +160,8 @@ def jh_start(prompt: str = "", intent: str = "", session_id: str = "default") ->
     if has_saved_filters and detected_intent != "edit_filters":
         msg = (
             f"Welcome back! Loaded saved filters from {home_dir}:\n"
-            f"- Job Style: {saved_filters.get('job_style') or 'Any'}\n"
+            f"- Method: {active_method.capitalize()}\n"
+            f"- Job Style / Role: {saved_filters.get('job_style') or 'Any'}\n"
             f"- Work Mode: {saved_filters.get('work_mode')}\n"
             f"- Roles: {', '.join(saved_filters.get('roles', [])) or 'Any'}\n"
             f"- Min Salary: ${saved_filters.get('min_salary', 0):,.0f}\n"
@@ -115,38 +176,78 @@ def jh_start(prompt: str = "", intent: str = "", session_id: str = "default") ->
                 "choices": ["reuse", "edit", "start over"],
                 "recommended": "reuse",
             },
-            "next_tool": "jh_search" if saved_filters.get("job_style") else "jh_set_filters",
+            "next_tool": "jh_search" if (active_method == "classic" and saved_filters.get("job_style")) else ("jh_open_ui" if active_method == "modern" else "jh_set_filters"),
             "data": {
+                "method": active_method,
                 "saved_filters": saved_filters,
                 "has_profile": has_profile,
             }
         }
 
-    # New search or edit filters: Round 1 Guided Interview (max 7 questions)
-    round_1_questions = [
-        {"id": "job_style", "question": "What kind of job style or domain are you targeting?", "recommended": saved_filters.get("job_style") or "tech jobs"},
-        {"id": "work_mode", "question": "What is your preferred work mode?", "recommended": saved_filters.get("work_mode") or "any", "choices": ["any", "remote", "hybrid", "onsite"]},
-        {"id": "locations", "question": "What is your target location or country?", "recommended": ", ".join(saved_filters.get("locations", [])) or "any"},
-        {"id": "min_salary", "question": "What is your minimum acceptable annual salary?", "recommended": str(saved_filters.get("min_salary", 0)) if saved_filters.get("min_salary") else "any"},
-        {"id": "visa_need", "question": "Do you require visa sponsorship?", "recommended": "yes" if saved_filters.get("visa_need") else "no", "choices": ["no", "yes"]}
-    ]
-
-    return {
-        "status": "needs_input",
-        "step": 4,
-        "message_for_user": f"Workspace initialized at {home_dir}. Let's configure your search view in Round 1.",
-        "ask_user": "Please review and confirm your initial job criteria (Round 1 of 2):",
-        "options": {
-            "round": 1,
-            "questions": round_1_questions,
-            "recommended": {"job_style": "tech jobs", "work_mode": "any", "locations": "any", "min_salary": "any", "visa_need": "no"}
-        },
-        "next_tool": "jh_set_filters",
-        "data": {
-            "has_profile": has_profile,
-            "interview_rules": "Ask in rounds, 7 questions max per round. 'any' is valid. Hard filters hide, soft rank.",
+    # New search or edit filters: Guided Interview
+    if active_method == "modern":
+        # Modern Interview: Round 1 (target role required, region, stage, pay, visa, work mode)
+        round_1_questions = [
+            {"id": "target_role", "question": "What target role are you looking for? (Required for Signal Radar, e.g. Frontend Engineer, ML Engineer)", "recommended": profile.get("target_title") or "Software Engineer"},
+            {"id": "region", "question": "What is your target region and time zone? (or 'any')", "recommended": "any"},
+            {"id": "stage", "question": "Target company funding stage? (pre-seed, seed, series A, or any)", "recommended": "any", "choices": ["any", "pre-seed", "seed", "series A"]},
+            {"id": "min_salary", "question": "What is your minimum annual compensation? (or 'any')", "recommended": "any"},
+            {"id": "visa_need", "question": "Do you require visa sponsorship?", "recommended": "no", "choices": ["no", "yes"]},
+            {"id": "work_mode", "question": "Preferred work mode?", "recommended": "any", "choices": ["any", "remote", "onsite", "hybrid"]}
+        ]
+        return {
+            "status": "needs_input",
+            "step": 4,
+            "message_for_user": f"Workspace initialized at {home_dir}. Active Method: Modern (outreach first).",
+            "ask_user": "Please review and confirm your Modern outreach criteria (Round 1 of 2; target role is required, others can be 'any'):",
+            "options": {
+                "round": 1,
+                "method": "modern",
+                "questions": round_1_questions,
+                "recommended": {
+                    "target_role": profile.get("target_title") or "Software Engineer",
+                    "job_style": profile.get("target_title") or "tech jobs",
+                    "region": "any",
+                    "stage": "any",
+                    "min_salary": "any",
+                    "visa_need": "no",
+                    "work_mode": "any",
+                }
+            },
+            "next_tool": "jh_set_filters",
+            "data": {
+                "method": "modern",
+                "has_profile": has_profile,
+                "interview_rules": "Only target role is required. Any is valid for others. 7 questions max per round.",
+            }
         }
-    }
+    else:
+        # Classic Interview: Round 1
+        round_1_questions = [
+            {"id": "job_style", "question": "What kind of job style or domain are you targeting?", "recommended": saved_filters.get("job_style") or "tech jobs"},
+            {"id": "work_mode", "question": "What is your preferred work mode?", "recommended": saved_filters.get("work_mode") or "any", "choices": ["any", "remote", "hybrid", "onsite"]},
+            {"id": "locations", "question": "What is your target location or country?", "recommended": ", ".join(saved_filters.get("locations", [])) or "any"},
+            {"id": "min_salary", "question": "What is your minimum acceptable annual salary?", "recommended": str(saved_filters.get("min_salary", 0)) if saved_filters.get("min_salary") else "any"},
+            {"id": "visa_need", "question": "Do you require visa sponsorship?", "recommended": "yes" if saved_filters.get("visa_need") else "no", "choices": ["no", "yes"]}
+        ]
+        return {
+            "status": "needs_input",
+            "step": 4,
+            "message_for_user": f"Workspace initialized at {home_dir}. Active Method: Classic (job boards).",
+            "ask_user": "Please review and confirm your initial job criteria (Round 1 of 2):",
+            "options": {
+                "round": 1,
+                "method": "classic",
+                "questions": round_1_questions,
+                "recommended": {"job_style": "tech jobs", "work_mode": "any", "locations": "any", "min_salary": "any", "visa_need": "no"}
+            },
+            "next_tool": "jh_set_filters",
+            "data": {
+                "method": "classic",
+                "has_profile": has_profile,
+                "interview_rules": "Ask in rounds, 7 questions max per round. 'any' is valid. Hard filters hide, soft rank.",
+            }
+        }
 
 
 def jh_load_resume(resume_path: str = "", raw_text: str = "", profile_id: str = "master") -> dict[str, Any]:
@@ -223,29 +324,54 @@ def jh_load_resume(resume_path: str = "", raw_text: str = "", profile_id: str = 
     }
 
 
-def jh_confirm_profile(confirmed: bool = True, overrides: Optional[dict[str, Any]] = None, profile_id: str = "master") -> dict[str, Any]:
-    """Step 3: Confirm or update extracted profile details and activate it for fit scoring."""
+def jh_confirm_profile(
+    confirmed: bool = True,
+    overrides: Optional[dict[str, Any]] = None,
+    portfolio_url: str = "",
+    proof_points: Optional[list[dict[str, str]]] = None,
+    profile_id: str = "master"
+) -> dict[str, Any]:
+    """Step 3: Confirm profile details, collect portfolio link and 3 proof points, and activate candidate profile."""
     prof = db.get_profile(profile_id)
     if overrides and isinstance(overrides, dict):
         prof.update(overrides)
-        db.save_profile(prof, profile_id=profile_id)
+    if portfolio_url:
+        prof["portfolio_url"] = str(portfolio_url).strip()
+    if proof_points is not None:
+        prof["proof_points"] = proof_points
 
+    db.save_profile(prof, profile_id=profile_id)
     db.set_active_resume_profile(profile_id)
     db.set_session_state("profile_confirmed", last_tool="jh_confirm_profile")
 
+    curr_method = config.get_method()
     return {
         "status": "ok",
         "step": 3,
-        "message_for_user": f"Profile '{prof.get('_profile_name')}' confirmed and activated. Ready to set search filters.",
-        "ask_user": None,
+        "message_for_user": (
+            f"Profile '{prof.get('_profile_name')}' confirmed and activated.\n"
+            f"- Portfolio: {prof.get('portfolio_url') or 'Not provided'}\n"
+            f"- Proof points: {len(prof.get('proof_points', []))} recorded\n"
+            f"Next: select your job hunting method. Modern (outreach first) is default."
+        ),
+        "ask_user": (
+            "Which search method do you prefer?\n"
+            "1. Modern (Recommended): Outreach first. Catch fresh hiring posts & seed funding news, "
+            "find decision-maker emails, and send a short human email before the crowd applies.\n"
+            "2. Classic: Traditional job boards, broad search, view filters, tailored resume & cover letter for the Apply button.\n"
+            "(No answer defaults to Modern)"
+        ),
         "options": {
-            "choices": ["jh_set_filters", "jh_search"],
-            "recommended": "jh_set_filters"
+            "choices": ["modern", "classic"],
+            "recommended": "modern"
         },
-        "next_tool": "jh_set_filters",
+        "next_tool": "jh_set_filters" if curr_method == "classic" else "jh_set_method",
         "data": {
             "active_profile": prof.get("_profile_name"),
             "target_roles": prof.get("target_roles", []),
+            "portfolio_url": prof.get("portfolio_url", ""),
+            "proof_points": prof.get("proof_points", []),
+            "method": curr_method,
         }
     }
 
@@ -496,7 +622,7 @@ def jh_open_ui(port: int = 8765, host: str = "127.0.0.1") -> dict[str, Any]:
 
 
 def jh_status() -> dict[str, Any]:
-    """Inspect full JobHunter state: workspace path, session state, radar, refresh states, cleanup status, and stored job count."""
+    """Inspect full JobHunter state: active method, workspace path, session state, radar, refresh states, cleanup status, and stored job/signal counts."""
     home_dir = home.get_home()
     session_state = db.get_session_state()
     radar = db.get_radar_state()
@@ -504,30 +630,57 @@ def jh_status() -> dict[str, Any]:
     cleanup = db.get_cleanup_status()
     profile = db.get_profile()
     filters = db.get_view_filters()
+    active_method = config.get_method()
 
     with db.session() as c:
         total_jobs = c.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
         active_jobs = c.execute("SELECT COUNT(*) FROM jobs WHERE freshness_state='active'").fetchone()[0]
         dismissals_count = c.execute("SELECT COUNT(*) FROM dismissals").fetchone()[0]
+        signals_count = c.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
+        fresh_signals = c.execute("SELECT COUNT(*) FROM signals WHERE status='fresh'").fetchone()[0]
+        contacts_count = c.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
+        outreach_count = c.execute("SELECT COUNT(*) FROM outreach").fetchone()[0]
+
+    daily_cap = config.get_daily_cap()
+    today_sent = db.get_outreach_today_count()
+    remaining_cap = max(0, daily_cap - today_sent)
+
+    if active_method == "modern":
+        method_summary = (
+            f"- Method: Modern (Outreach First)\n"
+            f"- Signals: {signals_count} stored ({fresh_signals} fresh)\n"
+            f"- Contacts Found: {contacts_count}\n"
+            f"- Outreach Today: {today_sent} / {daily_cap} sent ({remaining_cap} remaining)\n"
+            f"- Send Mode: {config.get_send_mode()} | Follow-up: {config.get_follow_up_days()}d"
+        )
+    else:
+        method_summary = (
+            f"- Method: Classic (Job Boards & Apply)\n"
+            f"- Stored Jobs: {total_jobs} ({active_jobs} active)\n"
+            f"- LinkedIn Radar: {radar.get('status')} (Interval: {radar.get('interval_seconds')}s)\n"
+            f"- Dismissals: {dismissals_count}\n"
+            f"- Cleanup Grace: {cleanup.get('grace_hours')}h"
+        )
+
+    msg = (
+        f"JobHunter Status:\n"
+        f"- Workspace: {home_dir}\n"
+        f"{method_summary}\n"
+        f"- Active Profile: {profile.get('_profile_name')} ({profile.get('target_title') or 'Candidate'})"
+    )
 
     return {
         "status": "ok",
         "step": "status",
-        "message_for_user": (
-            f"JobHunter Status:\n"
-            f"- Workspace: {home_dir}\n"
-            f"- Total Stored Jobs: {total_jobs} ({active_jobs} active)\n"
-            f"- LinkedIn Radar: {radar.get('status')} (Interval: {radar.get('interval_seconds')}s)\n"
-            f"- Total Dismissals: {dismissals_count}\n"
-            f"- Cleanup Grace: {cleanup.get('grace_hours')}h ({cleanup.get('warning_count')} warning)"
-        ),
+        "message_for_user": msg,
         "ask_user": None,
         "options": {
-            "choices": ["jh_search", "jh_query", "jh_open_ui"],
-            "recommended": "jh_search"
+            "choices": ["jh_start", "jh_set_method", "jh_open_ui"],
+            "recommended": "jh_start"
         },
-        "next_tool": "jh_search",
+        "next_tool": "jh_search" if active_method == "classic" else "jh_start",
         "data": {
+            "method": active_method,
             "workspace_home": str(home_dir),
             "session_state": session_state,
             "radar_state": radar,
@@ -537,7 +690,12 @@ def jh_status() -> dict[str, Any]:
             "view_filters": filters,
             "total_jobs": total_jobs,
             "active_jobs": active_jobs,
-            "dismissals_count": dismissals_count,
+            "signals_count": signals_count,
+            "fresh_signals": fresh_signals,
+            "contacts_count": contacts_count,
+            "outreach_count": outreach_count,
+            "today_sent": today_sent,
+            "remaining_cap": remaining_cap,
         }
     }
 
@@ -601,3 +759,21 @@ def jh_feedback(job_id: str = "", action: str = "dismiss", reason: str = "",
             "excluded_keywords": filters.get("excluded_keywords", []),
         }
     }
+
+
+def jh_find_contacts(signal_id_or_company: str, target_role: str = "") -> dict[str, Any]:
+    """Modern Step 12: Find up to 3 decision makers (Found, Pattern, Guess) or alternative routes for outreach."""
+    from . import contacts
+    return contacts.jh_find_contacts(signal_id_or_company, target_role=target_role)
+
+
+def jh_build_resume(company: str, role: str, signal_id: str = "") -> dict[str, Any]:
+    """Modern Step 13: Build or retrieve single grounded 1-page PDF resume <= 200 KB in jobmcp/outputs/."""
+    from . import email_drafter
+    return email_drafter.jh_build_resume(company=company, role=role, signal_id=signal_id)
+
+
+def jh_draft_email(contact_id: str, signal_id: str = "", resume_path: str = "") -> dict[str, Any]:
+    """Modern Step 13: Draft human 3-4 line outreach email with slop linting and attachment policy."""
+    from . import email_drafter
+    return email_drafter.jh_draft_email(contact_id=contact_id, signal_id=signal_id, resume_path=resume_path)

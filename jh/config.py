@@ -132,3 +132,85 @@ def configure_mcp_environment(workspace_path: str = ""):
     DB_PATH = os.path.join(DATA_DIR, "engine.db")
     _ensure_data_dir()
     return JOBHUNTER_DIR
+
+
+def get_method() -> str:
+    """Return active search & application method: 'modern' (default) or 'classic'."""
+    try:
+        from . import db
+        val = db.get_setting("method")
+        if val and val.lower().strip() in ("modern", "classic"):
+            return val.lower().strip()
+    except Exception:
+        pass
+    return os.environ.get("JH_METHOD", "modern").lower().strip()
+
+
+def set_method(method: str) -> str:
+    """Set active search & application method: 'modern' or 'classic'."""
+    clean = (method or "modern").lower().strip()
+    if clean not in ("modern", "classic"):
+        clean = "modern"
+    try:
+        from . import db
+        db.set_setting("method", clean)
+    except Exception:
+        pass
+    os.environ["JH_METHOD"] = clean
+    return clean
+
+
+def get_daily_cap() -> int:
+    try:
+        from . import db
+        val = db.get_setting("daily_cap")
+        if val:
+            return max(1, min(200, int(val)))
+    except Exception:
+        pass
+    return int(os.environ.get("JH_DAILY_CAP", "20"))
+
+
+def get_follow_up_days() -> int:
+    try:
+        from . import db
+        val = db.get_setting("follow_up_days")
+        if val:
+            return max(1, min(30, int(val)))
+    except Exception:
+        pass
+    return int(os.environ.get("JH_FOLLOW_UP_DAYS", "4"))
+
+
+def get_first_touch_attachment() -> bool:
+    try:
+        from . import db
+        val = db.get_setting("first_touch_attachment")
+        if val is not None:
+            return str(val).lower() in ("1", "true", "yes", "on")
+    except Exception:
+        pass
+    return True
+
+
+def get_send_mode() -> str:
+    try:
+        from . import db
+        val = db.get_setting("send_mode")
+        if val:
+            return val.lower().strip()
+    except Exception:
+        pass
+    return os.environ.get("JH_SEND_MODE", "one_at_a_time")
+
+
+def get_resume_max_kb() -> int:
+    try:
+        from . import db
+        val = db.get_setting("resume_max_kb")
+        if val:
+            return max(50, min(1000, int(val)))
+    except Exception:
+        pass
+    return int(os.environ.get("JH_RESUME_MAX_KB", "200"))
+

@@ -16,6 +16,7 @@ SCHEMA_VERSION = 5
 
 EMPTY_PROFILE = {
     "name": "", "email": "", "phone": "", "location": "", "linkedin": "", "github": "",
+    "portfolio_url": "", "proof_points": [],
     "target_title": "", "target_roles": [], "years_of_experience": 0, "work_mode": "Any",
     "preferred_locations": [], "min_salary": 0, "excluded_keywords": [],
     "preferred_job_types": [], "dream_companies": [], "dream_role": "",
@@ -356,20 +357,24 @@ def init_db():
             ("years", "REAL DEFAULT 0"),
             ("skills", "TEXT DEFAULT ''"),
             ("resume_path", "TEXT DEFAULT ''"),
+            ("portfolio_url", "TEXT DEFAULT ''"),
+            ("proof_points", "TEXT DEFAULT '[]'"),
         ]:
             if col not in prof_cols:
                 c.execute(f"ALTER TABLE profile ADD COLUMN {col} {col_type}")
 
         # Backfill profile row 1 columns if data JSON exists
         prof_row = c.execute("SELECT id, data, roles FROM profile WHERE id=1").fetchone()
-        if prof_row and prof_row["data"] and not prof_row["roles"]:
+        if prof_row and prof_row["data"]:
             try:
                 p_data = json.loads(prof_row["data"])
                 p_roles = json.dumps(p_data.get("target_roles") or [])
                 p_skills = json.dumps(p_data.get("skills") or [])
                 p_years = float(p_data.get("years_of_experience") or 0)
                 p_path = str(p_data.get("resume_path") or "")
-                c.execute("UPDATE profile SET roles=?, years=?, skills=?, resume_path=? WHERE id=1", (p_roles, p_years, p_skills, p_path))
+                p_port = str(p_data.get("portfolio_url") or "")
+                p_pts = json.dumps(p_data.get("proof_points") or [])
+                c.execute("UPDATE profile SET roles=?, years=?, skills=?, resume_path=?, portfolio_url=?, proof_points=? WHERE id=1", (p_roles, p_years, p_skills, p_path, p_port, p_pts))
             except Exception:
                 pass
 
@@ -540,6 +545,141 @@ def init_db():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_dismissals_job_id ON dismissals(job_id)")
 
+        # ------------------------------------------------------------- Phase B2 / Modern Track Tables
+        # 12. signals
+        c.execute("""CREATE TABLE IF NOT EXISTS signals (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            source TEXT NOT NULL,
+            url TEXT DEFAULT '',
+            url_hash TEXT NOT NULL,
+            author_name TEXT DEFAULT '',
+            author_url TEXT DEFAULT '',
+            company TEXT NOT NULL,
+            company_domain TEXT DEFAULT '',
+            text TEXT DEFAULT '',
+            posted_at TEXT DEFAULT '',
+            likes INTEGER DEFAULT 0,
+            comments INTEGER DEFAULT 0,
+            found_at TEXT NOT NULL,
+            is_new INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'fresh',
+            score INTEGER DEFAULT 0,
+            role_guess TEXT DEFAULT '',
+            stage TEXT DEFAULT 'any',
+            region TEXT DEFAULT 'any',
+            funding_amount TEXT DEFAULT '',
+            funding_round TEXT DEFAULT '',
+            signal_json TEXT DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_url_hash ON signals(url_hash)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_status ON signals(status)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_company ON signals(company)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_is_new ON signals(is_new)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_type ON signals(type)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_score ON signals(score)")
+
+        # 13. company_briefs
+        c.execute("""CREATE TABLE IF NOT EXISTS company_briefs (
+            id TEXT PRIMARY KEY,
+            signal_id TEXT DEFAULT '',
+            company TEXT NOT NULL,
+            company_domain TEXT DEFAULT '',
+            stage TEXT DEFAULT '',
+            funding_summary TEXT DEFAULT '',
+            brief_json TEXT NOT NULL DEFAULT '{}',
+            learning_pack_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_company_briefs_company ON company_briefs(company)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_company_briefs_signal ON company_briefs(signal_id)")
+
+        # 14. contacts
+        c.execute("""CREATE TABLE IF NOT EXISTS contacts (
+            id TEXT PRIMARY KEY,
+            signal_id TEXT DEFAULT '',
+            company TEXT NOT NULL,
+            name TEXT NOT NULL,
+            role TEXT NOT NULL,
+            email TEXT DEFAULT '',
+            confidence TEXT DEFAULT 'Guess',
+            provider TEXT DEFAULT '',
+            source_url TEXT DEFAULT '',
+            found_at TEXT NOT NULL,
+            status TEXT DEFAULT 'new',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_contacts_signal ON contacts(signal_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_contacts_company ON contacts(company)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_contacts_status ON contacts(status)")
+
+        # 15. outreach
+        c.execute("""CREATE TABLE IF NOT EXISTS outreach (
+            id TEXT PRIMARY KEY,
+            contact_id TEXT NOT NULL,
+            signal_id TEXT DEFAULT '',
+            company TEXT NOT NULL,
+            recipient_name TEXT DEFAULT '',
+            recipient_email TEXT DEFAULT '',
+            recipient_title TEXT DEFAULT '',
+            subject TEXT DEFAULT '',
+            body TEXT DEFAULT '',
+            status TEXT DEFAULT 'draft',
+            drafted_at TEXT NOT NULL,
+            sent_at TEXT DEFAULT NULL,
+            follow_up_due TEXT DEFAULT NULL,
+            follow_up_sent_at TEXT DEFAULT NULL,
+            replied_at TEXT DEFAULT NULL,
+            reply_received_at TEXT DEFAULT NULL,
+            reply_sentiment TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            resume_path TEXT DEFAULT '',
+            attached INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_outreach_contact ON outreach(contact_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_outreach_signal ON outreach(signal_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_outreach_status ON outreach(status)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_outreach_follow_up ON outreach(follow_up_due)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_outreach_sent_at ON outreach(sent_at)")
+
+        # Migration columns for contacts and outreach
+        contacts_cols = _columns(c, "contacts")
+        for col, col_type in [
+            ("company_domain", "TEXT DEFAULT ''"),
+            ("title", "TEXT DEFAULT ''"),
+            ("role_category", "TEXT DEFAULT ''"),
+            ("email_confidence", "TEXT DEFAULT 'Guess'"),
+            ("linkedin_url", "TEXT DEFAULT ''"),
+            ("x_handle", "TEXT DEFAULT ''"),
+            ("phone", "TEXT DEFAULT ''"),
+            ("source", "TEXT DEFAULT ''"),
+            ("last_contacted_at", "TEXT DEFAULT ''"),
+            ("notes", "TEXT DEFAULT ''"),
+        ]:
+            if col not in contacts_cols:
+                c.execute(f"ALTER TABLE contacts ADD COLUMN {col} {col_type}")
+
+        outreach_cols = _columns(c, "outreach")
+        for col, col_type in [
+            ("recipient_name", "TEXT DEFAULT ''"),
+            ("recipient_email", "TEXT DEFAULT ''"),
+            ("recipient_title", "TEXT DEFAULT ''"),
+            ("subject", "TEXT DEFAULT ''"),
+            ("body", "TEXT DEFAULT ''"),
+            ("follow_up_sent_at", "TEXT DEFAULT NULL"),
+            ("reply_received_at", "TEXT DEFAULT NULL"),
+            ("reply_sentiment", "TEXT DEFAULT ''"),
+        ]:
+            if col not in outreach_cols:
+                c.execute(f"ALTER TABLE outreach ADD COLUMN {col} {col_type}")
+
         # Indexes on jobs
         c.execute("CREATE INDEX IF NOT EXISTS idx_jobs_fingerprint ON jobs(fingerprint)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_jobs_url_hash ON jobs(url_hash)")
@@ -549,6 +689,12 @@ def init_db():
 
         # Default settings
         c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('cleanup_grace_hours', '24')")
+        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('method', 'modern')")
+        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('daily_cap', '20')")
+        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('follow_up_days', '4')")
+        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('first_touch_attachment', '1')")
+        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('send_mode', 'one_at_a_time')")
+        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('resume_max_kb', '200')")
 
         c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
@@ -788,10 +934,12 @@ def save_profile(data, profile_id=None):
             skills_val = json.dumps(skills) if isinstance(skills, list) else str(skills or "")
             years_val = float(data.get("years_of_experience") or 0)
             resume_path_val = str(data.get("resume_path") or "")
+            portfolio_url_val = str(data.get("portfolio_url") or "")
+            proof_points_val = json.dumps(data.get("proof_points") or []) if isinstance(data.get("proof_points"), (list, dict)) else str(data.get("proof_points") or "[]")
             c.execute("""
-                INSERT OR REPLACE INTO profile (id, data, updated_at, roles, years, skills, resume_path)
-                VALUES (1, ?, ?, ?, ?, ?, ?)
-            """, (json.dumps(data), iso_now, roles_val, years_val, skills_val, resume_path_val))
+                INSERT OR REPLACE INTO profile (id, data, updated_at, roles, years, skills, resume_path, portfolio_url, proof_points)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (json.dumps(data), iso_now, roles_val, years_val, skills_val, resume_path_val, portfolio_url_val, proof_points_val))
     return get_profile(pid)
 
 
@@ -2372,6 +2520,465 @@ def query_jobs(view_filters=None, session_id="default"):
         "usable_gate": usable_gate,
         "view_filters": filters,
     }
+
+
+# ------------------------------------------------------------- Modern Track Database Helpers
+
+def ingest_signal(sig: dict) -> dict:
+    """Ingest a signal (hiring post or funding news) with deduplication and scoring."""
+    now = now_iso()
+    s = dict(sig)
+    sig_id = s.get("id") or f"sig_{uuid.uuid4().hex[:12]}"
+    sig_type = s.get("type") or "hiring_post"
+    source = s.get("source") or "radar"
+    url = s.get("url") or ""
+    url_hash = s.get("url_hash") or (url if url else sig_id)
+    author_name = s.get("author_name") or ""
+    author_url = s.get("author_url") or ""
+    company = s.get("company") or "Unknown Company"
+    company_domain = s.get("company_domain") or ""
+    text = s.get("text") or ""
+    posted_at = s.get("posted_at") or now
+    likes = int(s.get("likes") or 0)
+    comments = int(s.get("comments") or 0)
+    found_at = s.get("found_at") or now
+    is_new = int(s.get("is_new", 1))
+    status = s.get("status") or "fresh"
+    score = int(s.get("score") or 0)
+    role_guess = s.get("role_guess") or ""
+    stage = s.get("stage") or "any"
+    region = s.get("region") or "any"
+    funding_amount = s.get("funding_amount") or ""
+    funding_round = s.get("funding_round") or ""
+    signal_json = json.dumps(s.get("signal_json") or s)
+
+    with session() as c:
+        # Check duplicate by url_hash
+        existing = c.execute("SELECT id, status, is_new, likes, comments FROM signals WHERE url_hash=?", (url_hash,)).fetchone()
+        if existing:
+            # Update likes/comments and status if needed, but preserve saved/dismissed
+            curr_status = existing["status"]
+            new_status = curr_status if curr_status in ("saved", "dismissed") else status
+            c.execute("""
+                UPDATE signals
+                SET likes=?, comments=?, status=?, updated_at=?
+                WHERE url_hash=?
+            """, (likes, comments, new_status, now, url_hash))
+            s["id"] = existing["id"]
+            s["status"] = new_status
+            s["is_new"] = existing["is_new"]
+            return s
+
+        # Funding dedupe by company within 14 days
+        if sig_type == "funding":
+            prev_funding = c.execute("""
+                SELECT id FROM signals
+                WHERE type='funding' AND lower(company)=lower(?) AND datetime(found_at) >= datetime(?, '-14 days')
+            """, (company, now)).fetchone()
+            if prev_funding:
+                return {"id": prev_funding["id"], "duplicate": True, "status": "duplicate"}
+
+        c.execute("""
+            INSERT INTO signals (
+                id, type, source, url, url_hash, author_name, author_url,
+                company, company_domain, text, posted_at, likes, comments,
+                found_at, is_new, status, score, role_guess, stage, region,
+                funding_amount, funding_round, signal_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            sig_id, sig_type, source, url, url_hash, author_name, author_url,
+            company, company_domain, text, posted_at, likes, comments,
+            found_at, is_new, status, score, role_guess, stage, region,
+            funding_amount, funding_round, signal_json, now, now
+        ))
+        s["id"] = sig_id
+        return s
+
+
+def get_signals(limit: int = 100, status: str | None = None, view_filters: dict | None = None, sig_type: str | None = None) -> list[dict]:
+    """Retrieve signals with optional status, type, and view filter matching."""
+    with session() as c:
+        query = "SELECT * FROM signals WHERE 1=1"
+        params: list[Any] = []
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        if sig_type:
+            query += " AND type = ?"
+            params.append(sig_type)
+        query += " ORDER BY posted_at DESC, score DESC LIMIT ?"
+        params.append(limit)
+        rows = c.execute(query, params).fetchall()
+
+    results = []
+    for r in rows:
+        d = dict(r)
+        if d.get("signal_json"):
+            try:
+                d["data"] = json.loads(d["signal_json"])
+            except Exception:
+                d["data"] = {}
+        results.append(d)
+
+    if view_filters:
+        target_role = (view_filters.get("job_style") or view_filters.get("role") or "").lower()
+        target_region = (view_filters.get("region") or view_filters.get("locations") or "").lower()
+        if isinstance(target_region, list):
+            target_region = " ".join(target_region).lower()
+        filtered = []
+        for s in results:
+            if target_role and s.get("role_guess") and target_role not in s["role_guess"].lower() and s["role_guess"].lower() not in target_role:
+                continue
+            if target_region and s.get("region") and s["region"] != "any" and s["region"].lower() not in target_region:
+                continue
+            filtered.append(s)
+        return filtered
+
+    return results
+
+
+def get_signal(signal_id: str) -> dict | None:
+    with session() as c:
+        row = c.execute("SELECT * FROM signals WHERE id=? OR url_hash=?", (signal_id, signal_id)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        if d.get("signal_json"):
+            try:
+                d["data"] = json.loads(d["signal_json"])
+            except Exception:
+                d["data"] = {}
+        return d
+
+
+def update_signal_status(signal_id: str, status: str) -> bool:
+    with session() as c:
+        c.execute("UPDATE signals SET status=?, updated_at=? WHERE id=?", (status, now_iso(), signal_id))
+        return c.execute("SELECT changes()").fetchone()[0] > 0
+
+
+def ack_signals(signal_ids: list[str] | None = None) -> int:
+    """Clear is_new flag on signals shown to the user."""
+    with session() as c:
+        if signal_ids:
+            ph = ",".join("?" * len(signal_ids))
+            c.execute(f"UPDATE signals SET is_new=0 WHERE id IN ({ph})", list(signal_ids))
+        else:
+            c.execute("UPDATE signals SET is_new=0 WHERE is_new=1")
+        return c.execute("SELECT changes()").fetchone()[0]
+
+
+def get_new_signals_count(view_filters: dict | None = None) -> int:
+    """Count new signals, optionally matching active view filters."""
+    signals = get_signals(limit=250, status="fresh", view_filters=view_filters)
+    return sum(1 for s in signals if s.get("is_new"))
+
+
+def save_company_brief(company: str, brief_data: dict, learning_pack_data: dict, signal_id: str = "", domain: str = "", stage: str = "", funding_summary: str = "") -> dict:
+    now = now_iso()
+    brief_id = f"brief_{uuid.uuid4().hex[:12]}"
+    brief_json = json.dumps(brief_data)
+    lp_json = json.dumps(learning_pack_data)
+    with session() as c:
+        # Check existing by company or signal_id
+        existing = None
+        if signal_id:
+            existing = c.execute("SELECT id FROM company_briefs WHERE signal_id=?", (signal_id,)).fetchone()
+        if not existing and company:
+            existing = c.execute("SELECT id FROM company_briefs WHERE lower(company)=lower(?)", (company,)).fetchone()
+
+        if existing:
+            brief_id = existing["id"]
+            c.execute("""
+                UPDATE company_briefs
+                SET stage=?, funding_summary=?, brief_json=?, learning_pack_json=?, updated_at=?
+                WHERE id=?
+            """, (stage, funding_summary, brief_json, lp_json, now, brief_id))
+        else:
+            c.execute("""
+                INSERT INTO company_briefs (id, signal_id, company, company_domain, stage, funding_summary, brief_json, learning_pack_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (brief_id, signal_id, company, domain, stage, funding_summary, brief_json, lp_json, now, now))
+
+    return {
+        "id": brief_id,
+        "signal_id": signal_id,
+        "company": company,
+        "brief": brief_data,
+        "learning_pack": learning_pack_data,
+        "updated_at": now,
+    }
+
+
+def get_company_brief(company_or_signal_id: str) -> dict | None:
+    with session() as c:
+        row = c.execute("""
+            SELECT * FROM company_briefs
+            WHERE id=? OR signal_id=? OR lower(company)=lower(?)
+            ORDER BY updated_at DESC LIMIT 1
+        """, (company_or_signal_id, company_or_signal_id, company_or_signal_id)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        try:
+            d["brief"] = json.loads(d["brief_json"])
+        except Exception:
+            d["brief"] = {}
+        try:
+            d["learning_pack"] = json.loads(d["learning_pack_json"])
+        except Exception:
+            d["learning_pack"] = {}
+        return d
+
+
+def save_contact(contact: dict) -> dict:
+    now = now_iso()
+    c_dict = dict(contact)
+    cid = c_dict.get("id") or f"ct_{uuid.uuid4().hex[:12]}"
+    signal_id = c_dict.get("signal_id") or ""
+    company = c_dict.get("company") or ""
+    company_domain = c_dict.get("company_domain") or ""
+    name = c_dict.get("name") or "Contact"
+    title = c_dict.get("title") or c_dict.get("role") or ""
+    role_category = c_dict.get("role_category") or ""
+    email = c_dict.get("email") or ""
+    confidence = c_dict.get("email_confidence") or c_dict.get("confidence") or "Guess"
+    provider = c_dict.get("provider") or c_dict.get("source") or ""
+    source = c_dict.get("source") or provider
+    source_url = c_dict.get("source_url") or ""
+    linkedin_url = c_dict.get("linkedin_url") or ""
+    x_handle = c_dict.get("x_handle") or ""
+    phone = c_dict.get("phone") or ""
+    notes = c_dict.get("notes") or ""
+    last_contacted_at = c_dict.get("last_contacted_at") or ""
+    found_at = c_dict.get("found_at") or now
+    status = c_dict.get("status") or "new"
+
+    with session() as c:
+        existing = None
+        if email:
+            existing = c.execute("SELECT id FROM contacts WHERE lower(email)=lower(?)", (email,)).fetchone()
+        if not existing and name and company:
+            existing = c.execute("SELECT id FROM contacts WHERE lower(name)=lower(?) AND lower(company)=lower(?)", (name, company)).fetchone()
+
+        if existing:
+            cid = existing["id"]
+            c.execute("""
+                UPDATE contacts
+                SET role=?, title=?, role_category=?, company_domain=?, confidence=?, email_confidence=?,
+                    provider=?, source=?, source_url=?, linkedin_url=?, x_handle=?, phone=?,
+                    notes=?, last_contacted_at=?, status=?, updated_at=?
+                WHERE id=?
+            """, (title, title, role_category, company_domain, confidence, confidence,
+                  provider, source, source_url, linkedin_url, x_handle, phone,
+                  notes, last_contacted_at, status, now, cid))
+        else:
+            c.execute("""
+                INSERT INTO contacts (
+                    id, signal_id, company, company_domain, name, role, title, role_category,
+                    email, confidence, email_confidence, provider, source, source_url,
+                    linkedin_url, x_handle, phone, notes, last_contacted_at, found_at, status,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                cid, signal_id, company, company_domain, name, title, title, role_category,
+                email, confidence, confidence, provider, source, source_url,
+                linkedin_url, x_handle, phone, notes, last_contacted_at, found_at, status,
+                now, now
+            ))
+
+    c_dict["id"] = cid
+    c_dict["title"] = title
+    c_dict["role"] = title
+    c_dict["confidence"] = confidence
+    c_dict["email_confidence"] = confidence
+    return c_dict
+
+
+def get_contacts(signal_id: str = "", company: str = "") -> list[dict]:
+    with session() as c:
+        if signal_id and company:
+            rows = c.execute("SELECT * FROM contacts WHERE signal_id=? OR lower(company)=lower(?) ORDER BY created_at DESC", (signal_id, company)).fetchall()
+        elif signal_id:
+            rows = c.execute("SELECT * FROM contacts WHERE signal_id=? ORDER BY created_at DESC", (signal_id,)).fetchall()
+        elif company:
+            rows = c.execute("SELECT * FROM contacts WHERE lower(company)=lower(?) ORDER BY created_at DESC", (company,)).fetchall()
+        else:
+            rows = c.execute("SELECT * FROM contacts ORDER BY created_at DESC LIMIT 100").fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_contact(contact_id: str) -> dict | None:
+    with session() as c:
+        row = c.execute("SELECT * FROM contacts WHERE id=?", (contact_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def delete_contact(contact_id: str) -> bool:
+    with session() as c:
+        c.execute("DELETE FROM outreach WHERE contact_id=?", (contact_id,))
+        c.execute("DELETE FROM contacts WHERE id=?", (contact_id,))
+        return c.execute("SELECT changes()").fetchone()[0] > 0
+
+
+def update_contact_status(contact_id: str, status: str) -> bool:
+    with session() as c:
+        c.execute("UPDATE contacts SET status=?, updated_at=? WHERE id=?", (status, now_iso(), contact_id))
+        return c.execute("SELECT changes()").fetchone()[0] > 0
+
+
+def log_outreach(
+    contact_id: str,
+    signal_id: str = "",
+    company: str = "",
+    status: str = "draft",
+    notes: str = "",
+    resume_path: str = "",
+    attached: int = 1,
+    recipient_name: str = "",
+    recipient_email: str = "",
+    recipient_title: str = "",
+    subject: str = "",
+    body: str = "",
+    follow_up_due: str | None = None,
+    follow_up_sent_at: str | None = None,
+    reply_received_at: str | None = None,
+    reply_sentiment: str = "",
+) -> dict:
+    now = now_iso()
+    oid = f"out_{uuid.uuid4().hex[:12]}"
+    with session() as c:
+        c.execute("""
+            INSERT INTO outreach (
+                id, contact_id, signal_id, company, recipient_name, recipient_email, recipient_title,
+                subject, body, status, drafted_at, follow_up_due, follow_up_sent_at,
+                reply_received_at, reply_sentiment, notes, resume_path, attached, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            oid, contact_id, signal_id, company, recipient_name, recipient_email, recipient_title,
+            subject, body, status, now, follow_up_due, follow_up_sent_at,
+            reply_received_at, reply_sentiment, notes, resume_path, attached, now, now
+        ))
+    return {
+        "id": oid,
+        "contact_id": contact_id,
+        "signal_id": signal_id,
+        "company": company,
+        "recipient_name": recipient_name,
+        "recipient_email": recipient_email,
+        "recipient_title": recipient_title,
+        "subject": subject,
+        "body": body,
+        "status": status,
+        "drafted_at": now,
+        "follow_up_due": follow_up_due,
+        "notes": notes,
+        "resume_path": resume_path,
+        "attached": attached,
+    }
+
+
+def get_outreach_for_contact(contact_id: str) -> list[dict]:
+    with session() as c:
+        rows = c.execute("SELECT * FROM outreach WHERE contact_id=? ORDER BY created_at DESC", (contact_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_outreach_today() -> list[dict]:
+    with session() as c:
+        today_prefix = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+        rows = c.execute("SELECT * FROM outreach WHERE sent_at LIKE ? ORDER BY sent_at DESC", (f"{today_prefix}%",)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_outreach_today_count() -> int:
+    return len(get_outreach_today())
+
+
+def get_outreach_queue() -> list[dict]:
+    with session() as c:
+        rows = c.execute("SELECT * FROM outreach WHERE status IN ('draft', 'queued') ORDER BY created_at ASC").fetchall()
+        return [dict(r) for r in rows]
+
+
+def mark_outreach_sent(outreach_id_or_contact_id: str) -> dict | None:
+    now = now_iso()
+    follow_up_days = int(get_setting("follow_up_days", "4"))
+    follow_up_due = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=follow_up_days)).isoformat()
+    with session() as c:
+        row = c.execute("SELECT * FROM outreach WHERE id=? OR contact_id=? ORDER BY created_at DESC LIMIT 1", (outreach_id_or_contact_id, outreach_id_or_contact_id)).fetchone()
+        if not row:
+            return None
+        oid = row["id"]
+        cid = row["contact_id"]
+        c.execute("""
+            UPDATE outreach
+            SET status='sent', sent_at=?, follow_up_due=?, updated_at=?
+            WHERE id=?
+        """, (now, follow_up_due, now, oid))
+        c.execute("UPDATE contacts SET status='sent', updated_at=? WHERE id=?", (now, cid))
+        updated = c.execute("SELECT * FROM outreach WHERE id=?", (oid,)).fetchone()
+        return dict(updated) if updated else None
+
+
+def mark_outreach_replied(outreach_id_or_contact_id: str) -> dict | None:
+    now = now_iso()
+    with session() as c:
+        row = c.execute("SELECT * FROM outreach WHERE id=? OR contact_id=? ORDER BY created_at DESC LIMIT 1", (outreach_id_or_contact_id, outreach_id_or_contact_id)).fetchone()
+        if not row:
+            return None
+        oid = row["id"]
+        cid = row["contact_id"]
+        c.execute("""
+            UPDATE outreach
+            SET status='replied', replied_at=?, updated_at=?
+            WHERE id=?
+        """, (now, now, oid))
+        c.execute("UPDATE contacts SET status='replied', updated_at=? WHERE id=?", (now, cid))
+        updated = c.execute("SELECT * FROM outreach WHERE id=?", (oid,)).fetchone()
+        return dict(updated) if updated else None
+
+
+def get_outreach_report() -> dict:
+    with session() as c:
+        total_drafted = c.execute("SELECT count(*) as cnt FROM outreach").fetchone()["cnt"]
+        total_sent = c.execute("SELECT count(*) as cnt FROM outreach WHERE status IN ('sent', 'replied', 'followup_sent', 'closed')").fetchone()["cnt"]
+        total_replied = c.execute("SELECT count(*) as cnt FROM outreach WHERE status='replied'").fetchone()["cnt"]
+        total_calls = total_replied
+        reply_rate = (total_replied / total_sent) if total_sent > 0 else 0.0
+
+        with_attach = c.execute("SELECT count(*) as sent, sum(CASE WHEN status='replied' THEN 1 ELSE 0 END) as replies FROM outreach WHERE attached=1 AND status != 'draft'").fetchone()
+        without_attach = c.execute("SELECT count(*) as sent, sum(CASE WHEN status='replied' THEN 1 ELSE 0 END) as replies FROM outreach WHERE attached=0 AND status != 'draft'").fetchone()
+
+        w_sent = with_attach["sent"] or 0
+        w_rep = with_attach["replies"] or 0
+        wo_sent = without_attach["sent"] or 0
+        wo_rep = without_attach["replies"] or 0
+
+        rate_with = (w_rep / w_sent) if w_sent > 0 else 0.0
+        rate_without = (wo_rep / wo_sent) if wo_sent > 0 else 0.0
+
+        suggestion = "Keep sending targeted 3-4 line notes with relevant proof points."
+        if wo_sent >= 5 and rate_without > rate_with:
+            suggestion = "Sending initial emails without attachments is yielding higher reply rates. Consider keeping first_touch_attachment off."
+        elif total_sent >= 10 and reply_rate < 0.10:
+            suggestion = "Reply rate is below 10%. Consider refining the target role or quoting a tighter observation from recent company news."
+
+        return {
+            "total_drafted": total_drafted,
+            "total_sent": total_sent,
+            "total_replied": total_replied,
+            "total_calls": total_calls,
+            "reply_rate": round(reply_rate, 3),
+            "by_attachment": {
+                "attached": {"sent": w_sent, "replies": w_rep, "rate": round(rate_with, 3)},
+                "unattached": {"sent": wo_sent, "replies": wo_rep, "rate": round(rate_without, 3)},
+            },
+            "suggested_change": suggestion,
+            "generated_at": now_iso(),
+        }
 
 
 

@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from . import db, home, pipeline
+from . import config, db, home, pipeline
 
 log = logging.getLogger("jobhunter.radar")
 
@@ -145,13 +145,30 @@ class RadarWorker:
         log.info("LinkedIn Radar worker stopped.")
 
     def poll_once(self) -> dict[str, Any]:
-        """Run a single gentle LinkedIn incremental poll with lifecycle ingestion."""
+        """Run a single gentle poll with lifecycle ingestion (Signals in Modern mode, LinkedIn in Classic mode)."""
         db.update_radar_state(status="working")
         now_dt = datetime.datetime.now(datetime.timezone.utc)
         iso_now = now_dt.isoformat()
 
         try:
-            # 1. Run incremental scrape
+            active_method = config.get_method()
+            sig_discovered = 0
+            sig_new_ingested = 0
+            if active_method == "modern":
+                from . import signals
+                sig_res = signals.poll_modern_signals()
+                sig_discovered = sig_res.get("discovered", 0)
+                sig_new_ingested = sig_res.get("new_ingested", 0)
+                matching_count = db.get_new_signals_count()
+                top_titles = [f"{s.get('company', '')}: {s.get('role_guess', '')}" for s in sig_res.get("top_signals", [])]
+                if matching_count > 0:
+                    push_radar_event(
+                        total_new=sig_new_ingested,
+                        matching_filters=matching_count,
+                        top_titles=top_titles,
+                    )
+
+            # LinkedIn incremental scrape (Decision C: always runs)
             new_discovered_count = pipeline.run_linkedin_incremental()
 
             # 2. Ingest staged pending jobs into jobs table
@@ -193,8 +210,9 @@ class RadarWorker:
 
             return {
                 "success": True,
-                "discovered": new_discovered_count,
-                "new_ingested": len(inserted_new),
+                "method": active_method,
+                "discovered": new_discovered_count + sig_discovered,
+                "new_ingested": len(inserted_new) + sig_new_ingested,
                 "matching_filters": len(matching_new),
                 "interval_seconds": self.current_interval,
             }
