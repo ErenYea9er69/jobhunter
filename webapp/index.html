@@ -87,7 +87,9 @@
     </a>
     <nav aria-label="Main">
       <ul>
-        <li><a class="nav-item" href="#/jobs" data-route="jobs"><svg class="icon"><use href="#i-search"/></svg>Jobs</a></li>
+        <li id="nav-item-signals-wrap"><a class="nav-item" href="#/signals" data-route="signals"><svg class="icon"><use href="#i-sparkles"/></svg>Signals<span class="nav-count" id="nav-count-signals"></span></a></li>
+        <li id="nav-item-jobs-wrap"><a class="nav-item" href="#/jobs" data-route="jobs"><svg class="icon"><use href="#i-search"/></svg>Jobs</a></li>
+        <li id="nav-item-outreach-wrap"><a class="nav-item" href="#/outreach" data-route="outreach"><svg class="icon"><use href="#i-mail"/></svg>Outreach<span class="nav-count" id="nav-count-outreach"></span></a></li>
         <li><a class="nav-item" href="#/applications" data-route="applications"><svg class="icon"><use href="#i-square-kanban"/></svg>Applications<span class="nav-count" id="nav-count-apps"></span></a></li>
         <li><a class="nav-item" href="#/documents" data-route="documents"><svg class="icon"><use href="#i-pen-line"/></svg>Documents</a></li>
         <li><a class="nav-item" href="#/resume" data-route="resume"><svg class="icon"><use href="#i-file-text"/></svg>Resume<span class="nav-count" id="nav-resume-flag"></span></a></li>
@@ -125,18 +127,161 @@
 
     <header class="page-head">
       <div>
-        <h1 id="page-title" tabindex="-1">Jobs</h1>
+        <h1 id="page-title" tabindex="-1">Signals</h1>
         <p class="page-sub" id="page-sub"></p>
       </div>
       <div class="page-actions" id="page-actions">
-        <button class="btn btn-secondary btn-sm btn-radar" id="btn-radar-header" type="button" aria-label="LinkedIn Radar" title="LinkedIn Radar: Live watcher">
+        <div id="page-actions-custom"></div>
+        <!-- Method switch: Modern (default) vs Classic -->
+        <div class="method-toggle seg" role="radiogroup" aria-label="Method choice" id="method-toggle-header">
+          <button type="button" class="btn-seg active" data-method="modern" id="btn-method-modern">Modern</button>
+          <button type="button" class="btn-seg" data-method="classic" id="btn-method-classic">Classic</button>
+        </div>
+
+        <button class="btn btn-secondary btn-sm btn-radar" id="btn-radar-header" type="button" aria-label="Radar: Live watcher" title="Radar: Live watcher">
           <span class="radar-dot" id="radar-header-dot"></span>
           <svg class="icon icon-sm"><use href="#i-radar"/></svg>
-          <span>Radar</span>
+          <span id="radar-header-label">Radar</span>
           <span class="badge badge-accent" id="radar-header-badge" hidden>0</span>
         </button>
       </div>
     </header>
+
+    <!-- ============ SIGNALS (Modern) ============ -->
+    <section class="view" data-view="signals" hidden aria-labelledby="page-title">
+      <div class="jobs-tools">
+        <div id="signals-notice"></div>
+        <form id="signals-filter-form" class="search-row" role="search" autocomplete="off">
+          <div class="field">
+            <label for="sig-q">Filter signals</label>
+            <div class="with-icon">
+              <svg class="icon"><use href="#i-search"/></svg>
+              <input class="input" id="sig-q" name="sig-q" type="search" placeholder="Role, keyword, or company (e.g. Frontend, AI, Stripe)" enterkeyhint="search">
+            </div>
+          </div>
+          <div class="field">
+            <label for="sig-stage">Stage</label>
+            <select class="select" id="sig-stage">
+              <option value="any">Any stage</option>
+              <option value="seed">Seed</option>
+              <option value="series A">Series A</option>
+              <option value="series B">Series B</option>
+              <option value="pre-seed">Pre-seed</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="sig-type">Signal type</label>
+            <select class="select" id="sig-type">
+              <option value="">All types</option>
+              <option value="hiring_post">Hiring posts</option>
+              <option value="funding">Funding news</option>
+            </select>
+          </div>
+        </form>
+
+        <div class="signals-bar-row">
+          <div class="signals-meta-counts">
+            <span class="count" id="signals-count">0 signals</span>
+            <span class="meta" id="signals-meta">sorted by freshness &amp; match score</span>
+          </div>
+          <label class="check check-sm" id="lbl-sig-late-toggle">
+            <input type="checkbox" id="sig-late-toggle">
+            <span>Show late signals (&gt;24h, &gt;100 likes, or funding &gt;14d)</span>
+          </label>
+        </div>
+
+        <!-- Usability Banner for Signals (<10 or >300) -->
+        <div class="banner-usability" id="banner-signals-usability" hidden role="alert">
+          <div class="banner-content">
+            <svg class="icon"><use href="#i-circle-alert"/></svg>
+            <span id="signals-usability-message"></span>
+          </div>
+          <div class="banner-actions" id="signals-usability-actions"></div>
+        </div>
+      </div>
+
+      <div class="signals-content" aria-label="Signal radar feed">
+        <h2 class="section-title" id="h-fresh-signals">Fresh Signals</h2>
+        <ul class="signal-grid" id="signals-fresh-list" aria-live="polite"></ul>
+        <div id="signals-state"></div>
+
+        <div class="signals-late-section" id="signals-late-wrap" hidden>
+          <hr class="sep">
+          <h2 class="section-title text-dim" id="h-late-signals">Late Signals (Lower Reach Priority)</h2>
+          <ul class="signal-grid signal-grid-late" id="signals-late-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ OUTREACH & FOLLOW-UPS (Modern) ============ -->
+    <section class="view" data-view="outreach" hidden aria-labelledby="page-title">
+      <div class="outreach-dashboard">
+        <div class="metric-grid">
+          <div class="metric-card">
+            <span class="metric-label">Sent Today</span>
+            <div class="metric-val"><span id="metric-sent-today">0</span> <small>/ 20 cap</small></div>
+            <span class="metric-sub" id="metric-cap-sub">Daily reset at midnight</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Tomorrow Queue</span>
+            <div class="metric-val" id="metric-queue-count">0</div>
+            <span class="metric-sub">Drafts waiting for next cap reset</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Follow-ups Due</span>
+            <div class="metric-val" id="metric-followups-count">0</div>
+            <span class="metric-sub">4+ days since sent with no reply</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Weekly Reply Rate</span>
+            <div class="metric-val" id="metric-reply-rate">0%</div>
+            <span class="metric-sub"><button class="text-btn text-xs" id="btn-view-weekly-report" type="button">View weekly report</button></span>
+          </div>
+        </div>
+
+        <!-- Follow-ups due -->
+        <div class="outreach-section" id="outreach-followups-section">
+          <div class="section-head">
+            <h2>Follow-ups Due (4 Days Without Reply)</h2>
+            <span class="badge badge-accent" id="badge-followup-count">0</span>
+          </div>
+          <p class="section-desc">One polite follow-up reaches decision makers when emails get buried. The MCP drafts a 2-line nudge.</p>
+          <ul class="followup-list" id="followup-list"></ul>
+        </div>
+
+        <!-- Queue for tomorrow -->
+        <div class="outreach-section" id="outreach-queue-section">
+          <div class="section-head">
+            <h2>Tomorrow Queue</h2>
+            <span class="badge" id="badge-queue-count">0</span>
+          </div>
+          <p class="section-desc">Drafts queued when the 20-email daily cap is reached. Sent when you approve them tomorrow.</p>
+          <ul class="queue-list" id="queue-list"></ul>
+        </div>
+
+        <!-- Sent history -->
+        <div class="outreach-section">
+          <div class="section-head">
+            <h2>Outreach Ledger (Recent Sends)</h2>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="outreach-table">
+              <thead>
+                <tr>
+                  <th>Contact</th>
+                  <th>Company &amp; Role</th>
+                  <th>Sent Date</th>
+                  <th>Channel</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="outreach-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- ============ JOBS ============ -->
     <section class="view" data-view="jobs" hidden aria-labelledby="page-title">
@@ -426,9 +571,11 @@
 </div>
 
 <nav class="tabbar" aria-label="Main">
-  <a href="#/jobs" data-route="jobs"><svg class="icon"><use href="#i-search"/></svg>Jobs</a>
-  <a href="#/applications" data-route="applications"><svg class="icon"><use href="#i-square-kanban"/></svg>Applications</a>
-  <a href="#/documents" data-route="documents"><svg class="icon"><use href="#i-pen-line"/></svg>Documents</a>
+  <a href="#/signals" data-route="signals" id="tabbar-signals"><svg class="icon"><use href="#i-sparkles"/></svg>Signals</a>
+  <a href="#/jobs" data-route="jobs" id="tabbar-jobs"><svg class="icon"><use href="#i-search"/></svg>Jobs</a>
+  <a href="#/outreach" data-route="outreach" id="tabbar-outreach"><svg class="icon"><use href="#i-mail"/></svg>Outreach</a>
+  <a href="#/applications" data-route="applications"><svg class="icon"><use href="#i-square-kanban"/></svg>Apps</a>
+  <a href="#/documents" data-route="documents"><svg class="icon"><use href="#i-pen-line"/></svg>Docs</a>
   <a href="#/resume" data-route="resume"><svg class="icon"><use href="#i-file-text"/></svg>Resume<span class="tab-dot" id="tab-resume-dot" hidden></span></a>
   <a href="#/settings" data-route="settings"><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
 </nav>
@@ -457,7 +604,7 @@
       <li><span>Previous job</span><kbd>k</kbd></li>
       <li><span>Save the selected job</span><kbd>s</kbd></li>
       <li><span>Apply to the selected job</span><kbd>a</kbd></li>
-      <li><span>Go to Jobs, Applications, Documents</span><span><kbd>g</kbd> then <kbd>j</kbd> <kbd>a</kbd> <kbd>d</kbd></span></li>
+      <li><span>Go to Jobs, Signals, Outreach, Applications</span><span><kbd>g</kbd> then <kbd>j</kbd> <kbd>s</kbd> <kbd>o</kbd> <kbd>a</kbd></span></li>
       <li><span>Show this list</span><kbd>?</kbd></li>
     </ul>
     <div class="dialog-foot"><button class="btn btn-primary" value="close">Close</button></div>
@@ -666,6 +813,279 @@
         </table>
       </div>
     </section>
+  </div>
+</dialog>
+
+<!-- ============ MODERN TRACK DIALOGS ============ -->
+
+<!-- Contacts & Outreach Panel -->
+<dialog id="dlg-contacts-panel" class="drawer drawer-wide" aria-labelledby="contacts-panel-title">
+  <div class="drawer-bar">
+    <button class="btn btn-quiet btn-icon" id="btn-contacts-drawer-close" type="button" aria-label="Close panel"><svg class="icon"><use href="#i-x"/></svg></button>
+    <div style="display:flex;align-items:center;gap:var(--s3);flex:1">
+      <h2 id="contacts-panel-title" style="margin:0;font-size:var(--text-lg)">Outreach &amp; Contacts</h2>
+      <span class="badge" id="contacts-company-badge"></span>
+    </div>
+  </div>
+  <div class="drawer-body" style="padding:var(--s5);display:grid;gap:var(--s6)">
+    <!-- Signal context line -->
+    <div class="panel-context-bar" id="contacts-context-bar">
+      <span id="contacts-context-text"></span>
+      <a class="text-btn text-xs" id="contacts-context-link" href="#" target="_blank" rel="noopener noreferrer"><svg class="icon icon-sm"><use href="#i-external-link"/></svg>View original post</a>
+      <button class="btn btn-quiet btn-sm" id="btn-view-brief-from-contacts" type="button"><svg class="icon icon-sm"><use href="#i-file-text"/></svg>Company brief &amp; learning pack</button>
+    </div>
+
+    <!-- Section: Decision Makers -->
+    <section class="outreach-pane" aria-labelledby="h-decision-makers">
+      <div class="pane-head">
+        <h3 id="h-decision-makers" style="margin:0;display:flex;align-items:center;gap:var(--s2)"><svg class="icon icon-sm"><use href="#i-user"/></svg>Decision Makers <span class="badge" id="contacts-count-badge">0</span></h3>
+        <span class="hint" style="font-size:var(--text-xs)">Up to 3 targeted contacts based on company size. MX verified.</span>
+      </div>
+      <div class="contacts-grid" id="contacts-list"></div>
+    </section>
+
+    <!-- Section: 3-4 Line Outreach Email Draft -->
+    <section class="outreach-pane" aria-labelledby="h-email-draft">
+      <div class="pane-head">
+        <h3 id="h-email-draft" style="margin:0;display:flex;align-items:center;gap:var(--s2)"><svg class="icon icon-sm"><use href="#i-mail"/></svg>Short Human Email Draft</h3>
+        <div class="draft-meters">
+          <span class="meter-pill" id="meter-words">0 words (target: 40-80)</span>
+          <span class="meter-pill" id="meter-lines">0 lines (target: 3-4)</span>
+        </div>
+      </div>
+
+      <div class="field" style="margin-block-end:var(--s3)">
+        <label for="outreach-email-subject">Subject line (under 6 words, quotes company/role)</label>
+        <input class="input" id="outreach-email-subject" type="text" placeholder="Subject">
+      </div>
+
+      <div class="field">
+        <label for="outreach-email-body">Email body (3-4 lines, real detail, proof point, low friction ask)</label>
+        <textarea class="textarea mono" id="outreach-email-body" rows="6" placeholder="Email draft body..."></textarea>
+      </div>
+
+      <!-- Real-time Slop Warning Callout -->
+      <div class="banner-slop-warning" id="banner-slop-warning" hidden role="alert">
+        <div class="banner-content">
+          <svg class="icon text-danger"><use href="#i-shield-alert"/></svg>
+          <div>
+            <strong>Anti-slop check flagged issues:</strong>
+            <ul id="slop-flag-list" style="margin:var(--s1) 0 0;padding-inline-start:var(--s4);font-size:var(--text-xs)"></ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- First-Draft Legal Notice -->
+      <div class="legal-notice-box">
+        <svg class="icon icon-sm text-dim"><use href="#i-circle-alert"/></svg>
+        <span>You send these emails. Follow email rules of recipient's country: US CAN-SPAM requires a physical mailing address and an opt-out line; EU GDPR requires legitimate interest and opt-out; Canada CASL requires consent. Never send unsolicited attachments where prohibited.</span>
+      </div>
+    </section>
+
+    <!-- Section: Tailored Job Resume (1-page PDF <= 200KB per company/role) -->
+    <section class="outreach-pane" aria-labelledby="h-job-resume">
+      <div class="pane-head">
+        <h3 id="h-job-resume" style="margin:0;display:flex;align-items:center;gap:var(--s2)"><svg class="icon icon-sm"><use href="#i-file-text"/></svg>Job Resume (Tailored 1-page PDF)</h3>
+        <span class="badge badge-ok" id="badge-resume-cached">Grounded</span>
+      </div>
+      <div class="resume-row" style="display:flex;justify-content:space-between;align-items:center;padding:var(--s3);background:var(--panel-quiet);border-radius:var(--radius)">
+        <div>
+          <strong id="job-resume-filename">Resume.pdf</strong>
+          <div class="hint" id="job-resume-meta" style="font-size:var(--text-xs)">Tailored to role requirements using facts from your master resume only. Shared across all contacts for this company.</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="btn-open-resume-pdf" type="button"><svg class="icon icon-sm"><use href="#i-external-link"/></svg>Open PDF</button>
+      </div>
+    </section>
+  </div>
+  <div class="drawer-foot" style="display:flex;justify-content:space-between;align-items:center;padding:var(--s4) var(--s5);border-top:1px solid var(--line);background:var(--panel)">
+    <div class="cap-indicator">
+      <span id="drawer-cap-text" style="font-size:var(--text-xs);color:var(--ink-soft)">Sent today: 0 / 20</span>
+    </div>
+    <div style="display:flex;gap:var(--s2)">
+      <button class="btn btn-secondary btn-sm" id="btn-copy-outreach" type="button"><svg class="icon icon-sm"><use href="#i-copy"/></svg>Copy email</button>
+      <button class="btn btn-secondary btn-sm" id="btn-mailto-outreach" type="button"><svg class="icon icon-sm"><use href="#i-send"/></svg>Open in mail app</button>
+      <button class="btn btn-primary btn-sm" id="btn-mark-sent-outreach" type="button"><svg class="icon icon-sm"><use href="#i-check"/></svg>Mark as sent (+4d reminder)</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Company Brief & Learning Pack Dialog -->
+<dialog id="dlg-company-brief" class="dialog-body dlg-lg" aria-labelledby="brief-dialog-title">
+  <div class="dialog-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+    <div>
+      <h2 id="brief-dialog-title" style="margin:0">Company Research &amp; Learning Pack</h2>
+      <p class="mute" id="brief-company-sub" style="margin:var(--s1) 0 0;font-size:var(--text-sm)"></p>
+    </div>
+    <button class="btn btn-quiet btn-icon" id="btn-brief-close" type="button" aria-label="Close dialog"><svg class="icon"><use href="#i-x"/></svg></button>
+  </div>
+
+  <div class="seg" role="tablist" id="brief-tabs" style="margin-block:var(--s3)">
+    <button type="button" role="tab" class="btn-seg active" id="tab-brief-facts" aria-selected="true">Factual Company Brief</button>
+    <button type="button" role="tab" class="btn-seg" id="tab-brief-learning" aria-selected="false">Learning Pack &amp; Talking Points</button>
+  </div>
+
+  <!-- Pane 1: Factual Brief -->
+  <div class="brief-pane" id="pane-brief-facts">
+    <div class="brief-section">
+      <h3>What They Do</h3>
+      <p id="brief-what-they-do"></p>
+      <div class="source-link" id="brief-src-what"></div>
+    </div>
+    <div class="brief-section">
+      <h3>Business Model</h3>
+      <p id="brief-business-model"></p>
+      <div class="source-link" id="brief-src-biz"></div>
+    </div>
+    <div class="brief-section">
+      <h3>Tech Stack</h3>
+      <p id="brief-tech-stack"></p>
+      <div class="source-link" id="brief-src-tech"></div>
+    </div>
+    <div class="brief-section">
+      <h3>Recent News &amp; Funding</h3>
+      <p id="brief-recent-news"></p>
+      <div class="source-link" id="brief-src-news"></div>
+    </div>
+  </div>
+
+  <!-- Pane 2: Learning Pack -->
+  <div class="brief-pane" id="pane-brief-learning" hidden>
+    <div class="brief-section">
+      <h3>3 Smart Questions for First Conversation</h3>
+      <ul class="numbered-list" id="pack-questions"></ul>
+    </div>
+    <div class="brief-section">
+      <h3>Skill Gaps &amp; Study List</h3>
+      <ul class="gap-study-list" id="pack-gaps"></ul>
+    </div>
+    <div class="brief-section">
+      <h3>5 Talking Points (Connecting Candidate Experience)</h3>
+      <ul class="talking-points-list" id="pack-talking-points"></ul>
+    </div>
+    <div class="brief-section">
+      <h3>5-Line Summary</h3>
+      <div class="summary-box" id="pack-summary"></div>
+    </div>
+  </div>
+
+  <div class="dialog-foot">
+    <button class="btn btn-primary" id="btn-brief-done" type="button">Close</button>
+  </div>
+</dialog>
+
+<!-- First-Visit Onboarding Modal -->
+<dialog id="dlg-method-onboarding" class="dialog-body dlg-lg" aria-labelledby="onboarding-method-title">
+  <div class="dialog-header">
+    <svg class="icon text-primary"><use href="#i-sparkles"/></svg>
+    <h2 id="onboarding-method-title">Choose Your Job Search Method</h2>
+  </div>
+  <p class="mute" style="margin-block-end:var(--s4)">JobHunter supports two distinct approaches. You can switch at any time in the header, and all data stays in place.</p>
+  
+  <div class="method-cards-grid">
+    <div class="method-card method-card-highlighted" id="card-choice-modern">
+      <div class="method-card-badge">Default &amp; Recommended</div>
+      <h3>Modern: Outreach First</h3>
+      <p class="method-desc">Catch fresh hiring posts and seed funding news, find decision makers, and send a short human email before the crowd applies.</p>
+      <ul class="method-features">
+        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Signal Radar: hiring posts &amp; funding news</li>
+        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Decision maker finder with size-based titles &amp; MX check</li>
+        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Anti-slop 3-4 line email drafts &amp; 1-page tailored resume</li>
+        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Outreach ledger with 20/day cap &amp; follow-up nudges</li>
+      </ul>
+      <button class="btn btn-primary btn-block" id="btn-select-modern" type="button">Start with Modern</button>
+    </div>
+
+    <div class="method-card" id="card-choice-classic">
+      <h3>Classic: Job Boards &amp; Apply</h3>
+      <p class="method-desc">Search job boards, tailor resumes and cover letters for each posting, and apply through standard ATS forms.</p>
+      <ul class="method-features">
+        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Broad search across Greenhouse, Lever, Ashby, LinkedIn</li>
+        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Job cards with fit breakdown &amp; grounding audit</li>
+        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Tailored resume, cover letter &amp; interview prep</li>
+        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Extension autofill on career sites</li>
+      </ul>
+      <button class="btn btn-secondary btn-block" id="btn-select-classic" type="button">Use Classic</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Draft 2-Line Follow-up Dialog -->
+<dialog id="dlg-followup-draft" class="dialog-body" aria-labelledby="followup-draft-title">
+  <div class="dialog-header">
+    <svg class="icon"><use href="#i-mail"/></svg>
+    <h2 id="followup-draft-title">Draft 2-Line Follow-up</h2>
+  </div>
+  <p class="mute" id="followup-contact-info"></p>
+  <div class="field" style="margin-block:var(--s3)">
+    <label for="followup-body">Follow-up message</label>
+    <textarea class="textarea mono" id="followup-body" rows="4"></textarea>
+  </div>
+  <div class="dialog-foot">
+    <button class="btn btn-quiet" id="btn-followup-cancel" type="button">Cancel</button>
+    <button class="btn btn-secondary" id="btn-followup-copy" type="button"><svg class="icon icon-sm"><use href="#i-copy"/></svg>Copy</button>
+    <button class="btn btn-primary" id="btn-followup-mailto" type="button"><svg class="icon icon-sm"><use href="#i-send"/></svg>Open in mail app</button>
+  </div>
+</dialog>
+
+<!-- Record Reply Dialog -->
+<dialog id="dlg-reply-record" class="dialog-body" aria-labelledby="reply-record-title">
+  <div class="dialog-header">
+    <svg class="icon text-ok"><use href="#i-sparkles"/></svg>
+    <h2 id="reply-record-title">Record Reply</h2>
+  </div>
+  <p class="mute" id="reply-contact-info"></p>
+  <div class="field" style="margin-block:var(--s3)">
+    <label>What kind of reply did they send?</label>
+    <div class="chip-list" id="reply-chips">
+      <button type="button" class="chip-btn" data-reply="interested"><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Interested / Wants to chat</button>
+      <button type="button" class="chip-btn" data-reply="declined"><svg class="icon icon-sm text-danger"><use href="#i-x"/></svg> Not hiring / Declined</button>
+      <button type="button" class="chip-btn" data-reply="neutral"><svg class="icon icon-sm"><use href="#i-clock"/></svg> Neutral / Later</button>
+    </div>
+  </div>
+  <div id="reply-callprep-result" hidden style="margin-block:var(--s4);padding:var(--s3);background:var(--panel-quiet);border-radius:var(--radius)">
+    <h3 style="margin:0 0 var(--s2);font-size:var(--text-md)"><svg class="icon icon-sm text-primary"><use href="#i-sparkles"/></svg> Call Prep Pack Generated!</h3>
+    <p style="font-size:var(--text-xs)" class="mute">Review smart questions and talking points before your call:</p>
+    <div id="reply-prep-content" style="font-size:var(--text-sm);display:grid;gap:var(--s2)"></div>
+  </div>
+  <div class="dialog-foot">
+    <button class="btn btn-quiet" id="btn-reply-cancel" type="button">Close</button>
+  </div>
+</dialog>
+
+<!-- Weekly Report Dialog -->
+<dialog id="dlg-weekly-report" class="dialog-body dlg-lg" aria-labelledby="weekly-report-title">
+  <div class="dialog-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+    <div>
+      <h2 id="weekly-report-title" style="margin:0">Weekly Outreach Report</h2>
+      <p class="mute" id="weekly-report-period" style="margin:var(--s1) 0 0;font-size:var(--text-sm)"></p>
+    </div>
+    <button class="btn btn-quiet btn-icon" id="btn-report-close" type="button" aria-label="Close report"><svg class="icon"><use href="#i-x"/></svg></button>
+  </div>
+
+  <div class="report-stats-grid" id="report-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:var(--s3);margin-block:var(--s4)">
+    <div class="metric-card"><span class="metric-label">Total Sent</span><div class="metric-val" id="rep-sent">0</div></div>
+    <div class="metric-card"><span class="metric-label">Total Replies</span><div class="metric-val" id="rep-replies">0</div></div>
+    <div class="metric-card"><span class="metric-label">Reply Rate</span><div class="metric-val" id="rep-rate">0%</div></div>
+  </div>
+
+  <div class="report-breakdowns" style="display:grid;grid-template-columns:1fr 1fr;gap:var(--s4);margin-block-end:var(--s4)">
+    <div class="report-box" style="padding:var(--s3);background:var(--panel-quiet);border-radius:var(--radius)">
+      <h3 style="margin-top:0;font-size:var(--text-sm)">By Source</h3>
+      <ul class="breakdown-list" id="rep-sources" style="padding-left:var(--s4);font-size:var(--text-xs);margin:0"></ul>
+    </div>
+    <div class="report-box" style="padding:var(--s3);background:var(--panel-quiet);border-radius:var(--radius)">
+      <h3 style="margin-top:0;font-size:var(--text-sm)">By Attachment</h3>
+      <ul class="breakdown-list" id="rep-attachments" style="padding-left:var(--s4);font-size:var(--text-xs);margin:0"></ul>
+    </div>
+  </div>
+
+  <div class="recommendation-callout" style="padding:var(--s3);background:var(--panel-quiet);border-left:3px solid var(--action);border-radius:var(--radius)">
+    <strong style="display:block;margin-block-end:var(--s1)">Suggested Change for Next Week:</strong>
+    <span id="rep-suggested-change">Keep sending consistent short messages.</span>
+  </div>
+
+  <div class="dialog-foot" style="margin-top:var(--s4)">
+    <button class="btn btn-primary" id="btn-report-done" type="button">Done</button>
   </div>
 </dialog>
 

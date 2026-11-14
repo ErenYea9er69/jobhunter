@@ -242,6 +242,9 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
                 "radar_state": r_state,
             }))
 
+        if path == "/api/method":
+            return self._send_json(200, envelope(status="ok", data={"method": config.get_method()}))
+
         if path == "/api/signals":
             status_param = query.get("status", [""])[0] or None
             type_param = query.get("type", [""])[0] or None
@@ -539,6 +542,57 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             }
             app_id = tracker.upsert_application(app_data)
             return self._send_json(200, envelope(status="ok", data={"application_id": app_id}))
+
+        if path == "/api/method":
+            new_method = body.get("method", "modern").lower()
+            if new_method in ("modern", "classic"):
+                config.set_method(new_method)
+                return self._send_json(200, envelope(status="ok", data={"method": new_method}))
+            return self._send_json(400, envelope(status="error", error={"code": "invalid_method", "message": "Method must be 'modern' or 'classic'"}))
+
+        if path == "/api/signals/save":
+            signal_id = body.get("signal_id") or body.get("id") or ""
+            company = body.get("company", "")
+            role = body.get("role", "")
+            sig = db.get_signal(signal_id) if signal_id else None
+            if sig:
+                company = company or sig.get("company", "")
+                role = role or sig.get("role_guess") or "Software Engineer"
+                db.update_signal_status(signal_id, "saved")
+
+            from . import company_research, contacts, email_drafter
+            brief = db.get_company_brief(signal_id or company)
+            if not brief:
+                brief_data = company_research.build_company_brief(company=company, signal=sig)
+                lp_data = company_research.build_learning_pack(company=company, signal=sig)
+                brief = db.save_company_brief(company, brief_data, lp_data, signal_id=signal_id)
+            else:
+                brief_data = brief.get("brief", {})
+                lp_data = brief.get("learning_pack", {})
+
+            found_contacts = contacts.find_contacts(company=company, role=role, signal_id=signal_id)
+            resume_res = email_drafter.build_job_resume(company=company, role=role)
+            top_contact = found_contacts[0] if found_contacts else {}
+            email_res = email_drafter.draft_email(company=company, role=role, signal=sig, contact=top_contact)
+
+            return self._send_json(200, envelope(status="ok", data={
+                "signal_id": signal_id,
+                "company": company,
+                "role": role,
+                "brief": brief_data,
+                "learning_pack": lp_data,
+                "contacts": found_contacts,
+                "resume": resume_res,
+                "email": email_res,
+            }))
+
+        if path == "/api/signals/dismiss":
+            signal_id = body.get("signal_id") or body.get("id") or ""
+            reason = body.get("reason", "not_interested")
+            if not signal_id:
+                return self._send_json(400, envelope(status="error", error={"code": "missing_signal_id", "message": "signal_id is required"}))
+            db.update_signal_status(signal_id, "dismissed")
+            return self._send_json(200, envelope(status="ok", data={"signal_id": signal_id, "dismissed": True, "reason": reason}))
 
         if path == "/api/jobs/save":
             job_id = body.get("job_id") or body.get("id") or body.get("key")
