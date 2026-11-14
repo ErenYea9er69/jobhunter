@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import ai_manager, bigtech_directory, db, email_finder, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, save_flow, screening, tracker, workspace
+from . import ai_manager, bigtech_directory, config, db, email_finder, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, save_flow, screening, tracker, workspace
 from . import mcp_helpers as h
 from .mcp_helpers import envelope
 from .team import qa
@@ -561,19 +561,23 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
                 db.update_signal_status(signal_id, "saved")
 
             from . import company_research, contacts, email_drafter
+            profile = db.get_profile() or {}
+            sig_dict = sig or ({"company": company, "role_guess": role} if company else {})
             brief = db.get_company_brief(signal_id or company)
             if not brief:
-                brief_data = company_research.build_company_brief(company=company, signal=sig)
-                lp_data = company_research.build_learning_pack(company=company, signal=sig)
+                brief_data = company_research.build_company_brief(signal=sig_dict, profile=profile)
+                lp_data = company_research.build_learning_pack(brief=brief_data, signal=sig_dict, profile=profile)
                 brief = db.save_company_brief(company, brief_data, lp_data, signal_id=signal_id)
             else:
                 brief_data = brief.get("brief", {})
                 lp_data = brief.get("learning_pack", {})
 
-            found_contacts = contacts.find_contacts(company=company, role=role, signal_id=signal_id)
+            contact_res = contacts.find_contacts(signal_id_or_company=signal_id or company, target_role=role)
+            found_contacts = contact_res.get("contacts", []) if isinstance(contact_res, dict) else []
             resume_res = email_drafter.build_job_resume(company=company, role=role)
             top_contact = found_contacts[0] if found_contacts else {}
-            email_res = email_drafter.draft_email(company=company, role=role, signal=sig, contact=top_contact)
+            contact_id = top_contact.get("id") or ""
+            email_res = email_drafter.draft_short_email(contact_id=contact_id, signal_id=signal_id)
 
             return self._send_json(200, envelope(status="ok", data={
                 "signal_id": signal_id,
