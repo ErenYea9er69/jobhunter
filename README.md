@@ -1,6 +1,11 @@
 # JobHunter MCP Server
 <!-- mcp-name: io.github.ErenYea9er69/jobhunter -->
 
+[![PyPI version](https://img.shields.io/pypi/v/jobhunter-mcp.svg)](https://pypi.org/project/jobhunter-mcp/)
+[![Python versions](https://img.shields.io/pypi/pyversions/jobhunter-mcp.svg)](https://pypi.org/project/jobhunter-mcp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Smithery](https://smithery.ai/badge/@ErenYea9er69/jobhunter)](https://smithery.ai/server/@ErenYea9er69/jobhunter)
+
 JobHunter gives an AI assistant (Claude Desktop, Cursor, Antigravity, VS Code) tools for a full job search. It searches many sources, scores each job against your real resume, writes application documents from facts in that resume, and tracks every application. All data stays on your machine.
 
 JobHunter works like a small company. You talk to one AI, and that AI is the CEO. It briefs a team of specialists (Scout, Analyst, Writer, Coach, Chief of Staff). A Reviewer checks every job and document before you see it. See `docs/team.md`.
@@ -9,15 +14,14 @@ By default the AI sees seven CEO tools. The 39 specialist tools sit behind them.
 
 ## Quick start
 
-### 🚀 1-Command Run (Zero Clone, Zero Setup)
+### 🚀 1-Command Run (Published on PyPI — Zero Clone, Zero Setup)
 
-You **do not need to clone this repository** to run JobHunter with your AI assistant. Modern MCP environments run it directly with a single command via `uvx` (the fast, zero-install runner from Astral) or Smithery:
+You **do not need to clone this repository** to run JobHunter with your AI assistant. Run it instantly with a single command via `uvx` (the fast, isolated package runner from Astral) or Smithery:
 
-#### 1. Instant Terminal / Verification Run
+#### 1. Instant Verification / Terminal Run
 ```bash
-uvx --from git+https://github.com/ErenYea9er69/jobhunter jobhunter-mcp --check
+uvx jobhunter-mcp --check
 ```
-*(When published on PyPI, this is simply `uvx jobhunter-mcp`)*
 
 #### 2. Claude Desktop Integration
 Add JobHunter to your `claude_desktop_config.json`:
@@ -26,39 +30,41 @@ Add JobHunter to your `claude_desktop_config.json`:
   "mcpServers": {
     "jobhunter": {
       "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/ErenYea9er69/jobhunter",
-        "jobhunter-mcp"
-      ]
+      "args": ["jobhunter-mcp"]
     }
   }
 }
 ```
 
-#### 3. Cursor Integration (`.cursor/mcp.json` or Global Settings)
+#### 3. Cursor Integration (`.cursor/mcp.json` or Settings > MCP)
 ```json
 {
   "mcpServers": {
     "jobhunter": {
       "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/ErenYea9er69/jobhunter",
-        "jobhunter-mcp"
-      ]
+      "args": ["jobhunter-mcp"]
     }
   }
 }
 ```
 
-#### 4. Smithery Integration
+#### 4. Smithery Integration (1-Click)
 ```bash
 npx -y @smithery/cli run @ErenYea9er69/jobhunter
 ```
 Or 1-click install directly into Claude Desktop:
 ```bash
 npx -y @smithery/cli install @ErenYea9er69/jobhunter --client claude
+```
+
+#### 5. Optional Arguments
+You can pass any arguments directly to `uvx jobhunter-mcp`:
+```bash
+# Run with all specialist tools exposed
+uvx jobhunter-mcp --surface full
+
+# Run with custom resume workspace directory
+uvx jobhunter-mcp --workspace /path/to/my-resumes
 ```
 
 ---
