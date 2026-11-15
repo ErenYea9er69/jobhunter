@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ErenYea9er69/jobhunter",
+  "title": "JobHunter MCP",
+  "description": "MCP server for job search across many sources, resume-grounded scoring, truthful tailoring, ATS audits and application tracking.",
+  "version": "2.4.0",
+  "repository": {
+    "url": "https://github.com/ErenYea9er69/jobhunter",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "jobhunter-mcp",
+      "version": "2.4.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

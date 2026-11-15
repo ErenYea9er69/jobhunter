@@ -1,0 +1,26 @@
+startCommand:
+  type: stdio
+configSchema:
+  type: object
+  properties:
+    workspace:
+      type: string
+      description: "Path to workspace directory containing resumes"
+    surface:
+      type: string
+      description: "Tool exposure surface: 'team' (CEO tools only) or 'full' (all 46 tools)"
+      enum: ["team", "full"]
+      default: "full"
+commandFunction: |-
+  (config) => ({
+    command: "uvx",
+    args: [
+      "--from",
+      "git+https://github.com/ErenYea9er69/jobhunter",
+      "jobhunter-mcp",
+      ...(config.surface ? ["--surface", config.surface] : []),
+      ...(config.workspace ? ["--workspace", config.workspace] : [])
+    ]
+  })
+exampleConfig:
+  surface: "full"

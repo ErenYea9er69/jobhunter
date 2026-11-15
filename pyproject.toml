@@ -8,7 +8,7 @@ version = "2.4.0"
 description = "MCP server for job search: many sources, resume-grounded scoring, truthful document tailoring, application tracking"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "JobHunter Maintainers" }]
 keywords = ["mcp", "model-context-protocol", "job-search", "resume", "ats"]
 classifiers = [
@@ -16,6 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Office/Business",
 ]
 dependencies = [
@@ -23,6 +24,11 @@ dependencies = [
     "curl_cffi>=0.7",
     "pypdf>=4.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ErenYea9er69/jobhunter"
+Repository = "https://github.com/ErenYea9er69/jobhunter"
+"Bug Tracker" = "https://github.com/ErenYea9er69/jobhunter/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

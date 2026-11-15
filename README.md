@@ -1,4 +1,5 @@
 # JobHunter MCP Server
+<!-- mcp-name: io.github.ErenYea9er69/jobhunter -->
 
 JobHunter gives an AI assistant (Claude Desktop, Cursor, Antigravity, VS Code) tools for a full job search. It searches many sources, scores each job against your real resume, writes application documents from facts in that resume, and tracks every application. All data stays on your machine.
 
@@ -8,9 +9,63 @@ By default the AI sees seven CEO tools. The 39 specialist tools sit behind them.
 
 ## Quick start
 
-### ⚡ 1-Command Turnkey Run (Windows, macOS, Linux)
+### 🚀 1-Command Run (Zero Clone, Zero Setup)
 
-Clone the repository and launch the entire copilot ecosystem (Web Dashboard, ATS Autofill Extension, SQLite database, and MCP bridge) with one command:
+You **do not need to clone this repository** to run JobHunter with your AI assistant. Modern MCP environments run it directly with a single command via `uvx` (the fast, zero-install runner from Astral) or Smithery:
+
+#### 1. Instant Terminal / Verification Run
+```bash
+uvx --from git+https://github.com/ErenYea9er69/jobhunter jobhunter-mcp --check
+```
+*(When published on PyPI, this is simply `uvx jobhunter-mcp`)*
+
+#### 2. Claude Desktop Integration
+Add JobHunter to your `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "jobhunter": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/ErenYea9er69/jobhunter",
+        "jobhunter-mcp"
+      ]
+    }
+  }
+}
+```
+
+#### 3. Cursor Integration (`.cursor/mcp.json` or Global Settings)
+```json
+{
+  "mcpServers": {
+    "jobhunter": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/ErenYea9er69/jobhunter",
+        "jobhunter-mcp"
+      ]
+    }
+  }
+}
+```
+
+#### 4. Smithery Integration
+```bash
+npx -y @smithery/cli run @ErenYea9er69/jobhunter
+```
+Or 1-click install directly into Claude Desktop:
+```bash
+npx -y @smithery/cli install @ErenYea9er69/jobhunter --client claude
+```
+
+---
+
+### 🛠️ Developer Setup & Local Copilot Suite (Optional)
+
+Clone only if you are developing JobHunter, customizing the codebase, or using the standalone local Web Dashboard and Chromium extension:
 
 ```bash
 git clone https://github.com/ErenYea9er69/jobhunter.git
