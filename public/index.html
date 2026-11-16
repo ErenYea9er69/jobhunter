@@ -112,6 +112,35 @@
   </aside>
 
   <main class="main" id="main" tabindex="-1">
+    <!-- V3 Resume Status Bar (Phase F5) -->
+    <div class="candidate-bar" id="candidate-bar">
+      <div class="candidate-info">
+        <span class="avatar sm" id="bar-candidate-avatar" aria-hidden="true">C</span>
+        <span class="candidate-name" id="bar-candidate-name">Candidate</span>
+        <span class="candidate-sep" aria-hidden="true">•</span>
+        <span class="candidate-role" id="bar-candidate-role">Target Role</span>
+        <span class="badge badge-accent" id="bar-role-confidence" hidden>100% confidence</span>
+      </div>
+      <div class="candidate-bar-actions">
+        <button class="btn btn-quiet btn-sm" id="btn-change-resume" type="button" aria-haspopup="dialog">
+          <svg class="icon icon-sm"><use href="#i-file-up"/></svg>
+          <span>Change resume</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- V3 Chat Question Notification Banner (Phase F3) -->
+    <div class="banner-chat-question" id="banner-chat-question" hidden role="status" aria-live="polite">
+      <div class="banner-chat-icon"><svg class="icon"><use href="#i-sparkles"/></svg></div>
+      <div class="banner-chat-body">
+        <div class="banner-chat-prompt">
+          <strong>The AI is asking you a question in chat:</strong>
+          <span class="chat-q-text" id="chat-question-text"></span>
+        </div>
+        <p class="banner-chat-sub">Answer in your chat terminal. Your answer filters these matches live.</p>
+      </div>
+    </div>
+
     <!-- Lifecycle Grace Deletion Warning Banner -->
     <div class="banner-lifecycle" id="banner-lifecycle" hidden role="alert">
       <div class="banner-content">
@@ -316,6 +345,30 @@
         </div>
       </div>
       <section aria-label="Search results">
+        <!-- V3 Live Search Progress View (Phase F1) -->
+        <div class="progress-view-card" id="search-progress-view" hidden>
+          <div class="progress-view-head">
+            <div class="pvh-left">
+              <svg class="icon spin icon-sm text-accent"><use href="#i-loader-circle"/></svg>
+              <h3>Searching job boards in background</h3>
+            </div>
+            <span class="progress-view-meta" id="progress-sources-summary">0 sources scanned • 0 jobs found</span>
+          </div>
+          <div class="source-cards-grid" id="source-cards-grid"></div>
+        </div>
+
+        <!-- V3 Filter Strip & Hidden Counter (Phase F2) -->
+        <div class="filter-strip" id="filter-strip">
+          <div class="filter-chips-list" id="filter-chips-list"></div>
+          <div class="filter-strip-actions">
+            <span class="filter-match-counter" id="filter-match-counter">Showing 0 matches</span>
+            <button class="btn btn-quiet btn-sm" id="btn-toggle-hidden" type="button" aria-pressed="false">
+              <svg class="icon icon-sm"><use href="#i-sliders-horizontal"/></svg>
+              <span id="btn-toggle-hidden-text">Show hidden</span>
+            </button>
+          </div>
+        </div>
+
         <!-- Usability Warning Banner (<10 or >300 matches) -->
         <div class="banner-usability" id="banner-usability" hidden role="alert">
           <div class="banner-content">
@@ -1087,6 +1140,38 @@
   <div class="dialog-foot" style="margin-top:var(--s4)">
     <button class="btn btn-primary" id="btn-report-done" type="button">Done</button>
   </div>
+</dialog>
+
+<!-- V3 Change Resume Modal Dialog (Phase F5) -->
+<dialog id="dlg-change-resume" class="dialog-body" aria-labelledby="dlg-change-title" style="max-width:540px;width:90%">
+  <div class="dialog-header" style="display:flex;justify-content:space-between;align-items:center;margin-block-end:var(--s3)">
+    <h2 id="dlg-change-title" style="margin:0">Change Resume</h2>
+    <button class="btn btn-quiet btn-icon" id="btn-cr-close" type="button" aria-label="Close dialog"><svg class="icon"><use href="#i-x"/></svg></button>
+  </div>
+  <form id="form-change-resume" autocomplete="off">
+    <p class="hint" style="margin-block-end:var(--s3)">Upload a new resume or paste text. Re-scoring updates jobs in place while keeping background search running.</p>
+    <div class="seg" role="tablist" style="margin-block-end:var(--s3)">
+      <button type="button" class="btn-seg active" id="tab-cr-file">Upload file</button>
+      <button type="button" class="btn-seg" id="tab-cr-text">Paste text</button>
+    </div>
+    <div id="pane-cr-file">
+      <div class="field" style="margin-block-end:var(--s3)">
+        <label for="cr-file-input">Resume file (PDF, DOCX, TXT, Markdown)</label>
+        <input class="input" type="file" id="cr-file-input" accept=".pdf,.docx,.txt,.md">
+      </div>
+    </div>
+    <div id="pane-cr-text" hidden>
+      <div class="field" style="margin-block-end:var(--s3)">
+        <label for="cr-text-input">Resume text</label>
+        <textarea class="textarea" id="cr-text-input" rows="8" placeholder="Paste your complete resume text here (minimum 300 characters)..." style="width:100%;box-sizing:border-box"></textarea>
+      </div>
+    </div>
+    <div id="cr-status-msg" class="hint" style="color:var(--c-red,#ef4444);margin-block-end:var(--s2)" hidden></div>
+    <div class="dialog-foot" style="display:flex;justify-content:flex-end;gap:var(--s2)">
+      <button class="btn btn-quiet" type="button" id="btn-cr-cancel">Cancel</button>
+      <button class="btn btn-primary" type="submit" id="btn-submit-change-resume">Update resume</button>
+    </div>
+  </form>
 </dialog>
 
 <div class="drop-overlay" id="drop-overlay" hidden><div>Drop your resume to add it</div></div>

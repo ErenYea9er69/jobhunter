@@ -1610,3 +1610,259 @@ dialog.status-drawer {
   .mk { background: Mark; color: MarkText; forced-color-adjust: none; }
   .job-card[aria-current="true"] { outline: 2px solid Highlight; }
 }
+
+/* ------------------------------------------------------------- V3 Start-Up Flow Surfaces */
+
+/* Candidate Bar (Phase F5) */
+.candidate-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding: var(--s2) var(--s4);
+  background: var(--panel-quiet, rgba(255, 255, 255, 0.03));
+  border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  font-size: var(--text-sm);
+  z-index: 10;
+}
+.candidate-info {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+.candidate-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+.candidate-sep {
+  color: var(--mute);
+}
+.candidate-role {
+  color: var(--ink-secondary, #a3a3a3);
+}
+
+/* Chat Question Notification Banner (Phase F3) */
+.banner-chat-question {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  background: var(--panel-elevated, #18181b);
+  border-bottom: 1px solid var(--line-focus, #eab308);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  animation: slideDown 200ms ease-out;
+}
+.banner-chat-icon {
+  color: var(--action, #f59e0b);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.banner-chat-body {
+  flex: 1;
+}
+.banner-chat-prompt {
+  font-size: var(--text-sm);
+  color: var(--ink);
+  line-height: 1.4;
+}
+.chat-q-text {
+  font-weight: 600;
+  color: var(--ink);
+  margin-left: var(--s1);
+}
+.banner-chat-sub {
+  margin: var(--s1) 0 0 0;
+  font-size: var(--text-xs);
+  color: var(--mute);
+}
+
+/* Live Search Progress View (Phase F1) */
+.progress-view-card {
+  margin-block: var(--s3);
+  padding: var(--s3) var(--s4);
+  background: var(--panel, #18181b);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius);
+}
+.progress-view-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-block-end: var(--s3);
+}
+.pvh-left {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.pvh-left h3 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.progress-view-meta {
+  font-size: var(--text-xs);
+  color: var(--mute);
+}
+.source-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: var(--s2);
+}
+.source-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--s2);
+  background: var(--panel-quiet, rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+.source-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.source-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+.source-card-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--mute);
+}
+.badge-status {
+  padding: 1px 6px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.badge-status-running {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+.badge-status-done {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+.badge-status-error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+.badge-status-disabled, .badge-status-waiting {
+  background: rgba(161, 161, 170, 0.15);
+  color: #a1a1aa;
+}
+
+/* Filter Strip (Phase F2) */
+.filter-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s2) var(--s3);
+  margin-block-end: var(--s3);
+  background: var(--panel-quiet, rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+}
+.filter-chips-list {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--panel, #27272a);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.1));
+  border-radius: 9999px;
+  font-size: var(--text-xs);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.filter-chip:hover, .filter-chip:focus-visible {
+  border-color: var(--action);
+}
+.filter-chip .chip-label {
+  color: var(--mute);
+}
+.filter-chip .chip-val {
+  font-weight: 600;
+}
+.filter-chip .chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  color: var(--mute);
+  cursor: pointer;
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+}
+.filter-chip .chip-remove:hover {
+  color: var(--c-red, #ef4444);
+}
+.filter-strip-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-left: auto;
+}
+.filter-match-counter {
+  font-size: var(--text-xs);
+  color: var(--mute);
+  white-space: nowrap;
+}
+
+/* Hidden Jobs Style (Phase F2) */
+.job-card.job-card-hidden {
+  border: 2px dashed var(--line-focus, #eab308) !important;
+  opacity: 0.82;
+  background: var(--panel-quiet, rgba(24, 24, 27, 0.6));
+}
+.jc-filter-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 2px 8px;
+  margin-block-start: var(--s1);
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: #fbbf24;
+}
+
+/* Document Generation Action Unlocks (Phase F4) */
+.jc-doc-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  margin-left: var(--s1);
+}
+.write-locked-notice {
+  padding: var(--s3);
+  background: var(--panel-quiet);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  margin-block-end: var(--s3);
+  font-size: var(--text-xs);
+  color: var(--mute);
+}

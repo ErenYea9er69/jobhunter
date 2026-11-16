@@ -302,6 +302,47 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             res["warning_jobs"] = [dict(j) for j in warning_jobs]
             return self._send_json(200, envelope(status="ok", data=res))
 
+        if path == "/api/session/status":
+            sid = query.get("session_id", query.get("session", ["default"]))[0]
+            from . import v5_tools, worker_launcher
+            st = v5_tools.jh_status(session_id=sid)
+            st["search_job"] = worker_launcher.get_search_job_status(sid)
+            return self._send_json(200, envelope(status="ok", data=st))
+
+        if path == "/api/search/stream":
+            sid = query.get("session_id", query.get("session", ["default"]))[0]
+            self.send_response(200)
+            self._send_cors_headers()
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache, no-transform")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+
+            from . import worker_launcher
+            sent_idx = 0
+            while True:
+                job_info = worker_launcher.get_search_job_status(sid)
+                events = job_info.get("events", [])
+                while sent_idx < len(events):
+                    evt = events[sent_idx]
+                    sent_idx += 1
+                    payload = f"event: {evt['type']}\ndata: {json.dumps(evt['data'], ensure_ascii=False)}\n\n".encode("utf-8")
+                    try:
+                        self.wfile.write(payload)
+                        self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError):
+                        return
+                if job_info.get("status") in ("completed", "failed", "stopped") and sent_idx >= len(events):
+                    done_payload = f"event: done\ndata: {json.dumps({'status': job_info.get('status'), 'done': True})}\n\n".encode("utf-8")
+                    try:
+                        self.wfile.write(done_payload)
+                        self.wfile.flush()
+                    except Exception:
+                        pass
+                    return
+                time.sleep(0.3)
+
         # 2. Static files from public/
         self._serve_static(path)
 
@@ -314,6 +355,39 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
 
         ws_dir = getattr(self.server, "ws_dir", Path.cwd())
         registry = resume_registry.ResumeRegistry(ws_dir)
+
+        if path == "/api/jobs/query":
+            sid = body.get("session_id") or "default"
+            filters = body.get("filters") or {}
+            from . import v5_tools
+            if filters:
+                v5_tools.jh_answer(session_id=sid, answers=filters, user_reply="")
+            res = db.query_jobs(view_filters=filters, session_id=sid)
+            return self._send_json(200, envelope(status="ok", data={
+                "results": res["jobs"],
+                "count": res["count"],
+                "total_active_pool": res.get("total_active_pool", len(res["jobs"])),
+                "hidden_count": res.get("hidden_count", 0),
+                "hidden_message": res.get("hidden_message", ""),
+                "closing_soon": res.get("closing_soon", []),
+                "counts_removed": res.get("removed_counts", {}),
+            }))
+
+        if path == "/api/session/replace-resume":
+            sid = body.get("session_id") or "default"
+            r_path = body.get("resume_path") or ""
+            r_text = body.get("resume_text") or ""
+            from . import v5_tools
+            res = v5_tools.jh_replace_resume(session_id=sid, resume_path=r_path, resume_text=r_text)
+            return self._send_json(200, envelope(status="ok" if res.get("status") != "error" else "error", data=res))
+
+        if path == "/api/session/answer":
+            sid = body.get("session_id") or "default"
+            answers = body.get("answers") or {}
+            user_reply = body.get("user_reply") or ""
+            from . import v5_tools
+            res = v5_tools.jh_answer(session_id=sid, answers=answers, user_reply=user_reply)
+            return self._send_json(200, envelope(status="ok", data=res))
 
         if path == "/api/radar/ack":
             from . import radar

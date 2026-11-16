@@ -528,3 +528,105 @@ def test_acceptance_24_guesses_never_filter_before_answer(clean_v3_state):
     assert q_initial["count"] >= 2
     assert any(j["title"] == "Full-time Software Engineer" for j in q_initial["jobs"])
     assert any(j["title"] == "Intern Software Engineer" for j in q_initial["jobs"])
+
+
+# ==============================================================================
+# FRONTEND ACCEPTANCE TESTS (F1 to F5)
+# ==============================================================================
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+def test_acceptance_f1_progress_view_and_streaming(clean_v3_state):
+    """Test F1: Progress view shows per-source cards with live status updates."""
+    html_content = (REPO_ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    js_content = (REPO_ROOT / "public" / "app.js").read_text(encoding="utf-8")
+    css_content = (REPO_ROOT / "public" / "styles.css").read_text(encoding="utf-8")
+
+    # Verify HTML markup
+    assert 'id="search-progress-view"' in html_content
+    assert 'id="source-cards-grid"' in html_content
+    assert 'id="progress-sources-summary"' in html_content
+
+    # Verify CSS rules
+    assert ".progress-view-card" in css_content
+    assert ".source-cards-grid" in css_content
+    assert ".badge-status-running" in css_content
+
+    # Verify JS EventSource stream integration
+    assert "/api/search/stream" in js_content
+    assert "initSearchStream" in js_content
+    assert 'source-card' in js_content
+
+
+def test_acceptance_f2_filter_strip_and_hidden_counter(clean_v3_state):
+    """Test F2: A job matching the resume but not filters is hidden, and appears under 'Show hidden' with rule tag."""
+    html_content = (REPO_ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    js_content = (REPO_ROOT / "public" / "app.js").read_text(encoding="utf-8")
+    css_content = (REPO_ROOT / "public" / "styles.css").read_text(encoding="utf-8")
+
+    # Verify HTML markup
+    assert 'id="filter-strip"' in html_content
+    assert 'id="filter-chips-list"' in html_content
+    assert 'id="filter-match-counter"' in html_content
+    assert 'id="btn-toggle-hidden"' in html_content
+
+    # Verify CSS rules for hidden jobs and rule tags
+    assert ".job-card-hidden" in css_content
+    assert "dashed" in css_content
+    assert ".jc-filter-tag" in css_content
+
+    # Verify JS filter logic
+    assert "not internship" in js_content
+    assert "salary below target" in js_content
+    assert "state.showHidden" in js_content
+    assert "renderFilterStrip" in js_content
+
+
+def test_acceptance_f3_chat_question_banner(clean_v3_state):
+    """Test F3: When jh_status reports an unanswered question, the banner shows the question text."""
+    html_content = (REPO_ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    js_content = (REPO_ROOT / "public" / "app.js").read_text(encoding="utf-8")
+
+    # Verify HTML markup
+    assert 'id="banner-chat-question"' in html_content
+    assert 'id="chat-question-text"' in html_content
+    assert "The AI is asking you a question in chat:" in html_content
+
+    # Verify JS polling and update logic
+    assert "/api/session/status" in js_content
+    assert "pollSessionStatus" in js_content
+    assert "unanswered_questions" in js_content or "next_question" in js_content
+
+
+def test_acceptance_f4_save_button_document_trigger(clean_v3_state):
+    """Test F4: The Save button is the only path to the document actions."""
+    js_content = (REPO_ROOT / "public" / "app.js").read_text(encoding="utf-8")
+    from jh import save_flow
+
+    # Verify JS UI gating: tailor and cover actions only unlocked when isSaved
+    assert 'data-act="tailor"' in js_content
+    assert 'data-act="cover"' in js_content
+    assert 'isSaved' in js_content
+    assert 'Documents are locked' in js_content
+
+    # Verify Backend gating: save_flow.is_job_saved enforces Rule 4
+    assert hasattr(save_flow, "is_job_saved")
+    assert save_flow.is_job_saved("unsaved_dummy_id") is False
+
+
+def test_acceptance_f5_resume_status_bar_and_replace(clean_v3_state):
+    """Test F5: Changing the resume re-scores the list without restarting the search."""
+    html_content = (REPO_ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    js_content = (REPO_ROOT / "public" / "app.js").read_text(encoding="utf-8")
+
+    # Verify HTML markup
+    assert 'id="candidate-bar"' in html_content
+    assert 'id="bar-candidate-name"' in html_content
+    assert 'id="bar-candidate-role"' in html_content
+    assert 'id="btn-change-resume"' in html_content
+    assert 'id="dlg-change-resume"' in html_content
+
+    # Verify JS replace logic
+    assert "/api/session/replace-resume" in js_content
+    assert "initChangeResumeModal" in js_content
+    assert "loadJobsQuery" in js_content

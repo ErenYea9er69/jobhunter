@@ -15,11 +15,11 @@
 | **Phase B6: Subagent Support (Optional)** (subagent_brief < 120 words, monitor <= 6 polls, runner templates for Claude Code and Antigravity, jh_install_agent, server independence) | B6.1, B6.2, B6.3, B6.4, B6.5 | 100% |
 | **Phase B7: Instruction Files Update** (skills folder, MCP instructions in mcp_server.py, tool descriptions, STOP rules, remove narrow/early resume triggers) | B7.1, B7.2, B7.3 | 100% |
 | **Phase B8: Acceptance Tests & Backend Report** (Acceptance tests 1-24 scripted, Audit score >= 9, Backend Report and pause for frontend approval) | B8.1, B8.2, B8.3 | 100% |
-| **Frontend Phase F1: Progress View & Live Streaming** | F1.1 | 100% (Deferred) |
-| **Frontend Phase F2: Filter Strip & Hidden Counter** | F2.1 | 100% (Deferred) |
-| **Frontend Phase F3: Chat Question Notification Banner** | F3.1 | 100% (Deferred) |
-| **Frontend Phase F4: Save Button Document Trigger** | F4.1 | 100% (Deferred) |
-| **Frontend Phase F5: Resume Status & Change Resume Button** | F5.1 | 100% (Deferred) |
+| **Frontend Phase F1: Progress View & Live Streaming** | F1.1 | 100% Complete |
+| **Frontend Phase F2: Filter Strip & Hidden Counter** | F2.1 | 100% Complete |
+| **Frontend Phase F3: Chat Question Notification Banner** | F3.1 | 100% Complete |
+| **Frontend Phase F4: Save Button Document Trigger** | F4.1 | 100% Complete |
+| **Frontend Phase F5: Resume Status & Change Resume Button** | F5.1 | 100% Complete |
 | **Audit: Self-Assessment Rubric (Completeness, Correctness, Quality, Resilience >= 9)** | A1.1, A1.2, A1.3, A1.4 | 100% |
 
 ---
@@ -168,12 +168,12 @@
 
 ---
 
-## SECTION 2: FRONTEND PHASES (PAUSED UNTIL USER APPROVAL)
-- [ ] **Task F1.1**: Phase F1 - Progress view and live match streaming.
-- [ ] **Task F2.1**: Phase F2 - Filter strip with live editing and hidden match counter.
-- [ ] **Task F3.1**: Phase F3 - Chat question notification banner.
-- [ ] **Task F4.1**: Phase F4 - Save button trigger for document generation.
-- [ ] **Task F5.1**: Phase F5 - Profile status bar and Change Resume button.
+## SECTION 2: FRONTEND PHASES
+- [x] **Task F1.1**: Phase F1 - Progress view and live match streaming (`public/app.js:1890-1980`, `jh/httpd.py:305-340`, `public/index.html:347-360`).
+- [x] **Task F2.1**: Phase F2 - Filter strip with live editing and hidden match counter (`public/app.js:770-850`, `public/index.html:361-375`, `public/styles.css:1700-1780`).
+- [x] **Task F3.1**: Phase F3 - Chat question notification banner (`public/app.js:2000-2050`, `public/index.html:135-150`, `jh/httpd.py:300-305`).
+- [x] **Task F4.1**: Phase F4 - Save button trigger for document generation (`public/app.js:840-865`, `public/app.js:1050-1080`, `jh/httpd.py:650-660`).
+- [x] **Task F5.1**: Phase F5 - Profile status bar and Change Resume button (`public/app.js:2050-2130`, `public/index.html:115-130`, `jh/httpd.py:380-395`).
 
 ---
 
@@ -195,3 +195,8 @@
 | **Phase B6: Subagent Support (Optional)** | 10.0 | 10.0 | 9.9 | 9.7 | 9.7 | **PASSED** | `agents/jobhunter-runner.md`, `jh/v5_tools.py:280-310`; Tests 6, 8, 15 pass. |
 | **Phase B7: Instruction Files Update** | 10.0 | 10.0 | 9.9 | 10.0 | 9.9 | **PASSED** | `mcp_server.py:15-55`, `skills/jobhunter.md:1-50`, `jh/team/tools.py:228-320`; Test 14 passes. |
 | **Phase B8: Acceptance Tests & Backend Report** | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 | **PASSED** | `tests/test_v3_acceptance.py`: 24/24 passed (100%); key regression 118/118 passed. |
+| **Phase F1: Progress View & Live Streaming** | 10.0 | 10.0 | 9.8 | 9.8 | 9.8 | **PASSED** | `public/app.js:1890-1980`, `jh/httpd.py:305-340`; Test F1 passes. |
+| **Phase F2: Filter Strip & Hidden Counter** | 10.0 | 10.0 | 9.9 | 9.8 | 9.8 | **PASSED** | `public/app.js:770-850`, `public/styles.css:1700-1780`; Test F2 passes. |
+| **Phase F3: Chat Question Notification Banner** | 10.0 | 10.0 | 10.0 | 9.8 | 9.8 | **PASSED** | `public/app.js:2000-2050`, `public/index.html:135-150`; Test F3 passes. |
+| **Phase F4: Save Button Document Trigger** | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 | **PASSED** | `public/app.js:840-865`, `public/app.js:1050-1080`, `jh/httpd.py:650-660`; Test F4 passes. |
+| **Phase F5: Resume Status Bar & Modal** | 10.0 | 10.0 | 9.9 | 9.8 | 9.8 | **PASSED** | `public/app.js:2050-2130`, `public/index.html:115-130`, `jh/httpd.py:380-395`; Test F5 passes. |

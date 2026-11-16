@@ -65,6 +65,10 @@
 
   /* ------------------------------------------------------------ state */
   const state = {
+    sessionId: (new URLSearchParams(window.location.search)).get("session") || (new URLSearchParams(window.location.search)).get("session_id") || "default",
+    showHidden: false,
+    sourcesProgress: [],
+    unansweredQuestions: [],
     method: lsGet("jobhunter_method") || "modern",
     route: "signals",
     online: null,
@@ -767,22 +771,79 @@
   }
 
   function visibleJobs() {
-    const f = state.filters;
+    const f = state.filters || {};
     let list = state.jobs.map((j, i) => ({ j, key: jobKey(j, i) }));
-    list = list.filter(({ j }) => {
-      if (f.mode && String(j.work_mode || "").toLowerCase().replace(/[\s-]/g, "") !== f.mode.toLowerCase()) return false;
-      if (f.type && !String(j.job_type || "").toLowerCase().includes(f.type.toLowerCase())) return false;
-      if (f.fit && !(typeof j.score === "number" && j.score >= f.fit)) return false;
-      return true;
+
+    const evaluated = list.map((item) => {
+      const j = item.j;
+      let hiddenRule = null;
+
+      // 1. Work mode
+      if (f.mode && f.mode !== "any") {
+        const wm = String(j.work_mode || "").toLowerCase().replace(/[\s-]/g, "");
+        if (wm && wm !== f.mode.toLowerCase()) {
+          hiddenRule = "work mode mismatch";
+        }
+      }
+      // 2. Job type / contract type / internship
+      if (!hiddenRule && (f.type || f.job_type)) {
+        const targetType = (f.type || f.job_type || "").toLowerCase();
+        const hay = `${j.job_type || ""} ${j.title || ""} ${j.description || ""}`.toLowerCase();
+        const isIntern = /\b(intern|internship|stage|stagiaire|alternance|pfe|co-?op|student|praktik)\b/i.test(hay);
+        if (targetType.includes("intern") || targetType.includes("stage") || targetType.includes("pfe")) {
+          if (!isIntern) hiddenRule = "not internship";
+        } else if (targetType.includes("full") || targetType.includes("cdi")) {
+          if (isIntern) hiddenRule = "internship excluded";
+        } else if (targetType && targetType !== "any" && !hay.includes(targetType)) {
+          hiddenRule = `not ${targetType}`;
+        }
+      }
+      // 3. Minimum salary
+      if (!hiddenRule && f.min_salary && Number(f.min_salary) > 0) {
+        const minSal = Number(f.min_salary);
+        const jMax = Number(j.max_salary || j.salary_max || j.salary || 0);
+        const jMin = Number(j.min_salary || j.salary_min || 0);
+        const hasSal = jMax > 0 || jMin > 0;
+        if (hasSal) {
+          if ((jMax > 0 && jMax < minSal) && (jMin > 0 && jMin < minSal)) {
+            hiddenRule = "salary below target";
+          }
+        } else if (f.show_unknown_salary === false) {
+          hiddenRule = "salary not listed";
+        }
+      }
+      // 4. Fit score
+      if (!hiddenRule && f.fit && typeof j.score === "number" && j.score < f.fit) {
+        hiddenRule = `fit score below ${f.fit}%`;
+      }
+      // 5. Location / place
+      if (!hiddenRule && (f.location || state.place)) {
+        const targetLoc = (f.location || state.place || "").toLowerCase();
+        const jLoc = String(j.location || "").toLowerCase();
+        if (targetLoc && targetLoc !== "any" && targetLoc !== "remote" && !jLoc.includes(targetLoc)) {
+          hiddenRule = "location mismatch";
+        }
+      }
+
+      return {
+        ...item,
+        _is_hidden: Boolean(hiddenRule),
+        _hidden_rule: hiddenRule,
+      };
     });
+
+    state._totalFilteredHidden = evaluated.filter(i => i._is_hidden).length;
+
+    let result = state.showHidden ? evaluated : evaluated.filter(i => !i._is_hidden);
+
     if (state.sort === "date") {
       const d = (x) => (x.j.posted_days_ago == null ? 1e9 : x.j.posted_days_ago);
-      list.sort((a, b) => d(a) - d(b));
+      result.sort((a, b) => d(a) - d(b));
     } else {
       const s = (x) => (typeof x.j.score === "number" ? x.j.score : -1);
-      list.sort((a, b) => s(b) - s(a));
+      result.sort((a, b) => s(b) - s(a));
     }
-    return list;
+    return result;
   }
 
   function scoreBadge(score) {
@@ -800,15 +861,27 @@
   function cardActions(j, key) {
     const app = findApp(j);
     const url = jobUrl(j);
+    const isSaved = app && app.status === "saved";
     let apply;
     if (app && app.status !== "saved") apply = `<span class="btn btn-secondary btn-sm card-state">${icon("check", "icon-sm")}${esc(STAGE_LABEL[app.status] || "Tracked")}</span>`;
     else apply = `<button class="btn btn-primary btn-sm" type="button" data-act="apply" data-key="${esc(key)}"${url ? "" : " disabled"}>Apply</button>`;
-    const save = app
-      ? (app.status === "saved" ? `<button class="btn btn-quiet btn-sm" type="button" disabled>${icon("bookmark-check", "icon-sm")}<span>Saved</span></button>` : "")
+    
+    // Save button: clicking marks saved and unlocks document generation
+    const save = isSaved
+      ? `<button class="btn btn-quiet btn-sm" type="button" disabled>${icon("bookmark-check", "icon-sm")}<span>Saved</span></button>`
       : `<button class="btn btn-quiet btn-sm" type="button" data-act="save" data-key="${esc(key)}">${icon("bookmark", "icon-sm")}<span>Save</span></button>`;
+    
+    // Unlocked document generation actions: ONLY for saved jobs (Phase F4)
+    const docActions = isSaved
+      ? `<div class="jc-doc-actions">
+           <button class="btn btn-secondary btn-sm" type="button" data-act="tailor" data-key="${esc(key)}" title="Generate tailored resume">${icon("file-text", "icon-sm")}<span>Tailor</span></button>
+           <button class="btn btn-secondary btn-sm" type="button" data-act="cover" data-key="${esc(key)}" title="Draft cover letter">${icon("mail", "icon-sm")}<span>Cover letter</span></button>
+         </div>`
+      : "";
+
     const copy = url ? `<button class="btn btn-quiet btn-sm btn-icon" type="button" data-act="copy-link" data-key="${esc(key)}" aria-label="Copy posting link">${icon("link", "icon-sm")}</button>` : "";
     const dismiss = `<button class="btn btn-quiet btn-sm btn-icon" type="button" data-act="dismiss" data-key="${esc(key)}" aria-label="Dismiss job" title="Dismiss">${icon("x", "icon-sm")}</button>`;
-    return `${apply}${save}${copy}${dismiss}<button class="btn btn-quiet btn-sm go" type="button" data-act="details" data-key="${esc(key)}">Details${icon("chevron-right", "icon-sm")}</button>`;
+    return `${apply}${save}${docActions}${copy}${dismiss}<button class="btn btn-quiet btn-sm go" type="button" data-act="details" data-key="${esc(key)}">Details${icon("chevron-right", "icon-sm")}</button>`;
   }
 
   function jobCardHtml(item) {
@@ -842,7 +915,11 @@
     const sk = (j.matched_skills || []).slice(0, 4);
     const more = (j.matched_skills || []).length - sk.length;
     const sn = snippet(j.description);
-    return `<li><article class="job-card" data-tier="${tier}" aria-current="${key === state.selectedId}">
+
+    const hiddenClass = item._is_hidden ? " job-card-hidden" : "";
+    const filterTag = item._is_hidden ? `<div class="jc-filter-tag"><svg class="icon icon-sm text-amber"><use href="#i-circle-alert"/></svg><span>Filtered: ${esc(item._hidden_rule)}</span></div>` : "";
+
+    return `<li><article class="job-card${hiddenClass}" data-tier="${tier}" aria-current="${key === state.selectedId}">
       <div class="jc-top">
         <span class="avatar" aria-hidden="true">${esc(initialOf(j.company))}</span>
         <div class="jc-id">
@@ -852,6 +929,7 @@
         <div class="jc-badges">${scoreBadge(j.score)}${dupBadge}</div>
       </div>
       ${meta ? `<div class="jc-meta">${meta}</div>` : ""}
+      ${filterTag}
       ${fitReason ? `<div class="jc-fit-reason">${icon("sparkles", "icon-sm")}<span>${esc(fitReason)}</span></div>` : ""}
       ${riskLine}
       ${sn ? `<p class="jc-desc" dir="auto">${esc(sn)}</p>` : ""}
@@ -886,6 +964,7 @@
     }
     const items = visibleJobs();
     const hidden = state.jobs.length - items.length;
+    renderFilterStrip();
     if (!state.jobs.length) {
       bar.hidden = true;
       list.innerHTML = "";
@@ -907,6 +986,7 @@
       return;
     }
     list.innerHTML = items.map(jobCardHtml).join("");
+    renderFilterStrip();
   }
 
   function currentJob() {
@@ -960,12 +1040,23 @@
       ? `<div class="matched" aria-label="Skills from your resume that this posting asks for">${matched.map((s, i) => `<span class="mk" style="--i:${Math.min(i, 10)}">${esc(s)}</span>`).join("")}</div><p class="legend">Highlighted terms come from your resume.</p>`
       : "";
 
-    const writeRows = [
-      ["cover-letter", "Cover letter", "Built from your resume facts"],
-      ["tailor-resume", "Tailored resume", "Your resume, reordered for this posting"],
-      ["interview-prep", "Interview prep", "STAR stories from your experience"],
-      ["outreach", "Recruiter message", "LinkedIn note and a message to the hiring manager"],
-    ].map(([k, t, d]) => `<button class="write-row" type="button" data-doc="${k}"><span><span class="t">${t}</span><span class="d">${d}</span></span><span class="go">${icon("chevron-right")}</span></button>`).join("");
+    const isSaved = app && app.status === "saved";
+    let writeSectionContent = "";
+    if (isSaved) {
+      const writeRows = [
+        ["cover-letter", "Cover letter", "Built from your resume facts"],
+        ["tailor-resume", "Tailored resume", "Your resume, reordered for this posting"],
+        ["interview-prep", "Interview prep", "STAR stories from your experience"],
+        ["outreach", "Recruiter message", "LinkedIn note and a message to the hiring manager"],
+      ].map(([k, t, d]) => `<button class="write-row" type="button" data-doc="${k}"><span><span class="t">${t}</span><span class="d">${d}</span></span><span class="go">${icon("chevron-right")}</span></button>`).join("");
+      writeSectionContent = `<div class="write-list">${writeRows}</div>`;
+    } else {
+      writeSectionContent = `
+        <div class="write-locked-notice">
+          <p><strong>Documents are locked.</strong> Save this job first to unlock tailored resume and cover letter generation.</p>
+          <button class="btn btn-primary btn-sm" type="button" data-act="save" data-key="${esc(state.selectedId)}">${icon("bookmark", "icon-sm")}<span>Save this job to unlock</span></button>
+        </div>`;
+    }
 
     box.innerHTML = `
       <div class="drawer-bar">
@@ -983,7 +1074,7 @@
         <section class="detail-section" aria-labelledby="h-post"><h3 id="h-post">Posting</h3>
           ${post ? `<div class="posting-wrap"><div class="posting sweep" dir="auto">${post.html}</div></div>${post.count ? `<p class="legend">${post.count} ${post.count === 1 ? "term" : "terms"} from your resume ${post.count === 1 ? "is" : "are"} highlighted.</p>` : ""}` : `<p>This job came without a description.${url ? " Open the posting to read it." : ""}</p>`}
         </section>
-        <section class="detail-section" aria-labelledby="h-write"><h3 id="h-write">Write for this job</h3><div class="write-list">${writeRows}</div></section>
+        <section class="detail-section" aria-labelledby="h-write"><h3 id="h-write">Write for this job</h3>${writeSectionContent}</section>
       </div>`;
     byId("job-drawer").setAttribute("aria-labelledby", "drawer-title");
     byId("job-drawer").scrollTop = 0;
@@ -1653,6 +1744,20 @@
       if (act) {
         const key = act.dataset.key;
         if (act.dataset.act === "save") onSave(key);
+        else if (act.dataset.act === "tailor") {
+          const j = jobByKey(key);
+          if (j) {
+            state.docDraft = { kind: "tailor-resume", title: j.title || "", company: j.company || "", description: j.description || "" };
+            go("documents");
+          }
+        }
+        else if (act.dataset.act === "cover") {
+          const j = jobByKey(key);
+          if (j) {
+            state.docDraft = { kind: "cover-letter", title: j.title || "", company: j.company || "", description: j.description || "" };
+            go("documents");
+          }
+        }
         else if (act.dataset.act === "dismiss") openDismissDialog(key);
         else if (act.dataset.act === "apply") onApply(key);
         else if (act.dataset.act === "details") selectJob(key);
@@ -1696,6 +1801,11 @@
       const w = e.target.closest("[data-doc]");
       if (w) {
         const j = currentJob();
+        const app = j ? findApp(j) : null;
+        if (!app || app.status !== "saved") {
+          toast("Save this job first to unlock document generation", { kind: "warn" });
+          return;
+        }
         if (j) state.docDraft = { kind: w.dataset.doc, title: j.title || "", company: j.company || "", description: j.description || "" };
         state.selectedId = null;
         dlg.close();
@@ -1782,6 +1892,367 @@
       state.place = cached.loc || "";
       byId("q").value = state.query;
       byId("loc").value = state.place;
+    }
+
+    // V3 Start-Up Flow Initializations
+    initFilterStripHandlers();
+    initChangeResumeModal();
+    initSearchStream();
+    pollSessionStatus();
+    if (!sessionPollTimer) {
+      sessionPollTimer = setInterval(pollSessionStatus, 3000);
+    }
+  }
+
+  /* ------------------------------------------------------------ V3 Start-Up Flow Enhancements */
+
+  function renderFilterStrip() {
+    const strip = byId("filter-strip");
+    if (!strip) return;
+    const f = state.filters || {};
+    const chipsList = byId("filter-chips-list");
+    const counterEl = byId("filter-match-counter");
+    const toggleBtn = byId("btn-toggle-hidden");
+    const toggleText = byId("btn-toggle-hidden-text");
+
+    const chips = [];
+    if (state.query) chips.push({ key: "query", label: "Query", val: state.query });
+    if (state.place) chips.push({ key: "place", label: "Place", val: state.place });
+    if (f.job_type || f.type) chips.push({ key: "job_type", label: "Type", val: f.job_type || f.type });
+    if (f.mode && f.mode !== "any") chips.push({ key: "mode", label: "Mode", val: f.mode });
+    if (f.min_salary && Number(f.min_salary) > 0) chips.push({ key: "min_salary", label: "Min Pay", val: "$" + Number(f.min_salary).toLocaleString() });
+    if (f.visa && f.visa !== "any") chips.push({ key: "visa", label: "Visa", val: f.visa });
+    if (f.seniority && f.seniority !== "any") chips.push({ key: "seniority", label: "Seniority", val: f.seniority });
+    if (f.fit && Number(f.fit) > 0) chips.push({ key: "fit", label: "Fit", val: f.fit + "%+" });
+
+    if (chipsList) {
+      if (!chips.length) {
+        chipsList.innerHTML = `<span class="mute" style="font-size:var(--text-xs)">No active filters</span>`;
+      } else {
+        chipsList.innerHTML = chips.map(c => `
+          <span class="filter-chip" data-chip="${esc(c.key)}">
+            <span class="chip-label">${esc(c.label)}:</span>
+            <span class="chip-val">${esc(c.val)}</span>
+            <button class="chip-remove" type="button" data-remove-chip="${esc(c.key)}" aria-label="Remove ${esc(c.label)} filter">&times;</button>
+          </span>
+        `).join("");
+      }
+    }
+
+    const totalInPool = state.jobs.length;
+    const hiddenCount = state._totalFilteredHidden || 0;
+    const showingCount = totalInPool - hiddenCount;
+
+    if (counterEl) {
+      if (totalInPool > 0) {
+        counterEl.textContent = `Showing ${showingCount} matches (${hiddenCount} hidden by your filters)`;
+      } else {
+        counterEl.textContent = `Showing 0 matches`;
+      }
+    }
+
+    if (toggleBtn && toggleText) {
+      toggleBtn.setAttribute("aria-pressed", String(state.showHidden));
+      toggleText.textContent = state.showHidden ? `Hide filtered (${hiddenCount})` : `Show hidden (${hiddenCount})`;
+      toggleBtn.hidden = hiddenCount === 0;
+    }
+  }
+
+  function initFilterStripHandlers() {
+    const btnToggleHidden = byId("btn-toggle-hidden");
+    if (btnToggleHidden && !btnToggleHidden.dataset.bound) {
+      btnToggleHidden.dataset.bound = "true";
+      btnToggleHidden.addEventListener("click", () => {
+        state.showHidden = !state.showHidden;
+        renderJobs();
+        renderFilterStrip();
+      });
+    }
+
+    const filterStrip = byId("filter-strip");
+    if (filterStrip && !filterStrip.dataset.bound) {
+      filterStrip.dataset.bound = "true";
+      filterStrip.addEventListener("click", (e) => {
+        const removeBtn = e.target.closest("[data-remove-chip]");
+        if (removeBtn) {
+          const key = removeBtn.dataset.removeChip;
+          if (key === "query") { state.query = ""; byId("q").value = ""; }
+          else if (key === "place") { state.place = ""; byId("loc").value = ""; }
+          else if (key === "job_type") { state.filters.job_type = ""; state.filters.type = ""; }
+          else if (key === "mode") { state.filters.mode = ""; }
+          else if (key === "min_salary") { state.filters.min_salary = 0; if (byId("flt-salary")) byId("flt-salary").value = ""; }
+          else if (key === "visa") { state.filters.visa = ""; }
+          else if (key === "seniority") { state.filters.seniority = ""; }
+          else if (key === "fit") { state.filters.fit = 0; }
+          renderFilterSegs();
+          renderFilterStrip();
+          if (state.searched) loadJobsQuery();
+          else renderJobs();
+          return;
+        }
+
+        const chip = e.target.closest(".filter-chip");
+        if (chip && !e.target.closest("button")) {
+          const key = chip.dataset.chip;
+          const currentVal = prompt(`Edit filter value for ${key}:`);
+          if (currentVal != null) {
+            if (key === "query") { state.query = currentVal; byId("q").value = currentVal; }
+            else if (key === "place") { state.place = currentVal; byId("loc").value = currentVal; }
+            else if (key === "job_type") { state.filters.job_type = currentVal; }
+            else if (key === "mode") { state.filters.mode = currentVal; }
+            else if (key === "min_salary") { state.filters.min_salary = Number(currentVal) || 0; }
+            else if (key === "visa") { state.filters.visa = currentVal; }
+            renderFilterSegs();
+            renderFilterStrip();
+            if (state.searched) loadJobsQuery();
+            else renderJobs();
+          }
+        }
+      });
+    }
+  }
+
+  let searchEventSource = null;
+  function initSearchStream() {
+    if (searchEventSource) {
+      searchEventSource.close();
+      searchEventSource = null;
+    }
+
+    const sid = state.sessionId || "default";
+    const pView = byId("search-progress-view");
+    const grid = byId("source-cards-grid");
+    const summary = byId("progress-sources-summary");
+
+    try {
+      const sseUrl = `/api/search/stream?session_id=${encodeURIComponent(sid)}`;
+      searchEventSource = new EventSource(sseUrl);
+
+      searchEventSource.addEventListener("progress", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          state.sourcesProgress = data.sources || [];
+          if (pView) pView.hidden = false;
+          if (summary) {
+            const doneCount = state.sourcesProgress.filter(s => s.status === "done" || s.status === "error" || s.status === "disabled").length;
+            const totalJobs = state.sourcesProgress.reduce((sum, s) => sum + (s.jobs_found || 0), 0);
+            summary.textContent = `${doneCount} of ${state.sourcesProgress.length} sources scanned • ${totalJobs} jobs found`;
+          }
+          if (grid) {
+            grid.innerHTML = state.sourcesProgress.map(s => `
+              <div class="source-card">
+                <div class="source-card-head">
+                  <span class="source-name">${esc(s.name)}</span>
+                  <span class="badge-status badge-status-${esc(s.status)}">${esc(s.status)}</span>
+                </div>
+                <div class="source-card-body">
+                  <span>${s.jobs_found || 0} jobs</span>
+                  <span>${s.elapsed ? s.elapsed + "s" : ""}</span>
+                </div>
+              </div>
+            `).join("");
+          }
+        } catch (err) {
+          console.warn("Failed to parse progress event:", err);
+        }
+      });
+
+      searchEventSource.addEventListener("job", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          const job = data.job;
+          if (job && !state.jobs.some(existing => (existing.id && existing.id === job.id) || (existing.key && existing.key === job.key))) {
+            state.jobs.push(job);
+            state.searched = true;
+            renderJobs();
+          }
+        } catch (err) {
+          console.warn("Failed to parse job stream event:", err);
+        }
+      });
+
+      searchEventSource.addEventListener("done", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (summary) summary.textContent = `Search finished • ${state.jobs.length} jobs found`;
+          if (searchEventSource) {
+            searchEventSource.close();
+            searchEventSource = null;
+          }
+          loadJobsQuery();
+          setTimeout(() => {
+            if (pView) pView.hidden = true;
+          }, 4000);
+        } catch (err) {}
+      });
+
+      searchEventSource.onerror = () => {
+        if (searchEventSource) {
+          searchEventSource.close();
+          searchEventSource = null;
+        }
+      };
+    } catch (e) {
+      console.warn("EventSource setup error:", e);
+    }
+  }
+
+  let sessionPollTimer = null;
+  async function pollSessionStatus() {
+    try {
+      const sid = state.sessionId || "default";
+      const res = await apiGet(`/api/session/status?session_id=${encodeURIComponent(sid)}`);
+      if (res && res.status === "ok" && res.data) {
+        const d = res.data;
+
+        // 1. Candidate Bar (Phase F5)
+        const nameEl = byId("bar-candidate-name");
+        const roleEl = byId("bar-candidate-role");
+        const confBadge = byId("bar-role-confidence");
+        const avatarEl = byId("bar-candidate-avatar");
+
+        const candidateName = d.candidate_name || (state.active && state.active.name) || "Candidate";
+        const roleFocus = (d.role_focus && d.role_focus.length) ? d.role_focus.join(", ") : (state.active && state.active.target_title) || "Target role";
+
+        if (nameEl) nameEl.textContent = candidateName;
+        if (roleEl) roleEl.textContent = roleFocus;
+        if (avatarEl) avatarEl.textContent = initialOf(candidateName);
+        if (confBadge) {
+          if (d.role_confidence) {
+            confBadge.textContent = Math.round(d.role_confidence * 100) + "% match";
+            confBadge.hidden = false;
+          } else {
+            confBadge.hidden = true;
+          }
+        }
+
+        // 2. Chat Question Banner (Phase F3)
+        const bannerQ = byId("banner-chat-question");
+        const textQ = byId("chat-question-text");
+        const nextQ = d.next_question || (d.unanswered_questions && d.unanswered_questions[0]);
+        if (nextQ && bannerQ && textQ) {
+          const qText = nextQ.question || nextQ;
+          textQ.textContent = `"${qText}"`;
+          bannerQ.hidden = false;
+        } else if (bannerQ) {
+          bannerQ.hidden = true;
+        }
+
+        // 3. Live filter sync if user answered in chat (Phase F3 / F2)
+        if (d.filters && typeof d.filters === "object") {
+          let changed = false;
+          for (const [k, v] of Object.entries(d.filters)) {
+            if (state.filters[k] !== v && v !== "" && v !== "any") {
+              state.filters[k] = v;
+              changed = true;
+            }
+          }
+          if (changed) {
+            renderFilterStrip();
+            renderJobs();
+          }
+        }
+      }
+    } catch (e) {
+      // Quiet poll failure
+    }
+  }
+
+  function initChangeResumeModal() {
+    const btnOpen = byId("btn-change-resume");
+    const dlg = byId("dlg-change-resume");
+    if (!btnOpen || !dlg || btnOpen.dataset.bound) return;
+    btnOpen.dataset.bound = "true";
+
+    closeOnBackdrop(dlg);
+    btnOpen.addEventListener("click", () => {
+      const msg = byId("cr-status-msg");
+      if (msg) msg.hidden = true;
+      const tIn = byId("cr-text-input");
+      if (tIn) tIn.value = "";
+      const fIn = byId("cr-file-input");
+      if (fIn) fIn.value = "";
+      dlg.showModal();
+    });
+
+    const btnClose = byId("btn-cr-close");
+    const btnCancel = byId("btn-cr-cancel");
+    if (btnClose) btnClose.addEventListener("click", () => dlg.close());
+    if (btnCancel) btnCancel.addEventListener("click", () => dlg.close());
+
+    const tabFile = byId("tab-cr-file");
+    const tabText = byId("tab-cr-text");
+    const paneFile = byId("pane-cr-file");
+    const paneText = byId("pane-cr-text");
+
+    if (tabFile && tabText && paneFile && paneText) {
+      tabFile.addEventListener("click", () => {
+        tabFile.classList.add("active");
+        tabText.classList.remove("active");
+        paneFile.hidden = false;
+        paneText.hidden = true;
+      });
+      tabText.addEventListener("click", () => {
+        tabText.classList.add("active");
+        tabFile.classList.remove("active");
+        paneFile.hidden = true;
+        paneText.hidden = false;
+      });
+    }
+
+    const form = byId("form-change-resume");
+    if (form && !form.dataset.bound) {
+      form.dataset.bound = "true";
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const statusMsg = byId("cr-status-msg");
+        const submitBtn = byId("btn-submit-change-resume");
+        if (submitBtn) submitBtn.disabled = true;
+        if (statusMsg) statusMsg.hidden = true;
+
+        try {
+          const isText = paneText && !paneText.hidden;
+          let resumeText = "";
+          let resumePath = "";
+
+          if (isText) {
+            resumeText = (byId("cr-text-input").value || "").trim();
+            if (resumeText.length < 300) {
+              throw new Error("Resume text must have at least 300 characters.");
+            }
+          } else {
+            const file = byId("cr-file-input").files[0];
+            if (!file) throw new Error("Please select a resume file.");
+            resumeText = await file.text();
+          }
+
+          const res = await apiPost("/api/session/replace-resume", {
+            session_id: state.sessionId,
+            resume_path: resumePath,
+            resume_text: resumeText,
+          });
+
+          if (res && res.status !== "error") {
+            dlg.close();
+            toast("Resume updated successfully. Jobs re-scored.");
+            await pollSessionStatus();
+            await loadJobsQuery();
+          } else {
+            const err = (res && res.error && res.error.message) || (res && res.message_for_user) || "Failed to update resume.";
+            if (statusMsg) {
+              statusMsg.textContent = err;
+              statusMsg.hidden = false;
+            }
+          }
+        } catch (err) {
+          if (statusMsg) {
+            statusMsg.textContent = err.message || "Failed to parse resume.";
+            statusMsg.hidden = false;
+          }
+        } finally {
+          if (submitBtn) submitBtn.disabled = false;
+        }
+      });
     }
   }
 

@@ -172,34 +172,91 @@ def start_background_search(session_id: str, query: str = "", location: str = ""
             "matches_count": 0,
             "first_batch_ready": False,
             "error": None,
+            "sources": [],
+            "events": [],
         }
         _ACTIVE_SEARCH_JOBS[sid] = job_info
 
     def _worker():
+        start_time = time.time()
+
+        def _prog_cb(stage: str, data: dict[str, Any]) -> None:
+            with _ACTIVE_SEARCH_LOCK:
+                now = time.time()
+                elapsed = round(now - start_time, 1)
+                if stage == "init":
+                    src_labels = data.get("sources", [])
+                    job_info["sources"] = [
+                        {"name": s, "status": "running", "jobs_found": 0, "elapsed": 0.0}
+                        for s in src_labels
+                    ]
+                    job_info["events"].append({
+                        "type": "progress",
+                        "data": {"sources": list(job_info["sources"]), "done": False, "elapsed": elapsed}
+                    })
+                elif stage == "source_done":
+                    s_name = data.get("source", "")
+                    st = data.get("state", "ok")
+                    cnt = data.get("count", 0)
+                    sec = round(data.get("ms", 0) / 1000.0, 1)
+                    st_map = {"ok": "done", "failed": "error", "timeout": "error", "skipped": "disabled"}
+                    card_st = st_map.get(st, "done")
+                    for s in job_info["sources"]:
+                        if s["name"] == s_name:
+                            s["status"] = card_st
+                            s["jobs_found"] = cnt
+                            s["elapsed"] = sec
+                            break
+                    else:
+                        job_info["sources"].append({
+                            "name": s_name, "status": card_st, "jobs_found": cnt, "elapsed": sec
+                        })
+                    job_info["sources_done"] = data.get("completed", len(job_info["sources"]))
+                    job_info["jobs_found"] = data.get("raw_total", job_info["jobs_found"])
+                    job_info["events"].append({
+                        "type": "progress",
+                        "data": {"sources": list(job_info["sources"]), "done": False, "elapsed": elapsed}
+                    })
+
         try:
-            # 1. Broad search execution
-            # If source_filter provided (e.g. Tunisia only), pass along
             res = pipeline.search(
                 query=query,
                 location=location,
                 force_refresh=False,
+                on_progress=_prog_cb,
             )
             raw_jobs = res.get("jobs", []) if isinstance(res, dict) else res
             
-            # Store in DB
             stats = db.store_jobs(raw_jobs, query=query, location=location)
             
             with _ACTIVE_SEARCH_LOCK:
+                elapsed = round(time.time() - start_time, 1)
                 job_info["status"] = "completed"
                 job_info["jobs_found"] = stats.get("total", len(raw_jobs))
-                job_info["sources_done"] = len(res.get("statuses", [])) if isinstance(res, dict) else 10
+                job_info["sources_done"] = len(job_info.get("sources", [])) or 10
                 job_info["first_batch_ready"] = True
+                for j in raw_jobs:
+                    job_info["events"].append({"type": "job", "data": {"job": j}})
+                job_info["events"].append({
+                    "type": "done",
+                    "data": {
+                        "status": "completed",
+                        "sources": list(job_info["sources"]),
+                        "total_jobs": len(raw_jobs),
+                        "done": True,
+                        "elapsed": elapsed
+                    }
+                })
                 
         except Exception as e:
             with _ACTIVE_SEARCH_LOCK:
                 job_info["status"] = "failed"
                 job_info["error"] = str(e)
                 job_info["first_batch_ready"] = True
+                job_info["events"].append({
+                    "type": "done",
+                    "data": {"status": "failed", "error": str(e), "done": True}
+                })
 
     t = threading.Thread(target=_worker, daemon=True, name=f"jh-search-{sid}")
     t.start()
