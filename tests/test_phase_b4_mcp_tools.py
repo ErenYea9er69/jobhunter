@@ -106,7 +106,9 @@ def test_jh_load_resume_and_confirm_profile():
     assert p["target_title"] == "Lead Software Architect"
 
 
-def test_jh_search_blocks_only_missing_job_style():
+def test_jh_search_blocks_only_missing_job_style(monkeypatch):
+    from jh import pipeline
+    monkeypatch.setattr(pipeline, "search", lambda *args, **kwargs: {"jobs": [], "total": 0})
     # Missing job style blocks with needs_input
     res_block = v5_tools.jh_search(job_style="")
     assert res_block["status"] == "needs_input"

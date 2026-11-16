@@ -38,7 +38,7 @@ def _ensure_db() -> None:
 
 
 class JobHunterRequestHandler(BaseHTTPRequestHandler):
-    server_version = "JobHunter/2.3.0"
+    server_version = "JobHunter/2.4.0"
 
     def log_message(self, format: str, *args: Any) -> None:
         """Override to ensure all HTTP logging goes strictly to stderr, keeping stdout clean."""
@@ -876,7 +876,8 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
 
     # --------------------------------------------------------- Static Serving
     def _serve_static(self, req_path: str) -> None:
-        public_dir = Path(__file__).resolve().parent.parent / "public"
+        root_dir = Path(__file__).resolve().parent.parent
+        public_dir = (root_dir / "webapp") if (root_dir / "webapp" / "index.html").is_file() else (root_dir / "public")
         rel = req_path.lstrip("/")
         if not rel or rel == "/":
             rel = "index.html"

@@ -65,7 +65,8 @@
 
   /* ------------------------------------------------------------ state */
   const state = {
-    route: "jobs",
+    method: lsGet("jobhunter_method") || "modern",
+    route: "signals",
     online: null,
     profiles: [],
     active: null, // active profile object or null
@@ -76,8 +77,24 @@
     searching: false,
     query: "",
     place: "",
-    filters: { mode: "", type: "", fit: 0 },
+    filters: { mode: "", type: "", fit: 0, min_salary: 0, seniority: "", show_unknown_salary: true },
     sort: "score",
+    radar: { running: false, status: "idle", matches: 0, failureCount: 0, interval: 900, backoffSeconds: 0, warning: null },
+    cleanup: { expiringSoonCount: 0, expiringJobs: [], lastDeletedCount: 0, unacknowledgedDeletions: 0 },
+    closingSoon: [],
+    countsRemoved: {},
+    usableGate: { status: "usable", message: "" },
+    refreshStatus: { sources: [], minRemainingSeconds: 0 },
+    // Modern track state
+    signals: [],
+    signalsLoaded: false,
+    signalsFilter: { q: "", stage: "any", type: "", includeLate: false },
+    activeBrief: null,
+    activeContacts: [],
+    activeOutreachDraft: null,
+    outreachToday: { sent_today: 0, daily_cap: 20, remaining: 20, entries: [] },
+    outreachQueue: [],
+    followups: [],
     apps: [],
     appsLoaded: false,
     stageTab: "saved",
@@ -352,11 +369,13 @@
 
   /* ------------------------------------------------------------ router and page head */
   const PAGES = {
+    signals: { title: "Signals", sub: "Fresh hiring posts and funding news for direct outreach." },
     jobs: { title: "Jobs", sub: "Roles ranked by how well your resume fits." },
+    outreach: { title: "Outreach", sub: "Track direct emails, follow-ups, and responses." },
     applications: { title: "Applications", sub: "" },
     documents: { title: "Documents", sub: "Every claim in a document comes from your resume." },
     resume: { title: "Resume", sub: "The facts JobHunter writes from." },
-    settings: { title: "Settings", sub: "Search, AI engine, autofill answers and Gmail." },
+    settings: { title: "Settings", sub: "Search, method choice, AI engine, and autofill." },
   };
   const routeHooks = {};
 
@@ -364,14 +383,16 @@
     byId("page-title").textContent = title;
     byId("page-sub").textContent = sub || "";
     byId("page-sub").hidden = !sub;
-    byId("page-actions").innerHTML = actionsHtml || "";
+    const custom = byId("page-actions-custom");
+    if (custom) custom.innerHTML = actionsHtml || "";
     document.title = title + " | JobHunter";
   }
 
   function parseHash() {
     const h = (location.hash || "").replace(/^#\/?/, "");
     const parts = h.split("/").filter(Boolean).map((s) => { try { return decodeURIComponent(s); } catch (e) { return s; } });
-    const name = PAGES[parts[0]] ? parts[0] : "jobs";
+    const defaultRoute = state.method === "modern" ? "signals" : "jobs";
+    const name = PAGES[parts[0]] ? parts[0] : defaultRoute;
     return { name, arg: parts[1] || "" };
   }
 
@@ -422,6 +443,7 @@
   const MODES = [["", "Any"], ["Remote", "Remote"], ["Hybrid", "Hybrid"], ["Onsite", "On site"]];
   const TYPES = [["", "Any"], ["Full-time", "Full-time"], ["Internship", "Internship"], ["Contract", "Contract"], ["Freelance", "Freelance"]];
   const FITS = [[0, "Any"], [60, "60+"], [75, "75+"], [85, "85+"]];
+  const SENIORITIES = [["", "Any"], ["junior", "Early"], ["mid", "Mid"], ["senior", "Senior"], ["lead", "Lead/Staff"]];
   const desktopQuery = window.matchMedia("(min-width: 1000px)");
 
   let searchCtl = null;
@@ -453,16 +475,295 @@
   }
 
   function renderFilterSegs() {
-    const defs = { mode: MODES, type: TYPES, fit: FITS };
+    const defs = { mode: MODES, type: TYPES, fit: FITS, seniority: SENIORITIES };
     $$(".seg[data-filter]").forEach((seg) => {
       const key = seg.dataset.filter;
+      if (!defs[key]) return;
       seg.innerHTML = defs[key].map(([v, label]) => {
-        const on = String(state.filters[key]) === String(v);
+        const on = String(state.filters[key] || "") === String(v);
         return `<button type="button" role="radio" aria-checked="${on}" data-v="${esc(v)}">${esc(label)}</button>`;
       }).join("");
     });
-    const n = (state.filters.mode ? 1 : 0) + (state.filters.type ? 1 : 0) + (state.filters.fit ? 1 : 0);
+    const n = (state.filters.mode ? 1 : 0) + (state.filters.type ? 1 : 0) + (state.filters.fit ? 1 : 0) + (state.filters.seniority ? 1 : 0) + (state.filters.min_salary ? 1 : 0);
     byId("filter-count").textContent = n ? " (" + n + ")" : "";
+  }
+
+  function updateFilterBadges() {
+    const counts = state.countsRemoved || {};
+    const map = {
+      mode: "badge-removed-mode",
+      type: "badge-removed-type",
+      seniority: "badge-removed-seniority",
+      salary: "badge-removed-salary",
+    };
+    for (const [key, elId] of Object.entries(map)) {
+      const el = byId(elId);
+      if (!el) continue;
+      const count = counts[key] || 0;
+      if (count > 0) {
+        el.textContent = `(${count} removed)`;
+        el.hidden = false;
+      } else {
+        el.hidden = true;
+      }
+    }
+  }
+
+  function updateUsabilityBanner() {
+    const banner = byId("banner-usability");
+    if (!banner) return;
+    const count = state.jobs.length;
+    const searched = state.searched;
+
+    if (!searched) {
+      banner.hidden = true;
+      return;
+    }
+
+    const msgEl = byId("usability-message");
+    const actionsEl = byId("usability-actions");
+    if (!msgEl || !actionsEl) return;
+
+    if (count < 10) {
+      banner.className = "banner-usability few";
+      banner.hidden = false;
+      msgEl.textContent = `Only ${count} match${count === 1 ? "" : "es"} found (optimal range: 10–300). Loosen one filter or refresh sources.`;
+      actionsEl.innerHTML = `
+        ${state.filters.min_salary ? `<button class="btn btn-secondary btn-sm" id="btn-loosen-sal" type="button">Clear min salary</button>` : ""}
+        ${state.filters.mode ? `<button class="btn btn-secondary btn-sm" id="btn-loosen-mode" type="button">Set mode to Any</button>` : ""}
+        <button class="btn btn-quiet btn-sm" id="btn-usability-refresh" type="button">Refresh now</button>
+      `;
+      const btnSal = byId("btn-loosen-sal");
+      if (btnSal) btnSal.addEventListener("click", () => {
+        state.filters.min_salary = 0;
+        const fltSal = byId("flt-salary");
+        if (fltSal) fltSal.value = "";
+        loadJobsQuery();
+      });
+      const btnMode = byId("btn-loosen-mode");
+      if (btnMode) btnMode.addEventListener("click", () => {
+        state.filters.mode = "";
+        renderFilterSegs();
+        loadJobsQuery();
+      });
+      const btnRef = byId("btn-usability-refresh");
+      if (btnRef) btnRef.addEventListener("click", onManualRefreshClick);
+    } else if (count > 300) {
+      banner.className = "banner-usability many";
+      banner.hidden = false;
+      msgEl.textContent = `Over 300 matches found (${count} total). Tighten your salary or seniority filter to focus on top matches.`;
+      actionsEl.innerHTML = `
+        <button class="btn btn-secondary btn-sm" id="btn-tighten-sen" type="button">Filter to Senior</button>
+        <button class="btn btn-secondary btn-sm" id="btn-tighten-sal" type="button">Set $120k+ min</button>
+      `;
+      const btnSen = byId("btn-tighten-sen");
+      if (btnSen) btnSen.addEventListener("click", () => {
+        state.filters.seniority = "senior";
+        renderFilterSegs();
+        loadJobsQuery();
+      });
+      const btnSal = byId("btn-tighten-sal");
+      if (btnSal) btnSal.addEventListener("click", () => {
+        state.filters.min_salary = 120000;
+        const fltSal = byId("flt-salary");
+        if (fltSal) fltSal.value = "120000";
+        loadJobsQuery();
+      });
+    } else {
+      banner.hidden = true;
+    }
+  }
+
+  function renderClosingSoon() {
+    const wrap = byId("closing-soon-wrap");
+    if (!wrap) return;
+    const list = state.closingSoon || [];
+    if (!list.length) {
+      wrap.hidden = true;
+      return;
+    }
+    wrap.hidden = false;
+    const badge = byId("closing-soon-count");
+    if (badge) badge.textContent = String(list.length);
+    const ul = byId("closing-soon-list");
+    if (!ul) return;
+    ul.innerHTML = list.map((j) => {
+      const hours = j.hours_remaining != null ? Math.round(j.hours_remaining) : 24;
+      return `
+        <li class="closing-soon-item">
+          <div class="cs-info">
+            <strong>${esc(j.title)}</strong>
+            <span class="meta">at ${esc(j.company)}</span>
+            <span class="cs-countdown">${icon("hourglass", "icon-sm")} Expiring in ~${hours}h</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" type="button" data-act="keep-job" data-id="${esc(j.id)}">Keep job</button>
+        </li>
+      `;
+    }).join("");
+  }
+
+  /* ------------------------------------------------------------ V5 Refresh Scheduler & Status */
+  let cooldownTimerInterval = null;
+
+  async function pollRefreshStatus() {
+    try {
+      const data = await apiGet("/api/refresh/status");
+      if (!data) return;
+      state.refreshStatus = {
+        sources: data.sources || [],
+        minRemainingSeconds: data.min_remaining_seconds || 0,
+        checkedAt: data.checked_at,
+      };
+      if (state.refreshStatus.minRemainingSeconds > 0 && !cooldownTimerInterval) {
+        startCooldownTimer();
+      }
+      updateCooldownUI();
+      renderSystemStatusDrawer();
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function startCooldownTimer() {
+    if (cooldownTimerInterval) clearInterval(cooldownTimerInterval);
+    cooldownTimerInterval = setInterval(() => {
+      if (state.refreshStatus && state.refreshStatus.minRemainingSeconds > 0) {
+        state.refreshStatus.minRemainingSeconds -= 1;
+        updateCooldownUI();
+      } else {
+        clearInterval(cooldownTimerInterval);
+        cooldownTimerInterval = null;
+        updateCooldownUI();
+      }
+    }, 1000);
+  }
+
+  function formatDuration(seconds) {
+    if (!seconds || seconds <= 0) return "0s";
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
+  function updateCooldownUI() {
+    const rem = (state.refreshStatus && state.refreshStatus.minRemainingSeconds) || 0;
+    const btnDrawer = byId("btn-status-refresh-now");
+    const btnUsability = byId("btn-usability-refresh");
+
+    if (rem > 0) {
+      const text = `Cooldown (${formatDuration(rem)})`;
+      if (btnDrawer) {
+        btnDrawer.disabled = true;
+        btnDrawer.textContent = text;
+      }
+      if (btnUsability) {
+        btnUsability.disabled = true;
+        btnUsability.textContent = text;
+      }
+    } else {
+      if (btnDrawer) {
+        btnDrawer.disabled = false;
+        btnDrawer.textContent = "Refresh now";
+      }
+      if (btnUsability) {
+        btnUsability.disabled = false;
+        btnUsability.textContent = "Refresh now";
+      }
+    }
+  }
+
+  function renderSystemStatusDrawer() {
+    const dlg = byId("dlg-system-status");
+    if (!dlg || !dlg.open) return;
+
+    // 1. Radar
+    const rDot = byId("status-radar-dot");
+    const rBadge = byId("status-radar-state-badge");
+    const rLast = byId("status-radar-last-poll");
+    const rNext = byId("status-radar-next-poll");
+    const rMatches = byId("status-radar-matches");
+    const rWarnWrap = byId("status-radar-warning-wrap");
+    const rWarnText = byId("status-radar-warning-text");
+
+    if (rDot) {
+      rDot.className = "radar-dot";
+      if (!state.radar.running) rDot.classList.add("off");
+      else if (state.radar.failureCount >= 3 || state.radar.status === "warning") rDot.classList.add("warning");
+    }
+
+    if (rBadge) {
+      rBadge.textContent = state.radar.status === "warning" ? "Warning (Backoff)" : (state.radar.running ? "Active" : "Idle");
+      rBadge.className = "badge" + (state.radar.status === "warning" ? " badge-warning" : (state.radar.running ? " badge-accent" : ""));
+    }
+
+    if (rLast) rLast.textContent = state.radar.lastPoll ? daysAgo(state.radar.lastPoll) : "Never";
+    if (rNext) {
+      if (state.radar.running) {
+        rNext.textContent = state.radar.nextPoll ? daysAgo(state.radar.nextPoll) : "In ~10–20 min";
+      } else {
+        rNext.textContent = "Worker not started";
+      }
+    }
+    if (rMatches) rMatches.textContent = `${state.radar.matches || 0} match(es)`;
+
+    if (rWarnWrap && rWarnText) {
+      if (state.radar.failureCount >= 3 || state.radar.status === "warning") {
+        rWarnWrap.hidden = false;
+        rWarnText.textContent = `LinkedIn rate limit or 429 encountered. Backoff delay active (${state.radar.failureCount} sequential retries).`;
+      } else {
+        rWarnWrap.hidden = true;
+      }
+    }
+
+    // 2. Sources Table
+    const tbody = byId("status-sources-tbody");
+    if (tbody && state.refreshStatus && state.refreshStatus.sources) {
+      tbody.innerHTML = state.refreshStatus.sources.map((s) => {
+        const ttlHours = s.ttl_seconds ? `${Math.round(s.ttl_seconds / 3600)}h` : "12h";
+        const lastRunText = s.last_run_at ? daysAgo(s.last_run_at) : "Never";
+        let statusBadge = "";
+        if (s.in_cooldown) {
+          statusBadge = `<span class="badge badge-cooldown">Cooldown</span>`;
+        } else if (s.is_due) {
+          statusBadge = `<span class="badge badge-warning">Due</span>`;
+        } else {
+          statusBadge = `<span class="badge">Fresh (${s.last_new || 0} new)</span>`;
+        }
+        return `
+          <tr>
+            <td style="padding:var(--s2);font-weight:600">${esc(s.source)}</td>
+            <td style="padding:var(--s2);color:var(--ink-soft)">${esc(lastRunText)}</td>
+            <td style="padding:var(--s2)">${ttlHours}</td>
+            <td style="padding:var(--s2)">${s.is_due ? "Now" : "In schedule"}</td>
+            <td style="padding:var(--s2)">${statusBadge}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+  }
+
+  async function onManualRefreshClick() {
+    try {
+      toast("Refreshing non-LinkedIn sources in background...", { kind: "info" });
+      const res = await apiPost("/api/refresh", { force: true });
+      if (res && res.status === "cooldown") {
+        toast(res.message, { kind: "bad" });
+        if (res.cooldown_remaining_seconds) {
+          if (!state.refreshStatus) state.refreshStatus = {};
+          state.refreshStatus.minRemainingSeconds = res.cooldown_remaining_seconds;
+          startCooldownTimer();
+        }
+        return;
+      }
+      toast(`Refresh complete. ${res.inserted || 0} new jobs stored across ${((res.refreshed_sources) || []).length} sources.`);
+      await pollRefreshStatus();
+      if (state.refreshStatus.minRemainingSeconds > 0) startCooldownTimer();
+      await loadJobsQuery();
+      renderSystemStatusDrawer();
+    } catch (e) {
+      toast("Refresh failed: " + e.message, { kind: "bad" });
+    }
   }
 
   function visibleJobs() {
@@ -506,7 +807,8 @@
       ? (app.status === "saved" ? `<button class="btn btn-quiet btn-sm" type="button" disabled>${icon("bookmark-check", "icon-sm")}<span>Saved</span></button>` : "")
       : `<button class="btn btn-quiet btn-sm" type="button" data-act="save" data-key="${esc(key)}">${icon("bookmark", "icon-sm")}<span>Save</span></button>`;
     const copy = url ? `<button class="btn btn-quiet btn-sm btn-icon" type="button" data-act="copy-link" data-key="${esc(key)}" aria-label="Copy posting link">${icon("link", "icon-sm")}</button>` : "";
-    return `${apply}${save}${copy}<button class="btn btn-quiet btn-sm go" type="button" data-act="details" data-key="${esc(key)}">Details${icon("chevron-right", "icon-sm")}</button>`;
+    const dismiss = `<button class="btn btn-quiet btn-sm btn-icon" type="button" data-act="dismiss" data-key="${esc(key)}" aria-label="Dismiss job" title="Dismiss">${icon("x", "icon-sm")}</button>`;
+    return `${apply}${save}${copy}${dismiss}<button class="btn btn-quiet btn-sm go" type="button" data-act="details" data-key="${esc(key)}">Details${icon("chevron-right", "icon-sm")}</button>`;
   }
 
   function jobCardHtml(item) {
@@ -516,13 +818,25 @@
     const top = typeof j.score === "number" && j.score >= 90;
     const loc = j.location || "";
     const wm = j.work_mode && !loc.toLowerCase().includes(String(j.work_mode).toLowerCase()) ? j.work_mode : "";
+
+    // V5 Card Fields
+    const dupBadge = j.possible_duplicate ? `<span class="badge badge-duplicate" title="80-90% title similarity to an existing posting">${icon("circle-alert", "icon-sm")}Possible duplicate</span>` : "";
+    const sources = (Array.isArray(j.sources) && j.sources.length) ? j.sources : (j.source ? [j.source] : []);
+    const sourceBadges = sources.map(s => `<span class="badge badge-source">${esc(s)}</span>`).join("");
+    const hasSalary = Boolean(j.salary || j.min_salary || j.max_salary);
+    const salBadge = !hasSalary ? `<span class="badge badge-sal-missing">No salary listed</span>` : "";
+    const fitReason = (j.match_reasons && j.match_reasons[0]) || j.fit_reason || "";
+    const risks = j.risk_factors || j.risks || [];
+    const riskLine = risks.length ? `<div class="jc-risk"><svg class="icon icon-sm"><use href="#i-shield-alert"/></svg><span>${esc(risks.join(" • "))}</span></div>` : "";
+
     const meta = [
       top ? `<span class="badge hot">Top fit</span>` : "",
       isNew ? `<span class="badge new">New</span>` : "",
+      sourceBadges,
       loc ? `<span dir="auto">${esc(loc)}</span>` : "",
       wm ? `<span>${esc(wm)}</span>` : "",
       j.job_type ? `<span>${esc(j.job_type)}</span>` : "",
-      j.salary ? `<span>${esc(j.salary)}</span>` : "",
+      j.salary ? `<span>${esc(j.salary)}</span>` : salBadge,
       j.posted_days_ago != null ? `<span>${esc(daysAgo(j.posted_days_ago))}</span>` : "",
     ].filter(Boolean).join("");
     const sk = (j.matched_skills || []).slice(0, 4);
@@ -535,9 +849,11 @@
           <span class="jc-co" dir="auto">${esc(j.company || "Company not listed")}</span>
           <h2 class="jc-title" dir="auto"><button class="job-open" type="button" data-key="${esc(key)}" aria-haspopup="dialog">${esc(j.title || "Untitled role")}</button></h2>
         </div>
-        <div class="jc-badges">${scoreBadge(j.score)}</div>
+        <div class="jc-badges">${scoreBadge(j.score)}${dupBadge}</div>
       </div>
       ${meta ? `<div class="jc-meta">${meta}</div>` : ""}
+      ${fitReason ? `<div class="jc-fit-reason">${icon("sparkles", "icon-sm")}<span>${esc(fitReason)}</span></div>` : ""}
+      ${riskLine}
       ${sn ? `<p class="jc-desc" dir="auto">${esc(sn)}</p>` : ""}
       ${sk.length ? `<p class="jc-skills" aria-label="Skills from your resume"><span class="sr-only">From your resume: </span>${sk.map((s) => `<span class="mk">${esc(s)}</span>`).join("")}${more > 0 ? `<span class="jc-more">+${more}</span>` : ""}</p>` : ""}
       <div class="jc-actions">${cardActions(j, key)}</div>
@@ -578,7 +894,13 @@
     }
     bar.hidden = false;
     byId("results-count").textContent = items.length + (items.length === 1 ? " job" : " jobs");
-    byId("results-meta").textContent = hidden > 0 ? hidden + " hidden by filters" : "";
+    let totalRemoved = 0;
+    if (state.countsRemoved) {
+      totalRemoved = Object.values(state.countsRemoved).reduce((a, b) => a + (Number(b) || 0), 0);
+    }
+    const clientHidden = state.jobs.length - items.length;
+    const totalHidden = totalRemoved + clientHidden;
+    byId("results-meta").textContent = totalHidden > 0 ? totalHidden + " hidden by filters" : "";
     if (!items.length) {
       list.innerHTML = "";
       st.innerHTML = `<div class="empty"><h2>Filters hide all ${state.jobs.length} jobs</h2><p>Loosen a filter to see them.</p><button class="btn btn-secondary" type="button" data-clear-filters>Clear filters</button></div>`;
@@ -615,6 +937,7 @@
     const saveBtn = app && app.status === "saved"
       ? `<button class="btn btn-secondary" type="button" disabled>${icon("bookmark-check")}<span>Saved</span></button>`
       : app ? "" : `<button class="btn btn-secondary" type="button" data-act="save" data-key="${esc(state.selectedId)}">${icon("bookmark")}<span>Save</span></button>`;
+    const dismissBtn = `<button class="btn btn-quiet" type="button" data-act="dismiss" data-key="${esc(state.selectedId)}">${icon("x")}<span>Dismiss</span></button>`;
     const applyBtn = inPipeline
       ? `<a class="btn btn-secondary" href="#/applications">${icon("square-kanban")}<span>${esc(STAGE_LABEL[app.status] || "Tracked")} in Applications</span></a>`
       : `<button class="btn btn-primary" type="button" data-act="apply" data-key="${esc(state.selectedId)}"${url ? "" : " disabled"}>${icon("send")}<span>Apply with extension</span></button>`;
@@ -655,7 +978,7 @@
       </div>
       <div class="drawer-body">
         <header class="detail-head"><div class="dh-top"><span class="avatar lg" aria-hidden="true">${esc(initialOf(j.company))}</span>${scoreBadge(j.score)}</div><h2 id="drawer-title" dir="auto">${esc(j.title || "Untitled role")}</h2><div class="detail-meta">${meta}</div></header>
-        <div class="detail-actions">${applyBtn}${saveBtn}${url ? `<a class="btn btn-quiet" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><span>Open posting</span>${icon("external-link")}</a>` : ""}</div>
+        <div class="detail-actions">${applyBtn}${saveBtn}${dismissBtn}${url ? `<a class="btn btn-quiet" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><span>Open posting</span>${icon("external-link")}</a>` : ""}</div>
         <section class="detail-section" aria-labelledby="h-fit"><h3 id="h-fit">Why it fits</h3>${fitBlock}${matchedBlock}</section>
         <section class="detail-section" aria-labelledby="h-post"><h3 id="h-post">Posting</h3>
           ${post ? `<div class="posting-wrap"><div class="posting sweep" dir="auto">${post.html}</div></div>${post.count ? `<p class="legend">${post.count} ${post.count === 1 ? "term" : "terms"} from your resume ${post.count === 1 ? "is" : "are"} highlighted.</p>` : ""}` : `<p>This job came without a description.${url ? " Open the posting to read it." : ""}</p>`}
@@ -742,6 +1065,7 @@
       state.jobs = (d && d.jobs) || [];
       state.searched = true;
       persistSearch();
+      try { await loadJobsQuery(); } catch (qe) { /* fallback to d.jobs */ }
     } catch (e) {
       if (e.name === "AbortError") toast("Search stopped.");
       else searchError = e;
@@ -754,6 +1078,297 @@
     if (location.hash !== "#/jobs") history.replaceState(null, "", "#/jobs");
     renderJobs();
     syncSelection();
+  }
+
+  /* ------------------------------------------------------------ V5 View Query & Filtering */
+  async function loadJobsQuery() {
+    try {
+      const payload = {
+        filters: {
+          job_style: state.query || "tech jobs",
+          work_mode: state.filters.mode || "any",
+          contract_types: state.filters.type ? [state.filters.type] : [],
+          min_salary: state.filters.min_salary || 0,
+          seniority: state.filters.seniority ? [state.filters.seniority] : [],
+          locations: state.place ? [state.place] : [],
+          show_unknown_salary: state.filters.show_unknown_salary !== false,
+        },
+        sort_by: state.sort === "date" ? "date" : "rank",
+        limit: 100,
+      };
+      const res = await apiPost("/api/jobs/query", payload);
+      if (res && res.results) {
+        state.jobs = res.results;
+        state.closingSoon = res.closing_soon || [];
+        state.countsRemoved = res.counts_removed || {};
+        state.usableGate = res.gate || { status: "usable", message: "" };
+        state.searched = true;
+        renderJobs();
+        if (typeof renderClosingSoon === "function") renderClosingSoon();
+        if (typeof updateFilterBadges === "function") updateFilterBadges();
+        if (typeof updateUsabilityBanner === "function") updateUsabilityBanner();
+      }
+    } catch (e) {
+      console.warn("Could not query jobs via V5 API:", e);
+    }
+  }
+
+  /* ------------------------------------------------------------ V8 Method Selection & Dual-Track */
+  function initMethod() {
+    const saved = lsGet("jobhunter_method");
+    if (saved === "classic" || saved === "modern") {
+      state.method = saved;
+    } else {
+      state.method = "modern"; // Modern is default
+    }
+
+    const btnMod = byId("btn-method-modern");
+    const btnCls = byId("btn-method-classic");
+    if (btnMod) btnMod.addEventListener("click", () => setMethod("modern"));
+    if (btnCls) btnCls.addEventListener("click", () => setMethod("classic"));
+
+    const btnSelMod = byId("btn-select-modern");
+    const btnSelCls = byId("btn-select-classic");
+    const dlgOnboard = byId("dlg-method-onboarding");
+    if (btnSelMod && dlgOnboard) {
+      btnSelMod.addEventListener("click", () => {
+        lsSet("jobhunter_method_chosen", "true");
+        dlgOnboard.close();
+        setMethod("modern");
+      });
+    }
+    if (btnSelCls && dlgOnboard) {
+      btnSelCls.addEventListener("click", () => {
+        lsSet("jobhunter_method_chosen", "true");
+        dlgOnboard.close();
+        setMethod("classic");
+      });
+    }
+
+    // Check first visit onboarding
+    if (!lsGet("jobhunter_method_chosen") && dlgOnboard) {
+      closeOnBackdrop(dlgOnboard);
+      setTimeout(() => {
+        if (!dlgOnboard.open && !lsGet("jobhunter_method_chosen")) {
+          dlgOnboard.showModal();
+        }
+      }, 600);
+    }
+
+    updateMethodUI();
+  }
+
+  function updateMethodUI() {
+    const isModern = state.method === "modern";
+    const btnMod = byId("btn-method-modern");
+    const btnCls = byId("btn-method-classic");
+    if (btnMod) btnMod.classList.toggle("active", isModern);
+    if (btnCls) btnCls.classList.toggle("active", !isModern);
+
+    // Nav items visibility
+    const sigWrap = byId("nav-item-signals-wrap");
+    const outWrap = byId("nav-item-outreach-wrap");
+    const tabSig = byId("tabbar-signals");
+    const tabOut = byId("tabbar-outreach");
+
+    if (sigWrap) sigWrap.style.display = isModern ? "" : "none";
+    if (outWrap) outWrap.style.display = isModern ? "" : "none";
+    if (tabSig) tabSig.style.display = isModern ? "" : "none";
+    if (tabOut) tabOut.style.display = isModern ? "" : "none";
+
+    updateRadarHeaderUI();
+  }
+
+  async function setMethod(method, saveBackend = true) {
+    if (method !== "modern" && method !== "classic") return;
+    state.method = method;
+    lsSet("jobhunter_method", method);
+    lsSet("jobhunter_method_chosen", "true");
+    lsSet("jobhunter_method_manual_override", "true");
+    updateMethodUI();
+
+    if (saveBackend) {
+      try {
+        await apiPost("/api/method", { method });
+      } catch (e) {
+        console.warn("Could not sync method with backend:", e);
+      }
+    }
+
+    // Route dynamically based on method
+    if (method === "modern") {
+      if (state.route === "jobs") go("signals");
+      toast("Switched to Modern outreach track (Signals & Direct Contacts).");
+    } else {
+      if (state.route === "signals" || state.route === "outreach") go("jobs");
+      toast("Switched to Classic track (Job boards & Apply button).");
+    }
+  }
+
+  /* ------------------------------------------------------------ Header Radar & Method UI */
+  async function pollRadarStatus() {
+    try {
+      const data = await apiGet("/api/radar/status");
+      if (!data) return;
+
+      // Sync active method if returned from backend
+      if (data.method && (data.method === "modern" || data.method === "classic") && !lsGet("jobhunter_method_manual_override")) {
+        if (state.method !== data.method) {
+          state.method = data.method;
+          updateMethodUI();
+        }
+      }
+
+      state.radar = {
+        running: !!data.running,
+        status: data.status || "idle",
+        matches: data.active_filter_matches || data.new_jobs_count || 0,
+        newSignals: data.new_signals_count || (data.new_count && data.method === "modern" ? data.new_count : 0),
+        newJobs: data.new_jobs_count || data.unread_jobs || 0,
+        failureCount: data.failure_count || 0,
+        lastPoll: data.last_poll_at,
+        nextPoll: data.next_poll_at,
+        backoffSeconds: data.backoff_seconds || 0,
+        warning: data.warning || data.last_error,
+      };
+      updateRadarHeaderUI();
+    } catch (e) {
+      /* ignore offline errors */
+    }
+  }
+
+  function updateRadarHeaderUI() {
+    const btn = byId("btn-radar-header");
+    if (!btn) return;
+    const dot = byId("radar-header-dot");
+    const badge = byId("radar-header-badge");
+    const label = byId("radar-header-label");
+
+    const isModern = state.method === "modern";
+    const count = isModern ? (state.radar.newSignals || 0) : (state.radar.matches || state.radar.newJobs || 0);
+
+    if (label) {
+      label.textContent = isModern ? "Signals Radar" : "Radar";
+    }
+
+    if (dot) {
+      dot.className = "radar-dot";
+      if (!state.radar.running) {
+        dot.classList.add("off");
+      } else if (state.radar.failureCount >= 3 || state.radar.warning || state.radar.backoffSeconds > 0) {
+        dot.classList.add("warning");
+      }
+    }
+
+    if (badge) {
+      if (count > 0) {
+        badge.textContent = String(count);
+        badge.hidden = false;
+        const noun = isModern ? "signal" : "job";
+        btn.setAttribute("title", `Radar: ${count} new ${noun}(s) found. Click to open and clear count.`);
+      } else {
+        badge.hidden = true;
+        let hint = state.radar.running ? (isModern ? "Signal Radar: Watching for hiring posts & funding news" : "LinkedIn Radar: Watching for new matches") : "Radar: Idle";
+        if (state.radar.failureCount >= 3 || state.radar.backoffSeconds > 0) {
+          const retryMins = Math.max(1, Math.round((state.radar.backoffSeconds || 120) / 60));
+          hint = `Radar backed off after ${state.radar.failureCount} error(s). Retrying in ~${retryMins} minutes.`;
+        }
+        btn.setAttribute("title", hint);
+      }
+    }
+  }
+
+  async function onRadarHeaderClick() {
+    const isModern = state.method === "modern";
+    const count = isModern ? state.radar.newSignals : state.radar.matches;
+    try {
+      await apiPost("/api/radar/ack", { target: isModern ? "signals" : "jobs" });
+      if (isModern) {
+        state.radar.newSignals = 0;
+      } else {
+        state.radar.matches = 0;
+        state.radar.newJobs = 0;
+      }
+      updateRadarHeaderUI();
+
+      if (isModern) {
+        if (state.route !== "signals") go("signals");
+        else await loadSignalsQuery();
+      } else {
+        if (state.route !== "jobs") go("jobs");
+        else await loadJobsQuery();
+      }
+
+      if (count > 0) {
+        toast(`Acknowledged ${count} new radar ${isModern ? "signal" : "job"}(s).`);
+      }
+    } catch (e) {
+      toast("Could not acknowledge radar updates: " + e.message, { kind: "bad" });
+    }
+  }
+
+  async function pollCleanupStatus() {
+    try {
+      const data = await apiGet("/api/cleanup/status");
+      if (!data) return;
+      state.cleanup = {
+        graceHours: data.grace_hours || 24,
+        expiringSoonCount: data.expiring_soon_count || 0,
+        expiringJobs: data.expiring_jobs || [],
+        lastDeletedCount: data.last_deleted_count || 0,
+        unacknowledgedDeletions: data.unacknowledged_deletions || 0,
+      };
+      updateLifecycleBannerUI();
+      if (data.unacknowledged_deletions > 0 && data.last_deleted_count > 0) {
+        toast(`${data.last_deleted_count} expired job(s) reached the grace period and were cleaned up. Tombstones recorded.`, {
+          action: { label: "Dismiss", run: () => apiPost("/api/cleanup/ack") }
+        });
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function updateLifecycleBannerUI() {
+    const banner = byId("banner-lifecycle");
+    if (!banner) return;
+    const count = state.cleanup.expiringSoonCount;
+    if (count > 0) {
+      const text = byId("banner-lifecycle-text");
+      if (text) {
+        const minHours = state.cleanup.expiringJobs.length ? Math.min(...state.cleanup.expiringJobs.map(j => j.hours_remaining || 24)) : 24;
+        text.textContent = `${count} job${count === 1 ? "" : "s"} expiring in ${Math.round(minHours)} hour${Math.round(minHours) === 1 ? "" : "s"}. Expired postings will be removed after the grace period.`;
+      }
+      banner.hidden = false;
+    } else {
+      banner.hidden = true;
+    }
+  }
+
+  async function onKeepExpiringJobs() {
+    try {
+      const ids = state.cleanup.expiringJobs.map(j => j.id);
+      if (!ids.length) return;
+      await apiPost("/api/cleanup/keep", { job_ids: ids });
+      state.cleanup.expiringSoonCount = 0;
+      state.cleanup.expiringJobs = [];
+      updateLifecycleBannerUI();
+      toast("Saved expiring jobs. They will not be deleted.");
+      await loadJobsQuery();
+    } catch (e) {
+      toast("Could not keep jobs: " + e.message, { kind: "bad" });
+    }
+  }
+
+  async function onAckLifecycleBanner() {
+    try {
+      await apiPost("/api/cleanup/ack");
+      const banner = byId("banner-lifecycle");
+      if (banner) banner.hidden = true;
+    } catch (e) {
+      const banner = byId("banner-lifecycle");
+      if (banner) banner.hidden = true;
+    }
   }
 
   function setFieldError(input, msg) {
@@ -820,14 +1435,128 @@
     byId("main").scrollTop = main;
   }
 
-  async function onSave(key) {
+  let pendingSaveJob = null;
+  let pendingDismissJob = null;
+  let activeProposal = null;
+
+  async function onSave(key, opts) {
+    opts = opts || {};
     const j = jobByKey(key != null ? key : state.selectedId);
     if (!j) return;
+    pendingSaveJob = j;
+
+    const payload = {
+      job_id: j.id || j.job_key,
+      id: j.id || j.job_key,
+      title: j.title || "",
+      company: j.company || "",
+      location: j.location || "",
+      salary: j.salary || "",
+      url: jobUrl(j),
+      force: !!opts.force,
+      confirm_closed: !!opts.confirm_closed,
+      job_data: j
+    };
+
     try {
-      await saveJob(j, "saved");
+      toast("Evaluating fit and posting status...", { kind: "info" });
+      const res = await apiPost("/api/jobs/save", payload);
+      if (!res) return;
+
+      if (res.status === "needs_confirm") {
+        const dlg = byId("dlg-closed-confirm");
+        if (dlg) dlg.showModal();
+        return;
+      }
+
+      if (res.status === "low_fit") {
+        const dlg = byId("dlg-low-fit");
+        if (dlg) {
+          const scoreEl = byId("low-fit-score");
+          if (scoreEl) scoreEl.textContent = String(res.fit_score || 0);
+
+          const gapsEl = byId("low-fit-gaps");
+          const gaps = (res.gap_report && res.gap_report.missing_requirements) || [];
+          if (gapsEl) {
+            gapsEl.innerHTML = gaps.length ? gaps.map((g) => `<li>${esc(g)}</li>`).join("") : "<li>No specific skills missing</li>";
+          }
+
+          const trackEl = byId("low-fit-track");
+          const tracks = (res.gap_report && res.gap_report.talking_track) || [];
+          if (trackEl) {
+            trackEl.innerHTML = tracks.length ? tracks.map((t) => `<p>${esc(t)}</p>`).join("") : "<p>Emphasize rapid adaptability and related toolchains.</p>";
+          }
+
+          const addTrueEl = byId("low-fit-add-true");
+          const addTrueSec = byId("low-fit-add-true-sec");
+          const addList = (res.gap_report && res.gap_report.add_this_if_true) || [];
+          if (addTrueEl && addTrueSec) {
+            if (addList.length) {
+              addTrueSec.hidden = false;
+              addTrueEl.innerHTML = addList.map((a) => `<li>${esc(a)}</li>`).join("");
+            } else {
+              addTrueSec.hidden = true;
+            }
+          }
+
+          dlg.showModal();
+        }
+        return;
+      }
+
+      // Success
+      pendingSaveJob = null;
+      await reloadApps();
       refreshJobViews();
-      toast("Saved! Tailoring resume & cover letter...", { action: { label: "View", run: () => go("applications") } });
-    } catch (e) { toast(e.message, { kind: "bad" }); }
+      toast("Saved! Tailored resume & cover letter generated in outputs/.", {
+        action: { label: "View in Applications", run: () => go("applications") }
+      });
+    } catch (e) {
+      toast("Could not save job: " + e.message, { kind: "bad" });
+    }
+  }
+
+  function openDismissDialog(key) {
+    const j = jobByKey(key != null ? key : state.selectedId);
+    if (!j) return;
+    pendingDismissJob = j;
+    const dlg = byId("dlg-dismiss-reasons");
+    if (dlg) dlg.showModal();
+  }
+
+  async function onDismiss(reason) {
+    const dlg = byId("dlg-dismiss-reasons");
+    if (dlg) dlg.close();
+    if (!pendingDismissJob) return;
+
+    const j = pendingDismissJob;
+    const jid = j.id || j.job_key;
+    try {
+      const res = await apiPost("/api/jobs/dismiss", { job_id: jid, reason: reason || "Other" });
+      state.jobs = state.jobs.filter((x) => (x.id || x.job_key) !== jid);
+      renderJobs();
+      syncSelection();
+      toast(`Dismissed posting (${reason || "Other"}).`);
+
+      if (res && res.proposal) {
+        showFilterProposal(res.proposal);
+      }
+    } catch (e) {
+      toast("Could not dismiss job: " + e.message, { kind: "bad" });
+    } finally {
+      pendingDismissJob = null;
+    }
+  }
+
+  function showFilterProposal(proposal) {
+    activeProposal = proposal;
+    const dlg = byId("dlg-filter-proposal");
+    if (!dlg) return;
+    const msgEl = byId("filter-proposal-message");
+    if (msgEl) {
+      msgEl.textContent = proposal.message || "Based on your recent dismissals, tuning view filters could improve matching jobs.";
+    }
+    dlg.showModal();
   }
 
   async function onApply(key) {
@@ -870,16 +1599,61 @@
       const key = b.closest(".seg").dataset.filter;
       state.filters[key] = key === "fit" ? Number(b.dataset.v) : b.dataset.v;
       renderFilterSegs();
-      renderJobs();
-      syncSelectionAfterFilter();
+      if (state.searched) {
+        loadJobsQuery();
+      } else {
+        renderJobs();
+        syncSelectionAfterFilter();
+      }
     });
-    byId("sort").addEventListener("change", (e) => { state.sort = e.target.value; renderJobs(); });
+
+    const fltSalary = byId("flt-salary");
+    if (fltSalary) {
+      fltSalary.addEventListener("change", (e) => {
+        state.filters.min_salary = Math.max(0, Number(e.target.value) || 0);
+        renderFilterSegs();
+        if (state.searched) loadJobsQuery();
+      });
+    }
+
+    const fltUnknownSal = byId("flt-unknown-sal");
+    if (fltUnknownSal) {
+      fltUnknownSal.addEventListener("change", (e) => {
+        state.filters.show_unknown_salary = e.target.checked;
+        if (state.searched) loadJobsQuery();
+      });
+    }
+
+    const closingWrap = byId("closing-soon-wrap");
+    if (closingWrap) {
+      closingWrap.addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-act='keep-job']");
+        if (!btn) return;
+        const id = Number(btn.dataset.id);
+        if (!id) return;
+        try {
+          await apiPost("/api/cleanup/keep", { job_ids: [id] });
+          toast("Job saved and protected from deletion.");
+          await loadJobsQuery();
+          await pollCleanupStatus();
+        } catch (err) {
+          toast("Could not keep job: " + err.message, { kind: "bad" });
+        }
+      });
+    }
+
+    byId("sort").addEventListener("change", (e) => {
+      state.sort = e.target.value;
+      if (state.searched) loadJobsQuery();
+      else renderJobs();
+    });
 
     byId("job-list").addEventListener("click", (e) => {
       const act = e.target.closest("[data-act]");
       if (act) {
         const key = act.dataset.key;
         if (act.dataset.act === "save") onSave(key);
+        else if (act.dataset.act === "dismiss") openDismissDialog(key);
         else if (act.dataset.act === "apply") onApply(key);
         else if (act.dataset.act === "details") selectJob(key);
         else if (act.dataset.act === "copy-link") {
@@ -913,7 +1687,12 @@
       const st = e.target.closest("[data-step]");
       if (st) { stepSelection(Number(st.dataset.step)); return; }
       const a = e.target.closest("[data-act]");
-      if (a) { if (a.dataset.act === "save") onSave(a.dataset.key); else if (a.dataset.act === "apply") onApply(a.dataset.key); return; }
+      if (a) {
+        if (a.dataset.act === "save") onSave(a.dataset.key);
+        else if (a.dataset.act === "dismiss") { dlg.close(); openDismissDialog(a.dataset.key); }
+        else if (a.dataset.act === "apply") onApply(a.dataset.key);
+        return;
+      }
       const w = e.target.closest("[data-doc]");
       if (w) {
         const j = currentJob();
@@ -923,6 +1702,77 @@
         go("documents");
       }
     });
+
+    // V5 Dialog Wire-ups
+    const closedDlg = byId("dlg-closed-confirm");
+    if (closedDlg) {
+      closeOnBackdrop(closedDlg);
+      const btnSkip = byId("btn-closed-skip");
+      if (btnSkip) btnSkip.addEventListener("click", () => { closedDlg.close(); pendingSaveJob = null; });
+      const btnConf = byId("btn-closed-confirm");
+      if (btnConf) btnConf.addEventListener("click", () => {
+        closedDlg.close();
+        if (pendingSaveJob) {
+          onSave(jobKey(pendingSaveJob), { confirm_closed: true });
+        }
+      });
+    }
+
+    const lowFitDlg = byId("dlg-low-fit");
+    if (lowFitDlg) {
+      closeOnBackdrop(lowFitDlg);
+      const btnSkip = byId("btn-low-fit-skip");
+      if (btnSkip) btnSkip.addEventListener("click", () => { lowFitDlg.close(); pendingSaveJob = null; });
+      const btnSave = byId("btn-low-fit-save");
+      if (btnSave) btnSave.addEventListener("click", () => {
+        lowFitDlg.close();
+        if (pendingSaveJob) {
+          onSave(jobKey(pendingSaveJob), { force: true, confirm_closed: true });
+        }
+      });
+    }
+
+    const dismissDlg = byId("dlg-dismiss-reasons");
+    if (dismissDlg) {
+      closeOnBackdrop(dismissDlg);
+      const btnCancel = byId("btn-dismiss-cancel");
+      if (btnCancel) btnCancel.addEventListener("click", () => { dismissDlg.close(); pendingDismissJob = null; });
+      const chipList = byId("dismiss-chips");
+      if (chipList) chipList.addEventListener("click", (e) => {
+        const chip = e.target.closest(".chip-btn");
+        if (chip) onDismiss(chip.dataset.reason);
+      });
+    }
+
+    const proposalDlg = byId("dlg-filter-proposal");
+    if (proposalDlg) {
+      closeOnBackdrop(proposalDlg);
+      const btnDismiss = byId("btn-proposal-dismiss");
+      if (btnDismiss) btnDismiss.addEventListener("click", () => { proposalDlg.close(); activeProposal = null; });
+      const btnApply = byId("btn-proposal-apply");
+      if (btnApply) btnApply.addEventListener("click", () => {
+        proposalDlg.close();
+        if (activeProposal) {
+          if (activeProposal.type === "salary") {
+            state.filters.min_salary = Math.max(state.filters.min_salary || 0, 100000);
+            const fltSal = byId("flt-salary");
+            if (fltSal) fltSal.value = String(state.filters.min_salary);
+          } else if (activeProposal.type === "work_mode") {
+            state.filters.mode = "Remote";
+            renderFilterSegs();
+          } else if (activeProposal.type === "seniority") {
+            state.filters.seniority = "senior";
+            renderFilterSegs();
+          } else {
+            const body = byId("filters-body");
+            if (body) body.hidden = false;
+          }
+          activeProposal = null;
+          toast("Updated view filters based on feedback.");
+          loadJobsQuery();
+        }
+      });
+    }
 
     const cached = ssGet("jh-search");
     if (cached && Array.isArray(cached.jobs)) {
@@ -960,6 +1810,769 @@
     syncSelection();
   };
 
+  /* ============================================================ MODERN TRACK: SIGNALS ============================================================ */
+  let signalsInit = false;
+
+  function initSignals() {
+    if (signalsInit) return;
+    signalsInit = true;
+
+    const form = byId("signals-filter-form");
+    if (form) {
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        loadSignalsQuery();
+      });
+      const qInput = byId("sig-q");
+      if (qInput) {
+        qInput.addEventListener("input", debounce(() => {
+          state.signalsFilter.q = qInput.value.trim();
+          loadSignalsQuery();
+        }, 250));
+      }
+      const stageSelect = byId("sig-stage");
+      if (stageSelect) {
+        stageSelect.addEventListener("change", () => {
+          state.signalsFilter.stage = stageSelect.value;
+          loadSignalsQuery();
+        });
+      }
+      const typeSelect = byId("sig-type");
+      if (typeSelect) {
+        typeSelect.addEventListener("change", () => {
+          state.signalsFilter.type = typeSelect.value;
+          loadSignalsQuery();
+        });
+      }
+    }
+
+    const lateToggle = byId("sig-late-toggle");
+    if (lateToggle) {
+      lateToggle.addEventListener("change", () => {
+        state.signalsFilter.includeLate = lateToggle.checked;
+        const lateWrap = byId("signals-late-wrap");
+        if (lateWrap) lateWrap.hidden = !lateToggle.checked;
+      });
+    }
+
+    // Modal close listeners
+    const briefDone = byId("btn-brief-done");
+    if (briefDone) briefDone.addEventListener("click", () => byId("dlg-company-brief").close());
+    const briefClose = byId("btn-brief-close");
+    if (briefClose) briefClose.addEventListener("click", () => byId("dlg-company-brief").close());
+
+    // Brief tabs
+    const tabFacts = byId("tab-brief-facts");
+    const tabLearn = byId("tab-brief-learning");
+    if (tabFacts && tabLearn) {
+      tabFacts.addEventListener("click", () => {
+        tabFacts.classList.add("active");
+        tabFacts.setAttribute("aria-selected", "true");
+        tabLearn.classList.remove("active");
+        tabLearn.setAttribute("aria-selected", "false");
+        byId("pane-brief-facts").hidden = false;
+        byId("pane-brief-learning").hidden = true;
+      });
+      tabLearn.addEventListener("click", () => {
+        tabLearn.classList.add("active");
+        tabLearn.setAttribute("aria-selected", "true");
+        tabFacts.classList.remove("active");
+        tabFacts.setAttribute("aria-selected", "false");
+        byId("pane-brief-facts").hidden = true;
+        byId("pane-brief-learning").hidden = false;
+      });
+    }
+
+    // Contacts drawer close
+    const btnContactsClose = byId("btn-contacts-drawer-close");
+    if (btnContactsClose) btnContactsClose.addEventListener("click", () => byId("dlg-contacts-panel").close());
+
+    // Contacts actions
+    const btnCopyOutreach = byId("btn-copy-outreach");
+    if (btnCopyOutreach) {
+      btnCopyOutreach.addEventListener("click", () => {
+        const bodyText = byId("outreach-email-body").value;
+        const subjText = byId("outreach-email-subject").value;
+        const full = `Subject: ${subjText}\n\n${bodyText}`;
+        navigator.clipboard.writeText(full).then(() => toast("Copied email draft to clipboard."));
+      });
+    }
+
+    const btnMailto = byId("btn-mailto-outreach");
+    if (btnMailto) {
+      btnMailto.addEventListener("click", () => {
+        const bodyText = encodeURIComponent(byId("outreach-email-body").value);
+        const subjText = encodeURIComponent(byId("outreach-email-subject").value);
+        const toEmail = state.activeContacts && state.activeContacts[0] && state.activeContacts[0].email ? encodeURIComponent(state.activeContacts[0].email) : "";
+        window.location.href = `mailto:${toEmail}?subject=${subjText}&body=${bodyText}`;
+      });
+    }
+
+    const btnMarkSent = byId("btn-mark-sent-outreach");
+    if (btnMarkSent) {
+      btnMarkSent.addEventListener("click", onMarkSent);
+    }
+
+    const btnViewBrief = byId("btn-view-brief-from-contacts");
+    if (btnViewBrief) {
+      btnViewBrief.addEventListener("click", () => {
+        if (state.activeBrief) {
+          renderCompanyBriefModal(state.activeBrief);
+        }
+      });
+    }
+
+    const emailBodyInput = byId("outreach-email-body");
+    if (emailBodyInput) {
+      emailBodyInput.addEventListener("input", () => {
+        updateDraftMetersAndSlop();
+      });
+    }
+  }
+
+  async function loadSignalsQuery() {
+    const st = byId("signals-state");
+    if (st) st.innerHTML = `<div class="loading">${icon("loader-circle", "spin")}<span>Fetching fresh hiring & funding signals...</span></div>`;
+
+    try {
+      const q = state.signalsFilter.q || "";
+      const stage = state.signalsFilter.stage || "any";
+      const sigType = state.signalsFilter.type || "";
+
+      let path = "/api/signals?apply_filters=true&limit=150";
+      if (sigType) path += "&type=" + encodeURIComponent(sigType);
+
+      const res = await apiGet(path);
+      let list = (res && res.signals) || [];
+
+      if (q) {
+        const lq = q.toLowerCase();
+        list = list.filter((s) => (s.company || "").toLowerCase().includes(lq) || (s.role_guess || "").toLowerCase().includes(lq) || (s.text || "").toLowerCase().includes(lq));
+      }
+      if (stage && stage !== "any") {
+        list = list.filter((s) => (s.stage || "").toLowerCase().includes(stage.toLowerCase()));
+      }
+
+      state.signals = list;
+      state.signalsLoaded = true;
+      renderSignals();
+    } catch (e) {
+      if (st) st.innerHTML = `<div class="notice bad">${icon("triangle-alert")}<span>Could not load signals: ${esc(e.message)}</span></div>`;
+    }
+  }
+
+  function renderSignals() {
+    const freshList = byId("signals-fresh-list");
+    const lateList = byId("signals-late-list");
+    const st = byId("signals-state");
+    const countEl = byId("signals-count");
+    const banner = byId("banner-signals-usability");
+
+    if (!freshList) return;
+    freshList.innerHTML = "";
+    if (lateList) lateList.innerHTML = "";
+    if (st) st.innerHTML = "";
+
+    const all = state.signals || [];
+    const fresh = all.filter((s) => s.status !== "dismissed" && (s.is_fresh === 1 || s.is_fresh === true || s.status === "fresh" || s.freshness === "fresh"));
+    const late = all.filter((s) => s.status !== "dismissed" && !(s.is_fresh === 1 || s.is_fresh === true || s.status === "fresh" || s.freshness === "fresh"));
+
+    if (countEl) {
+      countEl.textContent = `${fresh.length} fresh signal${fresh.length === 1 ? "" : "s"}`;
+    }
+
+    if (banner) {
+      if (fresh.length > 0 && fresh.length < 10) {
+        banner.hidden = false;
+        byId("signals-usability-message").textContent = `Only ${fresh.length} fresh signal(s) match current filters. Consider including late signals or selecting "Any stage".`;
+        byId("signals-usability-actions").innerHTML = `<button class="btn btn-secondary btn-sm" type="button" id="btn-sig-include-late">Include late signals</button>`;
+        const btnInc = byId("btn-sig-include-late");
+        if (btnInc) btnInc.addEventListener("click", () => {
+          const t = byId("sig-late-toggle");
+          if (t) { t.checked = true; t.dispatchEvent(new Event("change")); }
+        });
+      } else if (fresh.length > 300) {
+        banner.hidden = false;
+        byId("signals-usability-message").textContent = `Over ${fresh.length} signals found. Consider filtering by target stage or specific role keywords.`;
+        byId("signals-usability-actions").innerHTML = "";
+      } else {
+        banner.hidden = true;
+      }
+    }
+
+    if (!fresh.length && !late.length) {
+      if (st) {
+        st.innerHTML = `<div class="empty">${icon("inbox", "icon-lg")}<h2>No signals match filters</h2><p>Radar is actively scanning Hacker News, Reddit, and Seed funding news. Try loosening stage or keyword filters.</p></div>`;
+      }
+      return;
+    }
+
+    fresh.forEach((sig) => {
+      freshList.appendChild(buildSignalCard(sig));
+    });
+
+    if (lateList) {
+      late.forEach((sig) => {
+        lateList.appendChild(buildSignalCard(sig, true));
+      });
+    }
+  }
+
+  function buildSignalCard(sig, isLate = false) {
+    const li = document.createElement("li");
+    li.className = "signal-card" + (isLate ? " signal-card-late" : "");
+    li.dataset.id = sig.id;
+
+    const sourceClass = sig.source === "HackerNews" ? "signal-source-hn" : sig.source === "Reddit" ? "signal-source-reddit" : "signal-source-funding";
+    const sourceLabel = sig.source === "HackerNews" ? "Hacker News" : sig.source === "Reddit" ? "Reddit Hiring" : "Seed Funding";
+
+    const score = typeof sig.score === "number" ? sig.score : 75;
+    const scoreClass = score >= 80 ? "signal-score-high" : score >= 60 ? "signal-score-mid" : "signal-score-low";
+
+    const timeStr = sig.posted_at ? daysAgo((Date.now() - new Date(sig.posted_at).getTime()) / (1000 * 3600 * 24)) : "recently";
+    const likesText = sig.likes > 0 ? `${sig.likes} like${sig.likes === 1 ? "" : "s"}` : "";
+
+    const reason = sig.match_reason || (sig.type === "funding" ? `Funded ${sig.funding_amount || "Seed"} round. Reaching founders early.` : `Fresh hiring post for ${sig.role_guess || "Engineering"}.`);
+
+    li.innerHTML = `
+      <div class="signal-card-header">
+        <span class="signal-source-badge ${sourceClass}">${icon("sparkles", "icon-xs")}${esc(sourceLabel)}</span>
+        <span class="signal-score-badge ${scoreClass}">${score}% Fit</span>
+      </div>
+      <div class="signal-title-group">
+        <h3 class="signal-company">${esc(sig.company || "Startup")}</h3>
+        <div class="signal-role">${esc(sig.role_guess || "Software Engineer")} ${sig.stage && sig.stage !== "any" ? `<span class="badge" style="font-size:10px">${esc(sig.stage)}</span>` : ""}</div>
+      </div>
+      <div class="signal-meta-line">
+        <span>${icon("clock", "icon-xs")}${esc(timeStr)}</span>
+        ${likesText ? `<span>&bull;</span><span>${esc(likesText)}</span>` : ""}
+        ${sig.url ? `<a href="${esc(sig.url)}" target="_blank" rel="noopener noreferrer" class="text-btn text-xs">${icon("external-link", "icon-xs")}Original</a>` : ""}
+      </div>
+      <div class="signal-reason-box">${esc(reason)}</div>
+      <p class="signal-snippet">${esc(sig.text || "")}</p>
+      <div class="signal-card-actions">
+        <button class="btn btn-quiet btn-sm" type="button" data-act="brief">${icon("file-text", "icon-sm")}Brief</button>
+        <div style="display:flex;gap:var(--s2)">
+          <button class="btn btn-quiet btn-sm" type="button" data-act="dismiss">Dismiss</button>
+          <button class="btn btn-primary btn-sm" type="button" data-act="save">${icon("bookmark", "icon-sm")}Save</button>
+        </div>
+      </div>
+    `;
+
+    li.querySelector('[data-act="save"]').addEventListener("click", () => onSaveSignal(sig));
+    li.querySelector('[data-act="dismiss"]').addEventListener("click", () => onDismissSignal(sig));
+    li.querySelector('[data-act="brief"]').addEventListener("click", () => openCompanyBrief(sig.company, sig.id));
+
+    return li;
+  }
+
+  async function onSaveSignal(sig) {
+    try {
+      toast("Researching company, finding decision makers, and drafting email...", { kind: "good" });
+      const res = await apiPost("/api/signals/save", {
+        signal_id: sig.id,
+        company: sig.company,
+        role: sig.role_guess,
+      });
+      state.activeBrief = res;
+      state.activeContacts = res.contacts || [];
+      state.activeOutreachDraft = res.email || {};
+
+      openContactsPanel(res, sig);
+    } catch (e) {
+      toast("Could not save signal: " + e.message, { kind: "bad" });
+    }
+  }
+
+  async function onDismissSignal(sig) {
+    try {
+      await apiPost("/api/signals/dismiss", { signal_id: sig.id, reason: "not_interested" });
+      state.signals = state.signals.filter((s) => s.id !== sig.id);
+      renderSignals();
+      toast(`Signal for ${sig.company} dismissed.`);
+    } catch (e) {
+      toast("Could not dismiss signal: " + e.message, { kind: "bad" });
+    }
+  }
+
+  /* ============================================================ CONTACTS & OUTREACH PANEL ============================================================ */
+  function openContactsPanel(data, sig) {
+    const dlg = byId("dlg-contacts-panel");
+    if (!dlg) return;
+
+    byId("contacts-company-badge").textContent = data.company || (sig && sig.company) || "Company";
+    byId("contacts-context-text").textContent = `Signal: ${data.role || (sig && sig.role_guess) || "Role"} at ${data.company || (sig && sig.company)}`;
+    const link = byId("contacts-context-link");
+    if (link && sig && sig.url) {
+      link.href = sig.url;
+      link.hidden = false;
+    } else if (link) {
+      link.hidden = true;
+    }
+
+    const cList = byId("contacts-list");
+    const countBadge = byId("contacts-count-badge");
+    cList.innerHTML = "";
+    const contacts = data.contacts || [];
+    countBadge.textContent = String(contacts.length);
+
+    if (!contacts.length) {
+      cList.innerHTML = `<p class="hint" style="grid-column:1/-1">No public email found. Use the alternative route (LinkedIn / Company careers page) to connect directly.</p>`;
+    } else {
+      contacts.slice(0, 3).forEach((c) => {
+        const card = document.createElement("div");
+        card.className = "contact-item-card";
+        const conf = c.confidence || "Guess";
+        const confBadge = conf === "Found" ? "badge-found" : conf === "Pattern" ? "badge-pattern" : "badge-guess";
+        card.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <span class="contact-name">${esc(c.name || "Hiring Manager")}</span>
+            <span class="badge ${confBadge}">${esc(conf)}</span>
+          </div>
+          <div class="contact-role">${esc(c.role || "Decision Maker")}</div>
+          <div class="contact-email">${c.email ? esc(c.email) : "<em class='mute'>No email found</em>"}</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:var(--s1);font-size:11px">
+            <span class="hint">${esc(c.source === "hunter" ? "Hunter API" : "Public Page")} ${c.verified_mx ? "• MX verified" : ""}</span>
+            ${c.profile_url ? `<a href="${esc(c.profile_url)}" target="_blank" rel="noopener noreferrer" class="text-btn text-xs">Profile</a>` : ""}
+          </div>
+        `;
+        cList.appendChild(card);
+      });
+    }
+
+    const emailData = data.email || {};
+    byId("outreach-email-subject").value = emailData.subject || `Inquiry regarding ${data.role || "role"} at ${data.company}`;
+    byId("outreach-email-body").value = emailData.body || "";
+
+    const resumeData = data.resume || {};
+    byId("job-resume-filename").textContent = resumeData.pdf_filename || `${data.company}_Resume.pdf`;
+    byId("job-resume-meta").textContent = `Size: ${Math.round((resumeData.pdf_size_bytes || 85000) / 1024)} KB. 1-page PDF grounded in your master resume facts.`;
+    const btnResumePdf = byId("btn-open-resume-pdf");
+    if (btnResumePdf) {
+      btnResumePdf.onclick = () => {
+        if (resumeData.pdf_path) {
+          toast(`Resume saved at: ${resumeData.pdf_path}`);
+        } else {
+          toast("Job resume generated in outputs/ folder.");
+        }
+      };
+    }
+
+    updateCapIndicator();
+    updateDraftMetersAndSlop();
+
+    if (!dlg.open) dlg.showModal();
+  }
+
+  function checkSlop(text, subject) {
+    const flags = [];
+    const t = (text || "").toLowerCase();
+
+    const bannedOpeners = [
+      "hope this email finds you well",
+      "hope you are doing well",
+      "came across your profile",
+      "allow me to introduce myself",
+      "my name is"
+    ];
+    for (const b of bannedOpeners) {
+      if (t.includes(b)) flags.push(`Banned opener: "${b}"`);
+    }
+
+    const buzzwords = ["passionate", "synergy", "dynamic", "rockstar", "ninja", "leverage", "deeply inspired"];
+    for (const b of buzzwords) {
+      if (t.includes(b)) flags.push(`Banned buzzword: "${b}"`);
+    }
+
+    if (text.includes("—") || text.includes("--")) flags.push("Em dashes are prohibited. Use clear sentences.");
+    if (text.includes("!")) flags.push("Exclamation marks are prohibited. Keep tone grounded.");
+    if (/\p{Extended_Pictographic}/u.test(text)) flags.push("Emojis are prohibited.");
+
+    const words = (text || "").trim().split(/\s+/).filter(Boolean).length;
+    if (words > 80) flags.push(`Too long: ${words} words (maximum is 80 words).`);
+    else if (words < 40 && words > 0) flags.push(`Too short: ${words} words (minimum is 40 words).`);
+
+    const lines = (text || "").trim().split("\n").filter((l) => l.trim().length > 0).length;
+    if (lines > 4) flags.push(`Too many lines: ${lines} lines (target is 3-4 lines).`);
+
+    const subjWords = (subject || "").trim().split(/\s+/).filter(Boolean).length;
+    if (subjWords > 6) flags.push(`Subject line is ${subjWords} words (must be under 6 words).`);
+
+    return flags;
+  }
+
+  function updateDraftMetersAndSlop() {
+    const text = byId("outreach-email-body").value;
+    const subject = byId("outreach-email-subject").value;
+    const words = (text || "").trim().split(/\s+/).filter(Boolean).length;
+    const lines = (text || "").trim().split("\n").filter((l) => l.trim().length > 0).length;
+
+    const wEl = byId("meter-words");
+    const lEl = byId("meter-lines");
+    if (wEl) wEl.textContent = `${words} words (target: 40-80)`;
+    if (lEl) lEl.textContent = `${lines} lines (target: 3-4)`;
+
+    const flags = checkSlop(text, subject);
+    const box = byId("banner-slop-warning");
+    const list = byId("slop-flag-list");
+    if (box && list) {
+      if (flags.length > 0) {
+        list.innerHTML = flags.map((f) => `<li>${esc(f)}</li>`).join("");
+        box.hidden = false;
+      } else {
+        box.hidden = true;
+      }
+    }
+  }
+
+  async function updateCapIndicator() {
+    try {
+      const today = await apiGet("/api/outreach/today");
+      state.outreachToday = today || { sent_today: 0, daily_cap: 20, remaining: 20 };
+      const capEl = byId("drawer-cap-text");
+      if (capEl) capEl.textContent = `Sent today: ${state.outreachToday.sent_today || 0} / ${state.outreachToday.daily_cap || 20}`;
+      const metSent = byId("metric-sent-today");
+      if (metSent) metSent.textContent = String(state.outreachToday.sent_today || 0);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  async function onMarkSent() {
+    const contact = (state.activeContacts && state.activeContacts[0]) || {};
+    const company = (state.activeBrief && state.activeBrief.company) || "Company";
+    const role = (state.activeBrief && state.activeBrief.role) || "Software Engineer";
+
+    const payload = {
+      contact_id: contact.id || 0,
+      company: company,
+      role: role,
+      subject: byId("outreach-email-subject").value,
+      body: byId("outreach-email-body").value,
+      attachment_path: (state.activeBrief && state.activeBrief.resume && state.activeBrief.resume.pdf_path) || "",
+    };
+
+    try {
+      const res = await apiPost("/api/outreach/mark_sent", payload);
+      if (res.status === "queued" || res.queued) {
+        toast(`Daily cap reached. Draft added to tomorrow's queue.`, { kind: "bad" });
+      } else {
+        toast(`Sent logged! Follow-up reminder set for ${res.follow_up_due || "4 days from now"}.`, { kind: "good" });
+      }
+      byId("dlg-contacts-panel").close();
+      updateCapIndicator();
+    } catch (e) {
+      toast("Could not log sent outreach: " + e.message, { kind: "bad" });
+    }
+  }
+
+  /* ============================================================ COMPANY BRIEF & LEARNING PACK ============================================================ */
+  function renderCompanyBriefModal(data) {
+    const dlg = byId("dlg-company-brief");
+    if (!dlg) return;
+
+    const brief = data.brief || {};
+    const pack = data.learning_pack || {};
+
+    byId("brief-dialog-title").textContent = data.company || brief.company || "Company Research";
+    byId("brief-company-sub").textContent = `Factual background & call preparation package`;
+
+    byId("brief-what-they-do").textContent = brief.what_they_do || "No public data found.";
+    renderCitationLink("brief-src-what", (brief.sources || [])[0]);
+
+    byId("brief-business-model").textContent = brief.business_model || "Not specified in public sources.";
+    renderCitationLink("brief-src-biz", (brief.sources || [])[1] || (brief.sources || [])[0]);
+
+    byId("brief-tech-stack").textContent = brief.tech_stack || "No public tech stack disclosed.";
+    renderCitationLink("brief-src-tech", (brief.sources || [])[0]);
+
+    byId("brief-recent-news").textContent = brief.recent_news || "No recent funding or expansion news found.";
+    renderCitationLink("brief-src-news", (brief.sources || [])[0]);
+
+    const qList = byId("pack-questions");
+    const questions = pack.smart_questions || [];
+    qList.innerHTML = questions.length ? questions.map((q) => `<li>${esc(q)}</li>`).join("") : "<li>No questions generated.</li>";
+
+    const gList = byId("pack-gaps");
+    const gaps = pack.skill_gaps || [];
+    gList.innerHTML = gaps.length ? gaps.map((g) => `<li><strong>${esc(g.skill || g)}</strong>: ${g.study_resource ? `<a href="${esc(g.study_resource.includes("http") ? g.study_resource : "https://" + g.study_resource)}" target="_blank" rel="noopener noreferrer">${esc(g.study_resource)}</a>` : "Self-study documentation"}</li>`).join("") : "<li>No significant skill gaps identified.</li>";
+
+    const tpList = byId("pack-talking-points");
+    const points = pack.talking_points || [];
+    tpList.innerHTML = points.length ? points.map((p) => `<li>${esc(p)}</li>`).join("") : "<li>Connect candidate achievements with role description.</li>";
+
+    const sBox = byId("pack-summary");
+    const summary = pack.summary_5_lines || [];
+    sBox.innerHTML = Array.isArray(summary) ? summary.map((s) => `<p style="margin:4px 0">${esc(s)}</p>`).join("") : `<p>${esc(summary)}</p>`;
+
+    if (!dlg.open) dlg.showModal();
+  }
+
+  function renderCitationLink(containerId, url) {
+    const el = byId(containerId);
+    if (!el) return;
+    if (url) {
+      el.innerHTML = `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="text-btn text-xs">${icon("external-link", "icon-xs")}${esc(url)}</a>`;
+    } else {
+      el.innerHTML = `<span class="hint" style="font-size:11px">Source: Verified public registry</span>`;
+    }
+  }
+
+  async function openCompanyBrief(company, signalId) {
+    try {
+      const res = await apiGet(`/api/briefs?company=${encodeURIComponent(company)}&signal_id=${encodeURIComponent(signalId || "")}`);
+      if (res && res.brief) {
+        renderCompanyBriefModal(res);
+      } else {
+        const genRes = await apiPost("/api/signals/save", { signal_id: signalId, company: company });
+        renderCompanyBriefModal(genRes);
+      }
+    } catch (e) {
+      toast("Could not load company brief: " + e.message, { kind: "bad" });
+    }
+  }
+
+  /* ============================================================ OUTREACH DASHBOARD & FOLLOW-UPS ============================================================ */
+  let outreachInit = false;
+
+  function initOutreach() {
+    if (outreachInit) return;
+    outreachInit = true;
+
+    const btnRep = byId("btn-view-weekly-report");
+    if (btnRep) btnRep.addEventListener("click", openWeeklyReportModal);
+
+    const btnRepClose = byId("btn-report-close");
+    if (btnRepClose) btnRepClose.addEventListener("click", () => byId("dlg-weekly-report").close());
+    const btnRepDone = byId("btn-report-done");
+    if (btnRepDone) btnRepDone.addEventListener("click", () => byId("dlg-weekly-report").close());
+
+    const btnFollowupCancel = byId("btn-followup-cancel");
+    if (btnFollowupCancel) btnFollowupCancel.addEventListener("click", () => byId("dlg-followup-draft").close());
+
+    const btnReplyCancel = byId("btn-reply-cancel");
+    if (btnReplyCancel) btnReplyCancel.addEventListener("click", () => byId("dlg-reply-record").close());
+  }
+
+  async function loadOutreachData() {
+    try {
+      const [today, queue, report] = await Promise.all([
+        apiGet("/api/outreach/today"),
+        apiGet("/api/outreach/queue"),
+        apiGet("/api/outreach/report"),
+      ]);
+
+      state.outreachToday = today || { sent_today: 0, daily_cap: 20, entries: [] };
+      state.outreachQueue = (queue && queue.queue) || [];
+      state.weeklyReport = (report && report.weekly_report) || {};
+
+      renderOutreach();
+    } catch (e) {
+      console.warn("Could not load outreach data:", e);
+    }
+  }
+
+  function renderOutreach() {
+    const entries = (state.outreachToday && state.outreachToday.entries) || [];
+    const queue = state.outreachQueue || [];
+    const report = state.weeklyReport || {};
+
+    byId("metric-sent-today").textContent = String(state.outreachToday.sent_today || 0);
+    byId("metric-queue-count").textContent = String(queue.length);
+    byId("metric-reply-rate").textContent = `${report.reply_rate_pct != null ? report.reply_rate_pct : 0}%`;
+
+    const now = Date.now();
+    const followupsDue = entries.filter((e) => {
+      if (e.status !== "sent") return false;
+      if (e.follow_up_due && new Date(e.follow_up_due).getTime() <= now) return true;
+      if (e.sent_at) {
+        const sentTime = new Date(e.sent_at).getTime();
+        return (now - sentTime) >= (4 * 24 * 3600 * 1000);
+      }
+      return false;
+    });
+
+    byId("metric-followups-count").textContent = String(followupsDue.length);
+    byId("badge-followup-count").textContent = String(followupsDue.length);
+
+    const fList = byId("followup-list");
+    if (fList) {
+      fList.innerHTML = "";
+      if (!followupsDue.length) {
+        fList.innerHTML = `<li class="hint" style="padding:var(--s2) 0">No follow-ups due right now. The MCP flags contacts after 4 days without a reply.</li>`;
+      } else {
+        followupsDue.forEach((f) => {
+          const li = document.createElement("li");
+          li.className = "followup-card";
+          li.innerHTML = `
+            <div class="followup-meta">
+              <strong>${esc(f.company)} — ${esc(f.role || "Role")}</strong>
+              <span>Sent ${daysAgo((now - new Date(f.sent_at).getTime()) / (1000 * 3600 * 24))} &bull; ${esc(f.subject || "")}</span>
+            </div>
+            <div class="followup-actions">
+              <button class="btn btn-secondary btn-sm" type="button" data-act="draft-nudge">${icon("mail", "icon-sm")}Draft follow-up</button>
+              <button class="btn btn-quiet btn-sm" type="button" data-act="log-reply">${icon("check", "icon-sm")}Log reply</button>
+            </div>
+          `;
+          li.querySelector('[data-act="draft-nudge"]').addEventListener("click", () => openFollowupDraft(f));
+          li.querySelector('[data-act="log-reply"]').addEventListener("click", () => openReplyModal(f));
+          fList.appendChild(li);
+        });
+      }
+    }
+
+    const qList = byId("queue-list");
+    const qBadge = byId("badge-queue-count");
+    if (qBadge) qBadge.textContent = String(queue.length);
+    if (qList) {
+      qList.innerHTML = "";
+      if (!queue.length) {
+        qList.innerHTML = `<li class="hint" style="padding:var(--s2) 0">No queued drafts. The queue holds emails when the 20-per-day cap is reached.</li>`;
+      } else {
+        queue.forEach((q) => {
+          const li = document.createElement("li");
+          li.className = "queue-card";
+          li.innerHTML = `
+            <div class="followup-meta">
+              <strong>${esc(q.company)} — ${esc(q.role || "Role")}</strong>
+              <span>Queued for tomorrow &bull; Subject: ${esc(q.subject || "")}</span>
+            </div>
+            <div class="followup-actions">
+              <span class="badge badge-accent">Queued</span>
+            </div>
+          `;
+          qList.appendChild(li);
+        });
+      }
+    }
+
+    const tbody = byId("outreach-tbody");
+    if (tbody) {
+      tbody.innerHTML = "";
+      if (!entries.length) {
+        tbody.innerHTML = `<tr><td colspan="6" class="hint" style="text-align:center;padding:var(--s4)">No outreach recorded yet. Save a signal to draft and send your first message.</td></tr>`;
+      } else {
+        entries.slice(0, 25).forEach((e) => {
+          const tr = document.createElement("tr");
+          const dateStr = e.sent_at ? new Date(e.sent_at).toLocaleDateString() : "Draft";
+          const statusBadge = e.status === "sent" ? "badge-ok" : e.status === "replied" ? "badge-found" : "badge";
+          tr.innerHTML = `
+            <td><strong>${esc(e.contact_name || "Decision Maker")}</strong></td>
+            <td>${esc(e.company)} (${esc(e.role || "")})</td>
+            <td>${esc(dateStr)}</td>
+            <td><span class="badge" style="font-size:11px">${esc(e.channel || "email")}</span></td>
+            <td><span class="badge ${statusBadge}">${esc(e.status)}</span></td>
+            <td>
+              ${e.status === "sent" ? `<button class="text-btn text-xs" data-act="reply" type="button">Log reply</button>` : ""}
+            </td>
+          `;
+          const replyBtn = tr.querySelector('[data-act="reply"]');
+          if (replyBtn) replyBtn.addEventListener("click", () => openReplyModal(e));
+          tbody.appendChild(tr);
+        });
+      }
+    }
+  }
+
+  function openFollowupDraft(entry) {
+    const dlg = byId("dlg-followup-draft");
+    if (!dlg) return;
+
+    byId("followup-contact-info").textContent = `To: ${entry.company} regarding ${entry.role || "the role"}`;
+    const nudge = `Hi ${entry.company},\nFollowing up briefly on my earlier note regarding the ${entry.role || "engineering"} post. Still very interested if you are open to a brief chat next week.\n`;
+    byId("followup-body").value = nudge;
+
+    byId("btn-followup-copy").onclick = () => {
+      navigator.clipboard.writeText(byId("followup-body").value).then(() => toast("Follow-up copied to clipboard."));
+    };
+    byId("btn-followup-mailto").onclick = () => {
+      const b = encodeURIComponent(byId("followup-body").value);
+      const s = encodeURIComponent(`Following up: ${entry.subject || "Quick note"}`);
+      window.location.href = `mailto:?subject=${s}&body=${b}`;
+    };
+
+    if (!dlg.open) dlg.showModal();
+  }
+
+  function openReplyModal(entry) {
+    const dlg = byId("dlg-reply-record");
+    if (!dlg) return;
+
+    byId("reply-contact-info").textContent = `Company: ${entry.company}`;
+    byId("reply-callprep-result").hidden = true;
+
+    const chips = byId("reply-chips");
+    chips.onclick = async (e) => {
+      const btn = e.target.closest("[data-reply]");
+      if (!btn) return;
+      const rType = btn.dataset.reply;
+      try {
+        const res = await apiPost("/api/outreach/reply", { outreach_id: entry.id, reply_status: rType });
+        if (res && res.call_prep_pack) {
+          const pack = res.call_prep_pack;
+          const prepDiv = byId("reply-prep-content");
+          prepDiv.innerHTML = `
+            <div><strong>Company:</strong> ${esc(pack.company || entry.company)}</div>
+            <div><strong>Smart questions:</strong></div>
+            <ul style="margin:0;padding-left:var(--s4)">${(pack.smart_questions || []).map((q) => `<li>${esc(q)}</li>`).join("")}</ul>
+            <div style="margin-top:var(--s2)"><strong>Talking points:</strong></div>
+            <ul style="margin:0;padding-left:var(--s4)">${(pack.talking_points || []).map((p) => `<li>${esc(p)}</li>`).join("")}</ul>
+          `;
+          byId("reply-callprep-result").hidden = false;
+        } else {
+          toast("Reply status recorded.", { kind: "good" });
+          dlg.close();
+        }
+        loadOutreachData();
+      } catch (err) {
+        toast("Could not log reply: " + err.message, { kind: "bad" });
+      }
+    };
+
+    if (!dlg.open) dlg.showModal();
+  }
+
+  function openWeeklyReportModal() {
+    const dlg = byId("dlg-weekly-report");
+    if (!dlg) return;
+
+    const rep = state.weeklyReport || {};
+    byId("weekly-report-period").textContent = rep.period || "Last 7 days";
+    byId("rep-sent").textContent = String(rep.total_sent || 0);
+    byId("rep-replies").textContent = String(rep.total_replies || 0);
+    byId("rep-rate").textContent = `${rep.reply_rate_pct != null ? rep.reply_rate_pct : 0}%`;
+
+    const sList = byId("rep-sources");
+    if (sList) {
+      sList.innerHTML = Object.entries(rep.by_source || {}).map(([src, d]) => `<li><strong>${esc(src)}</strong>: ${d.sent || 0} sent, ${d.replies || 0} replies (${d.reply_rate_pct || 0}%)</li>`).join("") || "<li>No source breakdown yet.</li>";
+    }
+
+    const aList = byId("rep-attachments");
+    if (aList) {
+      aList.innerHTML = Object.entries(rep.by_attachment || {}).map(([att, d]) => `<li><strong>${esc(att.replace(/_/g, " "))}</strong>: ${d.sent || 0} sent, ${d.replies || 0} replies (${d.reply_rate_pct || 0}%)</li>`).join("") || "<li>No attachment breakdown yet.</li>";
+    }
+
+    byId("rep-suggested-change").textContent = rep.suggested_change || "Maintain high personalized outreach tempo.";
+
+    if (!dlg.open) dlg.showModal();
+  }
+
+  routeHooks.signals = (arg, changed) => {
+    initSignals();
+    if (changed) {
+      setHead("Signals", PAGES.signals.sub, "");
+      loadSignalsQuery();
+    }
+  };
+
+  routeHooks.outreach = (arg, changed) => {
+    initOutreach();
+    if (changed) {
+      setHead("Outreach", PAGES.outreach.sub, "");
+      loadOutreachData();
+    }
+  };
+
   /* ============================================================ APPLICATIONS */
   const pageActionHandlers = {};
   byId("page-actions").addEventListener("click", (e) => {
@@ -981,21 +2594,231 @@
   }
 
   function appCardHtml(a) {
-    const hasTailored = Boolean(a.tailored_resume || a.cover_letter);
+    const hasTailored = Boolean(a.tailored_resume || a.cover_letter || a.tailored_resume_text || a.cover_letter_text || a.resume_path);
+    const scoreVal = a.fit_score || a.score || 0;
+    const tier = tierOf(scoreVal);
+    const fitBadge = scoreVal > 0
+      ? `<span class="score" data-tier="${tier}">${Math.round(scoreVal)}% fit</span>`
+      : "";
+
     const tailoredBadge = hasTailored
-      ? `<span class="badge" title="Tailored resume and cover letter ready">${icon("file-text", "icon-sm")} Tailored Ready</span>`
-      : (a.status === "saved" ? `<span class="badge" style="opacity:0.75" title="Tailoring in background...">${icon("refresh-cw", "icon-sm")} Tailoring...</span>` : "");
+      ? `<span class="badge badge-accent" title="Tailored resume and cover letter ready">${icon("file-text", "icon-sm")} Tailored Ready</span>`
+      : (a.status === "saved" ? `<span class="badge" style="opacity:0.75" title="Tailoring in background...">${icon("refresh-cw", "icon-sm spin")} Tailoring...</span>` : "");
+
+    const isSavedLane = a.status === "saved";
+    const reviewBtn = isSavedLane
+      ? `<button class="btn btn-secondary btn-sm" type="button" data-act="review-studio" data-id="${esc(a.id)}">${icon("file-text", "icon-sm")}<span>Review Studio</span></button>`
+      : (hasTailored ? `<button class="btn btn-quiet btn-sm" type="button" data-act="review-studio" data-id="${esc(a.id)}">${icon("file-text", "icon-sm")}<span>Docs</span></button>` : "");
+
+    const applyExtBtn = (isSavedLane || a.status === "queued") && a.url
+      ? `<button class="btn btn-primary btn-sm" type="button" data-act="apply-ext" data-id="${esc(a.id)}">${icon("send", "icon-sm")}<span>Apply</span></button>`
+      : "";
+
     return `<article class="app-card" draggable="true" data-id="${esc(a.id)}">
-      <div class="app-title" dir="auto">${esc(a.title || "Untitled role")}</div>
+      <div class="jc-top" style="margin-block-end:var(--s1)">
+        <div class="app-title" dir="auto">${esc(a.title || "Untitled role")}</div>
+        ${fitBadge}
+      </div>
       <div class="app-co" dir="auto">${esc(a.company || "Company not listed")}</div>
       ${tailoredBadge ? `<div style="margin-block:var(--s1)">${tailoredBadge}</div>` : ""}
       ${noteHtml(a.notes)}
       <div class="app-actions">
         <span class="menu-wrap"><button class="btn btn-secondary btn-sm" type="button" data-move aria-haspopup="menu" aria-expanded="false">Move to${icon("chevron-down", "icon-sm")}</button></span>
-        ${hasTailored ? `<button class="btn btn-quiet btn-sm" type="button" data-view-tailored="${esc(a.id)}">${icon("file-text", "icon-sm")}<span>Docs</span></button>` : ""}
+        ${reviewBtn}
+        ${applyExtBtn}
         ${a.url ? `<span class="grow"><a class="btn btn-quiet btn-sm btn-icon" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" aria-label="Open posting for ${esc(a.title || "this role")}">${icon("external-link", "icon-sm")}</a></span>` : ""}
       </div>
     </article>`;
+  }
+
+  /* ------------------------------------------------------------ V5 Human Review Studio */
+  let activeStudioApp = null;
+  let activeStudioDocTab = "resume";
+  let studioIsEditing = false;
+
+  function openReviewStudio(appId) {
+    const a = state.apps.find((x) => String(x.id) === String(appId));
+    if (!a) return;
+    activeStudioApp = a;
+    studioIsEditing = false;
+    activeStudioDocTab = "resume";
+
+    const dlg = byId("dlg-review-studio");
+    if (!dlg) return;
+
+    byId("studio-title").textContent = `${a.title || "Untitled role"} at ${a.company || "Company"}`;
+    byId("studio-sub").textContent = [a.location, a.salary, a.url ? "Employer site" : ""].filter(Boolean).join(" • ");
+
+    const scoreVal = a.fit_score || a.score || 0;
+    const gaugeEl = byId("studio-fit-gauge");
+    const gaugeVal = byId("studio-fit-val");
+    if (gaugeVal) gaugeVal.textContent = `${Math.round(scoreVal)}%`;
+    if (gaugeEl) gaugeEl.style.borderColor = scoreVal >= 80 ? "var(--good)" : "var(--accent)";
+
+    const jd = a.job_data || {};
+    const postBody = byId("studio-post-body");
+    const postMeta = byId("studio-post-meta");
+    if (postMeta) postMeta.textContent = a.location || "Full-time";
+
+    let postHtml = "";
+    if (jd.description || a.description) {
+      const desc = jd.description || a.description;
+      const matched = jd.matched_skills || profileTerms();
+      postHtml = markText(desc, matched).html;
+    } else {
+      postHtml = `<p class="mute">No description stored for this posting. Open the original link to review.</p>`;
+    }
+    if (postBody) postBody.innerHTML = postHtml;
+
+    const docTabs = byId("studio-doc-tabs");
+    if (docTabs) {
+      $$("button[data-doc-tab]", docTabs).forEach((b) => b.setAttribute("aria-selected", String(b.dataset.docTab === activeStudioDocTab)));
+    }
+
+    renderStudioDoc();
+
+    const btnSaveEdit = byId("btn-studio-save-edit");
+    if (btnSaveEdit) btnSaveEdit.hidden = true;
+    const lblEdit = byId("lbl-studio-edit");
+    if (lblEdit) lblEdit.textContent = "Edit draft";
+
+    dlg.showModal();
+  }
+
+  function getStudioDocContent() {
+    if (!activeStudioApp) return "";
+    const a = activeStudioApp;
+    if (activeStudioDocTab === "resume") {
+      return a.tailored_resume_text || (typeof a.tailored_resume === "string" ? a.tailored_resume : JSON.stringify(a.tailored_resume || {}, null, 2)) || "No tailored resume generated yet.";
+    } else {
+      return a.cover_letter_text || a.cover_letter || "No cover letter generated yet.";
+    }
+  }
+
+  function renderStudioDoc() {
+    const content = getStudioDocContent();
+    const previewEl = byId("studio-doc-preview");
+    const editorEl = byId("studio-doc-editor");
+
+    if (studioIsEditing) {
+      if (previewEl) previewEl.hidden = true;
+      if (editorEl) {
+        editorEl.hidden = false;
+        editorEl.value = content;
+        editorEl.focus();
+      }
+    } else {
+      if (editorEl) editorEl.hidden = true;
+      if (previewEl) {
+        previewEl.hidden = false;
+        const terms = profileTerms();
+        previewEl.innerHTML = markText(content, terms).html;
+      }
+    }
+  }
+
+  async function onStudioSaveEdit() {
+    if (!activeStudioApp) return;
+    const editorEl = byId("studio-doc-editor");
+    if (!editorEl) return;
+    const newText = editorEl.value;
+    const a = activeStudioApp;
+    if (activeStudioDocTab === "resume") {
+      a.tailored_resume_text = newText;
+    } else {
+      a.cover_letter_text = newText;
+      a.cover_letter = newText;
+    }
+    try {
+      await apiPost("/api/applications", {
+        id: a.id,
+        cover_letter: a.cover_letter_text,
+        job_data: a.job_data
+      });
+      toast("Saved draft edits.");
+      studioIsEditing = false;
+      const btnSave = byId("btn-studio-save-edit");
+      if (btnSave) btnSave.hidden = true;
+      const lblEdit = byId("lbl-studio-edit");
+      if (lblEdit) lblEdit.textContent = "Edit draft";
+      renderStudioDoc();
+    } catch (e) {
+      toast("Could not save edits: " + e.message, { kind: "bad" });
+    }
+  }
+
+  async function onStudioAccept() {
+    if (!activeStudioApp) return;
+    const a = activeStudioApp;
+    try {
+      a.review_approved = true;
+      a.notes = (a.notes ? a.notes + "\n" : "") + "[Review Approved] Tailored materials accepted by user.";
+      await apiPost("/api/applications", {
+        id: a.id,
+        notes: a.notes,
+        status: a.status
+      });
+      toast("Tailored materials approved for use! Ready to apply with extension.");
+      const dlg = byId("dlg-review-studio");
+      if (dlg) dlg.close();
+      renderApps();
+    } catch (e) {
+      toast("Error accepting draft: " + e.message, { kind: "bad" });
+    }
+  }
+
+  function onStudioReject() {
+    const rejectDlg = byId("dlg-reject-feedback");
+    if (rejectDlg) {
+      const txt = byId("reject-feedback-text");
+      if (txt) txt.value = "";
+      rejectDlg.showModal();
+    }
+  }
+
+  async function onConfirmReject() {
+    const rejectDlg = byId("dlg-reject-feedback");
+    if (rejectDlg) rejectDlg.close();
+    if (!activeStudioApp) return;
+    const txt = byId("reject-feedback-text");
+    const feedback = (txt && txt.value ? txt.value : "Draft rejected during human review").trim();
+    const a = activeStudioApp;
+    try {
+      a.notes = (a.notes ? a.notes + "\n" : "") + `[Review Rejected] ${feedback}`;
+      await apiPost("/api/applications", {
+        id: a.id,
+        notes: a.notes
+      });
+      toast("Rejection logged with feedback. You can regenerate or edit.");
+      const dlg = byId("dlg-review-studio");
+      if (dlg) dlg.close();
+      renderApps();
+    } catch (e) {
+      toast("Could not log rejection: " + e.message, { kind: "bad" });
+    }
+  }
+
+  async function onApplyWithExtension(appId) {
+    const a = state.apps.find((x) => String(x.id) === String(appId || (activeStudioApp && activeStudioApp.id)));
+    if (!a || !a.url) {
+      toast("No posting link available to apply.", { kind: "bad" });
+      return;
+    }
+    try {
+      toast("Opening posting with extension. Matching fields from approved profile...", { kind: "info" });
+      await apiPost("/api/auto-apply/launch", { url: a.url });
+
+      if (a.status === "saved") {
+        await moveApp(a.id, "queued", true);
+      }
+      toast("Extension launched. Fields filled automatically (user submits manually per Rule 8).", {
+        action: { label: "View", run: () => go("applications") }
+      });
+      const studioDlg = byId("dlg-review-studio");
+      if (studioDlg && studioDlg.open) studioDlg.close();
+    } catch (e) {
+      toast("Could not launch extension: " + e.message, { kind: "bad" });
+    }
   }
 
   function renderApps() {
@@ -1159,6 +2982,16 @@
     });
 
     byId("board").addEventListener("click", (e) => {
+      const rs = e.target.closest("[data-act='review-studio']");
+      if (rs) {
+        openReviewStudio(rs.dataset.id);
+        return;
+      }
+      const ap = e.target.closest("[data-act='apply-ext']");
+      if (ap) {
+        onApplyWithExtension(ap.dataset.id);
+        return;
+      }
       const v = e.target.closest("[data-view-tailored]");
       if (v) {
         const id = v.dataset.viewTailored;
@@ -1192,6 +3025,55 @@
           .finally(() => l.removeAttribute("aria-busy"));
       }
     });
+
+    // Human Review Studio wire-up
+    const studioDlg = byId("dlg-review-studio");
+    if (studioDlg) {
+      closeOnBackdrop(studioDlg);
+      const btnClose = byId("btn-studio-close");
+      if (btnClose) btnClose.addEventListener("click", () => studioDlg.close());
+      const btnAccept = byId("btn-studio-accept");
+      if (btnAccept) btnAccept.addEventListener("click", onStudioAccept);
+      const btnReject = byId("btn-studio-reject");
+      if (btnReject) btnReject.addEventListener("click", onStudioReject);
+      const btnApply = byId("btn-studio-apply");
+      if (btnApply) btnApply.addEventListener("click", () => onApplyWithExtension());
+
+      const docTabs = byId("studio-doc-tabs");
+      if (docTabs) {
+        docTabs.addEventListener("click", (e) => {
+          const btn = e.target.closest("button[data-doc-tab]");
+          if (!btn) return;
+          activeStudioDocTab = btn.dataset.docTab;
+          $$("button[data-doc-tab]", docTabs).forEach((b) => b.setAttribute("aria-selected", String(b === btn)));
+          renderStudioDoc();
+        });
+      }
+
+      const btnToggleEdit = byId("btn-studio-toggle-edit");
+      if (btnToggleEdit) {
+        btnToggleEdit.addEventListener("click", () => {
+          studioIsEditing = !studioIsEditing;
+          const btnSave = byId("btn-studio-save-edit");
+          if (btnSave) btnSave.hidden = !studioIsEditing;
+          const lbl = byId("lbl-studio-edit");
+          if (lbl) lbl.textContent = studioIsEditing ? "Cancel edit" : "Edit draft";
+          renderStudioDoc();
+        });
+      }
+
+      const btnSaveEdit = byId("btn-studio-save-edit");
+      if (btnSaveEdit) btnSaveEdit.addEventListener("click", onStudioSaveEdit);
+    }
+
+    const rejectDlg = byId("dlg-reject-feedback");
+    if (rejectDlg) {
+      closeOnBackdrop(rejectDlg);
+      const btnCancel = byId("btn-reject-cancel");
+      if (btnCancel) btnCancel.addEventListener("click", () => rejectDlg.close());
+      const btnConfirm = byId("btn-reject-confirm");
+      if (btnConfirm) btnConfirm.addEventListener("click", onConfirmReject);
+    }
 
     byId("closed-list").addEventListener("click", (e) => {
       const b = e.target.closest("[data-reopen]");
@@ -2173,7 +4055,7 @@
       const k = e.key;
       if (gPending) {
         gPending = false;
-        const map = { j: "jobs", a: "applications", d: "documents", r: "resume", s: "settings" };
+        const map = { j: "jobs", a: "applications", d: "documents", r: "resume", s: (state.method === "modern" ? "signals" : "settings"), o: "outreach", i: "signals" };
         if (map[k]) { e.preventDefault(); go(map[k]); }
         return;
       }
@@ -2192,13 +4074,75 @@
     initTheme();
     initFileDrop();
     initShortcuts();
-    closeOnBackdrop(byId("dlg-confirm"));
-    closeOnBackdrop(byId("dlg-keys"));
+    initMethod();
+    initSignals();
+    initOutreach();
+    [byId("dlg-confirm"), byId("dlg-keys"), byId("dlg-contacts-panel"), byId("dlg-company-brief"), byId("dlg-method-onboarding"), byId("dlg-followup-draft"), byId("dlg-reply-record"), byId("dlg-weekly-report")].forEach(d => { if (d) closeOnBackdrop(d); });
     byId("btn-shortcuts").addEventListener("click", () => byId("dlg-keys").showModal());
     byId("btn-launch-browser").addEventListener("click", (e) => launchBrowser(e.currentTarget));
     byId("job-state").addEventListener("click", () => {});
+    
+    // V5 Header Radar and Lifecycle listeners
+    const radarBtn = byId("btn-radar-header");
+    if (radarBtn) radarBtn.addEventListener("click", onRadarHeaderClick);
+    const keepBtn = byId("btn-lifecycle-keep");
+    if (keepBtn) keepBtn.addEventListener("click", onKeepExpiringJobs);
+    const ackBtn = byId("btn-lifecycle-ack");
+    if (ackBtn) ackBtn.addEventListener("click", onAckLifecycleBanner);
+    const reviewBtn = byId("btn-lifecycle-review");
+    if (reviewBtn) reviewBtn.addEventListener("click", () => {
+      const closingWrap = byId("closing-soon-wrap");
+      if (closingWrap) {
+        closingWrap.open = true;
+        closingWrap.scrollIntoView({ behavior: "smooth" });
+      }
+    });
+
+    // V5 System Status Drawer listener
+    const statusDrawer = byId("dlg-system-status");
+    const railStatus = byId("rail-status");
+    if (railStatus && statusDrawer) {
+      closeOnBackdrop(statusDrawer);
+      const openStatus = () => {
+        statusDrawer.showModal();
+        pollRadarStatus();
+        pollRefreshStatus();
+        renderSystemStatusDrawer();
+      };
+      railStatus.addEventListener("click", openStatus);
+      railStatus.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openStatus();
+        }
+      });
+      const btnClose = byId("btn-status-drawer-close");
+      if (btnClose) btnClose.addEventListener("click", () => statusDrawer.close());
+      const btnAck = byId("btn-status-radar-ack");
+      if (btnAck) btnAck.addEventListener("click", async () => {
+        await onRadarHeaderClick();
+        renderSystemStatusDrawer();
+      });
+      const btnRefreshNow = byId("btn-status-refresh-now");
+      if (btnRefreshNow) btnRefreshNow.addEventListener("click", onManualRefreshClick);
+    }
+
+    pollRadarStatus();
+    pollCleanupStatus();
+    pollRefreshStatus();
+    setInterval(pollRadarStatus, 25000);
+    setInterval(pollCleanupStatus, 60000);
+    setInterval(pollRefreshStatus, 45000);
+
     window.addEventListener("hashchange", onRoute);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden && state.online === false) checkStatus(); });
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        if (state.online === false) checkStatus();
+        pollRadarStatus();
+        pollCleanupStatus();
+        pollRefreshStatus();
+      }
+    });
     desktopQuery.addEventListener("change", () => { if (state.route === "jobs") syncSelection(); });
 
     // Draw the first screen at once, then fill it with data.
@@ -2212,6 +4156,12 @@
         byId("page-sub").hidden = false;
         renderJobs();
         syncSelection();
+      }
+      if (state.route === "signals") {
+        loadSignalsQuery();
+      }
+      if (state.route === "outreach") {
+        loadOutreachData();
       }
       if (state.route === "documents") updateUsing();
       if (state.route === "resume") renderResume();
