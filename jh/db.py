@@ -213,9 +213,12 @@ def connect():
         os.makedirs(os.path.dirname(os.path.abspath(config.DB_PATH)), exist_ok=True)
     conn = sqlite3.connect(config.DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA busy_timeout=30000")
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError:
+        pass
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -2322,6 +2325,8 @@ def query_jobs(view_filters=None, session_id="default"):
     min_sal = float(filters.get("min_salary") or 0)
     show_unknown_salary = bool(filters.get("show_unknown_salary", True))
     contract_types = [c.lower().strip() for c in (filters.get("contract_types") or []) if c and c.strip()]
+    if filters.get("job_type") and str(filters["job_type"]).lower() not in ("any", ""):
+        contract_types.append(str(filters["job_type"]).lower().strip())
     excluded_cos = [c.lower().strip() for c in (filters.get("excluded_companies") or []) if c and c.strip()]
     excluded_kws = [k.lower().strip() for k in (filters.get("excluded_keywords") or []) if k and k.strip()]
     posting_age = int(filters.get("posting_age") or 30)
@@ -2381,8 +2386,17 @@ def query_jobs(view_filters=None, session_id="default"):
             return True
         j_jt = (j.get("job_type") or "").lower()
         j_ti = (j.get("title") or "").lower()
+        j_desc = (j.get("description") or "")[:400].lower()
+        hay = f"{j_jt} {j_ti} {j_desc}"
+        is_intern = bool(re.search(r"\b(intern|internship|stage|stagiaire|alternance|pfe|co-?op|student|praktik)\b", hay))
+        wants_intern = any("intern" in ct or "pfe" in ct or "stage" in ct for ct in contract_types)
+        wants_fulltime = any("full" in ct for ct in contract_types)
+        if wants_intern and not wants_fulltime:
+            return is_intern
+        if wants_fulltime and not wants_intern:
+            return not is_intern
         for ct in contract_types:
-            if ct in j_jt or ct in j_ti:
+            if ct in hay:
                 return True
         return False
 
@@ -2510,10 +2524,13 @@ def query_jobs(view_filters=None, session_id="default"):
             "actions": ["tighten_salary", "tighten_seniority", "tighten_location"]
         }
 
+    hidden_count = max(0, len(candidate_jobs) - total_count)
     return {
         "jobs": matching_jobs,
         "count": total_count,
         "total_active_pool": len(candidate_jobs),
+        "hidden_count": hidden_count,
+        "hidden_message": f"{hidden_count} hidden by your filters",
         "closing_soon": closing_soon,
         "closing_soon_count": len(closing_soon),
         "removed_counts": removed_counts,

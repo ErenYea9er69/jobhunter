@@ -392,6 +392,12 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
     depth = prefs.get("search_depth", "standard")
     targets = regions.resolve_targets(prefs, profile, location)
     remote_ok = regions.wants_remote(prefs, profile)
+    loc_clean = (location or "").lower().strip()
+    is_specific_country = bool(targets) and loc_clean not in ("remote", "worldwide", "remote worldwide", "any", "")
+    if is_specific_country:
+        wm = (prefs.get("work_mode") or profile.get("work_mode") or "").lower()
+        if "remote" not in wm and "worldwide" not in wm:
+            remote_ok = False
 
     tasks = {}
     for s in src.SEARCH_SOURCES:

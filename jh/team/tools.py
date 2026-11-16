@@ -12,6 +12,7 @@ from . import missions, qa, roles, safety
 from .ceo import CEO, RELAY_RULES
 
 JH_TOOLS = (
+    "jh_begin", "jh_confirm", "jh_answer", "jh_replace_resume", "jh_launch", "jh_stop", "jh_install_agent",
     "jh_start", "jh_load_resume", "jh_confirm_profile", "jh_set_filters",
     "jh_search", "jh_query", "jh_refresh", "jh_open_ui", "jh_status", "jh_feedback",
     "jh_set_method", "jh_find_contacts", "jh_build_resume", "jh_draft_email"
@@ -228,12 +229,47 @@ def register_team(mcp: Any, tool: Callable, registry: dict[str, Callable], store
         return {"company": "A small job-search company. The client talks to the CEO. The CEO briefs the team. The Reviewer checks everything.",
                 "employees": roles.describe(ws, with_prompts=with_prompts), "relay_rules": list(RELAY_RULES)}
 
-    # ------------------------------------------------------------- V5 Core Flow Tools
+    # ------------------------------------------------------------- V5 / V3 Core Flow Tools
     from .. import v5_tools
 
     @tool
+    def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "default") -> dict[str, Any]:
+        """Phase B1: Entry point for any job request. Runs resume check and job-name inference, saves profile, creates session, and replies with needs_resume, needs_role, or ready with ticket."""
+        return v5_tools.jh_begin(resume_path=resume_path, resume_text=resume_text, session_id=session_id)
+
+    @tool
+    def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = None, user_reply: str = "") -> dict[str, Any]:
+        """Phase B1: Confirms target role focus when status is needs_role or user corrects guessed roles before launch. Returns ticket."""
+        return v5_tools.jh_confirm(session_id=session_id, answers=answers, user_reply=user_reply)
+
+    @tool
+    def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = None, user_reply: str = "") -> dict[str, Any]:
+        """Phase B1 & B5: Updates view filters live at query time without restarting the background search."""
+        return v5_tools.jh_answer(session_id=session_id, answers=answers, user_reply=user_reply)
+
+    @tool
+    def jh_replace_resume(session_id: str = "default", resume_path: str = "", resume_text: str = "") -> dict[str, Any]:
+        """Phase B1 & B2: Runs resume check on new file, re-parses it, re-scores stored jobs, and keeps worker and search running."""
+        return v5_tools.jh_replace_resume(session_id=session_id, resume_path=resume_path, resume_text=resume_text)
+
+    @tool
+    def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
+        """Phase B4: Detached launch of HTTP daemon, background search, and browser in under 3 seconds."""
+        return v5_tools.jh_launch(session_id=session_id, ticket=ticket)
+
+    @tool
+    def jh_stop(session_id: str = "default") -> dict[str, Any]:
+        """Phase B1: Stops the background worker and search jobs cleanly on request."""
+        return v5_tools.jh_stop(session_id=session_id)
+
+    @tool
+    def jh_install_agent(client: str = "claude", confirmed: bool = False) -> dict[str, Any]:
+        """Phase B6: Prompts user before copying runner subagent template to user-level configuration directory."""
+        return v5_tools.jh_install_agent(client=client, confirmed=confirmed)
+
+    @tool
     def jh_start(prompt: str = "", intent: str = "", session_id: str = "default") -> dict[str, Any]:
-        """Step 1 & 2: Entry point for any job-related prompt. Sets up isolated workspace, loads saved profile and view filters, detects intent, and returns the first guided question."""
+        """Step 1 & 2: Entry point alias. Always verifies resume first via jh_begin."""
         return v5_tools.jh_start(prompt=prompt, intent=intent, session_id=session_id)
 
     @tool
@@ -252,9 +288,9 @@ def register_team(mcp: Any, tool: Callable, registry: dict[str, Callable], store
         return v5_tools.jh_set_filters(filters=filters, session_id=session_id)
 
     @tool
-    def jh_search(job_style: str = "", region: str = "", force_refresh: bool = False, session_id: str = "default") -> dict[str, Any]:
-        """Step 5 & 6: Broad search by job style and optional region. Scrapes all sources broadly and stores all results in DB with lifecycle deduplication. Blocks only if job style is missing."""
-        return v5_tools.jh_search(job_style=job_style, region=region, force_refresh=force_refresh, session_id=session_id)
+    def jh_search(job_style: str = "", region: str = "", force_refresh: bool = False, session_id: str = "default", ticket: str = "") -> dict[str, Any]:
+        """Step 5 & 6: Search tool guarded by ticket gate. Requires valid ticket from jh_begin or jh_confirm."""
+        return v5_tools.jh_search(job_style=job_style, region=region, force_refresh=force_refresh, session_id=session_id, ticket=ticket)
 
     @tool
     def jh_query(filters: Optional[dict[str, Any]] = None, session_id: str = "default") -> dict[str, Any]:
@@ -267,14 +303,14 @@ def register_team(mcp: Any, tool: Callable, registry: dict[str, Callable], store
         return v5_tools.jh_refresh(source=source, force=force)
 
     @tool
-    def jh_open_ui(port: int = 8765, host: str = "127.0.0.1") -> dict[str, Any]:
-        """Step 8: Start the web UI server if down, verify health endpoint, find next free port if occupied, start LinkedIn Radar worker, and open browser."""
+    def jh_open_ui(port: int = 8080, host: str = "127.0.0.1") -> dict[str, Any]:
+        """Step 8: Start the web UI server if down, verify health endpoint, find next free port if occupied, and open browser."""
         return v5_tools.jh_open_ui(port=port, host=host)
 
     @tool
-    def jh_status() -> dict[str, Any]:
-        """Inspect full JobHunter state: workspace path, session state, radar, refresh states, cleanup status, and stored job count."""
-        return v5_tools.jh_status()
+    def jh_status(session_id: str = "default") -> dict[str, Any]:
+        """Inspect JobHunter state: session state, background search, matching jobs count, and top 5 matches only."""
+        return v5_tools.jh_status(session_id=session_id)
 
     @tool
     def jh_feedback(job_id: str = "", action: str = "dismiss", reason: str = "",

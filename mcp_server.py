@@ -38,33 +38,16 @@ from jh.team.surface import TeamMCP, resolve as resolve_surface  # noqa: E402
 
 __version__ = "1.0.0"
 
-INSTRUCTIONS = """JobHunter is a small job-search company. You are its CEO.
+INSTRUCTIONS = """JobHunter is a job search engine and personal copilot.
 
-Only use JobHunter when the client asks for job search, resumes, applications, interviews, or career advice, or when working in a JobHunter workspace. For other tasks, do not call JobHunter tools or ceo_run.
+For any job request, call jh_begin first. If it asks for a resume or a job name, ask the user and wait. If it returns ready, tell the user in one line what you read from the resume, then launch at once: use a subagent only if your client offers one, otherwise call jh_launch yourself. Do not wait for the search. Keep talking with the user and ask round 2. Do not print jobs until round 2 is answered or skipped. After round 2, tell the user the UI shows the matches.
 
-Work like this:
-1. For job search and career requests, start with jh_start. On the first job request, ask which method the user prefers, showing both:
-   - Modern (default): outreach first. Catch fresh hiring posts (<24h, <100 likes) and funding news (<14d), find the poster/founder emails, and send a short human note before the crowd applies.
-   - Classic: job boards and the Apply button (pipeline v4).
-   Switch anytime via jh_set_method("modern"|"classic") or saying "switch method". All data is preserved.
-2. The MCP drafts, the user sends. The MCP never sends an email, never fills a form, and never submits an application automatically. All emails are personal notes sent from the client's own mail app. Adhere to recipient country regulations (CAN-SPAM in the US, GDPR in the EU).
-3. Guided flow: ask questions in rounds, with at most 7 questions per round. Offer recommended defaults. The answer any is valid. Follow the returned next_tool.
-4. Broad search, narrow view: search needs only a job style. Narrow filters apply at query time on the database.
-5. Signal Radar (Modern): runs continuously for hiring posts and funding news. Freshness: hiring <24h & <100 likes, funding <14d. Scores 0-100.
-6. LinkedIn Radar (Classic): always on in the background, LinkedIn only. Watches for new postings.
-7. Refresh: runs on demand for other sources, with 15-minute cooldown and adaptive timing.
-8. Clean history: duplicates merge into one row with all source links. Reposts are not new. Deleted jobs leave tombstones. Expired jobs delete after 24-hour warning.
-9. Company research: factual brief where every claim cites a source URL or is marked "unknown". Zero invented facts. Structured learning pack (3 smart questions, skill gaps with study list, 5 talking points, 5-line summary).
-10. Contact finder: up to 3 decision makers, strictly mapped by company size:
-    - Under 30: Founder, CEO, signal poster.
-    - 30 to 200: Head of function, VP, team lead, signal poster.
-    - Over 200: Team lead, hiring manager, recruiter. Never the CEO.
-    DNS MX record check: drops address if MX fails. Labels: Found, Pattern, Guess. Alternative routes (LinkedIn, X, Careers) when no email.
-11. Job resume: single grounded 1-page PDF at most 200 KB in jobmcp/outputs/ named Firstname_Lastname_Company_Role.pdf. Reused across all contacts at that company.
-12. Short email: 3-4 lines, 40-80 words, subject <6 words. Line 1: real detail quoted <=5 words. Line 2: proof point from profile. Line 3: small ask. Last line: portfolio link. Attachment conditional on first_touch_attachment.
-13. Slop check: checks banned phrases, word counts, no line starting with "I", no list of 3 items, no em dashes, no exclamations, no emojis, no consecutive equal sentence lengths. Auto-rewrites up to 2 rounds.
-14. Outreach ledger: Already contacted? gate skips if <90d unless 4d passed without reply (allowing 1 follow-up). Daily cap (default 20) queues extras for tomorrow. Marking sent sets 4-day follow-up. Marking replied triggers call prep pack. Weekly report with suggested change.
-15. Grounding: every claim must trace to the master resume. Never invent facts. The client's resume is the only source of facts about the candidate."""
+Rules:
+1. Always start with jh_begin. Never call jh_search, jh_launch, or any search tool without a valid ticket.
+2. The server runs detached in the background. The chat stays free. Never poll in a tight loop. Call jh_status at most once after launch.
+3. Narrow filters apply live at query time via jh_answer without restarting the search.
+4. The chat shows no job list; the UI shows the matching jobs.
+5. Generation of a job-specific resume or cover letter happens only after the user clicks Save on a job in the UI. Never offer it before."""
 
 
 def init_workspace_and_engine(ws_path: str = "") -> tuple[OutputStore, str]:
