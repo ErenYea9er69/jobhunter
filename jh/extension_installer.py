@@ -237,7 +237,7 @@ def get_extension_status() -> dict[str, Any]:
         "success": True,
         "extension_dir": ext_dir,
         "extension_dir_valid": os.path.isdir(ext_dir) and bool(manifest),
-        "version": manifest.get("version", "2.3.0"),
+        "version": manifest.get("version", "1.0.0"),
         "name": manifest.get("name", "JobHunter AI Autofill & Copilot"),
         "browsers": browsers,
         "recommended_browser": browsers[0]["name"] if browsers else None,

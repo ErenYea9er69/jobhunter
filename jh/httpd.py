@@ -38,7 +38,7 @@ def _ensure_db() -> None:
 
 
 class JobHunterRequestHandler(BaseHTTPRequestHandler):
-    server_version = "JobHunter/2.4.0"
+    server_version = "JobHunter/1.0.0"
 
     def log_message(self, format: str, *args: Any) -> None:
         """Override to ensure all HTTP logging goes strictly to stderr, keeping stdout clean."""
@@ -498,7 +498,7 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
                         "experience_years": profile.get("total_experience_years", 3),
                     },
                     "resume_path": profile.get("source_path", ""),
-                    "extension_version": ext_status.get("version", "2.3.0"),
+                    "extension_version": ext_status.get("version", "1.0.0"),
                 },
             )
             return self._send_json(200, res)

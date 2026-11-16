@@ -54,7 +54,7 @@ class HttpResponse:
 def _http_get(url: str, timeout: float = 5.0) -> HttpResponse:
     """Safe internal HTTP fetcher with status and header extraction."""
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "JobHunter/8.0 (Modern Outreach)"})
+        req = urllib.request.Request(url, headers={"User-Agent": "JobHunter/1.0.0 (Modern Outreach)"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             text = resp.read().decode("utf-8", errors="replace")
             hdrs = {k: v for k, v in resp.headers.items()}

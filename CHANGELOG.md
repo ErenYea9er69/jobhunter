@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.4.0
+## 1.0.0
 
 A review of every prompt (`docs/prompts.md`).
 
