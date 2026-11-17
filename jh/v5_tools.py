@@ -51,6 +51,18 @@ def _find_free_port(start_port: int = 8765, host: str = "127.0.0.1") -> int:
     return start_port
 
 
+def _coaching_envelope(fn):
+    """Decorator ensuring that every tool response dictionary structurally includes 'coaching': null by default."""
+    import functools
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        res = fn(*args, **kwargs)
+        if isinstance(res, dict):
+            res.setdefault("coaching", None)
+        return res
+    return wrapper
+
+
 def check_filter_clashes(filters: dict[str, Any]) -> list[str]:
     """Detect contradictory search criteria and provide actionable fix suggestions."""
     warnings = []
@@ -89,6 +101,7 @@ def check_filter_clashes(filters: dict[str, Any]) -> list[str]:
     return warnings
 
 
+@_coaching_envelope
 def jh_set_method(method: str = "modern", session_id: str = "default") -> dict[str, Any]:
     """Step 4: Set active job hunting method: 'modern' (outreach first, default) or 'classic' (job boards & apply).
     Preserves all existing data across switches.
@@ -127,6 +140,7 @@ def jh_set_method(method: str = "modern", session_id: str = "default") -> dict[s
     }
 
 
+@_coaching_envelope
 def jh_start(prompt: str = "", intent: str = "", session_id: str = "default", **kwargs) -> dict[str, Any]:
     """Step 1 & 2: Entry point for any job-related prompt.
     If session_id != 'default' or a resume is attached, delegates to jh_begin.
@@ -281,6 +295,7 @@ def jh_start(prompt: str = "", intent: str = "", session_id: str = "default", **
         }
 
 
+@_coaching_envelope
 def jh_load_resume(resume_path: str = "", raw_text: str = "", profile_id: str = "master", session_id: str = "default") -> dict[str, Any]:
     """Step 3: Load, parse, and extract skills, target roles, and experience from a resume file or raw text into candidate profile."""
     if session_id != "default":
@@ -361,6 +376,7 @@ def jh_load_resume(resume_path: str = "", raw_text: str = "", profile_id: str = 
     }
 
 
+@_coaching_envelope
 def jh_confirm_profile(confirmed: bool = True, overrides: Optional[dict[str, Any]] = None,
                        portfolio_url: str = "", proof_points: Optional[list[dict[str, str]]] = None,
                        profile_id: str = "master") -> dict[str, Any]:
@@ -408,6 +424,7 @@ def jh_confirm_profile(confirmed: bool = True, overrides: Optional[dict[str, Any
     }
 
 
+@_coaching_envelope
 def jh_set_filters(filters: dict[str, Any], session_id: str = "default") -> dict[str, Any]:
     """Step 4: Set or update query-time view filters with clash detection and round-based checks."""
     if not isinstance(filters, dict):
@@ -462,7 +479,8 @@ def jh_set_filters(filters: dict[str, Any], session_id: str = "default") -> dict
 # Phase B1 - B4 Tools (JobHunter V3 Start-Up Flow)
 # ==============================================================================
 
-def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "default") -> dict[str, Any]:
+@_coaching_envelope
+def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "default", track: str = "") -> dict[str, Any]:
     """Phase B1: Entry point for any job request. Runs resume check and job-name inference, saves profile, creates session, and replies with needs_resume, needs_role, or ready with ticket."""
     sess = ticket_manager.get_or_create_session(session_id)
 
@@ -582,9 +600,16 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     return reply
 
 
-def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = None, user_reply: str = "") -> dict[str, Any]:
+@_coaching_envelope
+def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = None, user_reply: str = "", track: str = "") -> dict[str, Any]:
     """Phase B1: Confirms target role focus when status is needs_role or user corrects guessed roles before launch. Returns ticket."""
     sess = ticket_manager.get_or_create_session(session_id)
+
+    # Evaluate optional coaching trigger on user_reply
+    coaching = None
+    if user_reply:
+        from . import coach
+        coaching = coach.evaluate_coaching(user_reply, session_id=session_id)
 
     # Reject empty user_reply
     if not user_reply or not str(user_reply).strip():
@@ -654,6 +679,7 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
     }
 
 
+@_coaching_envelope
 def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
     """Phase B4: Detached launch of HTTP daemon, background search, and browser in under 3 seconds."""
     sess = ticket_manager.get_or_create_session(session_id)
@@ -736,10 +762,19 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
     }
 
 
-def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = None, user_reply: str = "") -> dict[str, Any]:
+@_coaching_envelope
+def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = None, user_reply: str = "", track: str = "") -> dict[str, Any]:
     """Phase B1 & B5: Updates view filters live at query time without restarting the background search."""
     sess = ticket_manager.get_or_create_session(session_id)
     answers = answers or {}
+    if track:
+        answers["track"] = track
+
+    # Evaluate optional coaching trigger on user_reply
+    coaching = None
+    if user_reply:
+        from . import coach
+        coaching = coach.evaluate_coaching(user_reply, session_id=session_id)
 
     if user_reply and ticket_manager.is_explicit_skip(user_reply):
         ticket_manager.record_user_skip(session_id, "round_2", user_reply)
@@ -794,10 +829,12 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
             "hidden_by_filters": hidden_count,
             "filters_applied": sess["answers"],
             "ui_url": ui_url,
-        }
+        },
+        "coaching": coaching,
     }
 
 
+@_coaching_envelope
 def jh_replace_resume(session_id: str = "default", resume_path: str = "", resume_text: str = "") -> dict[str, Any]:
     """Phase B1 & B2: Runs resume check on new file, re-parses it, re-scores stored jobs, and keeps worker and search running."""
     sess = ticket_manager.get_or_create_session(session_id)
@@ -862,6 +899,7 @@ def jh_replace_resume(session_id: str = "default", resume_path: str = "", resume
     }
 
 
+@_coaching_envelope
 def jh_stop(session_id: str = "default") -> dict[str, Any]:
     """Phase B1: Stops the background worker and search job for a session."""
     worker_launcher.stop_worker(session_id)
@@ -875,6 +913,7 @@ def jh_stop(session_id: str = "default") -> dict[str, Any]:
     }
 
 
+@_coaching_envelope
 def jh_install_agent(client: str = "claude", confirmed: bool = False) -> dict[str, Any]:
     """Phase B6: Installs jobhunter-runner subagent definition into user config directory."""
     clean_client = client.lower().strip()
@@ -941,6 +980,7 @@ def jh_install_agent(client: str = "claude", confirmed: bool = False) -> dict[st
 # Search & Query Tools (with Ticket Gating & Backward Compatibility)
 # ==============================================================================
 
+@_coaching_envelope
 def jh_search(
     job_style: str = "",
     region: str = "",
@@ -1030,8 +1070,12 @@ def jh_search(
     }
 
 
-def jh_query(filters: Optional[dict[str, Any]] = None, session_id: str = "default") -> dict[str, Any]:
+@_coaching_envelope
+def jh_query(filters: Optional[dict[str, Any]] = None, session_id: str = "default", track: str = "") -> dict[str, Any]:
     """Step 7: Query stored jobs using view filters without re-scraping. Hard filters hide, soft preferences rank, expired jobs returned in closing_soon."""
+    if track:
+        filters = dict(filters or {})
+        filters["track"] = track
     q_res = db.query_jobs(view_filters=filters, session_id=session_id)
     usable_gate = q_res["usable_gate"]
     next_tool = "jh_open_ui" if usable_gate["usable"] else "jh_set_filters"
@@ -1058,6 +1102,7 @@ def jh_query(filters: Optional[dict[str, Any]] = None, session_id: str = "defaul
     }
 
 
+@_coaching_envelope
 def jh_refresh(source: str = "", force: bool = False) -> dict[str, Any]:
     """Background lane: Trigger on-demand refresh for non-Radar sources respecting TTL and forced cooldown."""
     from . import refresh_scheduler
@@ -1094,6 +1139,7 @@ def _check_health(host: str, port: int, timeout: float = 0.5) -> bool:
                 pass
 
 
+@_coaching_envelope
 def jh_open_ui(port: int = 8765, host: str = "127.0.0.1") -> dict[str, Any]:
     """Step 8: Start the web UI server if down, verify health endpoint, find next free port if occupied, start LinkedIn Radar worker, and open browser."""
     from . import httpd
@@ -1155,6 +1201,7 @@ def jh_open_ui(port: int = 8765, host: str = "127.0.0.1") -> dict[str, Any]:
     }
 
 
+@_coaching_envelope
 def jh_status(session_id: str = "default") -> dict[str, Any]:
     """Inspect full JobHunter state: active method, workspace path, session state, radar, refresh states, cleanup status, and top 5 matches."""
     home_dir = home.get_home()
@@ -1251,6 +1298,7 @@ def jh_status(session_id: str = "default") -> dict[str, Any]:
     }
 
 
+@_coaching_envelope
 def jh_feedback(
     job_id: str = "",
     action: str = "dismiss",
@@ -1317,18 +1365,21 @@ def jh_feedback(
     }
 
 
+@_coaching_envelope
 def jh_find_contacts(signal_id_or_company: str, target_role: str = "") -> dict[str, Any]:
     """Modern Step 12: Find up to 3 decision makers (Found, Pattern, Guess) or alternative routes for outreach."""
     from . import contacts
     return contacts.jh_find_contacts(signal_id_or_company, target_role=target_role)
 
 
+@_coaching_envelope
 def jh_build_resume(company: str, role: str, signal_id: str = "") -> dict[str, Any]:
     """Modern Step 13: Build or retrieve single grounded 1-page PDF resume <= 200 KB in jobmcp/outputs/."""
     from . import email_drafter
     return email_drafter.jh_build_resume(company=company, role=role, signal_id=signal_id)
 
 
+@_coaching_envelope
 def jh_draft_email(contact_id: str, signal_id: str = "", resume_path: str = "") -> dict[str, Any]:
     """Modern Step 13: Draft human 3-4 line outreach email with slop linting and attachment policy."""
     from . import email_drafter

@@ -1,0 +1,61 @@
+{
+  "opt_out_session": [
+    "\\bsolo\\s+busca\\b",
+    "\\bsin\\s+consejos\\b",
+    "\\bbasta\\s+de\\s+coaching\\b",
+    "\\bno\\s+aconsejes\\b"
+  ],
+  "opt_out_request": [
+    "\\bsin\\s+consejos\\s+en\\s+esta\\b",
+    "\\bno\\s+en\\s+esta\\s+b[uú]squeda\\b"
+  ],
+  "safety_patterns": [
+    "\\b(?:quiero|voy\\s+a)\\s+morir\\b",
+    "\\bacabar\\s+con\\s+mi\\s+vida\\b",
+    "\\bno\\s+quiero\\s+vivir\\b",
+    "\\bno\\s+quiero\\s+vivir\\s+m[aá]s\\b",
+    "\\bsuicid",
+    "\\bquitarme\\s+la\\s+vida\\b",
+    "\\bautolesi[oó]n\\b"
+  ],
+  "distress_stuck": [
+    "\\bperdiendo\\s+la\\s+esperanza\\b",
+    "\\bmuy\\s+frustrado\\s+con\\s+la\\s+b[uú]squeda\\b",
+    "\\bdesesperaci[oó]n\\b"
+  ],
+  "distress_ai": [
+    "\\btemor\\s+de\\s+que\\s+la\\s+ia\\s+reemplace\\b",
+    "\\bmiedo\\s+a\\s+la\\s+ia\\b"
+  ],
+  "distress_ai_negatives": [
+    "\\bbuscar\\s+trabajo\\s+de\\s+ia\\b",
+    "\\bempleos\\s+ia\\b"
+  ],
+  "explicit_advice": [
+    "\\bqu[eé]\\s+debo\\s+hacer\\b",
+    "\\bdame\\s+un\\s+consejo\\b",
+    "\\bnecesito\\s+tu\\s+opini[oó]n\\b",
+    "\\bay[uú]dame\\s+a\\s+decidir\\b"
+  ],
+  "aspirational": [
+    "\\btrabajo\\s+so[ñn]ado\\b",
+    "\\btrabajo\\s+ideal\\b",
+    "\\bfaang\\b"
+  ],
+  "aspirational_negatives": [
+    "\\bmejores\\s+trabajos\\s+python\\b"
+  ],
+  "business": [
+    "\\biniciar\\s+un\\s+negocio\\b",
+    "\\bcrear\\s+una\\s+empresa\\b",
+    "\\bc[oó]mo\\s+hacer\\s+dinero\\s+con\\s+un\\s+negocio\\b"
+  ],
+  "career_direction": [
+    "\\bqu[eé]\\s+es\\s+un\\s+buen\\s+trabajo\\s+para\\s+m[ií]\\b",
+    "\\bqu[eé]\\s+direcci[oó]n\\s+profesional\\b",
+    "\\bpara\\s+qu[eé]\\s+soy\\s+bueno\\b"
+  ],
+  "career_direction_negatives": [
+    "\\bbuen\\s+trabajo[!.,;]"
+  ]
+}

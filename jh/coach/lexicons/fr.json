@@ -1,0 +1,62 @@
+{
+  "opt_out_session": [
+    "\\bjuste\\s+chercher\\b",
+    "\\bpas\\s+de\\s+conseil\\b",
+    "\\barr[êe]ter\\s+le\\s+coaching\\b",
+    "\\bsans\\s+coaching\\b"
+  ],
+  "opt_out_request": [
+    "\\bpas\\s+de\\s+conseil\\s+sur\\s+celle-ci\\b",
+    "\\bpas\\s+cette\\s+fois\\b"
+  ],
+  "safety_patterns": [
+    "\\b(?:veux|vais)\\s+mourir\\b",
+    "\\bmettre\\s+fin\\s+[àa]\\s+mes\\s+jours\\b",
+    "\\bje\\s+veux\\s+en\\s+finir\\b",
+    "\\bsuicid",
+    "\\bplus\\s+envie\\s+de\\s+vivre\\b"
+  ],
+  "distress_stuck": [
+    "\\bperdu\\s+espoir\\b",
+    "\\btellement\\s+frustr[ée]\\b",
+    "\\bpanique\\s+pour\\s+le\\s+loyer\\b",
+    "\\bd[ée]sespoir\\b"
+  ],
+  "distress_ai": [
+    "\\bpeur\\s+que\\s+l'?ia\\s+prenne\\s+mon\\s+travail\\b",
+    "\\bl'?ia\\s+va\\s+remplacer\\s+les\\s+d[ée]veloppeurs\\b"
+  ],
+  "distress_ai_negatives": [
+    "\\bcherche\\s+emploi\\s+ia\\b",
+    "\\bpostes\\s+ia\\b"
+  ],
+  "explicit_advice": [
+    "\\bque\\s+dois-je\\s+faire\\b",
+    "\\bque\\s+me\\s+conseillez-vous\\b",
+    "\\bdonnez-moi\\s+un\\s+conseil\\b",
+    "\\bj'?ai\\s+besoin\\s+de\\s+conseils\\b"
+  ],
+  "aspirational": [
+    "\\bjob\\s+de\\s+r[êe]ve\\b",
+    "\\bemploi\\s+id[ée]al\\b",
+    "\\bfaang\\b"
+  ],
+  "aspirational_negatives": [
+    "\\bmeilleurs\\s+jobs\\s+python\\b"
+  ],
+  "business": [
+    "\\blancer\\s+un\\s+business\\b",
+    "\\bcr[ée]er\\s+une\\s+entreprise\\b",
+    "\\bgagner\\s+de\\s+l'?argent\\s+avec\\s+un\\s+business\\b",
+    "\\bid[ée]es\\s+de\\s+start-?up\\b"
+  ],
+  "career_direction": [
+    "\\bquel\\s+est\\s+un\\s+bon\\s+job\\s+pour\\s+moi\\b",
+    "\\bquelle\\s+direction\\s+de\\s+carri[èe]re\\b",
+    "\\ben\\s+quoi\\s+suis-je\\s+bon\\b"
+  ],
+  "career_direction_negatives": [
+    "\\bbon\\s+travail[!.,;]",
+    "\\bbeau\\s+travail[!.,;]"
+  ]
+}

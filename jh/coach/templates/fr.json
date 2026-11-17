@@ -1,0 +1,73 @@
+{
+  "S": {
+    "title": "Sécurité et Soutien",
+    "acknowledgment": "Je comprends à quel point les choses peuvent sembler pesantes en ce moment.",
+    "insight": "Votre vie et votre bien-être sont infiniment plus précieux que n'importe quelle recherche d'emploi.",
+    "options": [
+      "{crisis_text}",
+      "Contactez sans attendre un proche, un ami de confiance ou les services d'urgence locaux."
+    ],
+    "choice": "Prenez un moment pour vous. Souhaitez-vous faire une pause, ou me dire quand vous vous sentirez prêt ?",
+    "template": "Je comprends à quel point les choses peuvent sembler pesantes en ce moment. Votre santé et votre bien-être passent avant toute recherche d'emploi. {crisis_text} N'hésitez pas à vous confier à une personne de confiance ou aux services d'urgence spécialisés. Nous pouvons faire une pause complète et reprendre quand vous le souhaiterez."
+  },
+  "D": {
+    "title": "Résilience et Clarté",
+    "acknowledgment": "La recherche d'emploi est éprouvante, et l'inquiétude face aux évolutions du marché ou à l'IA est légitime.",
+    "insight": "Les refus constituent des indicateurs de marché et non un jugement de valeur personnel. L'adaptation se construit pas à pas.",
+    "options": [
+      "Concentrez-vous sur une petite action de 15 minutes aujourd'hui : envoyer un message ou peaufiner un projet.",
+      "Utilisez l'IA comme un outil d'assistance tout en conservant votre jugement critique.",
+      "Distinguez les bruits ambiants des compétences requises dans les offres réelles."
+    ],
+    "choice": "Souhaitez-vous explorer des étapes concrètes ou poursuivre votre recherche ?",
+    "template": "La recherche d'emploi est exigeante, et vos inquiétudes sont tout à fait naturelles. Les refus sont des informations sur le marché, non une appréciation personnelle.\n\nActions utiles :\n- Visez une petite réussite concrète de 15 minutes aujourd'hui.\n- Servez-vous des technologies modernes comme soutien tout en gardant la maîtrise finale.\n- Accordez-vous des pauses régulières pour préserver votre énergie.\n\nSouhaitez-vous explorer des étapes concrètes ou poursuivre votre recherche ?"
+  },
+  "A": {
+    "title": "Conseil Stratégique",
+    "acknowledgment": "Vous demandez un éclairage sur la meilleure démarche à suivre.",
+    "insight": "La recherche la plus fructueuse résout un problème précis pour une entreprise, plutôt que d'envoyer des candidatures indifférenciées.",
+    "options": [
+      "Ciblez 10 entreprises précises où votre profil répond à un besoin opérationnel urgent.",
+      "Sollicitez des contacts et des recommandations directes pour simplifier l'examen de votre candidature.",
+      "Formulez vos réalisations avec des données mesurables et vérifiables."
+    ],
+    "choice": "Souhaitez-vous approfondir cette stratégie ou poursuivre la recherche d'offres ?",
+    "template": "Vous demandez un avis constructif sur la démarche à suivre. Une approche ciblée résolvant un besoin précis est bien plus efficace que des envois massifs.\n\nRecommandations :\n- Identifiez 10 employeurs clés alignés avec vos forces.\n- Privilégiez les recommandations et le réseau direct.\n- Mettez en avant des résultats concrets et vérifiables.\n\nSouhaitez-vous approfondir cette stratégie ou poursuivre la recherche d'offres ?"
+  },
+  "B": {
+    "title": "Stratégie de Début de Carrière : Poste Passerelle vs Cible Idéale",
+    "acknowledgment": "Vous visez des objectifs ambitieux pour vos débuts professionnels.",
+    "insight": "Un premier poste solide qui développe des compétences reconnues et offre de bonnes références ouvre souvent des portes plus vite qu'une longue attente.",
+    "options": [
+      "Voie A (Parallèle) : Postulez aux postes de vos rêves tout en candidatant activement à des postes tremplins formateurs.",
+      "Voie B (Ciblée) : Concentrez-vous sur des postes juniors au sein d'équipes dynamiques pour acquérir une première expérience concrète.",
+      "Point d'étape : Fixez un bilan à 6 mois pour que le poste tremplin reste un véritable accélérateur."
+    ],
+    "choice": "Souhaitez-vous étudier une piste tremplin ou poursuivre directement la recherche ?",
+    "template": "Vous visez haut pour vos débuts professionnels. Un premier poste formateur permettant d'acquérir des compétences solides et des recommandations ouvre souvent des perspectives durables plus rapidement qu'une attente prolongée.\n\nPistes recommandées :\n- Voie A (Parallèle) : Visez vos postes cibles tout en explorant des postes passerelles formateurs.\n- Voie B (Ciblée) : Privilégiez les équipes où vous aurez des responsabilités immédiates.\n- Prévoyez un bilan à 6 mois pour valoriser votre progression.\n\nSouhaitez-vous étudier une piste tremplin ou poursuivre directement la recherche ?"
+  },
+  "C": {
+    "title": "Création d'Activité et Validation",
+    "acknowledgment": "Vous envisagez de lancer une activité indépendante ou une entreprise.",
+    "insight": "Les activités durables reposent sur des compétences maîtrisées qui résolvent un problème réel et coûteux, et non sur des listes d'idées théoriques.",
+    "options": [
+      "Faites l'inventaire des compétences pour lesquelles vos collègues ou clients font déjà appel à vous.",
+      "Validez la demande auprès d'une dizaine de clients potentiels avant tout investissement majeur.",
+      "Méfiez-vous des promesses irréalistes : rendements garantis, frais d'inscription ou recrutement d'affiliés."
+    ],
+    "choice": "Souhaitez-vous évaluer vos compétences pour un test sans risque ou voir les offres d'emploi ?",
+    "template": "Vous envisagez de créer une activité indépendante. Une entreprise pérenne se construit autour de compétences éprouvées répondant à des besoins réels.\n\nPrincipes essentiels :\n- Partez d'un savoir-faire existant en maintenant des coûts limités.\n- Validez votre proposition auprès d'une dizaine de clients avant d'engager des moyens importants.\n- Fuyez les modèles promettant des gains faciles ou exigeant des frais d'entrée.\n\nSouhaitez-vous évaluer vos compétences pour un test sans risque ou voir les offres d'emploi ?"
+  },
+  "E": {
+    "title": "Orientation Professionnelle et Forces Clés",
+    "acknowledgment": "Vous vous interrogez sur votre orientation professionnelle et vos points forts.",
+    "insight": "On développe une véritable expertise dans les domaines où l'on investit du temps et de la régularité, plus que dans la recherche d'une passion abstraite.",
+    "options": [
+      "Identifiez 2 ou 3 activités professionnelles où vos résultats sont constants et naturels.",
+      "Demandez à 3 anciens collègues de confiance ce qu'ils considèrent comme vos points forts distinctifs.",
+      "Réalisez de petits projets pratiques de deux semaines dans des domaines connexes avant une réorientation complète."
+    ],
+    "choice": "Souhaitez-vous explorer vos points forts ou continuer la recherche de postes ?",
+    "template": "Vous vous interrogez sur votre orientation professionnelle. L'expertise s'acquiert par la pratique régulière et la concentration.\n\nPistes de réflexion :\n- Repérez les tâches où votre efficacité est la plus naturelle.\n- Demandez à des pairs de confiance quels sujets ils vous confieraient spontanément.\n- Testez des projets concrets sur une courte période avant d'engager une reconversion.\n\nSouhaitez-vous explorer vos points forts ou continuer la recherche de postes ?"
+  }
+}

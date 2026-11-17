@@ -409,9 +409,66 @@ Honest limits of this reach: the catalog names real local boards, but nobody has
 
 ## Tools
 
-The full list with arguments is in `docs/tool-contracts.md`. The CEO tools (`ceo_run` and six more) are described in `docs/team.md`. Specialist groups: resumes (5), preferences and sources (7), finding jobs (4), analysis (5), documents (7), interview and outreach (4), playbooks (1), tracking (5), server (1).
+The full list with arguments is in `docs/tool-contracts.md`. The CEO tools (`ceo_run` and six more) are described in `docs/team.md`. Specialist groups: resumes (5), preferences and sources (7), finding jobs (4), analysis (5), documents (7), interview and outreach (4), playbooks (1), tracking (5), coaching (4), server (1).
 
-Every tool returns one envelope: `status` (`ok`, `partial`, `error`), `success`, `data`, `warnings`, `sources`, `correlation_id`. Errors carry a `code` and a `hint`. Search results are compact cards, so a search never floods the model's context. Use the `job_id` from a card with any tool.
+Every tool returns one envelope: `status` (`ok`, `partial`, `error`), `success`, `data`, `warnings`, `sources`, `correlation_id`, and `coaching` (`null` by default). Errors carry a `code` and a `hint`. Search results are compact cards, so a search never floods the model's context. Use the `job_id` from a card with any tool.
+
+## Career Coaching Layer
+
+JobHunter includes an optional, non-intrusive career coaching layer.
+
+### Prime Directive: Pure Execution by Default
+- The default behavior is **pure, silent execution**. The app searches, scores, tailors, and tracks with zero unsolicited life or career advice.
+- Factual notes (paywall flags, match scores, matched/missing skills, skill gaps, duplicate counts) appear normally in data fields and are **not** coaching.
+- Coaching text appears **only** inside the top-level `coaching` envelope field (`coaching: null` when inactive). It is never mixed into data fields.
+- Coaching triggers appear **at most once per session** (`coach_events`), remain under 120 words, and can be dismissed in a single click or message.
+
+### Triggers & Priority
+Triggers evaluate in strict priority order (`S > D > A > B > C > E`):
+
+| ID | Name | Fires When | Must NOT Fire When | Priority | Frequency |
+|---|---|---|---|---|---|
+| **S** | Safety | Signs of crisis, despair, or self-harm. Always on, ignores opt-out. Provides locale-keyed emergency contacts. | Metaphorical speech ("kill -9", "dead end job", "dying for coffee"). | 1 (Highest) | Every occurrence |
+| **D** | Distress / AI Anxiety | Overwhelming frustration (hundreds of apps with no reply) or panic about AI replacing developer jobs. | Neutral questions about AI jobs, skills, or tooling ("search AI engineer jobs"). | 2 | Once per session |
+| **A** | Explicit Advice | User explicitly asks for advice, opinion, or help deciding ("what would you advise?"). Overrides session opt-out for that request. | Normal job search queries or formatting commands. | 3 | Once per request |
+| **B** | Early Career / Reach | Entry-level candidate (confidence >= medium) + aspirational reach target ("dream/ideal job", FAANG) + objective mismatch (seniority gap >= 2 or top scores < threshold). Offers Dual Track A/B. | Mid/Senior candidates, low-confidence profiles, queries with "best" ("best Python jobs"), or after track accepted. | 4 | Once per session |
+| **C** | Business / Startup | Asks what business to start or how to make money with a company. Validates existing skills and customer demand; warns against scheme red flags. | Ordinary business analyst or business operations job searches. | 5 | Once per session |
+| **E** | Career Direction | Asks about career direction, choosing a path, or "what am I good at". Focuses on demonstrated competencies. | Idiomatic praise ("good job!", "great job finding those listings"). | 6 | Once per session |
+
+### Opt-Out & Controls
+- **Session Opt-Out:** Speaking phrases like *"just search"*, *"no advice"*, *"skip the coaching"*, or *"stop coaching"* turns coaching off for the session. *"No advice on this one"* suppresses coaching for that single query.
+- **Web UI Toggle:** Go to `Settings > Coaching` to toggle coaching on/off persistently or reset history.
+- **Dual Track Selection:** When Trigger B fires, users can choose *Target Track Only*, *Bridge Track*, or *Both (Dual Track)*. The optional `track` parameter (`"bridge" | "target" | "both"`) is passed to searches.
+
+### Configuration
+Configure coaching behavior via environment variables:
+- `JH_COACHING`: `on` or `off` (default: `on`).
+- `JH_COACH_CLASSIFIER`: `local` (deterministic regex/rules), `provider` (LLM-assisted classification), or `off` (default: `local`).
+- `JH_COACH_THRESHOLD`: Seniority score mismatch cutoff (default: `60`).
+- `JH_COACH_LANG`: Preferred coaching language code (e.g. `en`, `es`, `fr`; default: `en`).
+
+### Editing Templates & Guidelines
+- **Prompt Guidelines:** `prompts/coach/coach_guidelines.md` contains persona rules and style anchors (linted via `python -m jh.team.voice prompts/coach/coach_guidelines.md`).
+- **Templates:** Vetted deterministic fallback templates live in `jh/coach/templates/<lang>.json`.
+- **Lexicons:** Classification regex patterns live in `jh/coach/lexicons/<lang>.json`.
+- **Emergency Directory:** Locale emergency hotlines live in `jh/coach/emergency.json`.
+
+### MCP Server Integration
+JobHunter runs as an official stdio MCP server via `mcp_server.py`:
+```json
+{
+  "mcpServers": {
+    "jobhunter": {
+      "command": "python",
+      "args": ["-m", "mcp_server"],
+      "env": {
+        "JH_COACHING": "on",
+        "JH_COACH_CLASSIFIER": "local"
+      }
+    }
+  }
+}
+```
 
 ## Truthful by design
 

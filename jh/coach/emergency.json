@@ -1,0 +1,32 @@
+{
+  "default": {
+    "name": "Local Emergency Services",
+    "number": "your local emergency number",
+    "text": "If you are in distress or need immediate support, please reach out to your local emergency services, a crisis hotline in your area, or a trusted person."
+  },
+  "US": {
+    "name": "Suicide & Crisis Lifeline",
+    "number": "988",
+    "text": "In the US, you can call or text 988 (available 24/7, free, confidential) or contact emergency services at 911."
+  },
+  "CA": {
+    "name": "Suicide Crisis Helpline",
+    "number": "988",
+    "text": "In Canada, you can call or text 988 (available 24/7, bilingual, free) or contact emergency services at 911."
+  },
+  "UK": {
+    "name": "Samaritans & NHS",
+    "number": "111 / 116 123",
+    "text": "In the UK, you can call Samaritans at 116 123, call NHS mental health services at 111, or call 999 for emergencies."
+  },
+  "EU": {
+    "name": "European Emergency Services",
+    "number": "112",
+    "text": "In the EU, you can dial 112 for emergency assistance or connect with local crisis support lines in your country."
+  },
+  "AU": {
+    "name": "Lifeline Australia",
+    "number": "13 11 14",
+    "text": "In Australia, you can call Lifeline at 13 11 14 or emergency services at 000."
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "S": {
+    "title": "Seguridad y Apoyo",
+    "acknowledgment": "Comprendo lo difícil y abrumador que puede ser todo en este momento.",
+    "insight": "Tu vida y bienestar son infinitamente más importantes que cualquier búsqueda laboral.",
+    "options": [
+      "{crisis_text}",
+      "Comunícate de inmediato con una persona de confianza, familiar o profesional de apoyo."
+    ],
+    "choice": "¿Deseas tomarte una pausa, o avisarme cuando sientas que puedes continuar?",
+    "template": "Comprendo lo difícil y abrumador que puede ser todo en este momento. Tu bienestar es mucho más importante que cualquier empleo. {crisis_text} Por favor acércate a alguien de confianza o a los servicios de apoyo de emergencia. Podemos pausar por completo o avanzar paso a paso cuando te sientas listo."
+  },
+  "D": {
+    "title": "Resiliencia y Enfoque",
+    "acknowledgment": "Buscar trabajo puede ser agotador y la incertidumbre es totalmente comprensible.",
+    "insight": "Los rechazos son datos del mercado, no una medida de tu valor. El cambio tecnológico favorece la adaptación paso a paso.",
+    "options": [
+      "Elige un objetivo pequeño de 15 minutos hoy: enviar un mensaje o pulir un proyecto.",
+      "Usa la IA como asistente mientras mantienes siempre el criterio y la decisión final.",
+      "Distingue el ruido del mercado de los requisitos reales de las ofertas actuales."
+    ],
+    "choice": "¿Deseas explorar pasos concretos o continuar con la búsqueda?",
+    "template": "Buscar trabajo puede ser agotador y la incertidumbre es comprensible. Los rechazos son datos de mercado, no tu valor.\n\nOpciones prácticas:\n- Enfócate en una pequeña acción de 15 minutos hoy.\n- Usa las herramientas como asistentes manteniendo tu criterio final.\n- Define un horario de corte para descansar.\n\n¿Deseas explorar pasos concretos o continuar con la búsqueda?"
+  },
+  "A": {
+    "title": "Orientación Estratégica",
+    "acknowledgment": "Has solicitado una perspectiva clara sobre qué rumbo tomar.",
+    "insight": "La búsqueda más efectiva aborda las necesidades puntuales de la empresa antes de enviar solicitudes masivas.",
+    "options": [
+      "Elige 10 empresas específicas donde tu experiencia resuelva una prioridad urgente.",
+      "Busca contactos directos y referencias para agilizar la revisión de tu perfil.",
+      "Resume tus logros en puntos breves y comprobables."
+    ],
+    "choice": "¿Deseas profundizar en esta estrategia o continuar con la búsqueda?",
+    "template": "Has solicitado una perspectiva sobre cómo proceder. La búsqueda más efectiva resuelve problemas concretos de los empleadores.\n\nPasos recomendados:\n- Selecciona 10 empresas afines a tus puntos fuertes.\n- Busca conexiones y referencias directas.\n- Destaca resultados medibles en tu experiencia.\n\n¿Deseas profundizar en esta estrategia o continuar con la búsqueda?"
+  },
+  "B": {
+    "title": "Estrategia Inicial: Empleo Puente vs Ideal",
+    "acknowledgment": "Tienes metas altas en esta etapa inicial de tu carrera profesional.",
+    "insight": "Un buen primer empleo que desarrolle habilidades clave y genere referencias sólidas suele abrir puertas más rápido que esperar indefinidamente.",
+    "options": [
+      "Vía A (Paralela): Postula a metas altas mientras buscas activamente roles puente formativos.",
+      "Vía B (Enfocada): Concéntrate en posiciones junior donde adquieras experiencia práctica real.",
+      "Revisión: Si tomas un empleo puente, fija una revisión a los 6 meses para evaluar tu avance."
+    ],
+    "choice": "¿Deseas explorar una vía puente en paralelo o continuar con la búsqueda directa?",
+    "template": "Tienes metas altas en esta etapa inicial. Un buen primer empleo que desarrolle habilidades prácticas y genere referencias suele abrir puertas más rápido que esperar una oferta soñada.\n\nOpciones:\n- Vía A (Paralela): Postula a metas ambiciosas y a la vez a roles puente de gran aprendizaje.\n- Vía B (Enfocada): Prioriza equipos donde puedas asumir responsabilidades inmediatas.\n- Fija una revisión a los 6 meses para que el empleo puente impulse tu carrera.\n\n¿Deseas explorar una vía puente o continuar con la búsqueda?"
+  },
+  "C": {
+    "title": "Validación de Negocio",
+    "acknowledgment": "Estás evaluando iniciar un negocio o generar ingresos independientes.",
+    "insight": "Los proyectos rentables nacen de habilidades probadas que solucionan problemas reales, no de listas genéricas.",
+    "options": [
+      "Identifica las destrezas por las que colegas o clientes ya te consultan.",
+      "Valida la demanda hablando con ~10 posibles clientes antes de invertir dinero o tiempo masivo.",
+      "Alerta con esquemas dudosos: retornos garantizados, pagos de inscripción o reclutamiento."
+    ],
+    "choice": "¿Deseas evaluar tus habilidades para un experimento de bajo riesgo o ver empleos?",
+    "template": "Estás evaluando iniciar un negocio independiente. Los proyectos sostenibles nacen de habilidades probadas que resuelven problemas concretos.\n\nPrincipios clave:\n- Construye sobre una destreza que ya domines manteniendo gastos bajos.\n- Valida con ~10 clientes antes de realizar inversiones grandes.\n- Desconfía de ganancias garantizadas o cobros por participar.\n\n¿Deseas evaluar tus habilidades para un experimento o ver empleos?"
+  },
+  "E": {
+    "title": "Dirección Profesional y Fortalezas",
+    "acknowledgment": "Estás analizando qué rumbo profesional se adapta mejor a tus capacidades.",
+    "insight": "Las personas suelen destacar en aquello en lo que invierten tiempo constante y enfocado, más que en pasiones abstractas.",
+    "options": [
+      "Identifica las 2-3 tareas donde tus resultados fluyen con mayor naturalidad.",
+      "Pregunta a 2 o 3 colegas de confianza cuáles consideran tus mayores fortalezas técnicas.",
+      "Prueba proyectos cortos de 2 semanas en áreas afines antes de dar un giro total."
+    ],
+    "choice": "¿Deseas profundizar en tus fortalezas o continuar buscando empleos?",
+    "template": "Estás analizando qué rumbo profesional se adapta mejor a ti. Las habilidades destacadas surgen de la práctica constante y el trabajo enfocado.\n\nPuntos de partida:\n- Identifica tareas donde tu productividad sea alta y natural.\n- Pregunta a colegas de confianza qué problemas te confiarían primero.\n- Realiza pruebas prácticas breves antes de un cambio de carrera radical.\n\n¿Deseas profundizar en tus fortalezas o continuar buscando empleos?"
+  }
+}

@@ -6,13 +6,14 @@ import os
 import re
 import sqlite3
 import threading
+from typing import Any
 import uuid
 
 from . import config
 from .util import now_iso, parse_salary, annualize, clean_text, clean_job_type, parse_date
 
 _init_lock = threading.Lock()
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 EMPTY_PROFILE = {
     "name": "", "email": "", "phone": "", "location": "", "linkedin": "", "github": "",
@@ -698,6 +699,22 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('first_touch_attachment', '1')")
         c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('send_mode', 'one_at_a_time')")
         c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('resume_max_kb', '200')")
+
+        # 16. Coach Layer
+        c.execute("""CREATE TABLE IF NOT EXISTS coach_state (
+            session_id TEXT PRIMARY KEY,
+            coaching_enabled INTEGER DEFAULT 1,
+            opt_out INTEGER DEFAULT 0,
+            updated_at TEXT NOT NULL
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS coach_events (
+            session_id TEXT NOT NULL,
+            trigger_id TEXT NOT NULL,
+            ts TEXT NOT NULL,
+            PRIMARY KEY (session_id, trigger_id)
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_coach_events_session ON coach_events(session_id)")
+        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('coaching_enabled', '1')")
 
         c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
@@ -2996,6 +3013,148 @@ def get_outreach_report() -> dict:
             "suggested_change": suggestion,
             "generated_at": now_iso(),
         }
+
+
+# ------------------------------------------------------------ Coach Layer State & Persistence
+def get_coach_state(session_id: str = "default") -> dict:
+    sid = session_id or "default"
+    global_pref = get_coaching_preference()
+    with session() as c:
+        row = c.execute("SELECT session_id, coaching_enabled, opt_out, updated_at FROM coach_state WHERE session_id=?", (sid,)).fetchone()
+        if not row:
+            now = now_iso()
+            c.execute("INSERT OR IGNORE INTO coach_state (session_id, coaching_enabled, opt_out, updated_at) VALUES (?, ?, 0, ?)",
+                      (sid, 1 if global_pref else 0, now))
+            return {
+                "session_id": sid,
+                "coaching_enabled": bool(global_pref),
+                "opt_out": False,
+                "updated_at": now,
+            }
+        return {
+            "session_id": row["session_id"],
+            "coaching_enabled": bool(row["coaching_enabled"]) and global_pref,
+            "opt_out": bool(row["opt_out"]),
+            "updated_at": row["updated_at"],
+        }
+
+
+def set_coach_state(session_id: str = "default", coaching_enabled: bool | None = None, opt_out: bool | None = None) -> dict:
+    sid = session_id or "default"
+    curr = get_coach_state(sid)
+    new_enabled = curr["coaching_enabled"] if coaching_enabled is None else bool(coaching_enabled)
+    new_opt_out = curr["opt_out"] if opt_out is None else bool(opt_out)
+    now = now_iso()
+    with session() as c:
+        c.execute("""
+            INSERT INTO coach_state (session_id, coaching_enabled, opt_out, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                coaching_enabled=excluded.coaching_enabled,
+                opt_out=excluded.opt_out,
+                updated_at=excluded.updated_at
+        """, (sid, 1 if new_enabled else 0, 1 if new_opt_out else 0, now))
+    return {
+        "session_id": sid,
+        "coaching_enabled": new_enabled,
+        "opt_out": new_opt_out,
+        "updated_at": now,
+    }
+
+
+def record_coach_event(session_id: str = "default", trigger_id: str = "") -> bool:
+    """Record that coaching advice for trigger_id was delivered. Returns True if newly recorded, False if already delivered."""
+    if not trigger_id:
+        return False
+    sid = session_id or "default"
+    tid = trigger_id.strip().upper()
+    now = now_iso()
+    with session() as c:
+        try:
+            c.execute("INSERT INTO coach_events (session_id, trigger_id, ts) VALUES (?, ?, ?)", (sid, tid, now))
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+
+def get_coach_events(session_id: str = "default") -> list:
+    """Return all trigger IDs that have fired for this session."""
+    sid = session_id or "default"
+    with session() as c:
+        rows = c.execute("SELECT trigger_id FROM coach_events WHERE session_id=? ORDER BY ts ASC", (sid,)).fetchall()
+        return [r["trigger_id"] for r in rows]
+
+
+def has_coach_event(session_id: str = "default", trigger_id: str = "") -> bool:
+    """Check if advice for trigger_id has already been delivered in this session."""
+    if not trigger_id:
+        return False
+    sid = session_id or "default"
+    tid = trigger_id.strip().upper()
+    with session() as c:
+        row = c.execute("SELECT 1 FROM coach_events WHERE session_id=? AND trigger_id=?", (sid, tid)).fetchone()
+        return bool(row)
+
+
+def reset_coach_events(session_id: str = "default") -> None:
+    sid = session_id or "default"
+    with session() as c:
+        c.execute("DELETE FROM coach_events WHERE session_id=?", (sid,))
+
+
+def get_coaching_preference() -> bool:
+    """Persistent preference: is coaching enabled globally? (defaults to True unless set to '0' or JH_COACHING=off)."""
+    env = os.environ.get("JH_COACHING", "").strip().lower()
+    if env == "off":
+        return False
+    val = get_setting("coaching_enabled", "1")
+    return str(val).strip().lower() not in ("0", "false", "off", "no")
+
+
+def set_coaching_preference(enabled: bool, scope: str = "session", session_id: str = "default") -> dict:
+    """Update coaching preference with 'session' or 'persistent' scope."""
+    sid = session_id or "default"
+    sc = (scope or "session").strip().lower()
+    if sc == "persistent":
+        set_setting("coaching_enabled", "1" if enabled else "0")
+        set_coach_state(session_id=sid, coaching_enabled=enabled, opt_out=not enabled)
+    else:
+        set_coach_state(session_id=sid, coaching_enabled=enabled, opt_out=not enabled)
+    return {
+        "enabled": enabled,
+        "coaching_enabled": enabled,
+        "scope": sc,
+        "session_id": sid,
+        "opt_out": not enabled,
+    }
+
+
+def wipe_coaching_data(session_id: str | None = None) -> dict:
+    """Wipe coach state and events for a session or globally."""
+    with session() as c:
+        if session_id:
+            c1 = c.execute("DELETE FROM coach_events WHERE session_id=?", (session_id,)).rowcount
+            c2 = c.execute("DELETE FROM coach_state WHERE session_id=?", (session_id,)).rowcount
+        else:
+            c1 = c.execute("DELETE FROM coach_events").rowcount
+            c2 = c.execute("DELETE FROM coach_state").rowcount
+    return {"coach_events_cleared": c1, "coach_state_cleared": c2}
+
+
+def wipe_all_data() -> dict:
+    """Full data wipe: clears user jobs, search history, applications, contacts, and coaching data."""
+    counts = {}
+    with session() as c:
+        for tbl in ("coach_events", "coach_state", "search_jobs", "pending_search_jobs",
+                    "applications", "status_history", "watchlist", "seen_jobs",
+                    "outreach", "contacts", "signals", "company_briefs", "dismissals"):
+            try:
+                rc = c.execute(f"DELETE FROM {tbl}").rowcount
+                counts[tbl] = rc
+            except Exception:
+                pass
+    return counts
+
 
 
 

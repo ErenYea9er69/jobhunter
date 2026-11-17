@@ -1,0 +1,73 @@
+{
+  "S": {
+    "title": "Safety & Support",
+    "acknowledgment": "I hear how heavy and overwhelming things feel right now.",
+    "insight": "Your life and health matter far more than any job search.",
+    "options": [
+      "{crisis_text}",
+      "Reach out to a trusted friend, family member, mentor, or professional right now."
+    ],
+    "choice": "Please take a moment for yourself. Would you like to pause here, or let me know when you feel ready?",
+    "template": "I hear how heavy and overwhelming things feel right now. Your well-being matters far more than any job search. {crisis_text} Please reach out to someone you trust or professional crisis services. We can pause completely, or take things one small step at a time whenever you are ready."
+  },
+  "D": {
+    "title": "Search Resilience & Shift Navigation",
+    "acknowledgment": "Job hunting can feel exhausting, and anxiety about market shifts or AI is completely understandable.",
+    "insight": "Rejections are market data rather than a personal verdict; technological shifts reward those who experiment with tools rather than panic.",
+    "options": [
+      "Focus on one small 15-minute win today: send one warm message or polish one key project bullet.",
+      "Treat AI as a practical drafting assistant while you retain final judgment and oversight.",
+      "Separate market noise from verifiable employer requirements in current postings."
+    ],
+    "choice": "Would you like to explore small, high-leverage steps, or just proceed with the search?",
+    "template": "Job hunting can feel exhausting, and anxiety about market shifts or AI is completely understandable. Rejections are market data rather than a personal verdict; technological shifts reward those who experiment with tools rather than panic.\n\nHere are practical options:\n- Focus on one small 15-minute win today: message one contact or polish one specific bullet.\n- Treat modern AI as a helpful assistant while keeping full control of the final outcome.\n- Set a daily stopping time so the hunt does not consume your evenings.\n\nWould you like to explore small, high-leverage steps, or just proceed with your search?"
+  },
+  "A": {
+    "title": "Strategic Advice",
+    "acknowledgment": "You asked for an honest perspective on how to proceed.",
+    "insight": "The highest-yield job search treats the process like targeted consulting: solving a company's immediate bottleneck beats blasting generic applications.",
+    "options": [
+      "Shortlist 10 specific employers where your background matches an urgent business priority.",
+      "Use peer outreach and introductions to skip automated resume screening queues.",
+      "Package your recent work into concise, verifiable proof points."
+    ],
+    "choice": "Would you like to go deeper on this strategy, or just proceed with the search?",
+    "template": "You asked for an honest perspective on how to proceed. The highest-yield search treats the process like targeted consulting: solving a company's immediate bottleneck beats blasting generic applications.\n\nRecommended next steps:\n- Target 10 specific employers where your background solves an active problem.\n- Seek warm introductions or referrals to bypass automated filter gates.\n- Frame every resume bullet with a clear action and measurable outcome.\n\nWould you like to go deeper on this strategy, or just proceed with your search?"
+  },
+  "B": {
+    "title": "Early Career Strategy: Bridge vs Dream Role",
+    "acknowledgment": "You're aiming high early in your career with aspirational targets.",
+    "insight": "A decent first job that builds marketable skills, earns a strong reference, and has a visible growth path often opens doors faster than waiting for the perfect offer.",
+    "options": [
+      "Track A (Parallel): Keep applying to reach roles while aggressively pursuing high-learning bridge roles.",
+      "Track B (Targeted): Focus exclusively on entry-level or junior positions at growing teams to build an initial track record.",
+      "Milestone check: If taking a bridge role, set a firm 6-month review date so it never becomes a trap."
+    ],
+    "choice": "Would you like to explore a parallel bridge track, or just proceed with your search?",
+    "template": "You're aiming high early in your career with aspirational targets. A decent first job that builds marketable skills, earns a strong reference, and has a visible growth path often opens doors faster than waiting indefinitely for a dream offer.\n\nOptions to consider:\n- Track A (Parallel): Apply to reach roles while also pursuing strong bridge roles that build core skills.\n- Track B (Focused): Zero in on teams where you can take real ownership immediately.\n- Set a 6-month milestone check so a stepping-stone role never turns into a trap.\n\nWould you like to explore a parallel bridge track, or just proceed with your search?"
+  },
+  "C": {
+    "title": "Business Foundation & Validation",
+    "acknowledgment": "You're exploring starting a business or independent revenue stream.",
+    "insight": "Sustainable businesses grow from existing skills that solve painful, expensive problems for real people—not generic idea lists.",
+    "options": [
+      "Inventory the specific skills or favors colleagues and clients already pay or ask you for.",
+      "Pre-validate demand: talk to 10 potential customers and secure commitments before writing code or buying inventory.",
+      "Watch for scheme red flags: upfront fees, guaranteed returns, urgency pressure, or income tied to recruiting others."
+    ],
+    "choice": "Would you like to map your skills into a low-risk test, or just proceed with jobs?",
+    "template": "You're exploring starting a business or independent revenue stream. Sustainable businesses grow from existing skills that solve painful, expensive problems for real people—not generic idea lists.\n\nPractical principles:\n- Build from a skill you already possess; if none yet, build that skill first while keeping your expenses low.\n- Sell and validate with ~10 potential buyers before investing significant time or money.\n- Beware of scheme red flags: guaranteed returns, pay-to-join models, or pressure to recruit.\n\nWould you like to map your skills into a low-risk test, or just proceed with jobs?"
+  },
+  "E": {
+    "title": "Career Direction & Strengths",
+    "acknowledgment": "You're considering career direction and where your strengths best align.",
+    "insight": "People generally build deep competence in what they consistently spend focused time doing, rather than chasing vague notions of passion.",
+    "options": [
+      "Identify the 2-3 work tasks where you consistently produce results with less friction than peers.",
+      "Ask 3 former colleagues what they consider your most dependable technical or working strength.",
+      "Run small 2-week experiments or study sprints in adjacent tracks before committing to a full career pivot."
+    ],
+    "choice": "Would you like to explore your strengths further, or just proceed with searching jobs?",
+    "template": "You're considering career direction and where your strengths best align. People generally build deep competence in what they consistently spend focused time doing, rather than chasing vague notions of passion.\n\nHelpful ways to clarify:\n- Identify tasks where your output is high and the work feels naturally engaging.\n- Ask 2-3 trusted peers what specific problems they would bring to you first.\n- Test target roles with small practical projects before committing to a full pivot.\n\nWould you like to explore your strengths further, or just proceed with searching jobs?"
+  }
+}

@@ -149,6 +149,13 @@
       const m = env && env.error && (env.error.message || env.error);
       throw new Error(typeof m === "string" && m ? m : "The request failed (" + res.status + ").");
     }
+    if (env && env.coaching) {
+      try {
+        if (typeof renderCoachCard === "function") renderCoachCard(env.coaching);
+      } catch (err) {
+        console.warn("Failed to render coaching card:", err);
+      }
+    }
     return env && env.data !== undefined ? env.data : env;
   }
   const apiGet = (p, signal) => request("GET", p, null, signal);
@@ -1131,7 +1138,7 @@
     ssSet("jh-search", { q: state.query, loc: state.place, jobs: state.jobs, at: Date.now() });
   }
 
-  async function runSearch() {
+  async function runSearch(track) {
     if (state.searching) { if (searchCtl) searchCtl.abort(); return; }
     const q = byId("q").value.trim();
     const loc = byId("loc").value.trim();
@@ -1152,6 +1159,7 @@
     renderJobs();
     try {
       const params = new URLSearchParams({ q, location: loc, work_mode: "Any", job_type: "", min_score: "0" });
+      if (track) params.set("track", track);
       const d = await apiGet("/api/search?" + params.toString(), searchCtl.signal);
       state.jobs = (d && d.jobs) || [];
       state.searched = true;
@@ -1901,6 +1909,168 @@
     pollSessionStatus();
     if (!sessionPollTimer) {
       sessionPollTimer = setInterval(pollSessionStatus, 3000);
+    }
+    initCoachUi();
+  }
+
+  /* ------------------------------------------------------------ Coaching Layer */
+  let activeCoachingTrigger = null;
+
+  function hideCoachCard() {
+    const card = byId("coach-card");
+    if (card) card.hidden = true;
+  }
+
+  function renderCoachCard(data) {
+    const card = byId("coach-card");
+    if (!card || !data) return;
+
+    let text = "";
+    let triggerId = "";
+    let options = [];
+    let choice = "";
+
+    if (typeof data === "string") {
+      text = data;
+    } else if (typeof data === "object") {
+      text = [data.acknowledgment, data.insight].filter(Boolean).join(" ");
+      if (!text && data.text) text = data.text;
+      triggerId = data.trigger_id || "";
+      options = data.options || [];
+      choice = data.choice || "";
+    }
+
+    activeCoachingTrigger = triggerId;
+    const whyEl = byId("coach-card-why");
+    if (whyEl) {
+      whyEl.hidden = true;
+      if (triggerId) {
+        const reasons = {
+          "S": "Safety check: supportive resources and assistance.",
+          "D": "Frustration or anxiety detected: practical momentum and focus.",
+          "A": "Advice requested directly.",
+          "B": "Objective seniority mismatch: bridging entry-level experience with aspirational target.",
+          "C": "Business or monetization query: validating customer demand first.",
+          "E": "Direction or strengths query: identifying demonstrated skills."
+        };
+        whyEl.textContent = reasons[triggerId] || "Objective signals in profile or query matched a coaching heuristic.";
+      }
+    }
+
+    const whyBtn = byId("btn-coach-why");
+    if (whyBtn) whyBtn.setAttribute("aria-expanded", "false");
+
+    const bodyEl = byId("coach-card-body");
+    if (bodyEl) bodyEl.textContent = text || "";
+
+    const optEl = byId("coach-card-options");
+    if (optEl) {
+      if (options && options.length) {
+        optEl.innerHTML = `<ul class="coach-options-list">${options.map((o) => `<li>${esc(o)}</li>`).join("")}</ul>`;
+        optEl.hidden = false;
+      } else {
+        optEl.innerHTML = "";
+        optEl.hidden = true;
+      }
+    }
+
+    const choiceEl = byId("coach-card-choice");
+    if (choiceEl) {
+      let buttonsHtml = "";
+      if (triggerId === "B") {
+        buttonsHtml = `
+          <button type="button" class="btn btn-sm btn-secondary" data-coach-act="track-target">Target Track Only</button>
+          <button type="button" class="btn btn-sm btn-secondary" data-coach-act="track-bridge">Bridge Track</button>
+          <button type="button" class="btn btn-sm btn-primary" data-coach-act="track-both">Both (Dual Track)</button>
+          <button type="button" class="btn btn-sm btn-ghost" data-coach-act="dismiss">Dismiss</button>
+        `;
+      } else {
+        buttonsHtml = `
+          <button type="button" class="btn btn-sm btn-primary" data-coach-act="dismiss">Got it</button>
+        `;
+      }
+      choiceEl.innerHTML = buttonsHtml;
+      choiceEl.hidden = false;
+    }
+
+    card.hidden = false;
+  }
+
+  function initCoachUi() {
+    const btnWhy = byId("btn-coach-why");
+    if (btnWhy) {
+      btnWhy.addEventListener("click", () => {
+        const whyEl = byId("coach-card-why");
+        if (whyEl) {
+          const isHidden = whyEl.hidden;
+          whyEl.hidden = !isHidden;
+          btnWhy.setAttribute("aria-expanded", String(isHidden));
+        }
+      });
+    }
+
+    const btnDismiss = byId("btn-coach-dismiss");
+    if (btnDismiss) {
+      btnDismiss.addEventListener("click", async () => {
+        try {
+          if (activeCoachingTrigger) {
+            await apiPost("/api/coach/dismiss", { trigger_id: activeCoachingTrigger });
+          }
+        } catch (_) {}
+        hideCoachCard();
+      });
+    }
+
+    const btnDontShow = byId("btn-coach-dont-show");
+    if (btnDontShow) {
+      btnDontShow.addEventListener("click", async () => {
+        try {
+          await apiPost("/api/coach/dismiss", { dont_show_again: true });
+          toast("Coaching disabled in settings.");
+        } catch (err) {
+          toast("Error updating preference: " + err.message, { kind: "bad" });
+        }
+        hideCoachCard();
+      });
+    }
+
+    const choiceBox = byId("coach-card-choice");
+    if (choiceBox) {
+      choiceBox.addEventListener("click", async (e) => {
+        const act = e.target.closest("[data-coach-act]");
+        if (!act) return;
+        const action = act.dataset.coachAct;
+        if (action === "dismiss") {
+          try {
+            if (activeCoachingTrigger) {
+              await apiPost("/api/coach/dismiss", { trigger_id: activeCoachingTrigger });
+            }
+          } catch (_) {}
+          hideCoachCard();
+        } else if (action === "track-target" || action === "track-bridge" || action === "track-both") {
+          const trackVal = action === "track-bridge" ? "bridge" : action === "track-target" ? "target" : "both";
+          hideCoachCard();
+          toast(`Selected ${trackVal} track.`);
+          runSearch(trackVal);
+        }
+      });
+    }
+
+    const btnAdvice = byId("btn-get-advice");
+    if (btnAdvice) {
+      btnAdvice.addEventListener("click", async () => {
+        try {
+          const q = (byId("q") && byId("q").value.trim()) || "";
+          const res = await apiPost("/api/coach/trigger", { action: "advice", text: q });
+          if (res && res.coaching) {
+            renderCoachCard(res.coaching);
+          } else {
+            toast("No specific coaching advice triggered for this search.");
+          }
+        } catch (err) {
+          toast("Could not get advice: " + err.message, { kind: "bad" });
+        }
+      });
     }
   }
 
@@ -4178,7 +4348,7 @@
   };
 
   /* ============================================================ SETTINGS */
-  const SECTIONS = [["search", "Search"], ["ai", "AI engine"], ["autofill", "Autofill"], ["gmail", "Gmail"], ["browser", "Browser"]];
+  const SECTIONS = [["search", "Search"], ["ai", "AI engine"], ["autofill", "Autofill"], ["coaching", "Coaching"], ["gmail", "Gmail"], ["browser", "Browser"]];
   const MODELS = {
     gemini: ["gemini-3.8-flash", "gemini-3.1-pro", "gemini-3.5-flash"],
     openai: ["gpt-5-mini", "o3-mini", "gpt-5"],
@@ -4476,6 +4646,13 @@
     loadAi();
     loadGmailStatus().then(renderGmail);
     loadBrowsers();
+    try {
+      const ctx = await apiGet("/api/coach/context");
+      if (ctx) {
+        const t = byId("coach-toggle");
+        if (t) t.value = ctx.coaching_enabled ? "1" : "0";
+      }
+    } catch (_) {}
   }
 
   function initSettings() {
@@ -4503,6 +4680,32 @@
     byId("btn-gmail-sync2").addEventListener("click", syncGmailNow);
     byId("btn-launch2").addEventListener("click", (e) => launchBrowser(e.currentTarget));
     byId("settings-tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-section]"); if (b) go("settings/" + b.dataset.section); });
+
+    const formCoach = byId("form-coach");
+    if (formCoach) {
+      formCoach.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const enabled = byId("coach-toggle").value === "1";
+        const threshold = Number(byId("coach-threshold").value) || 60;
+        try {
+          await apiPost("/api/coach/preference", { enabled, scope: "persistent", threshold });
+          feedback("fb-coach", "ok", "Coaching preferences saved.");
+        } catch (err) {
+          feedback("fb-coach", "bad", "Failed to save: " + err.message);
+        }
+      });
+    }
+    const btnCoachReset = byId("btn-coach-reset");
+    if (btnCoachReset) {
+      btnCoachReset.addEventListener("click", async () => {
+        try {
+          await apiPost("/api/coach/reset", {});
+          feedback("fb-coach", "ok", "Coaching history and events reset.");
+        } catch (err) {
+          feedback("fb-coach", "bad", "Failed to reset: " + err.message);
+        }
+      });
+    }
   }
 
   routeHooks.settings = (arg, changed) => {

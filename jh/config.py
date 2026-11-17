@@ -214,3 +214,62 @@ def get_resume_max_kb() -> int:
         pass
     return int(os.environ.get("JH_RESUME_MAX_KB", "200"))
 
+
+# ------------------------------------------------------------ Coaching Layer Config
+def get_coaching_mode() -> str:
+    """Coaching layer activation: 'auto' (default) or 'off' (fully disabled)."""
+    try:
+        from . import db
+        val = db.get_setting("coaching_mode")
+        if val:
+            v = str(val).strip().lower()
+            if v in ("auto", "off"):
+                return v
+    except Exception:
+        pass
+    env = os.environ.get("JH_COACHING", "auto").strip().lower()
+    return env if env in ("auto", "off") else "auto"
+
+
+def get_coach_classifier() -> str:
+    """Classifier mode: 'local' (default, rules/lexicon), 'off', or 'provider' (opt-in cloud LLM)."""
+    try:
+        from . import db
+        val = db.get_setting("coach_classifier")
+        if val:
+            v = str(val).strip().lower()
+            if v in ("local", "off", "provider"):
+                return v
+    except Exception:
+        pass
+    env = os.environ.get("JH_COACH_CLASSIFIER", "local").strip().lower()
+    return env if env in ("local", "off", "provider") else "local"
+
+
+def get_coach_threshold() -> float:
+    """Score mismatch threshold for Trigger B (default: 60.0)."""
+    try:
+        from . import db
+        val = db.get_setting("coach_threshold")
+        if val:
+            return float(val)
+    except Exception:
+        pass
+    try:
+        return float(os.environ.get("JH_COACH_THRESHOLD", "60"))
+    except (ValueError, TypeError):
+        return 60.0
+
+
+def get_coach_lang() -> str:
+    """Explicit coaching language code (e.g. 'en'), or empty string to follow user language."""
+    try:
+        from . import db
+        val = db.get_setting("coach_lang")
+        if val:
+            return str(val).strip().lower()
+    except Exception:
+        pass
+    return os.environ.get("JH_COACH_LANG", "").strip().lower()
+
+

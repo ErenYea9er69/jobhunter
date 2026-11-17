@@ -44,6 +44,7 @@ class Result:
     warnings: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     status: str = "ok"
+    coaching: Optional[Any] = None
 
 
 def correlation_id() -> str:
@@ -51,11 +52,13 @@ def correlation_id() -> str:
 
 
 def envelope(status: str = "ok", data: Optional[dict] = None, warnings: Optional[list] = None,
-             sources: Optional[list] = None, cid: str = "", error: Optional[dict] = None) -> dict[str, Any]:
+             sources: Optional[list] = None, cid: str = "", error: Optional[dict] = None,
+             coaching: Optional[Any] = None) -> dict[str, Any]:
     env: dict[str, Any] = {
         "status": status, "success": status in ("ok", "partial"), "data": data or {},
         "warnings": list(warnings or []), "sources": list(sources or []),
         "correlation_id": cid or correlation_id(), "schema_version": SCHEMA_VERSION, "generated_at": now_iso(),
+        "coaching": coaching,
     }
     if error:
         env["error"] = error
@@ -79,7 +82,7 @@ def make_tool_decorator(mcp: Any) -> Callable:
                 warnings = list(res.warnings)
                 if first_notice and first_notice not in warnings:
                     warnings.insert(0, first_notice)
-                env = envelope(res.status, res.data, warnings, res.sources, cid)
+                env = envelope(res.status, res.data, warnings, res.sources, cid, coaching=res.coaching)
                 outcome = res.status
             except ToolError as e:
                 warnings = [str(e)]

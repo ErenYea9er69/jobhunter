@@ -12,6 +12,7 @@ import mimetypes
 import os
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -203,7 +204,11 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             prof = h.resolve_profile(overlay=False, require=False)
             res = pipeline.search(query=q, location=loc, work_mode=wm, min_score=min_score, limit=limit, profile=prof, job_type=jt)
             jobs = res.get("jobs", []) if isinstance(res, dict) else res
-            return self._send_json(200, envelope(status="ok", data={"jobs": jobs, "count": len(jobs), "coverage": res.get("coverage", {})}))
+            top_scores = [j.get("score") for j in jobs[:5] if isinstance(j, dict) and j.get("score") is not None]
+            sid = self.headers.get("X-Session-ID", "ui-default")
+            from . import coach
+            coaching = coach.evaluate_coaching(user_text=q, profile=prof, top_match_scores=top_scores, session_id=sid)
+            return self._send_json(200, envelope(status="ok", data={"jobs": jobs, "count": len(jobs), "coverage": res.get("coverage", {})}, coaching=coaching))
 
         if path == "/api/bigtech/directory":
             companies = bigtech_directory.list_bigtech_companies()
@@ -308,6 +313,19 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             st = v5_tools.jh_status(session_id=sid)
             st["search_job"] = worker_launcher.get_search_job_status(sid)
             return self._send_json(200, envelope(status="ok", data=st))
+
+        if path == "/api/coach/context":
+            sid = query.get("session_id", query.get("session", ["default"]))[0]
+            from . import coach
+            ctx = coach.get_coaching_context(session_id=sid)
+            return self._send_json(200, envelope(status="ok", data=ctx))
+
+        if path == "/api/coach/content":
+            tid = query.get("trigger_id", query.get("trigger", ["B"]))[0]
+            lang = query.get("lang", ["en"])[0]
+            from . import coach
+            content = coach.get_coaching_content(trigger_id=tid, language=lang)
+            return self._send_json(200, envelope(status="ok", data=content))
 
         if path == "/api/search/stream":
             sid = query.get("session_id", query.get("session", ["default"]))[0]
@@ -480,6 +498,41 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             provider = body.get("provider")
             res = ai_manager.clear_ai_key(provider=provider)
             return self._send_json(200, envelope(status="ok", data=res))
+
+        if path == "/api/coach/preference":
+            enabled = bool(body.get("enabled", True))
+            scope = str(body.get("scope", "session"))
+            sid = str(body.get("session_id", "default"))
+            from . import coach
+            res = coach.set_coaching_preference(enabled=enabled, scope=scope, session_id=sid)
+            return self._send_json(200, envelope(status="ok", data=res))
+
+        if path == "/api/coach/trigger":
+            sid = str(body.get("session_id", "default"))
+            user_text = str(body.get("message", "give me advice"))
+            from . import coach
+            coaching = coach.evaluate_coaching(user_text, session_id=sid)
+            if not coaching and body.get("action") == "advice":
+                coaching = coach.get_coaching_content("A")
+                coach.record_coaching_event("A", session_id=sid)
+            return self._send_json(200, envelope(status="ok", data={"coaching": coaching}))
+
+        if path == "/api/coach/dismiss":
+            tid = str(body.get("trigger_id", ""))
+            sid = str(body.get("session_id", "default"))
+            dont_show_again = bool(body.get("dont_show_again", False))
+            from . import coach
+            if dont_show_again:
+                coach.set_coaching_preference(enabled=False, scope="persistent", session_id=sid)
+            elif tid:
+                coach.record_coaching_event(tid, session_id=sid)
+            return self._send_json(200, envelope(status="ok", data={"dismissed": True}))
+
+        if path == "/api/coach/reset":
+            sid = str(body.get("session_id", "default"))
+            db.reset_coach_events(session_id=sid)
+            db.set_coach_state(session_id=sid, coaching_enabled=True, opt_out=False)
+            return self._send_json(200, envelope(status="ok", data={"reset": True}))
 
         if path == "/api/ai/test":
             res = ai_manager.test_ai_connection()

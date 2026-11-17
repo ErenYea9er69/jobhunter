@@ -1,0 +1,122 @@
+{
+  "opt_out_session": [
+    "\\bjust\\s+search\\b",
+    "\\bno\\s+advice\\b",
+    "\\bskip\\s+(?:the\\s+)?coaching\\b",
+    "\\bstop\\s+coaching\\b",
+    "\\bdon'?t\\s+coach\\b",
+    "\\bdisable\\s+coaching\\b",
+    "\\bturn\\s+off\\s+coaching\\b",
+    "\\bsearch\\s+only\\b"
+  ],
+  "opt_out_request": [
+    "\\bno\\s+advice\\s+on\\s+this(?:\\s+one)?\\b",
+    "\\bskip\\s+advice\\s+for\\s+now\\b",
+    "\\bnot\\s+on\\s+this\\s+search\\b",
+    "\\bjust\\s+this\\s+search\\b"
+  ],
+  "safety_patterns": [
+    "\\b(?:want\\s+to|going\\s+to|gonna|feel\\s+like)\\s+kil{1,2}(?:ing)?\\s+myself\\b",
+    "\\b(?:want|wanna)\\s+(?:to\\s+)?die\\b",
+    "\\bfeel\\s+like\\s+dying\\b",
+    "\\b(?:end|endng|ending)\\s+(?:my\\s+life|it\\s+all)\\b",
+    "\\bwant\\s+to\\s+end\\s+it\\s+all\\b",
+    "\\bsuicid",
+    "\\bbetter\\s+off\\s+dead\\b",
+    "\\bcan'?t\\s+go\\s+on\\s+living\\b",
+    "\\bno\\s+point\\s+in\\s+living\\b",
+    "\\bno\\s+reason\\s+to\\s+live\\b",
+    "\\blife\\s+isn'?t\\s+worth\\s+living\\b",
+    "\\bself[- ]harm\\b"
+  ],
+  "distress_stuck": [
+    "\\bapplied\\s+to\\s+\\d+\\s+jobs\\b",
+    "\\bhundreds\\s+of\\s+applications\\s+and\\s+nothing\\b",
+    "\\bso\\s+frustrated\\s+with\\s+(?:this|job|searching)\\b",
+    "\\blosing\\s+hope\\b",
+    "\\bfeel(?:ing)?\\s+completely\\s+hopeless\\b",
+    "\\bpanicking\\s+about\\s+(?:money|rent|unemployment|bills)\\b",
+    "\\bterrified\\s+i\\s+won'?t\\s+find\\b",
+    "\\bso\\s+burned\\s+out\\b",
+    "\\bdepressed\\s+about\\s+(?:the\\s+)?job\\s+hunt\\b",
+    "\\bcrying\\s+after\\s+rejection\\b",
+    "\\bdespair\\s+over\\s+(?:job|unemployment)\\b"
+  ],
+  "distress_ai": [
+    "\\b(?:afraid|scared|terrified|worried)\\s+(?:that\\s+)?ai\\s+will\\s+(?:take|replace)\\b",
+    "\\bwill\\s+ai\\s+replace\\s+(?:programmers|developers|engineers|my\\s+job|all\\s+jobs)\\b",
+    "\\bis\\s+(?:software\\s+engineering|coding|programming)\\s+dead\\b",
+    "\\bpanicking\\s+about\\s+ai\\b",
+    "\\bai\\s+career\\s+anxiety\\b",
+    "\\bai\\s+is\\s+taking\\s+all\\s+(?:the\\s+)?(?:dev|tech|developer|engineering)\\s+jobs\\b",
+    "\\bterrified\\s+ai\\s+will\\s+take\\b"
+  ],
+  "distress_ai_negatives": [
+    "\\b(?:search|find|looking\\s+for|open)\\s+ai\\s+(?:engineer|jobs|roles)\\b",
+    "\\bai\\s+prompt\\s+engineer\\b",
+    "\\bwhat\\s+ai\\s+skills\\b",
+    "\\b(?:pytorch|tensorflow|llm|huggingface|rag)\\s+jobs\\b",
+    "\\bhow\\s+many\\s+jobs\\s+require\\b",
+    "\\bhow\\s+to\\s+learn\\s+(?:llm|ai)\\b",
+    "\\bis\\s+ai\\s+automation\\s+increasing\\b"
+  ],
+  "explicit_advice": [
+    "\\bwhat\\s+should\\s+i\\s+do\\b",
+    "\\bwhat\\s+do\\s+you\\s+(?:advise|recommend)\\b",
+    "\\bgive\\s+me\\s+(?:some\\s+)?advice\\b",
+    "\\bi\\s+need\\s+advice\\b",
+    "\\bneed\\s+your\\s+opinion\\b",
+    "\\bwhat\\s+is\\s+your\\s+(?:opinion|take|advice)\\b",
+    "\\bhelp\\s+me\\s+decide\\b",
+    "\\bcan\\s+you\\s+advise\\s+me\\b",
+    "\\bwhat\\s+would\\s+you\\s+(?:do|advise)\\b",
+    "\\bshould\\s+i\\s+take\\s+this\\b"
+  ],
+  "aspirational": [
+    "\\b(?:dream|perfect|ideal)\\s+job\\b",
+    "\\b(?:dream|ideal)\\s+company\\b",
+    "\\b(?:top|elite|faang)\\s+tier\\s+(?:job|company|firm)\\b",
+    "\\bfaang\\b",
+    "\\bstaff\\s+(?:software\\s+)?engineer\\b",
+    "\\bprincipal\\s+(?:software\\s+)?engineer\\b",
+    "\\bvp\\s+(?:of\\s+)?engineering\\b",
+    "\\bdirector\\s+(?:of\\s+)?engineering\\b",
+    "\\bhead\\s+of\\s+engineering\\b",
+    "\\bchief\\s+architect\\b"
+  ],
+  "aspirational_negatives": [
+    "\\bbest\\s+(?:python|java|rust|go|golang|c\\+\\+|javascript|typescript|react|vue|node|backend|frontend|devops|cloud|remote|local|paying|matched|match)\\s+jobs\\b",
+    "\\bbest\\s+match(?:es)?\\b",
+    "\\bbest\\s+jobs\\s+in\\b"
+  ],
+  "business": [
+    "\\b(?:start|launch|build|create)\\s+(?:a|my\\s+own)\\s+business\\b",
+    "\\bwhat\\s+business\\s+(?:should|can)\\s+i\\s+start\\b",
+    "\\bhow\\s+(?:can|to)\\s+(?:i\\s+)?make\\s+money\\s+with\\s+a\\s+business\\b",
+    "\\bstartup\\s+ideas?\\b",
+    "\\bbusiness\\s+ideas?\\b",
+    "\\bside\\s+business\\s+ideas?\\b",
+    "\\bhow\\s+to\\s+start\\s+a\\s+company\\b"
+  ],
+  "career_direction": [
+    "\\bwhat'?s\\s+a\\s+good\\s+job\\s+for\\s+me\\b",
+    "\\bwhat\\s+is\\s+a\\s+good\\s+job\\s+for\\s+me\\b",
+    "\\bwhat\\s+(?:career|job)\\s+(?:direction|path)?\\s*(?:should|can)\\s+i\\s+(?:take|pursue)\\b",
+    "\\bwhich\\s+career\\s+direction\\b",
+    "\\bwhat\\s+am\\s+i\\s+good\\s+at\\b",
+    "\\bhow\\s+do\\s+i\\s+choose\\s+a\\s+career\\b",
+    "\\bcareer\\s+path\\s+should\\s+i\\s+take\\b",
+    "\\bwhat\\s+should\\s+my\\s+career\\s+be\\b",
+    "\\bwhat\\s+career\\s+direction\\b"
+  ],
+  "career_direction_negatives": [
+    "\\bgood\\s+job[!.,;]",
+    "\\bgreat\\s+job[!.,;]",
+    "\\bnice\\s+job[!.,;]",
+    "\\bawesome\\s+job[!.,;]",
+    "\\bdid\\s+a\\s+good\\s+job\\b",
+    "\\bdoing\\s+a\\s+good\\s+job\\b",
+    "\\bgood\\s+job\\s+(?:finding|searching|matching|doing)\\b",
+    "\\bgood\\s+jobs\\s+for\\s+\\w+\\s+in\\b"
+  ]
+}

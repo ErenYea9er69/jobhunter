@@ -47,7 +47,8 @@ Rules:
 2. The server runs detached in the background. The chat stays free. Never poll in a tight loop. Call jh_status at most once after launch.
 3. Narrow filters apply live at query time via jh_answer without restarting the search.
 4. The chat shows no job list; the UI shows the matching jobs.
-5. Generation of a job-specific resume or cover letter happens only after the user clicks Save on a job in the UI. Never offer it before."""
+5. Generation of a job-specific resume or cover letter happens only after the user clicks Save on a job in the UI. Never offer it before.
+6. Coaching: default to zero unsolicited advice. Check coach guidelines in prompts/coach/coach_guidelines.md and call coach tools (get_coaching_context, get_coaching_content) when triggers apply."""
 
 
 def init_workspace_and_engine(ws_path: str = "") -> tuple[OutputStore, str]:

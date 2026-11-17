@@ -23,9 +23,9 @@ from .mcp_helpers import Result, ToolError
 
 def _tool_envelope(status: str = "ok", data: Optional[dict] = None, warnings: Optional[list] = None,
                    sources: Optional[list] = None, sources_used: Optional[list] = None, cid: str = "",
-                   error: Optional[dict] = None) -> dict[str, Any]:
+                   error: Optional[dict] = None, coaching: Optional[Any] = None) -> dict[str, Any]:
     src = sources if sources is not None else sources_used
-    return h.envelope(status=status, data=data, warnings=warnings, sources=src, cid=cid, error=error)
+    return h.envelope(status=status, data=data, warnings=warnings, sources=src, cid=cid, error=error, coaching=coaching)
 from .resume_registry import ResumeRegistry
 from .source_policy import sanitize_apply_url
 from .util import clean_text, http_get_text
@@ -357,7 +357,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
 
     @tool
     def search_jobs(query: str = "", location: str = "", work_mode: str = "", min_score: int = 0, limit: int = 25,
-                    company_focus: str = "", refresh: bool = False, job_type: str = "") -> dict[str, Any]:
+                    company_focus: str = "", refresh: bool = False, job_type: str = "", track: str = "") -> dict[str, Any]:
         """Search every enabled source for your region and return compact job cards ranked by fit.
 
         Which sources run depends on your preferences (set_preferences): target countries, remote, disabled sources,
@@ -372,6 +372,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             company_focus: any, avoid_big_names or only_big_names. Empty uses your preference.
             refresh: Skip cached source results.
             job_type: Full-time, Internship, Contract or Part-time. Empty uses your preference.
+            track: Optional coaching track filter ('bridge', 'target', or 'both').
         """
         profile = h.resolve_profile(overlay=False, require=False)
         if profile.get("_is_empty") and not query:
@@ -464,11 +465,12 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         return Result(data, warnings)
 
     @tool
-    def get_recommendations(limit: int = 15) -> dict[str, Any]:
+    def get_recommendations(limit: int = 15, track: str = "") -> dict[str, Any]:
         """Top matches for your resume and preferences with no query needed. Uses stored jobs first.
 
         Args:
             limit: Cards to return, 1 to 50.
+            track: Optional coaching track filter ('bridge', 'target', or 'both').
         """
         limit = h.clamp(limit, 1, 50)
         profile = h.resolve_profile()
@@ -860,6 +862,45 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         ranked = sorted(demand.values(), key=lambda d: (-d["required_in"], -d["jobs_asking"]))[:12]
         return {"based_on_jobs": len(pool), "priority_gaps": ranked,
                 "next_step": "Call get_playbook('career_skill_roadmap') to turn these gaps into a two-week plan."}
+
+    @tool
+    def get_coaching_context() -> dict[str, Any]:
+        """Return candidate experience level, confidence, recent match scores, and coaching status."""
+        from . import coach
+        return coach.get_coaching_context()
+
+    @tool
+    def get_coaching_content(trigger_id: str, language: str = "en") -> dict[str, Any]:
+        """Return vetted, non-preachy coaching template text (<= 120 words) for a given trigger ID.
+
+        Args:
+            trigger_id: Trigger identifier ('S', 'D', 'A', 'B', 'C', or 'E').
+            language: Language code ('en').
+        """
+        from . import coach
+        return coach.get_coaching_content(trigger_id=trigger_id, language=language)
+
+    @tool
+    def record_coaching_event(trigger_id: str) -> dict[str, Any]:
+        """Record that coaching advice for a trigger was delivered to ensure it only appears once per session.
+
+        Args:
+            trigger_id: The trigger that fired ('S', 'D', 'A', 'B', 'C', or 'E').
+        """
+        from . import coach
+        recorded = coach.record_coaching_event(trigger_id=trigger_id)
+        return {"trigger_id": trigger_id, "recorded": recorded}
+
+    @tool
+    def set_coaching_preference(enabled: bool, scope: str = "session") -> dict[str, Any]:
+        """Enable or disable career coaching suggestions.
+
+        Args:
+            enabled: True to enable coaching suggestions, False to disable completely.
+            scope: 'session' (current session only) or 'persistent' (saves to settings).
+        """
+        from . import coach
+        return coach.set_coaching_preference(enabled=enabled, scope=scope)
 
     @tool
     def follow_up_message(app_id: str, action_type: str = "status_check_5days", notes: str = "", resume_name: str = "") -> dict[str, Any]:

@@ -326,6 +326,7 @@
             <div class="with-icon"><svg class="icon"><use href="#i-map-pin"/></svg><input class="input" id="loc" name="loc" type="text" placeholder="City, country or Remote"></div>
           </div>
           <button class="btn btn-primary" id="btn-search" type="submit"><svg class="icon"><use href="#i-search"/></svg><span>Search jobs</span></button>
+          <button class="btn btn-secondary" id="btn-get-advice" type="button" title="Get career advice"><svg class="icon"><use href="#i-sparkles"/></svg><span>Get advice</span></button>
         </form>
         <div class="filters">
           <button class="btn btn-secondary btn-sm filter-toggle" id="filter-toggle" type="button" aria-expanded="false" aria-controls="filters-body"><svg class="icon icon-sm"><use href="#i-sliders-horizontal"/></svg>Filters<span id="filter-count"></span></button>
@@ -342,6 +343,22 @@
             </div>
             <div class="filter-group"><span class="label" id="lbl-fit">Minimum fit</span><div class="seg" role="radiogroup" aria-labelledby="lbl-fit" data-filter="fit"></div></div>
           </div>
+        </div>
+
+        <!-- Coaching Layer Card (Accessible, Dismissible) -->
+        <div class="coach-card" id="coach-card" hidden role="region" aria-label="Career coaching suggestion" aria-live="polite">
+          <div class="coach-card-head">
+            <div class="coach-badge"><svg class="icon"><use href="#i-sparkles"/></svg><span id="coach-card-title">Career Coach Insight</span></div>
+            <div class="coach-card-actions">
+              <button class="btn btn-ghost btn-sm" id="btn-coach-why" type="button" aria-expanded="false">Why am I seeing this?</button>
+              <button class="btn btn-ghost btn-sm" id="btn-coach-dismiss" type="button" aria-label="Dismiss coaching advice">Dismiss</button>
+              <button class="btn btn-ghost btn-sm text-dim" id="btn-coach-dont-show" type="button" title="Turn off coaching suggestions">Don't show again</button>
+            </div>
+          </div>
+          <div class="coach-card-why" id="coach-card-why" hidden></div>
+          <div class="coach-card-body" id="coach-card-body"></div>
+          <div class="coach-card-options" id="coach-card-options"></div>
+          <div class="coach-card-choice" id="coach-card-choice"></div>
         </div>
       </div>
       <section aria-label="Search results">
@@ -616,6 +633,34 @@
               <h3 style="font-size:var(--text-md);margin-block-end:var(--s2)">Browsers found on this computer</h3>
               <ul class="browser-list" id="browser-list"></ul>
             </div>
+          </section>
+
+          <!-- Coaching Layer -->
+          <section class="settings-panel" data-panel="coaching" aria-labelledby="h-coach">
+            <header>
+              <h2 id="h-coach">Career Coaching Layer</h2>
+              <p>Optional career heuristics and guidance. Triggers only under defined conditions, delivered at most once per session.</p>
+            </header>
+            <form id="form-coach" class="form-grid">
+              <div class="field">
+                <label for="coach-toggle">Coaching suggestions</label>
+                <select class="select" id="coach-toggle">
+                  <option value="1">On (Show suggestions when triggered)</option>
+                  <option value="0">Off (Silent mode, zero coaching)</option>
+                </select>
+                <span class="hint">When off, coaching is fully disabled and JobHunter runs in pure search mode.</span>
+              </div>
+              <div class="field">
+                <label for="coach-threshold">Score mismatch threshold</label>
+                <input class="input" id="coach-threshold" type="number" min="0" max="100" value="60" style="max-width:120px">
+                <span class="hint">Minimum match score threshold (default: 60) for Trigger B.</span>
+              </div>
+              <div class="form-foot">
+                <button class="btn btn-primary" type="submit" id="btn-coach-save">Save coaching settings</button>
+                <button class="btn btn-secondary" type="button" id="btn-coach-reset">Reset coaching history</button>
+                <span id="fb-coach" role="status"></span>
+              </div>
+            </form>
           </section>
         </div>
       </div>

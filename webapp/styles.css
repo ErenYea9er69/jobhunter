@@ -834,6 +834,99 @@ details.disclosure > .inner { padding: 0 var(--s4) var(--s4); display: grid; gap
   gap: var(--s2);
 }
 
+/* Career Coaching Layer Card */
+.coach-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  padding: var(--s4);
+  margin-block-end: var(--s4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  font-size: var(--text-sm);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.coach-card[hidden] {
+  display: none !important;
+}
+
+.coach-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-block-end: var(--s2);
+  flex-wrap: wrap;
+}
+
+.coach-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-weight: 600;
+  color: var(--accent);
+  font-size: var(--text-sm);
+}
+
+.coach-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.coach-card-why {
+  background: var(--panel-quiet);
+  border-left: 2px solid var(--accent);
+  padding: var(--s2) var(--s3);
+  margin-block: var(--s2);
+  font-size: var(--text-xs);
+  color: var(--ink-dim);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.coach-card-body {
+  color: var(--ink);
+  line-height: 1.5;
+  margin-block-end: var(--s3);
+  white-space: pre-line;
+}
+
+.coach-card-options {
+  margin-block-end: var(--s3);
+}
+
+.coach-card-options ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.coach-card-options li {
+  position: relative;
+  padding-left: var(--s4);
+  color: var(--ink);
+}
+
+.coach-card-options li::before {
+  content: "•";
+  position: absolute;
+  left: var(--s1);
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.coach-card-choice {
+  font-weight: 500;
+  color: var(--ink-dim);
+  border-top: 1px dashed var(--line);
+  padding-top: var(--s2);
+  margin-top: var(--s2);
+}
+
 .closing-soon-wrap {
   background: var(--panel-quiet);
   border: 1px solid var(--line);
