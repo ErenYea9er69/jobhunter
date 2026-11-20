@@ -17,7 +17,7 @@ def test_ui_index_html_has_all_target_components():
     # 2. Chat question banner with questions waiting title
     assert 'id="banner-chat-question"' in web_idx
     assert 'id="banner-chat-title"' in web_idx
-    assert 'questions are waiting in the chat' in web_idx
+    assert "The AI is asking you a question in chat:" in web_idx
 
     # 3. Change resume button and dialog
     assert 'id="btn-change-resume"' in web_idx
