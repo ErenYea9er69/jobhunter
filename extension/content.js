@@ -106,6 +106,7 @@
     if (/years? of (professional |relevant |work |total )?experience|experience.{0,20}years/.test(t)) return "years";
     if (/\b(city|current location|where are you (based|located))\b/.test(t) && !/relocat/.test(t)) return "location";
     if (ac === "name" || /^(full\s*name|your name|name|candidate name|legal name)$/.test(t.trim())) return "full";
+    if (/(gender|race|ethnic|veteran|disabilit|diversity|eeo|sexual orientation|demographic)/i.test(t)) return "eeo";
     return null;
   }
 
@@ -129,6 +130,7 @@
       case "auth": return yn(pr.work_authorized);
       case "sponsor": return yn(pr.needs_visa_sponsorship);
       case "notice": return NOTICE_TEXT[pr.notice_period] || null;
+      case "eeo": return "decline";
       default: return null;
     }
   }
@@ -141,6 +143,17 @@
 
   /* ---------------------------------------------------------------- changing the page */
   const RING = "0 0 0 2px #fff, 0 0 0 4px #000";
+  const ORANGE_RING = "0 0 0 2px #fff, 0 0 0 4px #f97316";
+
+  function highlightOrange(el) {
+    if (!el) return;
+    try {
+      el.style.boxShadow = ORANGE_RING;
+      el.style.borderColor = "#f97316";
+      el.style.backgroundColor = "#fff7ed";
+    } catch (e) {}
+  }
+
   function setValue(el, v) {
     const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : el.tagName === "SELECT" ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
     const d = Object.getOwnPropertyDescriptor(proto, "value");
@@ -167,8 +180,13 @@
   }
   function fillSelect(el, label, want) {
     const opts = Array.from(el.options).filter((o) => o.value !== "");
-    const w = String(want).toLowerCase();
-    const pick = opts.find((o) => clean(o.text).toLowerCase() === w) || opts.find((o) => clean(o.text).toLowerCase().startsWith(w)) || opts.find((o) => clean(o.text).toLowerCase().includes(w));
+    let pick = null;
+    if (want === "decline") {
+      pick = opts.find((o) => /(decline|prefer not|do not wish|choose not|not disclose)/i.test(clean(o.text)));
+    } else {
+      const w = String(want).toLowerCase();
+      pick = opts.find((o) => clean(o.text).toLowerCase() === w) || opts.find((o) => clean(o.text).toLowerCase().startsWith(w)) || opts.find((o) => clean(o.text).toLowerCase().includes(w));
+    }
     if (!pick || (el.value && el.selectedIndex > 0)) return false;
     const prev = el.value, prevStyle = ring(el);
     setValue(el, pick.value);
@@ -177,12 +195,17 @@
   }
   function fillRadio(group, label, want) {
     if (group.some((r) => r.checked)) return false;
-    const w = String(want).toLowerCase();
-    const pick = group.find((r) => { const t = labelOf(r).toLowerCase(); return t === w || t.startsWith(w + " ") || t.startsWith(w + ","); });
+    let pick = null;
+    if (want === "decline") {
+      pick = group.find((r) => /(decline|prefer not|do not wish|choose not|not disclose)/i.test(clean(labelOf(r))));
+    } else {
+      const w = String(want).toLowerCase();
+      pick = group.find((r) => { const t = labelOf(r).toLowerCase(); return t === w || t.startsWith(w + " ") || t.startsWith(w + ","); });
+    }
     if (!pick) return false;
     const prevStyle = ring(pick);
     pick.click();
-    record({ el: pick, label, shown: clean(labelOf(pick)) || want, prev: false, prevStyle, type: "radio" });
+    record({ el: pick, label, shown: clean(labelOf(pick)) || "Decline to self-identify", prev: false, prevStyle, type: "radio" });
     return true;
   }
 
@@ -208,7 +231,12 @@
     let filled = 0;
     const needs = [];
     const seenNeeds = new Set();
-    const need = (el, label, why) => { if (seenNeeds.has(label)) return; seenNeeds.add(label); needs.push({ el, label, why }); };
+    const need = (el, label, why) => {
+      if (seenNeeds.has(label)) return;
+      seenNeeds.add(label);
+      highlightOrange(el);
+      needs.push({ el, label, why });
+    };
 
     all.forEach((el) => {
       const type = (el.type || "").toLowerCase();
@@ -251,11 +279,12 @@
       const label = labelOf(cand[i]);
       const r = await api("/api/extension/solve", "POST", { question: label });
       const ans = r.ok && r.data && (r.data.answer || r.data.text);
-      if (ans) {
+      if (ans && ans.trim()) {
         const verdict = r.data.review && (r.data.review.verdict || r.data.review.status);
         if (fillText(cand[i], label, ans, { written: true, verdict: verdict || "" })) done++;
       } else {
-        S.needs.push({ el: cand[i], label, why: r.offline ? r.error : "Your resume has no facts that answer this. Write it yourself." });
+        highlightOrange(cand[i]);
+        S.needs.push({ el: cand[i], label, why: "Your profile has no verified facts for this question. Please answer it directly." });
       }
     }
     return done;
@@ -269,22 +298,7 @@
       return /^(submit( application)?|send application)$/.test(t);
     });
   }
-  function startCountdown() {
-    const btn = findSubmit();
-    if (!btn) return;
-    S.countdown = true;
-    render();
-    timer = setTimeout(() => {
-      S.countdown = false;
-      render();
-      try { btn.click(); } catch (e) { /* ignore */ }
-    }, 10000);
-  }
-  function cancelCountdown() {
-    clearTimeout(timer);
-    S.countdown = false;
-    render();
-  }
+  /* Step 11: The extension does not submit. It stops at the Review / Submit button and leaves the user to click submit. */
 
   /* ---------------------------------------------------------------- tracking */
   const CONFIRM = /(thank you for applying|application (has been )?(submitted|received)|we('| ha)ve received your application|your application (was|has been) sent)/i;
@@ -377,14 +391,16 @@
         h += `<div class="notice"><span>No form on this page yet. Open the application form, then press Fill.</span></div><button class="btn secondary" data-act="fill" type="button">Look again</button>`;
       }
       if (S.note) h += `<div><h2>${esc(S.note.kind)}<span class="count">${S.note.text.length}${S.note.max ? " of " + S.note.max : ""}</span></h2><div class="out" dir="auto">${esc(S.note.text)}</div><div class="actions" style="margin-top:8px"><button class="btn secondary small" data-act="copy" type="button">Copy</button>${S.note.insertable ? `<button class="btn secondary small" data-act="insert" type="button">Put in note box</button>` : ""}</div></div>`;
-      if (S.countdown) h += `<div class="notice"><strong>Submitting in 10 seconds.</strong><div class="bar" aria-hidden="true"><i></i></div><button class="btn secondary small" data-act="cancel" type="button">Cancel</button></div>`;
+      if (S.entries.length || S.needs.length) {
+        h += `<div class="badge-status-wrap" style="margin-bottom:8px"><span class="badge" id="badge-filled-status" style="display:inline-block;padding:6px 12px;background:#0f172a;color:#fff;border-radius:12px;font-weight:600;font-size:12px">${S.entries.length} fields filled, ${S.needs.length} needs you</span></div>`;
+      }
       if (S.entries.length) {
         h += `<div><h2>Filled<span class="count">${S.entries.length}</span><button class="btn quiet" data-act="undoall" type="button">Undo all</button></h2><ul class="list">${S.entries.map((e) => `<li><div class="row"><span class="lbl">${esc(e.label)}</span><button class="btn quiet" data-undo="${e.id}" type="button" aria-label="Undo ${esc(e.label)}">Undo</button></div><span class="val" dir="auto"><mark>${esc(clip(e.shown, 140))}</mark></span>${e.written ? `<span class="why">Written from your resume. Read it before you submit.${e.verdict ? " Reviewer: " + esc(e.verdict) + "." : ""}</span>` : ""}</li>`).join("")}</ul></div>`;
       }
       if (S.needs.length) {
-        h += `<div><h2>Needs you<span class="count">${S.needs.length}</span></h2><ul class="list">${S.needs.map((e, i) => `<li><div class="row"><span class="flag" dir="auto">${esc(clip(e.label, 90))}</span><button class="btn quiet" data-goto="${i}" type="button">Go to field</button></div><span class="why">${esc(e.why)}</span></li>`).join("")}</ul></div>`;
+        h += `<div><h2>Needs you<span class="count">${S.needs.length}</span></h2><ul class="list">${S.needs.map((e, i) => `<li><div class="row"><span class="flag" dir="auto" style="color:#f97316">${esc(clip(e.label, 90))}</span><button class="btn quiet" data-goto="${i}" type="button">Go to field</button></div><span class="why">${esc(e.why)}</span></li>`).join("")}</ul></div>`;
       }
-      if (S.entries.length && !S.countdown) {
+      if (S.entries.length) {
         h += S.applied ? "" : `<div class="notice"><span>Review the form, then submit it yourself.</span><button class="btn secondary small" data-act="applied" type="button">I submitted it. Track as Applied</button></div>`;
       }
       if (S.message) h += `<div class="notice ${S.applied ? "ok" : ""}" role="status">${esc(S.message)}</div>`;
@@ -410,7 +426,7 @@
     else if (a === "dash") window.open(DASHBOARD, "_blank", "noopener");
     else if (a === "resume") window.open(DASHBOARD + "/#/resume", "_blank", "noopener");
     else if (a === "undoall") undoAll();
-    else if (a === "cancel") cancelCountdown();
+    else if (a === "cancel") { S.message = ""; render(); }
     else if (a === "applied") markApplied(false);
     else if (a === "fill") await runFill(false);
     else if (a === "questions") await runFill(true);
@@ -429,11 +445,21 @@
     if (questionsOnly) n += await answerQuestions();
     S.stage = "ready";
     S.status = "";
-    if (!n && !S.needs.length && !S.message) S.message = "Nothing to fill. Empty fields that JobHunter knows how to answer were not found.";
+
+    // Stop at Review / Submit button without auto-submitting; highlight submit button
+    const submitBtn = findSubmit();
+    if (submitBtn) {
+      try {
+        submitBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+        submitBtn.style.outline = "2px dashed #3b82f6";
+      } catch (e) {}
+    }
+
+    const filledCount = S.entries.length;
+    const needsCount = S.needs.length;
+    S.message = `${filledCount} fields filled, ${needsCount} needs you`;
     render();
     watchSubmission();
-    if (!questionsOnly && S.prefs && S.prefs.submission_mode === "countdown" && n && !S.needs.length) startCountdown();
-    else if (!questionsOnly && S.prefs && S.prefs.submission_mode === "countdown" && S.needs.length) { S.message = "Not submitting by itself, because " + S.needs.length + " answers need you."; render(); }
   }
 
   async function outreach(noteOnly) {
