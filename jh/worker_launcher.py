@@ -284,7 +284,14 @@ def get_search_job_status(session_id: str) -> dict[str, Any]:
 
 
 def open_browser(url: str) -> bool:
-    """Launch user default browser without throwing errors on displayless setups."""
+    """Launch user browser with autofill extension without throwing errors on displayless setups."""
+    try:
+        from . import extension_installer
+        ext_res = extension_installer.launch_browser_with_extension(url=url)
+        if ext_res.get("success"):
+            return True
+    except Exception:
+        pass
     try:
         return webbrowser.open(url)
     except Exception:

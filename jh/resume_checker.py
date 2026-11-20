@@ -176,6 +176,19 @@ def check_resume(
 
     text_chars = len(text.strip())
     
+    # Try OCR fallback for scanned PDF if installed
+    if text_chars < 300 and filename.lower().endswith(".pdf") and isinstance(path_or_text, (str, Path)) and os.path.isfile(str(path_or_text)):
+        try:
+            import pdf2image
+            import pytesseract
+            images = pdf2image.convert_from_path(str(path_or_text), first_page=1, last_page=3)
+            ocr_text = "\n".join(pytesseract.image_to_string(img) for img in images).strip()
+            if len(ocr_text) >= 300:
+                text = ocr_text
+                text_chars = len(text.strip())
+        except Exception:
+            pass
+
     # Hard failure 2: Extracted text holds under 300 characters
     if text_chars < 300:
         msg = f"Extracted text holds under 300 characters (found only {text_chars} characters)."
@@ -273,8 +286,8 @@ def check_resume(
         warnings.append("Notice: No email address or phone number was detected in the document header.")
 
     non_letters = sum(1 for c in text if not c.isalnum() and not c.isspace())
-    if text_chars > 0 and (non_letters / text_chars) > 0.35:
-        warnings.append("Notice: Document contains a high proportion of non-standard symbols or formatting.")
+    if text_chars > 0 and ((non_letters / text_chars) > 0.35 or text.count("\ufffd") >= 3):
+        warnings.append("Notice: Document contains garbled text or unreadable symbols (encoding mismatch or OCR artifacts).")
 
     confidence = round(min(1.0, (len(sections_found) * 0.25) + (min(len(skills_found), 10) * 0.05) + (0.25 if contact["has_contact"] else 0.0)), 2)
 

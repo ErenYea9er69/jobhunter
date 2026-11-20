@@ -26,7 +26,9 @@ def evaluate_mock_interview(
     # 1. Personal ownership (0-25)
     i_count = len(re.findall(r"\b(i|my|mine|myself)\b", ans_lower))
     we_count = len(re.findall(r"\b(we|our|us)\b", ans_lower))
-    if i_count >= 3:
+    if i_count >= 1 and we_count == 0:
+        ownership_score = 23.0
+    elif i_count >= 3:
         ownership_score = 22.0 if we_count <= 2 else 20.0
     elif i_count >= 1:
         ownership_score = 16.0
@@ -34,7 +36,10 @@ def evaluate_mock_interview(
         ownership_score = 9.0
 
     # 2. Evidence and Quantified Results (0-25)
-    has_metrics = bool(re.search(r"\b\d+([.,]\d+)?\s*(%|ms|s|sec|k|m|gb|tb|req/s|rps|users|queries)\b|\b\d+%\b", ans_lower))
+    has_metrics = bool(re.search(
+        r"(\$\s*\d+|\b\d+([.,]\d+)?\s*(%|ms|s|sec|k|m|gb|tb|req/s|rps|users|queries|usd|eur)|\b\d+%)",
+        ans_lower,
+    ))
     has_numbers = bool(re.search(r"\b\d+\b", ans_lower))
     if has_metrics:
         evidence_score = 23.0
@@ -89,9 +94,9 @@ def evaluate_mock_interview(
 
     improvements = []
     if evidence_score < 18:
-        improvements.append("Quantify the impact with numbers, percentages, or scale (e.g. latency, throughput, cost savings).")
+        improvements.append("Metrics: Quantify the impact with numbers, percentages, or scale (e.g. latency, throughput, cost savings).")
     if ownership_score < 18:
-        improvements.append("Clarify your specific individual contribution rather than speaking generally for the team.")
+        improvements.append("Ownership: Clarify your personal ownership and specific individual contribution ('I' vs 'we') rather than speaking generally for the team.")
     if tech_score < 18:
         improvements.append("Mention specific technologies, architectural trade-offs, and failure modes evaluated.")
     if word_count < 30:
@@ -179,3 +184,18 @@ def generate_interview_prep(
         "behavioral_star_questions": behavioral,
         "interviewer_questions": interviewer_qs,
     }
+
+
+def grade_mock_answer(question: str, answer: str) -> dict[str, Any]:
+    """Grade mock interview answer on 1-5 scale for ownership and metrics."""
+    eval_res = evaluate_mock_interview(question, answer)
+    ownership = round(eval_res["dimension_scores"]["ownership_reflection"] / 5.0, 1)
+    metrics = round(eval_res["dimension_scores"]["evidence_result"] / 5.0, 1)
+    feedback = " ".join(eval_res["strengths"] + eval_res["specific_improvements"])
+    return {
+        "ownership_score": ownership,
+        "metrics_score": metrics,
+        "feedback": feedback,
+        "eval_result": eval_res,
+    }
+

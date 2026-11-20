@@ -106,6 +106,8 @@ def skip_reason(name: str, prefs: dict, targets: list[str], remote_ok: bool, con
         return None
     if i.user_configured and not configured:
         return "skipped", "Nothing added yet.", True
+    if not remote_ok and i.kind == "remote feed":
+        return "skipped", "Target location excludes remote feeds.", False
     if not regions.source_is_eligible(i.regions, targets, remote_ok):
         goal = ", ".join(regions.country_name(c) for c in targets) or "your location"
         if name == "Indeed":

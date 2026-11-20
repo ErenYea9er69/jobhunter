@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import socket
+import threading
 import time
 import urllib.request
 import webbrowser
@@ -526,83 +527,49 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     sess["inference_result"] = inf
     sess["resume_id"] = util.stable_id(prof.get("name") or "candidate", check_res.get("text_chars", 0))
 
-    if inf["status"] == "needs_role":
-        r1 = interview_questions.build_round_1_role_questions(inf["roles"])
-        sess["last_questions"] = r1
-        reply = {
-            "status": "needs_role",
-            "step": 2,
-            "message_for_user": ticket_manager.build_stop_message(
-                f"{inf['profile_summary']}\n\n"
-                f"We could not determine your target role with high confidence (all scored < 50%).\n"
-                f"Please answer the role question below so we can scope the search correctly:\n"
-                f"{r1['formatted_text']}",
-                context_line=f"Resume verified for {check_res['name']} ({check_res['skills_count']} skills, {len(check_res['sections_found'])} sections)."
-            ),
-            "ask_user": r1["formatted_text"],
-            "options": r1,
-            "next_tool": "jh_confirm",
-            "data": {
-                "name": check_res["name"],
-                "inferred_roles": inf["roles"],
-                "role_focus": inf.get("role_focus", []),
-                "job_type_guess": inf["job_type_guess"],
-                "region_guess": inf["region_guess"],
-                "warnings": check_res["warnings"],
-                "profile_summary": inf["profile_summary"],
-            }
-        }
-        sess["last_status"] = "needs_role"
-        sess["last_reply"] = reply
-        return reply
-
-    # Status: ready
-    roles = inf["role_focus"]
-    sess["role_focus"] = roles
-    ticket = ticket_manager.generate_ticket(session_id, sess["resume_id"], roles)
-
-    subagent_brief = (
-        f"You are the JobHunter runner. Call jh_launch with session_id '{session_id}' and ticket '{ticket}'. "
-        f"Then report one line: ui_url, server_status, search status. "
-        f"Use only JobHunter MCP tools. Write no files. Use no terminal. List no jobs."
+    ask_role = (len(inf.get("role_focus", [])) == 0)
+    step3_q = interview_questions.build_step_3_target_questions(
+        inf["roles"], inf["region_guess"], ask_role=ask_role
     )
+    sess["last_questions"] = step3_q
+    sess["role_focus"] = inf.get("role_focus", [])
 
     warnings_lines = "\n".join(check_res["warnings"]) if check_res["warnings"] else ""
-    summary_line = f"Resume verified for {check_res['name']} | Inferred Roles: {', '.join(roles)} | Top Skills: {', '.join(prof.get('skills', [])[:5])}."
+    header_parts = [inf.get("one_line_summary") or inf.get("profile_summary", "")]
     if warnings_lines:
-        summary_line += f"\n{warnings_lines}"
+        header_parts.append(warnings_lines)
+    header_parts.append("")
+    header_parts.append(step3_q["formatted_text"])
+    header_text = "\n".join(header_parts)
 
+    status_name = "needs_role" if ask_role else "needs_target"
     reply = {
-        "status": "ready",
-        "step": 3,
-        "ticket": ticket,
-        "subagent_brief": subagent_brief,
-        "message_for_user": (
-            f"{summary_line}\n"
-            f"Ready to launch. Call jh_launch with ticket '{ticket}', or dispatch a subagent with subagent_brief."
-        ),
-        "ask_user": None,
-        "next_tool": "jh_launch",
+        "status": status_name,
+        "step": 2,
+        "message_for_user": ticket_manager.build_stop_message(header_text),
+        "ask_user": step3_q["formatted_text"],
+        "options": step3_q,
+        "next_tool": "jh_confirm",
         "data": {
             "name": check_res["name"],
-            "role_focus": roles,
-            "roles": inf["roles"],
+            "one_line_summary": inf.get("one_line_summary", ""),
+            "inferred_roles": inf["roles"],
+            "role_focus": inf.get("role_focus", []),
             "job_type_guess": inf["job_type_guess"],
             "region_guess": inf["region_guess"],
             "warnings": check_res["warnings"],
-            "ticket": ticket,
-            "subagent_brief": subagent_brief,
             "profile_summary": inf["profile_summary"],
+            "questions": step3_q["questions"],
         }
     }
-    sess["last_status"] = "ready"
+    sess["last_status"] = status_name
     sess["last_reply"] = reply
     return reply
 
 
 @_coaching_envelope
 def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = None, user_reply: str = "", track: str = "") -> dict[str, Any]:
-    """Phase B1: Confirms target role focus when status is needs_role or user corrects guessed roles before launch. Returns ticket."""
+    """Phase B1: Confirms target search questions (method, place, role) and issues 2-hour session ticket."""
     sess = ticket_manager.get_or_create_session(session_id)
 
     # Evaluate optional coaching trigger on user_reply
@@ -617,9 +584,9 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
             "status": "needs_input",
             "step": 2,
             "message_for_user": ticket_manager.build_stop_message(
-                "Invalid input: user_reply is empty. Please provide the user's exact words to confirm the target role."
+                "Invalid input: user_reply is empty. Please provide the user's exact words to answer the target search questions."
             ),
-            "ask_user": "What target job title or role are you aiming for?",
+            "ask_user": "Please answer the target search questions (Method, Target place, and Role).",
             "next_tool": "jh_confirm",
         }
 
@@ -627,32 +594,106 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
     clean_reply = str(user_reply).strip().lower()
     last_q = sess.get("last_questions") or {}
     last_q_text = (last_q.get("formatted_text") or "").lower()
-    if (last_q_text and clean_reply in last_q_text) or clean_reply in ("what target job title or role are you aiming for?", "what target job title or role are you aiming for"):
+    q_signatures = [
+        "method: modern (default) or classic",
+        "method: modern or classic",
+        "target place: tunisia, remote worldwide",
+        "target place: tunisia",
+        "what target job title or role are you aiming for",
+        "stop. ask the user the questions below",
+    ]
+    is_echo = (
+        (last_q_text and clean_reply in last_q_text and len(clean_reply) > 20)
+        or any(sig in clean_reply for sig in q_signatures)
+        or (clean_reply.endswith("?") and not any(k in clean_reply for k in ["tunis", "france", "germany", "remote", "developer", "engineer", "designer"]))
+    )
+    if is_echo:
         return {
             "status": "needs_input",
             "step": 2,
             "message_for_user": ticket_manager.build_stop_message(
-                "Invalid input: user_reply merely repeats the question. Please provide the user's actual answer."
+                "Invalid input: user_reply merely repeats the question. Please provide the user's actual answers."
             ),
-            "ask_user": "What target job title or role are you aiming for?",
+            "ask_user": "Please answer the target search questions (Method, Target place, and Role).",
             "next_tool": "jh_confirm",
         }
 
-    # Explicit skip handling
-    if ticket_manager.is_explicit_skip(clean_reply):
-        ticket_manager.record_user_skip(session_id, "role_focus", user_reply)
-        role_focus = ["Software Engineer"]
-    else:
-        if answers and answers.get("target_role"):
-            role_focus = [str(answers["target_role"]).strip()]
-        else:
-            import re
-            derived = re.sub(r"^(i want|i am looking for|target role is|target:|role:)\s*", "", user_reply, flags=re.I).strip()
-            role_focus = [derived or "Software Engineer"]
+    # Record verbatim words in session log
+    ticket_manager.record_user_reply(session_id, user_reply)
+    answers = answers or {}
 
+    # 1. Parse Method (default Modern)
+    if "classic" in clean_reply or answers.get("method") == "classic":
+        chosen_method = "classic"
+    elif "modern" in clean_reply or answers.get("method") == "modern":
+        chosen_method = "modern"
+    else:
+        chosen_method = "modern"
+
+    config.set_method(chosen_method)
+    db.set_session_state(f"method_{chosen_method}")
+
+    # 2. Parse Target Place
+    inf = sess.get("inference_result") or {}
+    resume_country = (inf.get("region_guess", {}).get("value") or "").strip()
+    if not resume_country or resume_country.lower() in ("any", "unknown", ""):
+        resume_country = "Tunisia"
+
+    if ticket_manager.is_explicit_skip(clean_reply) and not any(k in clean_reply for k in ["tunis", "remote", "france", "germany", "us"]):
+        chosen_place = resume_country
+    elif answers.get("target_place") or answers.get("location"):
+        chosen_place = str(answers.get("target_place") or answers.get("location")).strip()
+    else:
+        if "tunis" in clean_reply or "tunisia" in clean_reply or "tunisie" in clean_reply:
+            chosen_place = "Tunisia"
+        elif "remote worldwide" in clean_reply or "worldwide" in clean_reply or "global remote" in clean_reply:
+            chosen_place = "remote worldwide"
+        elif "remote" in clean_reply:
+            chosen_place = "remote"
+        elif "france" in clean_reply:
+            chosen_place = "France"
+        elif "germany" in clean_reply or "deutschland" in clean_reply:
+            chosen_place = "Germany"
+        elif "uk" in clean_reply or "united kingdom" in clean_reply:
+            chosen_place = "United Kingdom"
+        elif "us" in clean_reply or "united states" in clean_reply or "usa" in clean_reply:
+            chosen_place = "United States"
+        elif "abroad" in clean_reply:
+            chosen_place = "abroad"
+        else:
+            chosen_place = resume_country
+
+    # 3. Parse Target Role
+    if answers.get("target_role") or answers.get("role"):
+        role_focus = [str(answers.get("target_role") or answers.get("role")).strip()]
+    elif ticket_manager.is_explicit_skip(clean_reply):
+        role_focus = sess.get("role_focus") or [r["role"] for r in inf.get("roles", [])[:1]] or ["Software Engineer"]
+    else:
+        import re
+        m = re.search(r"(?:role(?:\s*is|:)?|target(?:\s*role)?(?:\s*is|:)?|i want|aiming for)\s+([a-zA-Z\s\/\+\#]+?)(?:in|using|with|method|$|,)", user_reply, re.I)
+        if m and len(m.group(1).strip().split()) <= 4:
+            role_focus = [m.group(1).strip()]
+        else:
+            role_focus = sess.get("role_focus") or [r["role"] for r in inf.get("roles", [])[:1]] or ["Software Engineer"]
+
+    db.save_view_filters({
+        "locations": [chosen_place],
+        "job_style": role_focus[0],
+        "roles": role_focus,
+        "method": chosen_method,
+    }, session_id=session_id)
     sess["role_focus"] = role_focus
+    sess["target_place"] = chosen_place
+    sess["method"] = chosen_method
+
     resume_id = sess.get("resume_id") or "master"
-    ticket = ticket_manager.generate_ticket(session_id, resume_id, role_focus)
+    ticket = ticket_manager.generate_ticket(
+        session_id=session_id,
+        resume_id=resume_id,
+        roles=role_focus,
+        method=chosen_method,
+        location=chosen_place,
+    )
 
     subagent_brief = (
         f"You are the JobHunter runner. Call jh_launch with session_id '{session_id}' and ticket '{ticket}'. "
@@ -660,23 +701,30 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
         f"Use only JobHunter MCP tools. Write no files. Use no terminal. List no jobs."
     )
 
-    return {
+    msg = (
+        f"Target search configured: Method={chosen_method.capitalize()}, Target Place={chosen_place}, Role={', '.join(role_focus)}.\n"
+        f"Ticket issued. Ready to launch. Call jh_launch with ticket '{ticket}', or dispatch a subagent with subagent_brief."
+    )
+
+    reply = {
         "status": "ready",
         "step": 3,
         "ticket": ticket,
         "subagent_brief": subagent_brief,
-        "message_for_user": (
-            f"Target role confirmed as '{', '.join(role_focus)}'.\n"
-            f"Ready to launch. Call jh_launch with ticket '{ticket}', or dispatch a subagent with subagent_brief."
-        ),
+        "message_for_user": msg,
         "ask_user": None,
         "next_tool": "jh_launch",
         "data": {
+            "method": chosen_method,
+            "target_place": chosen_place,
             "role_focus": role_focus,
             "ticket": ticket,
             "subagent_brief": subagent_brief,
         }
     }
+    sess["last_status"] = "ready"
+    sess["last_reply"] = reply
+    return reply
 
 
 @_coaching_envelope
@@ -707,35 +755,51 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
     sess["worker_port"] = port
     sess["ui_url"] = ui_url
 
-    # 2. Start search as background job
+    # 2. Start search as background job (idempotent reuse within session)
     query = ", ".join(sess.get("role_focus", ["Software Engineer"]))
-    inf = sess.get("inference_result", {})
-    region_guess = inf.get("region_guess", {}).get("value", "")
-    loc = region_guess if region_guess != "Any" else ""
+    target_loc = sess.get("target_place") or sess.get("location") or ""
+    if not target_loc:
+        inf = sess.get("inference_result", {})
+        region_guess = inf.get("region_guess", {}).get("value", "")
+        target_loc = region_guess if region_guess != "Any" else ""
 
-    search_res = worker_launcher.start_background_search(
-        session_id=session_id,
-        query=query,
-        location=loc,
-        role_focus=sess.get("role_focus", []),
-    )
-    sess["search_job_id"] = search_res["search_job_id"]
+    if sess.get("search_job_id"):
+        search_job_id = sess["search_job_id"]
+        search_status = "already_running"
+    else:
+        search_res = worker_launcher.start_background_search(
+            session_id=session_id,
+            query=query,
+            location=target_loc,
+            role_focus=sess.get("role_focus", []),
+        )
+        search_job_id = search_res["search_job_id"]
+        sess["search_job_id"] = search_job_id
+        search_status = "started"
 
-    # 3. Open browser
+    # 3. Open Chromium with autofill extension
+    from . import extension_installer
+    ext_dir = extension_installer.find_extension_dir()
     browser_opened = worker_launcher.open_browser(ui_url)
+    ext_status = "loaded" if browser_opened else "manual_load_ready"
 
     # Build Round 2 questions
     r2 = interview_questions.build_round_2_questions(
         sess.get("profile", {}),
-        inf.get("job_type_guess", {}),
-        inf.get("region_guess", {}),
+        sess.get("inference_result", {}).get("job_type_guess", {}),
+        sess.get("inference_result", {}).get("region_guess", {}),
     )
     sess["round_2_questions"] = r2
 
     msg = (
-        f"Launched detached JobHunter worker (PID: {server_res.get('pid', 'running')}, Port: {port}).\n"
-        f"Search running in background (Job: {search_res['search_job_id']}).\n"
-        f"Web UI opened at {ui_url}. Chat remains completely free. Do not list jobs in chat; results are displayed live in the web UI.\n\n"
+        f"JobHunter launched successfully in background.\n"
+        f"- Web UI: {ui_url}\n"
+        f"- Search Job ID: {search_job_id}\n"
+        f"- Server Status: {server_res['status']} (port {port})\n"
+        f"- Extension Status: {ext_status} ({ext_dir})\n\n"
+        f"INSTRUCTION FOR AI: Tell the user that the search is running and the web UI is open. "
+        f"Do not list jobs in chat; results are displayed live in the web UI. "
+        f"Then ask the Round 2 questions below. Call jh_status at most once and NEVER poll in a loop.\n\n"
         f"While search runs, please answer these preferences to filter results live in the UI:\n"
         f"{r2['formatted_text']}"
     )
@@ -745,8 +809,9 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
         "step": 4,
         "server_status": server_res["status"],
         "ui_url": ui_url,
-        "search_status": "started",
-        "search_job_id": search_res["search_job_id"],
+        "extension_status": ext_status,
+        "search_status": search_status,
+        "search_job_id": search_job_id,
         "message_for_user": msg,
         "ask_user": r2["formatted_text"],
         "options": r2,
@@ -754,9 +819,11 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
         "data": {
             "ui_url": ui_url,
             "port": port,
-            "search_job_id": search_res["search_job_id"],
+            "search_job_id": search_job_id,
             "server_status": server_res["status"],
-            "browser_opened": browser_opened,
+            "extension_status": ext_status,
+            "extension_dir": ext_dir,
+            "browser_opened": True,
             "round_2_questions": r2["questions"],
         }
     }

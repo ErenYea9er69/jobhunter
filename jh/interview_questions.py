@@ -9,6 +9,62 @@ from __future__ import annotations
 from typing import Any
 
 
+def build_step_3_target_questions(
+    inferred_roles: list[dict[str, Any]],
+    region_guess: dict[str, Any],
+    ask_role: bool = False,
+) -> dict[str, Any]:
+    """Generates Step 3 target search interview questions (3 questions max, all skippable)."""
+    suggested_region = (region_guess.get("value") or "").strip()
+    if not suggested_region or suggested_region.lower() in ("any", "unknown"):
+        suggested_region = "Tunisia"
+
+    role_choices = [r["role"] for r in inferred_roles]
+    top_role = role_choices[0] if role_choices else "Software Engineer"
+
+    questions = [
+        {
+            "id": "method",
+            "question": "1. Method: Modern (default) or Classic?\n   - Modern: catches early funding signals and hiring posts and drafts human outreach to decision-maker emails under a daily cap.\n   - Classic: searches many job boards and has the Apply button.",
+            "choices": ["Modern", "Classic"],
+            "recommended": "Modern",
+        },
+        {
+            "id": "target_place",
+            "question": f"2. Target place: Tunisia, remote worldwide, remote within a time zone range, abroad (which countries), or a specific city or region? Are you open to relocation?\n   (Suggested: {suggested_region})",
+            "choices": ["Tunisia", "remote worldwide", "remote within timezone", "abroad", suggested_region],
+            "recommended": suggested_region,
+        },
+    ]
+
+    lines = [
+        "Please answer these target search questions before we launch (all are skippable):",
+        "1. Method: Modern (default) or Classic?",
+        "   - Modern catches early funding signals and hiring posts and drafts human outreach to decision-maker emails under a daily cap.",
+        "   - Classic searches many job boards and has the Apply button.",
+        f"2. Target place: Tunisia, remote worldwide, remote within a time zone range, abroad (which countries), or a specific city or region? Are you open to relocation? (Suggested: {suggested_region})",
+    ]
+
+    if ask_role:
+        questions.append({
+            "id": "target_role",
+            "question": f"3. Target role: What target job title or role are you aiming for?\n   (Options: {', '.join(role_choices)}; Suggested: {top_role})",
+            "choices": role_choices,
+            "recommended": top_role,
+        })
+        lines.append(f"3. Target role: What target job title or role are you aiming for? (Options: {', '.join(role_choices)}; Suggested: {top_role})")
+
+    formatted_text = "\n".join(lines)
+
+    return {
+        "round": "target_search",
+        "required": True,
+        "ask_role": ask_role,
+        "questions": questions,
+        "formatted_text": formatted_text,
+    }
+
+
 def build_round_1_role_questions(inferred_roles: list[dict[str, Any]]) -> dict[str, Any]:
     """Generates Round 1 role clarification question when confidence is below 0.5."""
     role_choices = [r["role"] for r in inferred_roles]
@@ -124,3 +180,25 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
         "questions": questions,
         "formatted_text": "\n".join(formatted_lines),
     }
+
+
+def generate_mock_interview_questions(job: dict[str, Any], resume_or_profile: Any = None) -> list[dict[str, Any]]:
+    """Generate mock interview questions tailored to a specific job and candidate profile."""
+    from . import interview
+    profile = resume_or_profile if isinstance(resume_or_profile, dict) else {}
+    prep = interview.generate_interview_prep(job, profile)
+    questions = []
+    for q in prep.get("behavioral_star_questions", []):
+        if isinstance(q, dict):
+            questions.append(q)
+        else:
+            questions.append({"question": str(q)})
+    for tq in prep.get("technical_questions", []):
+        questions.append({"question": tq})
+    if not questions:
+        questions = [
+            {"question": "Tell me about a challenging technical tradeoff you had to make under tight deadlines."},
+            {"question": "Describe a time you resolved a major production incident."}
+        ]
+    return questions
+

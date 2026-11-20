@@ -274,3 +274,83 @@ def solve_screening_question(question, profile, job=None, question_type="auto", 
         "grounded": True,
         "word_count": len(fallback_answer.split())
     }
+
+
+def answer_screening_question(question: str, profile: dict[str, Any]) -> dict[str, Any]:
+    """Screening question evaluator for ATS autofill:
+    - Answers known questions strictly from profile facts.
+    - Leaves unknown questions empty with flagged=True (highlight in orange for user).
+    - Automatically declines EEO and diversity self-identification disclosures.
+    """
+    q_low = (question or "").lower()
+
+    # 1. EEO & Diversity Disclosures -> Auto-decline
+    if any(k in q_low for k in [
+        "gender", "race", "ethnicity", "veteran", "disability",
+        "diversity", "eeo", "self-identify", "sexual orientation", "demographic"
+    ]):
+        return {
+            "question": question,
+            "answer": "I do not wish to answer",
+            "answered": True,
+            "flagged": False,
+            "category": "eeo",
+        }
+
+    # 2. Known profile facts: Years of experience
+    if any(k in q_low for k in ["how many years", "years of experience", "years of hands-on", "total years"]):
+        yoe = profile.get("years_of_experience")
+        if yoe is None:
+            exps = profile.get("experience") or []
+            yoe = calculate_experience_years(exps)
+        return {
+            "question": question,
+            "answer": str(int(yoe) if isinstance(yoe, (int, float)) and yoe == int(yoe) else yoe),
+            "answered": True,
+            "flagged": False,
+            "category": "numeric_experience",
+        }
+
+    # 3. Known profile facts: Location
+    if any(k in q_low for k in ["where are you located", "current location", "city and country", "based in"]):
+        loc = profile.get("location") or profile.get("city")
+        if loc:
+            return {
+                "question": question,
+                "answer": str(loc),
+                "answered": True,
+                "flagged": False,
+                "category": "location",
+            }
+
+    # 4. Known profile facts: Work authorization / Sponsorship
+    if any(k in q_low for k in ["authorized to work", "legally authorized", "eligible to work"]):
+        auth = profile.get("work_authorization") or (profile.get("legal_and_eeo") or {}).get("authorized_us")
+        if auth is not None:
+            return {
+                "question": question,
+                "answer": "Yes" if "yes" in str(auth).lower() or auth is True else "No",
+                "answered": True,
+                "flagged": False,
+                "category": "authorization",
+            }
+    if any(k in q_low for k in ["require sponsorship", "require visa", "visa sponsorship", "need sponsorship"]):
+        spons = profile.get("visa_sponsorship") or (profile.get("legal_and_eeo") or {}).get("require_sponsorship_now")
+        if spons is not None:
+            return {
+                "question": question,
+                "answer": "Yes" if "yes" in str(spons).lower() or spons is True else "No",
+                "answered": True,
+                "flagged": False,
+                "category": "sponsorship",
+            }
+
+    # 5. Unknown question / clearance / unlisted certifications -> Leave empty, flagged=True
+    return {
+        "question": question,
+        "answer": "",
+        "answered": False,
+        "flagged": True,
+        "reason": "Fact not present in verified profile ledger",
+    }
+

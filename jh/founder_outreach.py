@@ -47,6 +47,11 @@ def _first_name(full_name: str) -> str:
     return parts[0] if parts else ""
 
 
+def get_daily_email_cap() -> int:
+    """Return the configured daily cold outreach cap (default: 20)."""
+    return config.get_daily_cap()
+
+
 def _extract_key_bullet(profile: Dict[str, Any], wanted_skills: List[str]) -> str:
     """Select the most relevant or high-impact bullet from the candidate profile."""
     exps = profile.get("experience", [])

@@ -382,6 +382,10 @@ def parse_resume(text):
             parts = [p.strip() for p in re.split(r"[|•·–—-]", l) if p.strip()]
             for p in parts:
                 if "@" not in p and not re.search(r"\d", p) and "http" not in p.lower() and len(p) < 30:
+                    if name and p.strip().lower() == name.strip().lower():
+                        continue
+                    if p.strip().lower() in ("curriculum vitae", "resume", "cv"):
+                        continue
                     if re.match(r"^[A-Z][a-z]+(?:\s[A-Z][a-z]+)?$", p) and not _ROLE_WORDS.search(p):
                         location = p
                         break

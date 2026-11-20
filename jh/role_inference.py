@@ -179,12 +179,15 @@ def infer_roles(profile: dict[str, Any], filename: str = "") -> dict[str, Any]:
 
     # Region guess from contacts or location in resume
     loc = (profile.get("location") or "").strip()
-    raw_hay = (profile.get("raw_text") or "")[:1000].lower()
+    candidate_name = (profile.get("name") or "").strip()
+    if loc and candidate_name and loc.lower() == candidate_name.lower():
+        loc = ""
+    raw_hay = (profile.get("raw_text") or "")[:1500].lower()
     if "tunis" in loc.lower() or "tunisia" in loc.lower() or "tunisie" in raw_hay or "+216" in raw_hay:
         region_val = "Tunisia"
-    elif "france" in loc.lower() or "+33" in raw_hay:
+    elif "france" in loc.lower() or "+33" in raw_hay or "paris" in loc.lower():
         region_val = "France"
-    elif "united states" in loc.lower() or "+1" in raw_hay:
+    elif "united states" in loc.lower() or "+1" in raw_hay or "usa" in loc.lower():
         region_val = "United States"
     elif "remote" in loc.lower():
         region_val = "Remote worldwide"
@@ -197,11 +200,13 @@ def infer_roles(profile: dict[str, Any], filename: str = "") -> dict[str, Any]:
         "note": "Suggested default from contact info. Does not filter until confirmed.",
     }
 
-    # Build concise 4-line profile summary
+    # Build concise profile summaries
     name_display = profile.get("name") or "Candidate"
     roles_display = ", ".join(f"{r['role']} ({int(r['confidence']*100)}%)" for r in ranked_roles)
     top_skills_display = ", ".join(list(profile.get("skills", []))[:6]) or "None listed"
     years_display = f"{years_exp:.1f} years" if years_exp else "Entry level / Student"
+
+    one_line_summary = f"Name: {name_display} | Roles: {roles_display} | Exp: {years_display} | Top Skills: {top_skills_display}. Say if this is wrong."
 
     profile_summary = (
         f"Profile Summary:\n"
@@ -217,5 +222,6 @@ def infer_roles(profile: dict[str, Any], filename: str = "") -> dict[str, Any]:
         "status": status,
         "job_type_guess": job_type_guess,
         "region_guess": region_guess,
+        "one_line_summary": one_line_summary,
         "profile_summary": profile_summary,
     }

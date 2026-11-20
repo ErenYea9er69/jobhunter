@@ -114,7 +114,7 @@ def get_gmail_config() -> Dict[str, Any]:
             "imap_server": data.get("imap_server", "imap.gmail.com"),
             "imap_port": data.get("imap_port", 993),
             "last_sync": data.get("last_sync", ""),
-            "sync_enabled": data.get("sync_enabled", True),
+            "sync_enabled": data.get("sync_enabled", False),
         }
     except Exception:
         return {
@@ -125,6 +125,13 @@ def get_gmail_config() -> Dict[str, Any]:
             "last_sync": "",
             "sync_enabled": False,
         }
+
+
+def is_sync_enabled() -> bool:
+    """Return whether background Gmail sync is enabled (default: False until explicitly enabled)."""
+    cfg = get_gmail_config()
+    return bool(cfg.get("configured") and cfg.get("sync_enabled", False))
+
 
 
 def save_gmail_config(

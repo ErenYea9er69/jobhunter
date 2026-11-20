@@ -63,12 +63,15 @@ def clean_v3_state(tmp_path, monkeypatch):
 
 
 def test_acceptance_01_jh_begin_valid_resume_no_premature_start(clean_v3_state):
-    """Test 1: jh_begin replies ready with ticket. No search row exists, server closed, no browser opened."""
+    """Test 1: jh_begin replies with one-line profile and step 3 target questions. No search row exists, server closed, no browser opened."""
     with patch("webbrowser.open") as mock_browser:
         res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="test_sess_01")
-        assert res["status"] == "ready"
-        assert res["ticket"].startswith("jh_tkt_")
-        assert "subagent_brief" in res
+        assert res["status"] in ("needs_target", "needs_role")
+        assert "STOP. Ask the user the questions below" in res["message_for_user"]
+        assert "Method: Modern (default) or Classic" in res["message_for_user"]
+        assert "Target place:" in res["message_for_user"]
+        assert res["next_tool"] == "jh_confirm"
+        assert "ticket" not in res  # Ticket is not issued before target search is answered
         
         # Verify no premature search or server
         with db.session() as c:
@@ -77,6 +80,12 @@ def test_acceptance_01_jh_begin_valid_resume_no_premature_start(clean_v3_state):
             
         mock_browser.assert_not_called()
         assert worker_launcher.get_search_job_status("test_sess_01")["status"] == "not_started"
+
+        # Now confirm answers to step 3 questions -> returns ticket and ready status
+        c_res = v5_tools.jh_confirm(session_id="test_sess_01", user_reply="Modern method, Tunisia")
+        assert c_res["status"] == "ready"
+        assert c_res["ticket"].startswith("jh_tkt_")
+        assert "subagent_brief" in c_res
 
 
 def test_acceptance_02_jh_launch_and_search_reject_without_ticket():
@@ -104,8 +113,8 @@ def test_acceptance_03_old_tools_alias_to_jh_begin():
 
     # Calling jh_load_resume with resume text delegates to jh_begin
     res_load = v5_tools.jh_load_resume(raw_text=SAMPLE_RESUME, session_id="alias_sess_2")
-    assert res_load["status"] == "ready"
-    assert "ticket" in res_load
+    assert res_load["status"] in ("needs_target", "needs_role")
+    assert res_load["next_tool"] == "jh_confirm"
 
 
 def test_acceptance_04_jh_confirm_rejects_empty_or_repetition():
@@ -125,7 +134,8 @@ def test_acceptance_05_launch_speed_and_needs_role_flow(clean_v3_state):
     """Test 5: jh_launch returns in < 3s, starts server & search, opens browser. Also for needs_role flow."""
     # Part A: Ready flow
     b_res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="perf_sess")
-    tkt = b_res["ticket"]
+    c_res = v5_tools.jh_confirm(session_id="perf_sess", user_reply="Modern, Tunisia")
+    tkt = c_res["ticket"]
 
     with patch("jh.worker_launcher.start_detached_server", return_value={"status": "started", "port": 8080}), \
          patch("jh.worker_launcher.open_browser", return_value=True) as mock_b:
@@ -169,14 +179,16 @@ High School Diploma, Lycee Pilote, 2022
 def test_acceptance_06_mode_a_and_mode_b_identical_state(clean_v3_state):
     """Test 6: Mode A (direct) and Mode B (subagent) produce identical session state."""
     b_a = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="sess_mode_a")
+    c_a = v5_tools.jh_confirm(session_id="sess_mode_a", user_reply="Modern, Tunisia")
     b_b = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="sess_mode_b")
+    c_b = v5_tools.jh_confirm(session_id="sess_mode_b", user_reply="Modern, Tunisia")
 
     with patch("jh.worker_launcher.start_detached_server", return_value={"status": "reused", "port": 8080}), \
          patch("jh.worker_launcher.open_browser", return_value=True):
         # Mode A: Main AI calls jh_launch
-        res_a = v5_tools.jh_launch(session_id="sess_mode_a", ticket=b_a["ticket"])
+        res_a = v5_tools.jh_launch(session_id="sess_mode_a", ticket=c_a["ticket"])
         # Mode B: Subagent calls jh_launch with same parameters
-        res_b = v5_tools.jh_launch(session_id="sess_mode_b", ticket=b_b["ticket"])
+        res_b = v5_tools.jh_launch(session_id="sess_mode_b", ticket=c_b["ticket"])
 
     assert res_a["status"] == res_b["status"] == "ok"
     assert res_a["server_status"] == res_b["server_status"]
@@ -186,7 +198,8 @@ def test_acceptance_06_mode_a_and_mode_b_identical_state(clean_v3_state):
 def test_acceptance_07_launch_idempotency(clean_v3_state):
     """Test 7: Second jh_launch for the same session reuses worker and search."""
     b_res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="idem_sess")
-    tkt = b_res["ticket"]
+    c_res = v5_tools.jh_confirm(session_id="idem_sess", user_reply="Modern, Tunisia")
+    tkt = c_res["ticket"]
 
     with patch("jh.worker_launcher.start_detached_server", return_value={"status": "started", "port": 8080}), \
          patch("jh.worker_launcher.open_browser", return_value=True):
@@ -210,9 +223,10 @@ def test_acceptance_08_worker_process_independence(clean_v3_state):
 
     # Launch search
     b_res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="survive_sess")
+    c_res = v5_tools.jh_confirm(session_id="survive_sess", user_reply="Modern, Tunisia")
     with patch("jh.worker_launcher.is_server_healthy", return_value=True), \
          patch("jh.worker_launcher.open_browser", return_value=True):
-        res = v5_tools.jh_launch(session_id="survive_sess", ticket=b_res["ticket"])
+        res = v5_tools.jh_launch(session_id="survive_sess", ticket=c_res["ticket"])
         assert res["status"] == "ok"
 
     # Simulate subagent process exiting: worker PID file and search state remain in memory/disk
@@ -224,9 +238,10 @@ def test_acceptance_08_worker_process_independence(clean_v3_state):
 def test_acceptance_09_answer_updates_filters_live_without_restart(clean_v3_state):
     """Test 9: jh_answer updates filters live without restarting the search."""
     b_res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="ans_sess")
+    c_res = v5_tools.jh_confirm(session_id="ans_sess", user_reply="Modern, Tunisia")
     with patch("jh.worker_launcher.start_detached_server", return_value={"status": "started", "port": 8080}), \
          patch("jh.worker_launcher.open_browser", return_value=True):
-        v5_tools.jh_launch(session_id="ans_sess", ticket=b_res["ticket"])
+        v5_tools.jh_launch(session_id="ans_sess", ticket=c_res["ticket"])
 
     search_id_before = worker_launcher.get_search_job_status("ans_sess")["job_id"]
 
@@ -253,9 +268,10 @@ def test_acceptance_09_answer_updates_filters_live_without_restart(clean_v3_stat
 def test_acceptance_10_status_top_5_matches_and_filter_counts(clean_v3_state):
     """Test 10: jh_status returns top 5 matches only, passing filters, with matching hidden count."""
     b_res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="top5_sess")
+    c_res = v5_tools.jh_confirm(session_id="top5_sess", user_reply="Modern, Tunisia")
     with patch("jh.worker_launcher.start_detached_server", return_value={"status": "started", "port": 8080}), \
          patch("jh.worker_launcher.open_browser", return_value=True):
-        v5_tools.jh_launch(session_id="top5_sess", ticket=b_res["ticket"])
+        v5_tools.jh_launch(session_id="top5_sess", ticket=c_res["ticket"])
 
     # Ingest 12 jobs (10 remote, 2 onsite)
     jobs = []
@@ -302,9 +318,10 @@ def test_acceptance_11_tunisia_source_routing():
 def test_acceptance_12_skip_all_handling(clean_v3_state):
     """Test 12: 'skip all' in user_reply stores fields as any and logs verbatim words."""
     b_res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="skip_sess")
+    c_res = v5_tools.jh_confirm(session_id="skip_sess", user_reply="skip all")
     with patch("jh.worker_launcher.start_detached_server", return_value={"status": "started", "port": 8080}), \
          patch("jh.worker_launcher.open_browser", return_value=True):
-        v5_tools.jh_launch(session_id="skip_sess", ticket=b_res["ticket"])
+        v5_tools.jh_launch(session_id="skip_sess", ticket=c_res["ticket"])
 
     ans_res = v5_tools.jh_answer(session_id="skip_sess", user_reply="skip all")
     assert ans_res["status"] == "ok"
@@ -318,9 +335,10 @@ def test_acceptance_12_skip_all_handling(clean_v3_state):
 def test_acceptance_13_chat_suppression():
     """Test 13: Chat text after launch contains no job list before Round 2 answers."""
     b_res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="chat_sess")
+    c_res = v5_tools.jh_confirm(session_id="chat_sess", user_reply="Modern, Tunisia")
     with patch("jh.worker_launcher.start_detached_server", return_value={"status": "started", "port": 8080}), \
          patch("jh.worker_launcher.open_browser", return_value=True):
-        l_res = v5_tools.jh_launch(session_id="chat_sess", ticket=b_res["ticket"])
+        l_res = v5_tools.jh_launch(session_id="chat_sess", ticket=c_res["ticket"])
 
     msg = l_res["message_for_user"]
     assert "Do not list jobs in chat" in msg
@@ -359,10 +377,11 @@ def test_acceptance_15_install_agent_safety(tmp_path, monkeypatch):
 def test_acceptance_16_launch_returns_under_3_seconds(clean_v3_state):
     """Test 16: Each launch call returns in under 3 seconds."""
     b_res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="speed_sess")
+    c_res = v5_tools.jh_confirm(session_id="speed_sess", user_reply="Modern, Tunisia")
     with patch("jh.worker_launcher.start_detached_server", return_value={"status": "started", "port": 8080}), \
          patch("jh.worker_launcher.open_browser", return_value=True):
         t0 = time.time()
-        res = v5_tools.jh_launch(session_id="speed_sess", ticket=b_res["ticket"])
+        res = v5_tools.jh_launch(session_id="speed_sess", ticket=c_res["ticket"])
         assert (time.time() - t0) < 3.0
         assert res["status"] == "ok"
 
@@ -424,9 +443,9 @@ Apply now to join our mission!
 
 
 def test_acceptance_20_valid_resume_gives_ready_with_summary():
-    """Test 20: Valid resume gives ready in one call with name, roles, confidence, years."""
+    """Test 20: Valid resume gives needs_target in one call with name, roles, confidence, years."""
     res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="summary_sess")
-    assert res["status"] == "ready"
+    assert res["status"] in ("needs_target", "needs_role")
     assert res["data"]["name"] == "Ahmed Ben Salah"
     assert len(res["data"]["role_focus"]) >= 1
     assert "Backend Engineer" in res["data"]["role_focus"]
@@ -475,9 +494,10 @@ BS Computer Science, 2017
 def test_acceptance_23_jh_replace_resume_rescores_without_restart(clean_v3_state):
     """Test 23: jh_replace_resume re-parses and re-scores without restarting worker."""
     b_res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="replace_sess")
+    c_res = v5_tools.jh_confirm(session_id="replace_sess", user_reply="Modern, Tunisia")
     with patch("jh.worker_launcher.start_detached_server", return_value={"status": "started", "port": 8080}), \
          patch("jh.worker_launcher.open_browser", return_value=True):
-        v5_tools.jh_launch(session_id="replace_sess", ticket=b_res["ticket"])
+        v5_tools.jh_launch(session_id="replace_sess", ticket=c_res["ticket"])
 
     # Ingest a React job
     react_job = {

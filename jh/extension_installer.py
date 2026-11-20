@@ -78,6 +78,16 @@ def detect_chromium_browsers() -> list[dict[str, str]]:
         prog_files = os.environ.get("ProgramFiles", r"C:\Program Files")
         prog_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
 
+        # 0. Chrome for Testing and Unbranded Chromium (highest priority for --load-extension support in v137+)
+        cft_candidates = [
+            os.path.join(local_app, "Google", "Chrome for Testing", "Application", "chrome.exe"),
+            os.path.join(prog_files, "Google", "Chrome for Testing", "Application", "chrome.exe"),
+            os.path.join(prog_files, "Chromium", "Application", "chrome.exe"),
+            os.path.join(local_app, "Chromium", "Application", "chrome.exe"),
+        ]
+        for p in cft_candidates:
+            add_browser("Chrome for Testing", "chromium", p)
+
         # 1. Google Chrome
         chrome_candidates = [
             os.path.join(prog_files, "Google", "Chrome", "Application", "chrome.exe"),
@@ -154,12 +164,15 @@ def copy_extension_path_to_clipboard() -> bool:
 
 
 def launch_browser_with_extension(url: str | None = None, browser_type: str = "auto") -> dict[str, Any]:
-    """Launches a detected Chromium browser with `--load-extension` pointing to the bundled extension."""
+    """Launches a detected Chromium browser with `--load-extension` and dedicated profile."""
     browsers = detect_chromium_browsers()
+    ext_dir = find_extension_dir()
     if not browsers:
         return {
             "success": False,
-            "error": "No Chromium-based browser (Chrome, Edge, Brave) detected on this machine.",
+            "error": "No Chromium-based browser (Chrome for Testing, Chromium, Chrome, Edge, Brave) detected on this machine.",
+            "extension_dir": ext_dir,
+            "url": url,
         }
 
     target = None
@@ -169,8 +182,11 @@ def launch_browser_with_extension(url: str | None = None, browser_type: str = "a
     if not target:
         target = browsers[0]
 
-    ext_dir = find_extension_dir()
-    cmd = [target["path"], f"--load-extension={ext_dir}"]
+    from . import home
+    user_data_dir = str(home.get_home() / "browser_profile")
+    os.makedirs(user_data_dir, exist_ok=True)
+
+    cmd = [target["path"], f"--user-data-dir={user_data_dir}", f"--load-extension={ext_dir}"]
     if url:
         cmd.append(url)
 
@@ -183,10 +199,11 @@ def launch_browser_with_extension(url: str | None = None, browser_type: str = "a
             "path": target["path"],
             "extension_dir": ext_dir,
             "url": url,
+            "user_data_dir": user_data_dir,
         }
     except Exception as e:
         log.error("Failed to launch %s with extension: %s", target["name"], e)
-        return {"success": False, "error": str(e), "browser": target["name"]}
+        return {"success": False, "error": str(e), "browser": target["name"], "extension_dir": ext_dir, "url": url}
 
 
 def open_extension_manager(browser_type: str = "auto") -> dict[str, Any]:

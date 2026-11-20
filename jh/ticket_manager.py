@@ -18,8 +18,8 @@ _TICKETS: dict[str, dict[str, Any]] = {}
 _SESSIONS: dict[str, dict[str, Any]] = {}
 
 
-def generate_ticket(session_id: str, resume_id: str, roles: list[str]) -> str:
-    """Issue a cryptographically secure 2-hour ticket bound to session and resume."""
+def generate_ticket(session_id: str, resume_id: str, roles: list[str], method: str = "modern", location: str = "") -> str:
+    """Issue a cryptographically secure 2-hour ticket bound to session, resume, roles, method, and location."""
     ticket = f"jh_tkt_{secrets.token_hex(16)}"
     now = time.time()
     payload = {
@@ -27,6 +27,8 @@ def generate_ticket(session_id: str, resume_id: str, roles: list[str]) -> str:
         "session_id": session_id,
         "resume_id": resume_id,
         "roles": roles,
+        "method": method,
+        "location": location,
         "issued_at": now,
         "expires_at": now + TICKET_TTL_SECONDS,
         "used_for_launch": False,
@@ -38,6 +40,8 @@ def generate_ticket(session_id: str, resume_id: str, roles: list[str]) -> str:
     sess["active_ticket"] = ticket
     sess["resume_id"] = resume_id
     sess["role_focus"] = roles
+    sess["method"] = method
+    sess["location"] = location
     
     return ticket
 
@@ -91,6 +95,17 @@ def is_explicit_skip(text: str) -> bool:
     """Check if the user response explicitly indicates a skip."""
     clean = (text or "").lower().strip()
     return clean in {"skip", "any", "skip all", "pass", "none", "no preference", "default"}
+
+
+def record_user_reply(session_id: str, user_reply: str) -> None:
+    """Record verbatim user reply in session log."""
+    sess = get_or_create_session(session_id)
+    if "user_replies" not in sess:
+        sess["user_replies"] = []
+    sess["user_replies"].append({
+        "user_reply": user_reply,
+        "timestamp": util.now_iso(),
+    })
 
 
 def record_user_skip(session_id: str, field_name: str, user_reply: str) -> None:
