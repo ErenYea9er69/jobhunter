@@ -129,12 +129,12 @@
       </div>
     </div>
 
-    <!-- V3 Chat Question Notification Banner (Phase F3) -->
+    <!-- V3/V4 Chat Question Notification Banner -->
     <div class="banner-chat-question" id="banner-chat-question" hidden role="status" aria-live="polite">
       <div class="banner-chat-icon"><svg class="icon"><use href="#i-sparkles"/></svg></div>
       <div class="banner-chat-body">
         <div class="banner-chat-prompt">
-          <strong>The AI is asking you a question in chat:</strong>
+          <strong id="banner-chat-title">6 questions are waiting in the chat</strong>
           <span class="chat-q-text" id="chat-question-text"></span>
         </div>
         <p class="banner-chat-sub">Answer in your chat terminal. Your answer filters these matches live.</p>
@@ -374,8 +374,12 @@
           <div class="source-cards-grid" id="source-cards-grid"></div>
         </div>
 
-        <!-- V3 Filter Strip & Hidden Counter (Phase F2) -->
+        <!-- V3/V4 Filter Strip & Hidden Counter -->
         <div class="filter-strip" id="filter-strip">
+          <div class="filter-summary-row" id="filter-summary-row" style="display:inline-flex;align-items:center;gap:var(--s2);margin-inline-end:var(--s3)">
+            <span class="filter-summary-text" id="filter-summary-text" style="font-weight:600">Internship PFE, Tunisia, On-site, Full Stack.</span>
+            <button class="btn btn-quiet btn-sm" id="btn-edit-filter-strip" type="button" style="text-decoration:underline;padding:2px 6px">Edit</button>
+          </div>
           <div class="filter-chips-list" id="filter-chips-list"></div>
           <div class="filter-strip-actions">
             <span class="filter-match-counter" id="filter-match-counter">Showing 0 matches</span>

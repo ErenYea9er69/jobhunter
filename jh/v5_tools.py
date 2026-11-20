@@ -1303,6 +1303,13 @@ def jh_status(session_id: str = "default") -> dict[str, Any]:
     port = port_info["port"] if port_info else 8080
     ui_url = f"http://127.0.0.1:{port}/?session={session_id}"
 
+    questions_waiting = 0
+    curr_state_str = session_state.get("current_state", "") if isinstance(session_state, dict) else str(session_state)
+    if curr_state_str in ("round_2_pending", "round_1_done", "ready"):
+        questions_waiting = 6
+    if curr_state_str in ("round_2_answered", "round_2_skipped"):
+        questions_waiting = 0
+
     if active_method == "modern":
         method_summary = (
             f"- Method: Modern (Outreach First)\n"
@@ -1355,6 +1362,7 @@ def jh_status(session_id: str = "default") -> dict[str, Any]:
             "cleanup_status": cleanup,
             "active_profile": profile.get("_profile_name"),
             "view_filters": filters,
+            "questions_waiting_count": questions_waiting,
             "signals_count": signals_count,
             "fresh_signals": fresh_signals,
             "contacts_count": contacts_count,

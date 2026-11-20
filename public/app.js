@@ -1347,7 +1347,11 @@
     const count = isModern ? (state.radar.newSignals || 0) : (state.radar.matches || state.radar.newJobs || 0);
 
     if (label) {
-      label.textContent = isModern ? "Signals Radar" : "Radar";
+      if (isModern) {
+        label.textContent = `Radar found ${count} new signals`;
+      } else {
+        label.textContent = count > 0 ? `Radar: ${count} new` : "Radar";
+      }
     }
 
     if (dot) {
@@ -2085,6 +2089,20 @@
     const toggleBtn = byId("btn-toggle-hidden");
     const toggleText = byId("btn-toggle-hidden-text");
 
+    const summaryText = byId("filter-summary-text");
+    if (summaryText) {
+      const parts = [];
+      const jt = f.job_type || f.type;
+      if (jt) parts.push(jt === "internship" ? "Internship PFE" : jt);
+      const pl = state.place || (f.locations && f.locations[0]);
+      if (pl && pl !== "any") parts.push(pl);
+      const md = f.mode || f.work_mode;
+      if (md && md !== "any") parts.push(md.charAt(0).toUpperCase() + md.slice(1));
+      const rl = state.query || (f.roles && f.roles[0]);
+      if (rl && rl !== "any") parts.push(rl);
+      summaryText.textContent = parts.length ? parts.join(", ") + "." : "All matches.";
+    }
+
     const chips = [];
     if (state.query) chips.push({ key: "query", label: "Query", val: state.query });
     if (state.place) chips.push({ key: "place", label: "Place", val: state.place });
@@ -2142,6 +2160,26 @@
     const filterStrip = byId("filter-strip");
     if (filterStrip && !filterStrip.dataset.bound) {
       filterStrip.dataset.bound = "true";
+
+      const btnEditStrip = byId("btn-edit-filter-strip");
+      if (btnEditStrip) {
+        btnEditStrip.addEventListener("click", () => {
+          const sumEl = byId("filter-summary-text");
+          const currentText = sumEl ? sumEl.textContent : "";
+          const newSummary = prompt("Edit active criteria (e.g. 'Internship PFE, Tunisia, On-site, Full Stack'):", currentText);
+          if (newSummary != null && newSummary.trim()) {
+            const parts = newSummary.replace(/\.$/, "").split(",").map(p => p.trim());
+            if (parts[0]) state.filters.job_type = parts[0];
+            if (parts[1]) state.place = parts[1];
+            if (parts[2]) state.filters.mode = parts[2].toLowerCase();
+            if (parts[3]) state.query = parts[3];
+            renderFilterStrip();
+            if (state.searched) loadJobsQuery();
+            else renderJobs();
+          }
+        });
+      }
+
       filterStrip.addEventListener("click", (e) => {
         const removeBtn = e.target.closest("[data-remove-chip]");
         if (removeBtn) {
@@ -2206,7 +2244,7 @@
           if (summary) {
             const doneCount = state.sourcesProgress.filter(s => s.status === "done" || s.status === "error" || s.status === "disabled").length;
             const totalJobs = state.sourcesProgress.reduce((sum, s) => sum + (s.jobs_found || 0), 0);
-            summary.textContent = `${doneCount} of ${state.sourcesProgress.length} sources scanned • ${totalJobs} jobs found`;
+            summary.textContent = `${doneCount} of ${state.sourcesProgress.length} sources done • ${totalJobs} jobs found • ${state.jobs.length} matches`;
           }
           if (grid) {
             grid.innerHTML = state.sourcesProgress.map(s => `
@@ -2296,13 +2334,18 @@
           }
         }
 
-        // 2. Chat Question Banner (Phase F3)
+        // 2. Chat Question Banner (Phase F3 / V4)
         const bannerQ = byId("banner-chat-question");
+        const titleQ = byId("banner-chat-title");
         const textQ = byId("chat-question-text");
-        const nextQ = d.next_question || (d.unanswered_questions && d.unanswered_questions[0]);
-        if (nextQ && bannerQ && textQ) {
-          const qText = nextQ.question || nextQ;
-          textQ.textContent = `"${qText}"`;
+        const waitingCount = d.questions_waiting_count !== undefined ? d.questions_waiting_count : (d.unanswered_count || 0);
+        if (waitingCount > 0 && bannerQ) {
+          if (titleQ) titleQ.textContent = `${waitingCount} questions are waiting in the chat`;
+          const nextQ = d.next_question || (d.unanswered_questions && d.unanswered_questions[0]);
+          if (textQ) {
+            const qText = nextQ ? (nextQ.question || nextQ) : "Answer in your chat terminal or reply 'skip all'. Your answers filter these matches live.";
+            textQ.textContent = `"${qText}"`;
+          }
           bannerQ.hidden = false;
         } else if (bannerQ) {
           bannerQ.hidden = true;
