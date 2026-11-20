@@ -348,24 +348,25 @@ def generate_application_follow_up(app_id, action_type="status_check_5days", not
         timing = "Within 48 hours of receiving written offer"
         strategy = "Gracious, value-anchored counter-proposal that maintains collaboration."
     else:
-        subject = f"Following up on {title} application at {company} — {cand_name}"
+        subject = f"Following up on {title} application at {company}: {cand_name}"
         body = (
             f"Dear {company} Hiring Team,\n\n"
-            f"I submitted my application for the {title} position last week and wanted to reiterate my strong interest in joining {company}.\n\n"
-            f"Given my hands-on background in {key_skill}, I believe my skillset aligns well with the team's technical focus. "
-            f"I would welcome the opportunity to connect for an introductory conversation when your schedule permits.\n\n"
-            f"Thank you for your time and consideration.\n\n"
+            f"I applied for the {title} position last week and wanted to confirm receipt of my materials.\n\n"
+            f"My engineering background in {key_skill} directly matches your posting requirements. "
+            f"Please let me know if I can provide work samples or discuss the technical focus.\n\n"
             f"Best regards,\n{cand_name}"
         )
         timing = "Tuesday or Thursday morning (9:00 AM local time)"
         strategy = "Confident 5-day touchpoint reaffirming fit without sounding demanding."
 
+    from . import slop
+    clean_fallback_body, _, _ = slop.rewrite_slop(body, kind="email", profile=profile)
     fallback_result = {
         "ok": True,
         "application_id": app_id,
         "action_type": norm_type,
         "subject_line": subject,
-        "body": body,
+        "body": clean_fallback_body,
         "strategy_notes": strategy,
         "recommended_send_timing": timing,
         "used_llm": False,
@@ -414,12 +415,15 @@ def generate_application_follow_up(app_id, action_type="status_check_5days", not
             raw_resp = caller(system_prompt, json.dumps(prompt_payload))
             parsed = refit._parse_json_llm_response(raw_resp)
             if parsed and isinstance(parsed, dict) and "body" in parsed:
+                from . import slop
+                clean_body, _, _ = slop.rewrite_slop(parsed.get("body") or body, kind="email", profile=profile)
+                clean_subject = (parsed.get("subject_line") or subject).replace("—", ":").replace("–", ":")
                 return {
                     "ok": True,
                     "application_id": app_id,
                     "action_type": parsed.get("action_type") or norm_type,
-                    "subject_line": parsed.get("subject_line") or subject,
-                    "body": parsed.get("body") or body,
+                    "subject_line": clean_subject,
+                    "body": clean_body,
                     "strategy_notes": parsed.get("strategy_notes") or strategy,
                     "recommended_send_timing": parsed.get("recommended_send_timing") or timing,
                     "used_llm": True,

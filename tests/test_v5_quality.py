@@ -301,11 +301,18 @@ def test_check_08_tailored_resume_speed_and_trigger(master_profile):
     res = save_flow.handle_save_job("job_chk8_perf", force=True)
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 5.0, f"Generation took {elapsed:.2f}s, expected < 5.0s"
-    assert res.get("status") in ("ok", "ready", "success", "approved")
-    # Verify file was generated after save
-    created_files = list(outputs_dir.glob("job_chk8_perf*"))
-    assert len(created_files) > 0
+    try:
+        assert elapsed < 5.0, f"Generation took {elapsed:.2f}s, expected < 5.0s"
+        assert res.get("status") in ("ok", "ready", "success", "approved")
+        # Verify file was generated after save
+        created_files = list(outputs_dir.glob("job_chk8_perf*"))
+        assert len(created_files) > 0
+    finally:
+        for f in outputs_dir.glob("job_chk8_perf*"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
 
 
 # -----------------------------------------------------------------------------

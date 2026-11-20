@@ -173,38 +173,38 @@ def solve_screening_question(question, profile, job=None, question_type="auto", 
     if any(k in q_low for k in ["why", "interest", "excite", "apply"]):
         skill_str = ", ".join(skills[:3]) if skills else "modern engineering"
         fallback_answer = (
-            f"I am excited to apply for the {title} role at {company} because it directly aligns with my hands-on "
-            f"experience in {skill_str}. In my previous work, {top_bullets[0] if top_bullets else 'I consistently focused on shipping reliable software'}. "
-            f"I am eager to bring this same dedication to velocity, clean architecture, and product impact to {company}."
+            f"The {title} role at {company} directly connects with my engineering work in {skill_str}. "
+            f"In my previous work, {top_bullets[0] if top_bullets else 'I consistently shipped reliable production software'}. "
+            f"I focus on clean architecture, high delivery velocity, and measurable product outcomes at {company}."
         )
     elif any(k in q_low for k in ["achievement", "accomplish", "proud", "impact"]):
-        bullet = top_bullets[0] if top_bullets else "architecting robust, scalable software solutions"
+        bullet = top_bullets[0] if top_bullets else "architecting scalable software solutions"
         fallback_answer = (
-            f"One of my most impactful accomplishments was when {bullet}. This initiative reinforced my commitment "
-            f"to engineering rigor, measurable performance gains, and delivering real value to end users."
+            f"A major accomplishment was when {bullet}. This initiative demonstrated "
+            f"engineering rigor, measurable performance gains, and direct value to users."
         )
     elif any(k in q_low for k in ["salary", "compensation", "rate", "expectation"]):
         sal = profile.get("min_salary")
         fallback_answer = (
-            f"My target compensation is {f'around ${int(sal):,} annually' if sal else 'competitive and commensurate with the market standards for this position'}, "
-            f"though I remain flexible based on the total compensation package, growth trajectory, and team scope."
+            f"My target compensation is {f'around ${int(sal):,} annually' if sal else 'in line with standard market rates for this role'}, "
+            f"and I remain open to discussing the full scope and compensation structure."
         )
     elif any(k in q_low for k in ["notice", "availability", "start date", "when can you start"]):
         np = profile.get("notice_period") or "2 weeks"
         fallback_answer = (
-            f"I am available to start with a standard {np} notice (or immediately where appropriate) to ensure a clean transition. "
-            f"I am ready to hit the ground running and integrate smoothly with the team."
+            f"I can start with a standard {np} notice period (or immediately where appropriate) to ensure a smooth transition, "
+            f"contributing immediately to active development priorities."
         )
     elif any(k in q_low for k in ["remote", "work mode", "time zone", "location"]):
         fallback_answer = (
-            f"I have extensive experience working asynchronously in distributed environments, maintaining high documentation standards, "
-            f"transparent progress communication, and self-directed execution across time zones."
+            f"I have worked asynchronously in distributed teams for multiple years, maintaining thorough documentation, "
+            f"clear progress updates, and autonomous delivery across time zones."
         )
     else:
-        skill_str = ", ".join(skills[:4]) if skills else "full-stack development"
+        skill_str = ", ".join(skills[:4]) if skills else "software engineering"
         fallback_answer = (
-            f"Throughout my career as a {profile.get('target_title', 'Software Engineer')}, I have focused heavily on {skill_str}. "
-            f"My approach centers on disciplined problem-solving, clean maintainable code, and pragmatic alignment with core business outcomes."
+            f"Throughout my work as a {profile.get('target_title', 'Software Engineer')}, I have built production systems using {skill_str}. "
+            f"I emphasize disciplined problem-solving, clean code, and alignment with business requirements."
         )
 
     cfg = refit.get_active_ai_config()
@@ -254,6 +254,8 @@ def solve_screening_question(question, profile, job=None, question_type="auto", 
 
             check = refit.ungrounded(profile, cleaned.replace(title, "").replace(company, ""))
             if not check["skills"] and not check["numbers"]:
+                from . import slop
+                cleaned, _, _ = slop.rewrite_slop(cleaned, kind="screening_answer", job=job, profile=profile)
                 return {
                     "question": question,
                     "answer": cleaned,
@@ -266,6 +268,8 @@ def solve_screening_question(question, profile, job=None, question_type="auto", 
         except Exception:
             pass
 
+    from . import slop
+    fallback_answer, _, _ = slop.rewrite_slop(fallback_answer, kind="screening_answer", job=job, profile=profile)
     return {
         "question": question,
         "answer": fallback_answer,

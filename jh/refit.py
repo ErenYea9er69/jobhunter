@@ -860,6 +860,8 @@ def generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=N
             if parsed and isinstance(parsed, dict):
                 llm_hook = (parsed.get("executive_hook") or parsed.get("tailored_summary") or "").strip()
                 if llm_hook and is_grounded(profile, llm_hook):
+                    from . import slop
+                    llm_hook, _, _ = slop.rewrite_slop(llm_hook, kind="resume", job=job, profile=profile)
                     full_tailored_sum = llm_hook
                     tailored_resume["summary"] = llm_hook
                     diff_summary["proposed"] = llm_hook
@@ -882,6 +884,8 @@ def generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=N
                     except Exception:
                         continue
                     if btext and btext != orig and is_grounded(profile, btext):
+                        from . import slop
+                        btext, _, _ = slop.rewrite_slop(btext, kind="resume", job=job, profile=profile)
                         tailored_resume["experience"][xi]["bullets"][bi] = btext
                         diffs.append({
                             "id": f"diff_llm_{xi}_{bi}",
@@ -898,6 +902,11 @@ def generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=N
                 engine_label = f"ai ({archetype}, 100% grounded)" if not rejected_count else f"ai ({archetype}, {rejected_count} ungrounded rewrite(s) blocked)"
         except Exception:
             engine_label = f"deterministic (LLM fallback, {archetype})"
+
+    from . import slop
+    if tailored_resume.get("summary"):
+        clean_sum, _, _ = slop.rewrite_slop(tailored_resume["summary"], kind="resume", job=job, profile=profile)
+        tailored_resume["summary"] = clean_sum
 
     # 4. Compute 6-Second Recruiter Audit
     all_bullets = [b for e in tailored_resume.get("experience", []) for b in e.get("bullets", [])]
@@ -1402,6 +1411,10 @@ def generate_cover_pitch(job, profile, tone="direct", angle="direct_impact", sel
         for vp in value_pillars:
             vp["proof_point"] = re.sub(r"\b\d+(?:\.\d+)?%|\$\d+", "", vp["proof_point"])
 
+    from . import slop
+    clean_full, _, _ = slop.rewrite_slop(full_text, kind="cover_letter", job=job, profile=profile)
+    full_text = clean_full
+
     words = full_text.split()
     word_count = len(words)
     reading_time_sec = max(15, round(word_count / 3.8))
@@ -1562,6 +1575,12 @@ def generate_interview_prep(job, profile, use_llm=None, llm_caller=None):
         except Exception:
             pass
 
+    from . import slop
+    for b in fallback_result.get("behavioral_scenarios", []):
+        if isinstance(b, dict) and "star_story" in b and isinstance(b["star_story"], dict):
+            for k in ("situation", "task", "action", "result"):
+                if k in b["star_story"]:
+                    b["star_story"][k], _, _ = slop.rewrite_slop(b["star_story"][k], kind="general", job=job, profile=profile)
     return fallback_result
 
 
@@ -1671,6 +1690,9 @@ def evaluate_mock_interview_answer(question, candidate_answer, job=None, profile
         except Exception:
             pass
 
+    from . import slop
+    if fallback_eval.get("refined_answer_suggestion"):
+        fallback_eval["refined_answer_suggestion"], _, _ = slop.rewrite_slop(fallback_eval["refined_answer_suggestion"], kind="screening_answer", job=job, profile=profile)
     return fallback_eval
 
 
@@ -1695,14 +1717,14 @@ def generate_recruiter_outreach(job, profile, message_type="all", custom_hook=""
 
     # LinkedIn note under 295 chars
     linkedin_note = (
-        f"Hi — I'm a {cand_role} specializing in {top_two}. "
+        f"Hi, I'm a {cand_role} specializing in {top_two}. "
         f"Saw your {title} opening at {company} and would love to connect and follow {company}'s engineering work!"
     )
     if len(linkedin_note) > 295:
-        linkedin_note = f"Hi — I'm a {cand_role} specializing in {key_skill}. Saw your {title} opening at {company} and would love to connect!"
+        linkedin_note = f"Hi, I'm a {cand_role} specializing in {key_skill}. Saw your {title} opening at {company} and would love to connect!"
 
     hm_inmail = {
-        "subject_line": f"{title} @ {company} — {cand_role} ({top_two})",
+        "subject_line": f"{title} @ {company}: {cand_role} ({top_two})",
         "body": (
             f"Hi Hiring Team,\n\n"
             f"I noticed {company}'s opening for a {title} working with {top_two}.\n\n"
@@ -1716,7 +1738,7 @@ def generate_recruiter_outreach(job, profile, message_type="all", custom_hook=""
         "subject_line": f"Quick question about engineering at {company}",
         "body": (
             f"Hi there,\n\n"
-            f"I came across your profile while researching {company}'s engineering team for the {title} opening.\n\n"
+            f"While researching {company}'s engineering team for the {title} opening, I saw your work on the team.\n\n"
             f"As a {cand_role} experienced in {top_two}, I'm preparing an application and would love to hear your perspective on the team culture, or request a referral if you feel there's a strong fit.\n\n"
             f"Thanks for your time!\n{cand_name}"
         )
@@ -1793,6 +1815,10 @@ def generate_recruiter_outreach(job, profile, message_type="all", custom_hook=""
         except Exception:
             pass
 
+    from . import slop
+    for k in ("linkedin_connection_note", "hiring_manager_inmail", "peer_referral_request"):
+        if k in fallback_result and fallback_result[k]:
+            fallback_result[k], _, _ = slop.rewrite_slop(fallback_result[k], kind="email" if "inmail" in k else "general", job=job, profile=profile)
     return fallback_result
 
 
@@ -1899,6 +1925,9 @@ def generate_skill_roadmap(profile, target_title=None, market_skills=None, use_l
         except Exception:
             pass
 
+    from . import slop
+    if "interview_bridge_script" in fallback_result and fallback_result["interview_bridge_script"]:
+        fallback_result["interview_bridge_script"], _, _ = slop.rewrite_slop(fallback_result["interview_bridge_script"], kind="general", profile=profile)
     return fallback_result
 
 

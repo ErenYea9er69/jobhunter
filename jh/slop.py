@@ -27,6 +27,13 @@ _DEFAULT_RULES = {
         "dear hiring manager",
         "as a passionate",
         "as a results-driven",
+        "i hope this email finds you well",
+        "i came across your",
+        "allow me to introduce myself",
+        "i am reaching out",
+        "i wanted to follow up",
+        "i am eager to",
+        "reiterate my strong interest",
     ],
     "stock_phrases": [
         "hard-working team player",
@@ -49,6 +56,17 @@ _DEFAULT_RULES = {
         "synergy",
         "proven track record",
         "wear many hats",
+        "i believe my skillset aligns",
+        "i would welcome the opportunity",
+        "thank you for your time and consideration",
+        "seasoned professional",
+        "committed to excellence",
+        "dedicated professional",
+        "at its core",
+        "it is worth mentioning",
+        "in today's",
+        "fast-paced world",
+        "rich tapestry",
     ],
     "buzzwords": [
         "cutting-edge",
@@ -63,6 +81,21 @@ _DEFAULT_RULES = {
         "mission-critical",
         "next-gen",
         "hyper-growth",
+        "delve",
+        "leverage",
+        "spearhead",
+        "utilize",
+        "orchestrate",
+        "facilitate",
+        "synergize",
+        "harness",
+        "foster",
+        "elevate",
+        "empower",
+        "tapestry",
+        "crucible",
+        "pivotal",
+        "landscape",
     ],
     "max_cover_letter_words": 200,
     "max_email_words": 80,
@@ -90,10 +123,15 @@ _PLACEHOLDERS = re.compile(
 _REPEATED_WORDS = re.compile(r"\b([a-zA-Z]{2,})\s+\1\b", re.I)
 _EM_DASH = re.compile(r"[—–]|--")
 _EXCLAMATION = re.compile(r"!")
+_BINARY_INVERSION = re.compile(
+    r"\bnot (?:just|only)\s+[^.,;]+,\s+but (?:also\s+)?|\bit['’]?s not (?:about\s+)?[^.,;]+,\s+it['’]?s",
+    re.I,
+)
+_TRIAD = re.compile(r"\b\w+,\s+\w+,\s+(?:and|or)\s+\w+\b", re.I)
 
 
 def slop_check(
-    text: str,
+    text: str | dict[str, Any],
     kind: str = "general",
     job: Optional[dict[str, Any]] = None,
     profile: Optional[dict[str, Any]] = None,
@@ -108,6 +146,14 @@ def slop_check(
     5. Sentences of uniform length in a row.
     6. Lines with no concrete detail.
     """
+    if isinstance(text, dict):
+        flags: list[str] = []
+        for val in text.values():
+            if isinstance(val, (str, dict)):
+                _, sub_flags = slop_check(val, kind=kind, job=job, profile=profile)
+                flags.extend(sub_flags)
+        return len(flags) == 0, flags
+
     flags: list[str] = []
     if not text or not text.strip():
         return True, []
@@ -174,11 +220,25 @@ def slop_check(
 
     # 7. Lines with no concrete detail
     if kind in ("resume", "screening_answer", "cover_letter"):
+        prof_skills = profile.get("skills", []) if profile and isinstance(profile, dict) else []
+        if isinstance(prof_skills, dict):
+            prof_skills = list(prof_skills.keys())
+        elif not isinstance(prof_skills, (list, tuple, set)):
+            prof_skills = []
+
+        job_req = job.get("required_skills", []) if job and isinstance(job, dict) else []
+        if isinstance(job_req, dict):
+            job_req = list(job_req.keys())
+        elif not isinstance(job_req, (list, tuple, set)):
+            job_req = []
+
+        company_name = str(job.get("company", "")).lower() if job and isinstance(job, dict) else ""
+
         has_concrete = (
             bool(re.search(r"\d", body))
-            or (profile and any(s.lower() in body_low for s in profile.get("skills", [])[:10]))
-            or (job and any(s.lower() in body_low for s in job.get("required_skills", [])[:5]))
-            or (job and job.get("company", "").lower() in body_low)
+            or any(str(s).lower() in body_low for s in list(prof_skills)[:10])
+            or any(str(s).lower() in body_low for s in list(job_req)[:5])
+            or (bool(company_name) and company_name in body_low)
         )
         if not has_concrete and len(body.split()) > 15:
             flags.append("no_concrete_detail: Text contains no concrete metrics, skills, or specific company details")
@@ -189,6 +249,15 @@ def slop_check(
         max_words = int(rules.get("max_cover_letter_words", 200))
         if wc > max_words + 15:
             flags.append(f"cover_letter_too_long: {wc} words (max {max_words})")
+
+    # 9. Structural patterns
+    if _BINARY_INVERSION.search(body):
+        flags.append("structural_formula: Binary inversion (not just X, but Y)")
+    if kind in ("short_email", "cover_letter", "screening_answer", "email"):
+        for line in lines:
+            if not line.startswith(("-", "*", "•")) and _TRIAD.search(line):
+                flags.append("structural_formula: Ascending triad (three-item list in sentence)")
+                break
 
     return len(flags) == 0, flags
 
@@ -279,12 +348,25 @@ def proofread_gate(
 
 
 def rewrite_slop(
-    text: str,
+    text: str | dict[str, Any],
     kind: str = "general",
     job: Optional[dict[str, Any]] = None,
     profile: Optional[dict[str, Any]] = None,
-) -> tuple[str, bool, list[str]]:
+) -> tuple[str | dict[str, Any], bool, list[str]]:
     """Run up to 2 repair rounds on slop-flagged text. Returns (clean_text, passed, flags)."""
+    if isinstance(text, dict):
+        res_dict = dict(text)
+        all_repairs: list[str] = []
+        all_passed = True
+        for k, v in res_dict.items():
+            if isinstance(v, (str, dict)):
+                rewritten, passed, repairs = rewrite_slop(v, kind=kind, job=job, profile=profile)
+                res_dict[k] = rewritten
+                if not passed:
+                    all_passed = False
+                all_repairs.extend(repairs)
+        return res_dict, all_passed, all_repairs
+
     current = text
     passed, flags = slop_check(current, kind=kind, job=job, profile=profile)
     if passed:
@@ -298,11 +380,14 @@ def rewrite_slop(
     # Replace em dashes and exclamation marks
     current = _EM_DASH.sub(", ", current)
     current = _EXCLAMATION.sub(".", current)
+    current = re.sub(r"\bnot (?:just|only)\s+([^.,;]+),\s+but (?:also\s+)?", r"\1 and ", current, flags=re.I)
+    current = re.sub(r"\bit['’]?s not (?:about\s+)?([^.,;]+),\s+it['’]?s\s+", "", current, flags=re.I)
     for phrase in stock_phrases:
         current = re.sub(re.escape(phrase), "", current, flags=re.I)
 
-    # Clean double spaces/punctuation
-    current = re.sub(r"\s{2,}", " ", current)
+    # Clean double spaces/punctuation without collapsing newlines
+    current = re.sub(r"[^\S\r\n]{2,}", " ", current)
+    current = re.sub(r"\n{3,}", "\n\n", current)
     current = re.sub(r",\s*,", ",", current)
     current = re.sub(r"\.\s*\.", ".", current).strip()
 
@@ -330,7 +415,8 @@ def rewrite_slop(
         if l_str:
             lines.append(l_str)
     current = "\n".join(lines).strip()
-    current = re.sub(r"\s{2,}", " ", current)
+    current = re.sub(r"[^\S\r\n]{2,}", " ", current)
+    current = re.sub(r"\n{3,}", "\n\n", current)
 
     passed, flags = slop_check(current, kind=kind, job=job, profile=profile)
     return current, passed, flags

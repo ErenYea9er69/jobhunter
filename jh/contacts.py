@@ -739,24 +739,11 @@ def find_contacts(
         public_candidates = public_adapter.domain_search(domain)
         raw_candidates.extend(public_candidates)
 
-    # Synthesize fallback decision maker if still zero
+    # If still zero candidates, append advisory notice instead of fabricating fake leadership
     if not raw_candidates:
-        default_title = "Founder & CEO" if size_num < 30 else ("VP of Engineering" if size_num <= 200 else "Engineering Manager")
-        fallback_cand = email_finder.find_corporate_email(
-            name="Leadership",
-            company=company_name,
-            domain=domain,
-            role=default_title,
+        notice_messages.append(
+            "No verified individual decision maker found on public pages. Use company careers portal or official LinkedIn route."
         )
-        raw_candidates.append({
-            "name": f"{company_name} Leadership",
-            "title": default_title,
-            "email": fallback_cand.get("primary_email", ""),
-            "confidence": "Guess",
-            "email_confidence": "Guess",
-            "source": "domain_pattern",
-            "company_domain": domain,
-        })
 
     # 3. Filter by exclusions, size rules, and rank
     scored_contacts: List[Tuple[int, Dict[str, Any]]] = []

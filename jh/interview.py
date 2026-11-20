@@ -175,6 +175,13 @@ def generate_interview_prep(
         "What does success look like in the first 90 days for this role?",
     ]
 
+    from . import slop
+    for b in behavioral:
+        sf = b.get("star_framework", {})
+        for k in ("situation", "task", "action", "result"):
+            if k in sf:
+                sf[k], _, _ = slop.rewrite_slop(sf[k], kind="general", job=job, profile=profile)
+
     return {
         "job_title": title,
         "company": comp,

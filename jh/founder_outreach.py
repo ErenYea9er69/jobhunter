@@ -116,13 +116,13 @@ def generate_founder_cold_email(
     # 2. Angle-specific Hook
     if angle == "product_teardown":
         obs = custom_observation.strip() or f"how cleanly {company} approaches user workflows"
-        hook = f"Huge fan of what you're building at {company}. While diving into your product, I was particularly impressed by {obs}."
+        hook = f"Following your product updates at {company}, I noted {obs}."
     elif angle == "domain_obsession":
-        hook = f"Following {company}'s trajectory closely. Given your focus on {key_skill} and ambitious roadmap, I wanted to share a quick idea on accelerating product delivery."
+        hook = f"Following {company}'s trajectory closely, I wanted to share a concrete approach to scaling {key_skill} in your roadmap."
     elif angle == "direct_impact":
-        hook = f"Reaching out directly because I've been following {company}'s growth. Early engineering teams can't afford management overhead—every hire needs to own problems end-to-end."
+        hook = f"Following {company}'s growth, I know early teams need hires who own problems end-to-end without overhead."
     else:  # scale_velocity (default)
-        hook = f"Huge fan of what you're building at {company}. Noticed your rapid growth and wanted to reach out directly rather than getting lost in a noisy ATS queue."
+        hook = f"Following {company}'s development, I noticed your team is expanding engineering."
 
     # 3. Credibility / Proof Anchor (strictly grounded from resume)
     if key_bullet:
@@ -150,6 +150,8 @@ def generate_founder_cold_email(
         sig,
     ]
     body = "\n\n".join(body_paragraphs)
+    from . import slop
+    body, _, _ = slop.rewrite_slop(body, kind="email", job=job, profile=profile)
 
     # Follow-up Bump Note (Sent 3-4 days later if no reply, <45 words)
     follow_up_greeting = f"Hi {fname_founder}," if fname_founder else "Hi there,"
@@ -227,22 +229,26 @@ def generate_linkedin_founder_outreach(
 
     # 1. Connection Note (<300 characters strictly)
     if key_bullet:
-        note = f"{greeting} loved seeing how {company} is scaling. As an engineer specializing in {key_skill}, I recently focused on: {key_bullet}. Would love to connect and follow your journey!"
+        note = f"{greeting} I follow {company}'s development. As an engineer working with {key_skill}, I recently delivered: {key_bullet}. I would value connecting."
     else:
-        note = f"{greeting} loved seeing how {company} is scaling. As an engineer specializing in {key_skill}, I love building high-ownership features end-to-end. Would love to connect and follow your journey!"
+        note = f"{greeting} I follow {company}'s development. As an engineer working with {key_skill}, I build production systems end-to-end. I would value connecting."
 
     # Guarantee < 300 characters
     if len(note) > 298:
-        note = note[:260].rsplit(".", 1)[0] + ". Would love to connect and follow your journey!"
+        note = note[:260].rsplit(".", 1)[0] + ". I would value connecting."
         if len(note) > 300:
             note = note[:295].rsplit(" ", 1)[0] + "..."
 
     # 2. Direct InMail / Message (80-120 words)
     inmail_subject = f"engineering at {company} ({first_name_cand})"
-    inmail_hook = f"Reaching out directly because I've been following {company}'s roadmap with huge interest. Given how fast your team is shipping, I know every engineering hire needs to own systems independently."
+    inmail_hook = f"I am contacting you regarding {company}'s engineering initiatives. As your team scales, I know every engineering hire needs to own systems independently."
     inmail_proof = f"As a {cand_target_title}, I build with {key_skill}, focusing on high autonomy from architectural schema design to production deployment."
     inmail_cta = "Are you open to a brief sync next week to see if we might collaborate, or prefer I send over a quick code sample?"
     inmail_body = f"{greeting}\n\n{inmail_hook}\n\n{inmail_proof}\n\n{inmail_cta}\n\nBest,\n{cand_name}"
+
+    from . import slop
+    note, _, _ = slop.rewrite_slop(note, kind="general", job=job, profile=profile)
+    inmail_body, _, _ = slop.rewrite_slop(inmail_body, kind="email", job=job, profile=profile)
 
     # QA Verification
     review_note = qa.review_document(note, kind="outreach", profile=profile, job=job)

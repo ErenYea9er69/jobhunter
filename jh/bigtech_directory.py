@@ -180,9 +180,9 @@ def generate_bigtech_outreach(
         f"Reaching out regarding the {cand_title} opening at {comp_name}{req_display}. I wanted to share my background directly as you review candidate profiles for the team.",
         "Key qualifications from my work:",
         f"- Core stack: {key_skill}, {second_skill}, and REST APIs.",
-        f"- Proven ownership: {top_bullet}",
-        "- Track record delivering full-stack features autonomously end-to-end.",
-        "I have reviewed the role requirements and would love to schedule a brief call next week to discuss team alignment.",
+        f"- Technical delivery: {top_bullet}",
+        "- End-to-end ownership: architecting, building, and deploying production services.",
+        "I have reviewed the role requirements and would welcome a brief conversation next week to discuss alignment.",
         f"Best,\n{cand_name}\n{profile.get('email', '')} | {profile.get('github', '')}",
     ]
     inmail_body = "\n\n".join([inmail_lines[0], inmail_lines[1], "\n".join(inmail_lines[2:6]), inmail_lines[6], inmail_lines[7]])
@@ -197,7 +197,7 @@ def generate_bigtech_outreach(
         "Why this candidate is a strong hire:",
         f"- Strong technical foundation in {key_skill} and {second_skill}.",
         f"- Proven impact: {top_bullet}",
-        "- High autonomy: builds and deploys end-to-end systems without management friction.",
+        "- High autonomy: builds and deploys production systems independently.",
     ]
     referral_blurb = "\n".join(referral_blurb_lines)
 
@@ -211,12 +211,16 @@ def generate_bigtech_outreach(
             role="Technical Recruiter",
         )
     else:
-        email_data = email_finder.find_corporate_email(
-            name="University Talent",
-            company=comp_name,
-            domain=comp_domain,
-            role="Technical Recruiter",
-        )
+        email_data = {
+            "success": False,
+            "primary_email": "",
+            "confidence_pct": 0,
+            "mail_provider": "Corporate Mail",
+        }
+
+    from . import slop
+    inmail_body, _, _ = slop.rewrite_slop(inmail_body, kind="email", job=job, profile=profile)
+    referral_blurb, _, _ = slop.rewrite_slop(referral_blurb, kind="general", job=job, profile=profile)
 
     # 4. Reviewer QA Checks
     rev_inmail = qa.review_document(inmail_body, kind="outreach", profile=profile, job=job)
