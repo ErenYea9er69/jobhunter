@@ -10,7 +10,7 @@ from typing import Any
 import uuid
 
 from . import config
-from .util import now_iso, parse_salary, annualize, clean_text, clean_job_type, parse_date
+from .util import now_iso, parse_salary, annualize, clean_text, clean_job_type, parse_date, stable_id
 
 _init_lock = threading.Lock()
 SCHEMA_VERSION = 6
@@ -715,6 +715,29 @@ def init_db():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_coach_events_session ON coach_events(session_id)")
         c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('coaching_enabled', '1')")
+
+        # 17. Confirmed Facts (R1 & R2 Quality Layer)
+        c.execute("""CREATE TABLE IF NOT EXISTS confirmed_facts (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            fact TEXT NOT NULL,
+            category TEXT DEFAULT 'general',
+            label TEXT DEFAULT 'user_confirmed',
+            created_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_confirmed_facts_session ON confirmed_facts(session_id)")
+
+        # 18. Base Resumes by Role Family (R6 Quality Layer)
+        c.execute("""CREATE TABLE IF NOT EXISTS base_resumes (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            role_family TEXT NOT NULL,
+            resume_data TEXT NOT NULL,
+            approved INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_base_resumes_session ON base_resumes(session_id)")
 
         c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
@@ -2509,7 +2532,19 @@ def query_jobs(view_filters=None, session_id="default"):
 
         j["rank_score"] = round(rank_score, 1)
 
-    matching_jobs.sort(key=lambda j: (j.get("rank_score", 0), j.get("score", 0)), reverse=True)
+    from . import freshness
+    for j in matching_jobs:
+        fresh_meta = freshness.format_freshness_badge(j)
+        j["posted_hours_ago"] = fresh_meta["posted_hours_ago"]
+        j["is_fresh_48h"] = fresh_meta["is_fresh"]
+        j["freshness_badge"] = fresh_meta["badge"]
+        j["freshness_label"] = fresh_meta["label"]
+
+    # Inside my filtered matches, sort fresh first (R9)
+    matching_jobs.sort(
+        key=lambda j: (1 if j.get("is_fresh_48h") else 0, j.get("rank_score", 0), j.get("score", 0)),
+        reverse=True,
+    )
 
     # 6. Usable Gate: [10, 300]
     total_count = len(matching_jobs)
@@ -2552,6 +2587,7 @@ def query_jobs(view_filters=None, session_id="default"):
         "closing_soon_count": len(closing_soon),
         "removed_counts": removed_counts,
         "usable_gate": usable_gate,
+        "ready_to_apply_count": get_ready_to_apply_count(session_id),
         "view_filters": filters,
     }
 
@@ -3147,13 +3183,116 @@ def wipe_all_data() -> dict:
     with session() as c:
         for tbl in ("coach_events", "coach_state", "search_jobs", "pending_search_jobs",
                     "applications", "status_history", "watchlist", "seen_jobs",
-                    "outreach", "contacts", "signals", "company_briefs", "dismissals"):
+                    "outreach", "contacts", "signals", "company_briefs", "dismissals",
+                    "confirmed_facts", "base_resumes"):
             try:
                 rc = c.execute(f"DELETE FROM {tbl}").rowcount
                 counts[tbl] = rc
             except Exception:
                 pass
     return counts
+
+
+# ------------------------------------------------------------ Confirmed Facts (R1 & R2)
+
+def add_confirmed_fact(fact: str, category: str = "general", session_id: str = "default") -> str:
+    """Store a chat-confirmed fact with timestamp and label user_confirmed."""
+    fact_clean = (fact or "").strip()
+    if not fact_clean:
+        return ""
+    fact_id = f"fact_{stable_id(fact_clean + session_id)[:12]}"
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    with session() as c:
+        c.execute(
+            """INSERT OR REPLACE INTO confirmed_facts (id, session_id, fact, category, label, created_at)
+               VALUES (?, ?, ?, ?, 'user_confirmed', ?)""",
+            (fact_id, session_id, fact_clean, category, now),
+        )
+    return fact_id
+
+
+def get_confirmed_facts(session_id: str = "default") -> list[dict]:
+    """Retrieve all user-confirmed facts for a session."""
+    with session() as c:
+        rows = c.execute(
+            "SELECT id, session_id, fact, category, label, created_at FROM confirmed_facts WHERE session_id=? ORDER BY created_at ASC",
+            (session_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ------------------------------------------------------------ Base Resumes (R6)
+
+def save_base_resume(role_family: str, resume_data: dict, approved: bool = False, session_id: str = "default") -> str:
+    """Store or update a role family base resume."""
+    base_id = f"base_{stable_id(role_family.lower() + session_id)[:12]}"
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    raw = json.dumps(resume_data)
+    with session() as c:
+        c.execute(
+            """INSERT OR REPLACE INTO base_resumes (id, session_id, role_family, resume_data, approved, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (base_id, session_id, role_family, raw, 1 if approved else 0, now, now),
+        )
+    return base_id
+
+
+def get_base_resumes(session_id: str = "default") -> list[dict]:
+    """Retrieve all base resumes for a session."""
+    with session() as c:
+        rows = c.execute(
+            "SELECT id, session_id, role_family, resume_data, approved, created_at, updated_at FROM base_resumes WHERE session_id=? ORDER BY created_at ASC",
+            (session_id,),
+        ).fetchall()
+        res = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["resume_data"] = json.loads(d["resume_data"])
+            except Exception:
+                pass
+            res.append(d)
+        return res
+
+
+def get_base_resume(role_family: str, session_id: str = "default") -> Optional[dict]:
+    """Retrieve a specific base resume by role family."""
+    with session() as c:
+        row = c.execute(
+            "SELECT id, session_id, role_family, resume_data, approved, created_at, updated_at FROM base_resumes WHERE session_id=? AND LOWER(role_family)=LOWER(?)",
+            (session_id, role_family.strip()),
+        ).fetchone()
+        if row:
+            d = dict(row)
+            try:
+                d["resume_data"] = json.loads(d["resume_data"])
+            except Exception:
+                pass
+            return d
+    return None
+
+
+def approve_base_resume(base_resume_id: str, session_id: str = "default") -> bool:
+    """Mark a base resume as approved."""
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    with session() as c:
+        res = c.execute(
+            "UPDATE base_resumes SET approved=1, updated_at=? WHERE (id=? OR role_family=?) AND session_id=?",
+            (now, base_resume_id, base_resume_id, session_id),
+        )
+        return res.rowcount > 0
+
+
+def get_ready_to_apply_count(session_id: str = "default") -> int:
+    """Return count of jobs with fully passed quality layer documents ready to apply."""
+    with session() as c:
+        row = c.execute(
+            """SELECT COUNT(*) as count FROM applications
+               WHERE (grounding_result='passed' OR grounding_result='repaired')
+                 AND resume_path IS NOT NULL AND resume_path != ''""",
+        ).fetchone()
+        return int(row["count"]) if row else 0
+
 
 
 

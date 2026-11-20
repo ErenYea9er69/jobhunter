@@ -167,7 +167,7 @@ def grounding_check_and_repair(
     if not final_review.blocked and not final_claims:
         return True, cleaned_text, [f.as_dict() if hasattr(f, "as_dict") else dict(f) for f in final_review.findings]
 
-    # Deterministic fallback guarantee: filter lines to only those mentioning verified facts
+    # Round 2: Deterministic line-by-line repair strictly checking each line against FactBase
     fb = claims_mod.FactBase(profile, job)
     safe_lines = []
     for line in cleaned_text.split("\n"):
@@ -180,7 +180,21 @@ def grounding_check_and_repair(
             safe_lines.append(line)
 
     fallback_text = "\n".join(safe_lines).strip()
-    return True, fallback_text, [{"code": "repaired", "message": "Stripped ungrounded claims", "severity": "info"}]
+    r2_review = qa.review_document(fallback_text, kind=kind, profile=profile, job=job)
+    r2_claims = [
+        c for c in claims_mod.check(fallback_text, profile, job, kind=kind)
+        if c.severity == claims_mod.BLOCK
+    ]
+
+    if not r2_review.blocked and not r2_claims and len(fallback_text) >= 20:
+        return True, fallback_text, [{"code": "repaired", "message": "Repaired ungrounded claims after 2 repair rounds", "severity": "info"}]
+
+    # R1: If a claim still fails after 2 repair rounds, block the document and show the claim
+    failing = [
+        c.as_dict() if hasattr(c, "as_dict") else {"sentence": c.sentence, "code": c.code, "message": c.message}
+        for c in (r2_claims or final_claims or claims_list)
+    ]
+    return False, text, failing
 
 
 def generate_saved_job_documents(
@@ -195,10 +209,34 @@ def generate_saved_job_documents(
     outputs_dir = home.get_home() / "outputs"
     os.makedirs(outputs_dir, exist_ok=True)
 
-    # 1. Custom Resume Generation
-    custom_resume_pkg = refit.generate_custom_resume(job, profile)
-    tailored_resume_dict = custom_resume_pkg.get("tailored_resume") or custom_resume_pkg
+    # 1. Base Resume Selection and Light Tailoring (R6)
+    base_resumes = db.get_base_resumes()
+    if not base_resumes:
+        refit.build_role_family_base_resumes(profile)
+        base_resumes = db.get_base_resumes()
+
+    job_title = (job.get("title") or "").lower()
+    selected_base = None
+    if base_resumes:
+        for b in base_resumes:
+            rf = b.get("role_family", "").lower()
+            if rf in job_title or any(w in job_title for w in rf.split() if len(w) > 3):
+                selected_base = b.get("resume_data")
+                break
+        if not selected_base:
+            selected_base = base_resumes[0].get("resume_data")
+
+    if selected_base:
+        tailored_resume_dict = refit.tailor_base_resume(selected_base, job)
+    else:
+        custom_resume_pkg = refit.generate_custom_resume(job, profile)
+        tailored_resume_dict = custom_resume_pkg.get("tailored_resume") or custom_resume_pkg
+
     resume_raw_text = exporters.to_txt(tailored_resume_dict)
+
+    # Anti-slop and proofread pass on resume (R7)
+    from . import slop
+    resume_raw_text, _, _ = slop.rewrite_slop(resume_raw_text, kind="resume", job=job, profile=profile)
 
     # Grounding check and repair for resume
     res_pass, clean_resume, res_findings = grounding_check_and_repair(
@@ -210,12 +248,19 @@ def generate_saved_job_documents(
     with open(resume_path, "w", encoding="utf-8") as f:
         f.write(clean_resume)
 
-    # 2. Cover Letter Generation
-    cover_pkg = refit.generate_cover_pitch(job, profile)
-    cover_raw_text = cover_pkg.get("full_text") or ""
-    if not cover_raw_text:
-        cover_pkg = refit.generate_cover_letter(job, profile)
-        cover_raw_text = cover_pkg.get("full_text") or ""
+    # Build ATS-verified single column PDF (R5)
+    pdf_filename = f"{safe_id}_tailored_resume.pdf"
+    pdf_path = str(outputs_dir / pdf_filename)
+    try:
+        pdf_bytes = exporters.to_pdf(tailored_resume_dict)
+        with open(pdf_path, "wb") as f:
+            f.write(pdf_bytes)
+    except Exception as e:
+        logger.warning("Could not build PDF: %s", e)
+
+    # 2. Cover Letter Generation per Rule R7 (Classic only, ~200 words, no stock openers)
+    cover_raw_text = refit.generate_r7_cover_letter(job, profile)
+    cover_raw_text, _, _ = slop.rewrite_slop(cover_raw_text, kind="cover_letter", job=job, profile=profile)
 
     # Grounding check and repair for cover letter
     cov_pass, clean_cover, cov_findings = grounding_check_and_repair(
@@ -228,6 +273,28 @@ def generate_saved_job_documents(
         f.write(clean_cover)
 
     # Update applications record in SQLite
+    if not res_pass or not cov_pass:
+        grounding_summary = "blocked"
+        failing_claims = (res_findings if not res_pass else []) + (cov_findings if not cov_pass else [])
+        with db.session() as c:
+            c.execute(
+                """UPDATE applications
+                   SET grounding_result=?, updated_at=datetime('now')
+                   WHERE id=? OR job_id=?""",
+                ("blocked", app_id, job_id),
+            )
+        return {
+            "status": "blocked",
+            "blocked": True,
+            "grounding": "blocked",
+            "message": "Document blocked: ungrounded claims could not be repaired in 2 rounds.",
+            "failing_claims": failing_claims,
+            "resume_path": "",
+            "cover_letter_path": "",
+            "clean_resume": "",
+            "clean_cover": "",
+        }
+
     grounding_summary = "passed"
     with db.session() as c:
         c.execute(
@@ -247,6 +314,8 @@ def generate_saved_job_documents(
         )
 
     return {
+        "status": "ok",
+        "blocked": False,
         "resume_path": resume_path,
         "cover_letter_path": cover_path,
         "grounding": grounding_summary,

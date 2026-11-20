@@ -182,9 +182,10 @@ class RadarWorker:
                 if res and res.get("is_new"):
                     inserted_new.append(j)
 
-            # 3. Check active view filter matches
+            # 3. Check active view filter matches (Radar alert counts fresh matches only per R9)
+            from . import freshness
             view_res = db.query_jobs()
-            matching_new = [j for j in view_res.get("jobs", []) if j.get("is_new")]
+            matching_new = [j for j in view_res.get("jobs", []) if j.get("is_new") and (j.get("is_fresh_48h") or freshness.is_fresh_48h(j))]
 
             # 4. Trigger event if new matching jobs found
             if matching_new:

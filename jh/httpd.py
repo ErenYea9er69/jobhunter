@@ -635,22 +635,33 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             job_info = body.get("job", {})
             profile = h.resolve_profile(require=False) or {}
 
-            raw_answer = screening.solve_screening_question(question, profile, job_info, use_llm=False)
-            answer_text = raw_answer.get("answer", "") if isinstance(raw_answer, dict) else str(raw_answer)
+            # R8: Answer strictly from master facts & confirmed facts.
+            # If fact is missing, leave empty and flag. Never invent.
+            ans_res = screening.answer_screening_question(question, profile)
+            if not ans_res.get("answered"):
+                res = envelope(
+                    status="ok",
+                    data={
+                        "question": question,
+                        "answer": "",
+                        "flagged": True,
+                        "reason": ans_res.get("reason", "Fact not present in verified profile ledger"),
+                    },
+                )
+                return self._send_json(200, res)
 
-            doc_record = {
-                "kind": "screening_answer",
-                "text": answer_text,
-                "question": question,
-            }
-            review = qa.review_document(answer_text, kind="screening_answer", profile=profile, job=job_info)
-            final_text = review.adjusted.get("text") or answer_text if isinstance(review.adjusted, dict) else answer_text
+            raw_answer = ans_res.get("answer", "")
+            from . import slop
+            clean_text, _, _ = slop.rewrite_slop(raw_answer, kind="screening_answer", job=job_info, profile=profile)
+            review = qa.review_document(clean_text, kind="screening_answer", profile=profile, job=job_info)
+            final_text = review.adjusted.get("text") or clean_text if isinstance(review.adjusted, dict) else clean_text
 
             res = envelope(
                 status="ok",
                 data={
                     "question": question,
                     "answer": final_text,
+                    "flagged": False,
                     "review": {
                         "verdict": review.verdict,
                         "findings": review.findings,

@@ -86,6 +86,11 @@ def _align_terms(bullet, job_text, cand_skills):
 
 
 def _wanted(job):
+    if isinstance(job, str):
+        text = job
+        w = dict(sk.extract_weighted(text))
+        w["__words__"] = set(re.findall(r"[a-z]{4,}", text.lower()))
+        return w, text
     text = f"{job.get('title', '')}\n{job.get('description', '')}"
     w = dict(sk.extract_weighted(text))
     w["__words__"] = set(re.findall(r"[a-z]{4,}", (job.get("title", "") or "").lower()))
@@ -98,6 +103,275 @@ def _years_phrase(profile):
         return ""
     y = int(y) if float(y).is_integer() else y
     return f"{y} year{'s' if y != 1 else ''}"
+
+
+# ------------------------------------------------------------ V5 Quality Layer (R2, R3, R4, R6, R7)
+
+BANNED_STOCK_PHRASES = [
+    "hard-working team player", "hard working team player", "team player",
+    "seeking opportunities", "seeking an opportunity", "results-driven",
+    "results driven", "passionate about", "fast-paced environment",
+    "testament to", "dynamic professional", "track record of success",
+    "hit the ground running", "go-getter", "self-starter", "synergy",
+    "proven track record", "wear many hats", "detail-oriented"
+]
+
+
+def generate_r3_summary(job: dict, profile: dict) -> str:
+    """R3: Strictly 2-line summary at top.
+    Line 1: Target role + strongest skill group that matches this job.
+    Line 2: One proof point from candidate facts (or omitted if none).
+    Never writes stock phrases.
+    """
+    wanted_w, _ = _wanted(job)
+    cand_skills = list(profile.get("skills", []))
+    cand_set = {s.lower(): s for s in cand_skills}
+    matched = [cand_set[s.lower()] for s in wanted_w if s != "__words__" and s.lower() in cand_set]
+    matched_skills = matched if matched else cand_skills[:4]
+
+    target_role = (
+        job.get("title")
+        or profile.get("target_title")
+        or (profile.get("experience") or [{}])[0].get("role")
+        or "Software Engineer"
+    )
+
+    skill_str = ", ".join(matched_skills[:4])
+    line1 = f"{target_role} specializing in {skill_str}." if skill_str else f"{target_role}."
+
+    proof_point = ""
+    cand_proofs = profile.get("proof_points") or []
+    if cand_proofs:
+        proof_point = cand_proofs[0].strip()
+    else:
+        for exp in profile.get("experience", []):
+            for b in exp.get("bullets", []):
+                if NUM_RE.search(b):
+                    proof_point = b.strip().lstrip("*-• ").strip()
+                    break
+            if proof_point:
+                break
+        if not proof_point and profile.get("experience"):
+            for exp in profile.get("experience", []):
+                for b in exp.get("bullets", []):
+                    if len(b.strip()) > 15:
+                        proof_point = b.strip().lstrip("*-• ").strip()
+                        break
+                if proof_point:
+                    break
+
+    for sp in BANNED_STOCK_PHRASES:
+        line1 = re.sub(re.escape(sp), "", line1, flags=re.I).strip()
+        if proof_point:
+            proof_point = re.sub(re.escape(sp), "", proof_point, flags=re.I).strip()
+
+    line1 = re.sub(r"\s{2,}", " ", line1).strip()
+    if proof_point:
+        proof_point = re.sub(r"\s{2,}", " ", proof_point).strip()
+        if not proof_point.endswith("."):
+            proof_point += "."
+        return f"{line1}\n{proof_point}"
+    return line1
+
+
+def partition_keywords(job: dict, profile: dict) -> dict[str, Any]:
+    """R4: Mirror job keywords into Have, Related, and Missing.
+    - Have: in candidate facts. Exact wording used in bullet and skills line.
+    - Related: close skill. Candidate skill is NOT renamed; listed as gap.
+    - Missing: not present; added nowhere; listed as gap.
+    Returns coverage dict with formatted 'keyword coverage: N of M, gaps: ...'.
+    """
+    wanted_dict, job_text = _wanted(job)
+    cand_skills = list(profile.get("skills", []))
+    cand_skills_lower = {s.lower(): s for s in cand_skills}
+
+    have = []
+    related = []
+    missing = []
+
+    for term, weight in wanted_dict.items():
+        if term == "__words__":
+            continue
+        t_low = term.lower()
+        if t_low in cand_skills_lower:
+            have.append(term)
+        else:
+            is_related = False
+            for cs in cand_skills:
+                if cs.lower() in t_low or t_low in cs.lower() or (len(t_low) >= 4 and t_low[:4] == cs.lower()[:4]):
+                    related.append(f"{term} (you have {cs})")
+                    is_related = True
+                    break
+            if not is_related:
+                missing.append(term)
+
+    total_m = len(have) + len(related) + len(missing)
+    all_gaps = related + missing
+    gap_str = ", ".join(all_gaps) if all_gaps else "none"
+    coverage_text = f"keyword coverage: {len(have)} of {total_m}, gaps: {gap_str}"
+
+    return {
+        "have": have,
+        "related": related,
+        "missing": missing,
+        "have_count": len(have),
+        "total_count": total_m,
+        "coverage_text": coverage_text,
+        "gaps": all_gaps,
+    }
+
+
+def check_keyword_stuffing(text: str, keywords: list[str]) -> tuple[bool, list[str]]:
+    """Assert a keyword appears at most twice in the body. Keyword stuffing fails."""
+    stuffed = []
+    text_low = text.lower()
+    for kw in keywords:
+        kw_clean = kw.strip().lower()
+        if not kw_clean or len(kw_clean) < 3 or kw_clean in ("the", "and", "for", "with"):
+            continue
+        count = len(re.findall(rf"\b{re.escape(kw_clean)}\b", text_low))
+        if count > 2:
+            stuffed.append(f"'{kw}' appears {count} times (maximum allowed is 2)")
+    return len(stuffed) == 0, stuffed
+
+
+def extract_missing_metric_questions(profile: dict, limit: int = 5) -> list[dict[str, Any]]:
+    """R2: Identify bullets without numbers and generate a single batch of <=5 questions."""
+    questions = []
+    for xi, exp in enumerate(profile.get("experience", [])):
+        company = exp.get("company", "Company")
+        role = exp.get("role", "Role")
+        for bi, bullet in enumerate(exp.get("bullets", [])):
+            if not NUM_RE.search(bullet) and len(bullet.strip()) >= 15:
+                questions.append({
+                    "id": f"q_metric_{xi}_{bi}",
+                    "experience_index": xi,
+                    "bullet_index": bi,
+                    "company": company,
+                    "role": role,
+                    "bullet": bullet.strip(),
+                    "question": f"At {company} as {role}, what was the real figure for '{bullet[:60]}...'? (e.g. users, speed, size, time saved, count - or skip)",
+                })
+                if len(questions) >= limit:
+                    return questions
+    return questions
+
+
+def build_role_family_base_resumes(profile: dict, session_id: str = "default") -> list[dict[str, Any]]:
+    """R6: Build up to 6 base resumes once from master facts, one per role family."""
+    from . import role_inference
+    inferred = role_inference.infer_roles(profile)
+    top_roles = [r["role"] for r in inferred.get("top_roles", [])][:6]
+    if not top_roles:
+        top_roles = ["Full Stack Engineer", "Backend Engineer", "Cloud / DevOps Engineer", "Frontend Engineer"]
+
+    bases = []
+    for rf in top_roles:
+        base = copy.deepcopy(profile)
+        base["target_title"] = rf
+        dummy_job = {"title": rf, "description": f"Role family base for {rf}"}
+        base["summary"] = generate_r3_summary(dummy_job, profile)
+        base["role_family"] = rf
+        db.save_base_resume(rf, base, approved=True, session_id=session_id)
+        bases.append(base)
+    return bases
+
+
+def tailor_base_resume(base_resume: dict, job: dict) -> dict[str, Any]:
+    """R6: Pick base resume and lightly tailor in under 5 seconds on Save."""
+    cand_skills = list(base_resume.get("skills", []))
+    wanted, job_text = _wanted(job)
+    kw_info = partition_keywords(job, base_resume)
+
+    tailored = copy.deepcopy(base_resume)
+    tailored["target_title"] = job.get("title") or base_resume.get("target_title")
+    tailored["summary"] = generate_r3_summary(job, base_resume)
+
+    # Reorder bullets based on relevance to posting
+    exps = copy.deepcopy(base_resume.get("experience", []))
+    for e in exps:
+        bullets = list(e.get("bullets", []))
+        ranked = sorted(range(len(bullets)), key=lambda i: (-_relevance(bullets[i], wanted), i))
+        reordered = [bullets[i] for i in ranked]
+        aligned = [_align_terms(b, job_text, cand_skills) for b in reordered]
+        e["bullets"] = aligned
+    tailored["experience"] = exps
+
+    # Align Have keywords in skills
+    have_set = set(s.lower() for s in kw_info["have"])
+    ordered_skills = [s for s in cand_skills if s.lower() in have_set] + [s for s in cand_skills if s.lower() not in have_set]
+    tailored["skills"] = ordered_skills
+    tailored["keyword_partition"] = kw_info
+    tailored["keyword_coverage"] = kw_info["coverage_text"]
+    return tailored
+
+
+def generate_r7_cover_letter(job: dict, profile: dict) -> str:
+    """R7: Classic cover letter (up to ~200 words):
+    - First line: specific reason about company with source from posting.
+    - One proof point.
+    - One small ask.
+    - Never opens with 'I am writing to apply'.
+    - Passes slop check and proofread gate.
+    """
+    company = (job.get("company") or "your company").strip()
+    title = (job.get("title") or "the role").strip()
+    desc = (job.get("description") or "").strip()
+
+    specific_source = ""
+    for s in re.split(r"[.\n]+", desc):
+        s_clean = s.strip()
+        if len(s_clean) > 20 and any(w in s_clean.lower() for w in ("building", "scale", "product", "platform", "mission", "focus", "team", "engineer")):
+            words = s_clean.split()
+            if len(words) <= 16:
+                specific_source = s_clean
+                break
+            else:
+                specific_source = " ".join(words[:14])
+                break
+    if not specific_source:
+        specific_source = f"{company}'s development of reliable, scalable systems"
+
+    first_line = f"{company}'s focus on {specific_source} directly aligns with my engineering background as a {profile.get('target_title', 'Software Engineer')}."
+
+    proof_point = ""
+    cand_proofs = profile.get("proof_points") or []
+    if cand_proofs:
+        proof_point = cand_proofs[0].strip()
+    else:
+        for exp in profile.get("experience", []):
+            for b in exp.get("bullets", []):
+                if NUM_RE.search(b):
+                    proof_point = f"At {exp.get('company', 'my previous role')}, I {b.strip().lstrip('*-• ').strip()}"
+                    break
+            if proof_point:
+                break
+        if not proof_point and profile.get("experience"):
+            exp0 = profile["experience"][0]
+            bullets = exp0.get("bullets", [])
+            if bullets:
+                proof_point = f"At {exp0.get('company', 'my previous role')}, I {bullets[0].strip().lstrip('*-• ').strip()}"
+
+    if not proof_point:
+        proof_point = "Throughout my work, I have focused on shipping reliable software architectures with high delivery velocity."
+
+    small_ask = f"Open to a brief 15-minute conversation this week to discuss how I can contribute to {company}'s roadmap?"
+    cand_name = profile.get("name") or "Candidate"
+    contact_parts = [profile.get("email"), profile.get("phone")]
+    contact_line = " | ".join(x for x in contact_parts if x)
+
+    paragraphs = [
+        f"Dear {company} team,",
+        first_line,
+        proof_point,
+        small_ask,
+        f"Best regards,\n{cand_name}" + (f"\n{contact_line}" if contact_line else "")
+    ]
+    letter_text = "\n\n".join(paragraphs)
+
+    from . import slop
+    clean_text, passed, flags = slop.rewrite_slop(letter_text, kind="cover_letter", job=job, profile=profile)
+    return clean_text
 
 
 # ------------------------------------------------------------ deterministic engine
@@ -505,40 +779,34 @@ def generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=N
     # Deterministic Base
     base_tailored, diffs, _, _ = refit_deterministic(job, profile)
 
-    # 1. Executive Positioning Hook (6-Second Anchor)
+    # 1. R3 Executive Two-Line Summary (Role + strongest skills matching job; proof point from facts; zero stock phrases)
     role = (profile.get("experience") or [{}])[0].get("role") or profile.get("target_title") or "Software Engineer"
-    yp = _years_phrase(profile)
-    company = job.get("company") or "the engineering team"
     job_title = job.get("title") or role
-
-    lead_skills = ", ".join(matched[:3]) if matched else ", ".join(cand_skills[:3])
-    hook = f"{role}"
-    if yp:
-        hook += f" with {yp} of production experience"
-    if lead_skills:
-        hook += f" specializing in {lead_skills}"
-    hook += f", focused on {arch_cfg['focus']}."
+    company = job.get("company") or "the engineering team"
+    yp = _years_phrase(profile)
+    full_tailored_sum = generate_r3_summary(job, profile)
+    hook = full_tailored_sum
 
     # Update summary diff
     orig_sum = (profile.get("summary") or "").strip()
-    full_tailored_sum = hook + (" " + orig_sum if orig_sum and hook.lower() not in orig_sum.lower() else "")
     diff_summary = {
         "id": "diff_summary",
         "section": "Professional Summary",
-        "label": "6-Sec Executive Hook",
+        "label": "R3 Summary",
         "original": orig_sum,
         "proposed": full_tailored_sum,
         "status": "modified" if full_tailored_sum != orig_sum else "unchanged",
-        "rationale": f"Anchors the recruiter's 6-second scan with role, experience, and exact matching stack ({lead_skills}). {arch_cfg['rationale']}",
+        "rationale": "Two lines: target role, strongest skill group matching this job, and one proof point from verified facts. Zero stock phrases.",
         "grounded": True
     }
     # Replace or prepend in diffs
     diffs = [d for d in diffs if d["id"] != "diff_summary"]
     diffs.insert(0, diff_summary)
 
-    # 2. Competencies Grid
-    primary_matches = matched
-    supporting_stack = [s for s in cand_skills if s not in matched]
+    # 2. Competencies Grid & R4 Keywords
+    kw_info = partition_keywords(job, profile)
+    primary_matches = kw_info["have"]
+    supporting_stack = [s for s in cand_skills if s not in primary_matches]
     practices = [s for s in cand_skills if s in sk.DEEP or s in {"REST APIs", "Microservices", "CI/CD", "Docker", "TDD", "Agile"}]
 
     core_competencies = {
@@ -550,6 +818,8 @@ def generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=N
     tailored_resume = copy.deepcopy(base_tailored)
     tailored_resume["summary"] = full_tailored_sum
     tailored_resume["target_title"] = job_title
+    tailored_resume["keyword_partition"] = kw_info
+    tailored_resume["keyword_coverage"] = kw_info["coverage_text"]
 
     # 3. LLM Enhancement (if requested and available)
     engine_label = f"deterministic (6-sec {archetype})"

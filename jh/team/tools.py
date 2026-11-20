@@ -15,7 +15,8 @@ JH_TOOLS = (
     "jh_begin", "jh_confirm", "jh_answer", "jh_replace_resume", "jh_launch", "jh_stop", "jh_install_agent",
     "jh_start", "jh_load_resume", "jh_confirm_profile", "jh_set_filters",
     "jh_search", "jh_query", "jh_refresh", "jh_open_ui", "jh_status", "jh_feedback",
-    "jh_set_method", "jh_find_contacts", "jh_build_resume", "jh_draft_email"
+    "jh_set_method", "jh_find_contacts", "jh_build_resume", "jh_draft_email",
+    "jh_ask_missing_metrics", "jh_confirm_metric"
 )
 TEAM_TOOLS = ("ceo_run", "ceo_plan", "ceo_delegate", "ceo_submit_work", "ceo_recheck", "ceo_status", "ceo_team") + JH_TOOLS
 
@@ -337,5 +338,27 @@ def register_team(mcp: Any, tool: Callable, registry: dict[str, Callable], store
     def jh_draft_email(contact_id: str, signal_id: str = "", resume_path: str = "") -> dict[str, Any]:
         """Modern Step 13: Draft human 3-4 line outreach email with slop linting and attachment policy."""
         return v5_tools.jh_draft_email(contact_id=contact_id, signal_id=signal_id, resume_path=resume_path)
+
+    @tool
+    def jh_ask_missing_metrics(session_id: str = "default") -> dict[str, Any]:
+        """Identify bullets without metrics in the profile and ask once in a single batch of <= 5 questions (R2)."""
+        return v5_tools.jh_ask_missing_metrics(session_id=session_id)
+
+    @tool
+    def jh_confirm_metric(
+        session_id: str = "default",
+        question_id: str = "",
+        bullet_ref: str = "",
+        metric_value: str = "",
+        skip: bool = False,
+    ) -> dict[str, Any]:
+        """Confirm or skip a real metric for a resume bullet (R2)."""
+        return v5_tools.jh_confirm_metric(
+            session_id=session_id,
+            question_id=question_id,
+            bullet_ref=bullet_ref,
+            metric_value=metric_value,
+            skip=skip,
+        )
 
     return ceo

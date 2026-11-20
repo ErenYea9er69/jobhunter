@@ -1459,3 +1459,70 @@ def jh_draft_email(contact_id: str, signal_id: str = "", resume_path: str = "") 
     """Modern Step 13: Draft human 3-4 line outreach email with slop linting and attachment policy."""
     from . import email_drafter
     return email_drafter.jh_draft_email(contact_id=contact_id, signal_id=signal_id, resume_path=resume_path)
+
+
+@_coaching_envelope
+def jh_ask_missing_metrics(session_id: str = "default") -> dict[str, Any]:
+    """Identify bullets without metrics in the profile and ask once in a single batch of <= 5 questions (R2)."""
+    from . import db, refit
+    profile = db.get_profile(session_id) or db.get_profile() or {}
+    questions = refit.extract_missing_metric_questions(profile, limit=5)
+    return {
+        "status": "ok",
+        "count": len(questions),
+        "questions": questions,
+        "message": (
+            f"Found {len(questions)} bullets without metrics. You may provide real numbers or skip."
+            if questions
+            else "All bullets have metrics or no questions needed."
+        ),
+    }
+
+
+@_coaching_envelope
+def jh_confirm_metric(
+    session_id: str = "default",
+    question_id: str = "",
+    bullet_ref: str = "",
+    metric_value: str = "",
+    skip: bool = False,
+) -> dict[str, Any]:
+    """Confirm or skip a real metric for a resume bullet (R2).
+    Confirmed metrics are stored with label 'user_confirmed' and date. Never estimates or rounds up.
+    """
+    from . import db
+    if skip or not metric_value.strip():
+        return {
+            "status": "skipped",
+            "question_id": question_id,
+            "message": "Metric question skipped; bullet will remain unnumbered.",
+        }
+
+    fact_text = f"Metric confirmed for {bullet_ref or question_id}: {metric_value.strip()}"
+    fact_id = db.add_confirmed_fact(
+        session_id=session_id,
+        fact=fact_text,
+        category="metric",
+        label="user_confirmed",
+    )
+
+    profile = db.get_profile(session_id) or db.get_profile() or {}
+    if question_id.startswith("q_metric_"):
+        parts = question_id.split("_")
+        if len(parts) >= 4 and parts[2].isdigit() and parts[3].isdigit():
+            xi, bi = int(parts[2]), int(parts[3])
+            exps = profile.get("experience", [])
+            if xi < len(exps):
+                bullets = exps[xi].get("bullets", [])
+                if bi < len(bullets):
+                    orig = bullets[bi].rstrip(".")
+                    bullets[bi] = f"{orig} ({metric_value.strip()})."
+                    db.save_profile(profile, session_id=session_id)
+
+    return {
+        "status": "confirmed",
+        "fact_id": fact_id,
+        "metric_value": metric_value.strip(),
+        "label": "user_confirmed",
+        "message": f"Stored confirmed metric: {metric_value.strip()}",
+    }

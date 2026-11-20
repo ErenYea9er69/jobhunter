@@ -1,153 +1,132 @@
-# JobHunter V4 Engineering Task Board & Coverage Matrix
+# JobHunter V5 Engineering Task Board & Coverage Matrix
 
-_Created: 2026-11-20 | Architecture: V4 Guided Pipeline Redesign_
+_Created: 2026-11-20 | Quality Layer: Resume and Application Quality Engine (R1 to R9)_
 
 ## 1. Traceability & Coverage Matrix (100% Coverage)
 
-| Step | Requirement Summary | Task ID(s) | Status | Verification Surface |
+| Rule | Requirement Summary | Task ID(s) | Status | Verification Surface |
 | :--- | :--- | :--- | :--- | :--- |
-| **Step 1** | Local resume check: hard stops (`needs_resume`), soft warnings, skill/role extraction | `B1-RESUME-CHECK` | Ready to Implement | `tests/test_v3_acceptance.py`, `tests/test_resume_checker.py` |
-| **Step 2** | One-line candidate profile summary; guesses never filter | `B2-PROFILE-SUMMARY` | Ready to Implement | `tests/test_v3_acceptance.py` |
-| **Step 3** | Target search interview before launch (Method, Target Place, Role if <0.5); exact STOP preamble, user_reply validation | `B3-TARGET-SEARCH-GATE` | Ready to Implement | `tests/test_v3_acceptance.py`, `tests/test_mcp_tools.py` |
-| **Step 4** | 2-hour session ticket issued only after Step 3 answered; all launch/search tools require ticket | `B4-TICKET-BINDING` | Ready to Implement | `tests/test_v3_acceptance.py`, `tests/test_ticket_manager.py` |
-| **Step 5** | Detached launch (<3s): free port, /health polling, background search, dedicated browser profile, headless fallback | `B5-DETACHED-LAUNCH` | Ready to Implement | `tests/test_v3_acceptance.py`, `tests/test_desktop_launcher.py` |
-| **Step 6** | Dual engine execution: LinkedIn Radar on, strict Tunisia source routing (0 remote feeds), Modern outreach rules & daily cap (20), slop check | `B6-SEARCH-ROUTING-MODERN` | Ready to Implement | `tests/test_pipeline.py`, `tests/test_v3_acceptance.py` |
-| **Step 7** | Round 2 preferences in chat; live query-time filtering via `jh_answer`; unanswered = any | `B7-ROUND2-LIVE-FILTER` | Ready to Implement | `tests/test_v3_acceptance.py`, `tests/test_phase_b3_search_filters.py` |
-| **Step 8** | Chat suppression (counts/status only, zero job dumps); UI matches & filter strip | `B8-CHAT-SUPPRESSION`, `F1-UI-BANNER-STRIP` | Ready to Implement | `tests/test_v3_acceptance.py` |
-| **Step 9** | Save-first document generation; liveness check; strict claim grounding audit & 2-round repair; PDF < 200KB | `B9-SAVE-AUDIT-GEN` | Ready to Implement | `tests/test_phase_b8_save_flow.py`, `tests/test_audit_remediation.py` |
-| **Step 10** | ATS Autofill Browser Extension: verified fields only, unknown blank, auto-decline EEO, submit pause | `F2-EXTENSION-AUTOFILL` | Deferred (Frontend Phase) | `tests/test_extension_bundle.py` |
-| **Step 11** | Passive career coaching triggered only on user demand | `B10-COACH-TRIGGERS` | Ready to Implement | `tests/test_coach_layer.py` |
-| **Step 12** | Mock interview grading on ownership ("I" vs "we") and verified metrics (1-5 scale) | `B11-MOCK-INTERVIEW` | Ready to Implement | `tests/test_interview.py` |
-| **Step 13** | Pipeline status tracking, opt-in Gmail sync (narrowest scopes, no send), daily digest | `B12-PIPELINE-GMAIL-DIGEST` | Ready to Implement | `tests/test_gmail_tracker.py`, `tests/test_tracker_partial_upsert.py` |
+| **R1** | Master resume as single source of facts, chat confirmed facts (`user_confirmed` + timestamp), strict sentence-level claim audit (employer, title, dates, degree, tools, numbers, results), 2 repair rounds, block if still failing, preserve employment gaps and real dates | `B1-R1-GROUNDING-CONFIRMED-FACTS` | Pending | `tests/test_v5_quality.py`, `tests/test_save_flow.py` |
+| **R2** | Real numbers only in bullets ("action, what, number"), single chat batch of <=5 questions for missing metrics, stored as `user_confirmed`, skip allowed with no number, zero estimation or rounding | `B2-R2-METRICS-INTERVIEW` | Pending | `tests/test_v5_quality.py`, `tests/test_refit.py` |
+| **R3** | Two-line summary: target role + matching skill group, plus one proof point from verified facts (or role + skills only if none), zero stock phrases ("passionate about", "results-driven", etc.) | `B3-R3-TWO-LINE-SUMMARY` | Pending | `tests/test_v5_quality.py`, `tests/test_refit.py` |
+| **R4** | Mirror job keywords without lying: 3 groups (Have = exact wording in bullet & skills, Related = gap without renaming, Missing = gap), keyword stuffing failure (>2 occurrences), coverage "keyword coverage: N of M, gaps: ..." | `B4-R4-KEYWORD-MIRRORING` | Pending | `tests/test_v5_quality.py`, `tests/test_refit.py` |
+| **R5** | ATS-safe 1-column layout, standard headings (Experience, Education, Projects, Skills), contact in body, no skill bars/stars/icons, pypdf round-trip extraction test (reading order, sections, email, phone), PDF < 200 KB, 1 page (<5 yrs) / max 2 pages | `B5-R5-ATS-PDF-ROUNDTRIP` | Pending | `tests/test_v5_quality.py`, `tests/test_exporters.py` |
+| **R6** | Up to 6 base resumes by role family built once from master facts and approved, on Save pick matching base and tailor in <5 seconds (reorder, Have keywords, R3 summary, pass R1) | `B6-R6-BASE-RESUMES-TAILORING` | Pending | `tests/test_v5_quality.py`, `tests/test_save_flow.py` |
+| **R7** | Comprehensive anti-slop check on resume, cover letter, email, and extension answers (editable `slop_rules.json`, buzzwords, em dashes, exclamation marks, same bullet starts, uniform sentence length, lacking concrete detail), 2-round rewrite, voice sample matching, Classic cover letter <=200w (company reason + proof point + small ask, no "I am writing to apply"), proofread gate (spell check, repeated words, past tense for past jobs, exact title/company, dates in order, no placeholders, one typo fails) | `B7-R7-SLOP-PROOFREAD-GATE` | Pending | `tests/test_v5_quality.py`, `tests/test_slop.py` |
+| **R8** | Screening answers in extension: answered strictly from master + confirmed facts, short and concrete, slop check (R7), blank + flagged when fact missing, auto-decline EEO, extension stops before Submit | `B8-R8-SCREENING-QUALITY` | Pending | `tests/test_v5_quality.py`, `tests/test_screening.py` |
+| **R9** | Freshness: "posted N hours ago", "fresh, under 48 hours" badge, fresh sorted first within filtered matches, company career page preference, Radar alert fresh-only, "ready to apply" count for passing R1/R5/R7, zero auto-apply | `B9-R9-FRESHNESS-BACKEND`, `F1-R9-FRESHNESS-UI`, `F2-R4-KEYWORD-UI` | Pending | `tests/test_v5_quality.py`, `tests/test_freshness.py` |
 
-**Coverage:** 13/13 Requirements Mapped = **100% Coverage**.
+**Coverage:** 9/9 Quality Layer Rules Mapped = **100% Coverage**.
 
 ---
 
-## 2. BACKEND Tasks (Phase 1 - In Order of Execution)
+## 2. BACKEND Tasks (Phase 1)
 
-### Task B1: `B1-RESUME-CHECK` & `B2-PROFILE-SUMMARY`
-- **Target Files:** `jh/resume_checker.py`, `jh/role_inference.py`, `jh/v5_tools.py`
+### Task B1: `B1-R1-GROUNDING-CONFIRMED-FACTS`
+- **Target Files:** `jh/db.py`, `jh/team/claims.py`, `jh/save_flow.py`
 - **Actions:**
-  - Enhance `resume_checker.py` with garbled text soft warning, OCR attempt on scanned PDFs (<300 chars) if OCR libraries are installed.
-  - Fix `region_guess` in `role_inference.py` to prevent candidate name from leaking as location.
-  - Implement the exact one-line profile summary: `Name: {name} | Roles: {roles} | Exp: {years}y | Top Skills: {skills}. Say if this is wrong.`
-  - Ensure all inferred guesses (`job_type_guess`, `region_guess`, `pay_guess`) are strictly marked `guess: True` and never applied as query filters.
+  - In `jh/db.py`: Add table and helper functions for confirmed facts: `add_confirmed_fact(fact, category, session_id)`, `get_confirmed_facts(session_id)`. Stored with `date` (ISO timestamp) and `label="user_confirmed"`.
+  - In `jh/team/claims.py`: Update `FactBase` to incorporate `user_confirmed` facts alongside profile facts. Ensure phone numbers, emails, and date components in contact lines are never flagged as unsupported metric claims.
+  - In `jh/save_flow.py`: Enforce strict 2-round repair loop. If any claim remains ungrounded after 2 repair rounds, set `grounding="blocked"`, block document save, and return the exact ungrounded claim details to the user.
+  - Ensure real dates and employment gaps are preserved without smoothing or fabrication.
 
-### Task B2: `B3-TARGET-SEARCH-GATE` & `B4-TICKET-BINDING`
-- **Target Files:** `jh/v5_tools.py`, `jh/ticket_manager.py`
+### Task B2: `B2-R2-METRICS-INTERVIEW` & Task B3: `B3-R3-TWO-LINE-SUMMARY`
+- **Target Files:** `jh/refit.py`, `jh/v5_tools.py`
 - **Actions:**
-  - Modify `jh_begin`: When resume is valid, do NOT issue a ticket and do NOT return `ready`. Return `status: "needs_target"` (or `needs_input`) with the 3 mandatory questions:
-    1) Method: Modern (default) or Classic.
-    2) Target place: Tunisia, remote worldwide, remote within a time zone range, abroad, or specific city/region. Ask about relocation.
-    3) Target role (only if top role confidence < 0.5, or user says guess is wrong).
-  - Prepend mandatory server-enforced header:
-    `STOP. Ask the user the questions below and wait for the answer. Do not call another tool.`
-  - Set `next_tool: "jh_confirm"`.
-  - Update `jh_confirm`:
-    - Require non-empty `user_reply` (reject empty or echoing questions).
-    - Parse method (defaults to `modern` if skipped), target place (defaults to country from resume or `worldwide`), and role corrections.
-    - Record verbatim words in session log.
-    - Generate the 2-hour session ticket bound to `(session_id, resume_id, role_focus, method, target_place)`.
-    - Return `status: "ready"`, `ticket`, `subagent_brief`, `next_tool: "jh_launch"`.
-  - Ensure `jh_launch`, `jh_search`, and search aliases reject missing/invalid tickets.
+  - In `jh/refit.py`:
+    - Format bullets as "action, what, and number" when a number exists in master facts or `user_confirmed` facts.
+    - If a bullet lacks numbers, never invent or estimate. Provide missing-metric question extractor.
+    - Rewrite summary generation to strictly output 2 lines:
+      Line 1: Target role + strongest skill group matching the job.
+      Line 2: One concrete proof point from verified facts (or omitted if none).
+      Strip and block all stock phrases ("hard-working team player", "seeking opportunities", "results-driven", "passionate about").
+  - In `jh/v5_tools.py`:
+    - Expose `jh_ask_missing_metrics` or question batching (max 5 questions) for unquantified bullets, storing answers with `user_confirmed` label.
 
-### Task B3: `B5-DETACHED-LAUNCH` & Browser Profile Support
-- **Target Files:** `jh/worker_launcher.py`, `jh/extension_installer.py`, `jh/v5_tools.py`
+### Task B4: `B4-R4-KEYWORD-MIRRORING`
+- **Target Files:** `jh/skills.py`, `jh/refit.py`, `jh/save_flow.py`
 - **Actions:**
-  - In `extension_installer.py`, support dedicated browser user data dir inside `jobmcp/run/browser_profile` (`--user-data-dir=...`).
-  - Support Chrome for Testing / unbranded Chromium detection alongside standard Chrome and Edge.
-  - If Chromium/display is unavailable, return clean URL and unpacked extension folder path with manual load steps without blocking.
-  - Return in < 3s with `ui_url`, `search_job_id`, `server_status`, `extension_status`, and instructions for Round 2.
-  - Enforce `DETACHED_PROCESS` + `CREATE_NEW_PROCESS_GROUP` on Windows.
+  - Partition extracted posting terms into 3 explicit groups:
+    - **Have:** In candidate facts. Use posting's exact casing/wording in bullet and skills line.
+    - **Related:** Close skill in candidate ontology; keep candidate's own skill name; show as gap.
+    - **Missing:** Not present; add nothing; show as gap.
+  - Enforce keyword stuffing gate: a keyword appears at most 2 times in the resume body.
+  - Return formatted string `keyword_coverage: "N of M, gaps: <list>"`.
 
-### Task B4: `B6-SEARCH-ROUTING-MODERN`
-- **Target Files:** `jh/pipeline.py`, `jh/source_registry.py`, `jh/email_drafter.py`, `jh/founder_outreach.py`
+### Task B5: `B5-R5-ATS-PDF-ROUNDTRIP`
+- **Target Files:** `jh/exporters.py`
 - **Actions:**
-  - In `pipeline.py` and `source_registry.py`: When target place is "Tunisia", strictly skip all global remote feeds (Himalayas, Remotive, Jobicy, RemoteOK, Hacker News, We Work Remotely, Working Nomads, Arbeitnow). Query only Tunisia/MENA boards (Bayt, Regional Boards) and Company ATS Boards.
-  - In Modern mode: Verify Signal Radar criteria (<24h, <100 likes; funding <14 days), title hierarchy (<30 staff: CEO/founder+poster; 30-200: department head/lead; >200: hiring manager/lead, never CEO), MX validation, 20 email daily cap, and slop check (40-80 words, <6 word subject, 0 buzzwords, 0 em dashes, 0 exclamation marks).
+  - Enforce standard ATS section headings in `exporters.py`: `Experience`, `Education`, `Projects`, `Skills`.
+  - Keep contact details inside page body (never in headers or footers).
+  - Eliminate skill bars, stars, and graphic symbols.
+  - Implement `verify_pdf_roundtrip(pdf_bytes, expected_data)` using `pypdf`:
+    - Extract text layer from generated PDF.
+    - Assert correct reading order from top to bottom.
+    - Assert all standard sections are found.
+    - Assert email and phone are extracted intact.
+    - Assert PDF size < 200 KB.
+  - Length control: enforce 1 page for students / <5 years experience; max 2 pages for senior profiles.
 
-### Task B5: `B7-ROUND2-LIVE-FILTER` & `B8-CHAT-SUPPRESSION`
-- **Target Files:** `jh/v5_tools.py`, `jh/db.py`
+### Task B6: `B6-R6-BASE-RESUMES-TAILORING`
+- **Target Files:** `jh/db.py`, `jh/role_inference.py`, `jh/refit.py`, `jh/save_flow.py`
 - **Actions:**
-  - In `jh_answer`: Accept Round 2 answers (job type, start date, work mode, visa, pay, company exclusions, modern voice samples).
-  - Apply query-time filtering to database view without restarting search.
-  - Count hidden rows accurately (`N hidden by your filters`).
-  - Maintain chat suppression: strictly no job lists or signal lists in chat; counts and status only.
+  - In `jh/db.py`: Create storage and schema for `base_resumes` (`id, role_family, resume_data, approved, created_at`).
+  - In `jh/refit.py`: Generate up to 6 base resumes for role families discovered by `role_inference.py` (Full Stack, Backend, Frontend, Cloud/DevOps, AI/ML, Data).
+  - In `jh/save_flow.py`: On Save, select the matching base resume and apply light tailoring (reorder, Have keywords, R3 summary) in < 5 seconds.
 
-### Task B6: `B9-SAVE-AUDIT-GEN`
-- **Target Files:** `jh/save_flow.py`
+### Task B7: `B7-R7-SLOP-PROOFREAD-GATE`
+- **Target Files:** `jh/slop.py`, `jh/email_drafter.py`, `jh/save_flow.py`, `jh/screening.py`
 - **Actions:**
-  - Verify zero generation before Save in UI.
-  - Liveness check on Save: if posting closed, skip generation and prompt to keep as record.
-  - Grounding audit: check claims against master resume, allow up to 2 repair passes, block and report document if ungrounded claims persist.
-  - Classic: tailored resume + cover letter. Modern: brief + one-page resume (PDF < 200KB) + short email + learning pack.
+  - Create centralized `jh/slop.py` with editable config file (`jh/slop_rules.json`).
+  - Lint resume, cover letter, email, and extension answers against:
+    - Banned openers and stock phrases.
+    - Buzzword stacks.
+    - Em dashes (`—`, `–`, `--`) and exclamation marks (`!`).
+    - Bullets that all start with the same verb or opener.
+    - Sentences of uniform length.
+    - Lines lacking concrete detail from facts or posting.
+  - Implement 2-round auto-rewrite loop.
+  - Implement Classic cover letter rule: <= 200 words, line 1: specific reason about company with source from posting, line 2: one proof point, line 3: small ask; never open with "I am writing to apply".
+  - Implement Proofread Gate: spell check, repeated words, past tense for past jobs, company name and title spelled exactly as in posting, dates in chronological order, zero placeholders (`[Company]`). One typo fails the gate.
 
-### Task B7: `B10-COACH-TRIGGERS`, `B11-MOCK-INTERVIEW`, `B12-PIPELINE-GMAIL-DIGEST`
-- **Target Files:** `jh/coach/triggers.py`, `jh/interview.py`, `jh/gmail_tracker.py`, `jh/digest.py`
+### Task B8: `B8-R8-SCREENING-QUALITY`
+- **Target Files:** `jh/screening.py`, `jh/httpd.py`
 - **Actions:**
-  - Ensure coaching is strictly opt-in and passive.
-  - Mock interview: 1-5 grading strictly evaluating ownership ("I" vs "we") and concrete metrics.
-  - Gmail tracker: opt-in flag, narrowest scopes (`gmail.readonly`, `gmail.compose`), zero auto-send.
-  - Daily digest: one-line summary at session start.
+  - In `jh/screening.py`: Remove speculative boilerplate from narrative fallbacks. If a fact is missing from master facts and confirmed facts, leave field blank and flag with `flagged=True`.
+  - Pass all answers through R7 slop check before returning.
+  - Maintain EEO / diversity auto-decline and stop before Submit.
+
+### Task B9: `B9-R9-FRESHNESS-BACKEND`
+- **Target Files:** `jh/freshness.py`, `jh/db.py`, `jh/pipeline.py`
+- **Actions:**
+  - Compute `posted_hours_ago` and `is_fresh_48h` (age <= 48 hours).
+  - Prefer company career page timestamp over aggregator timestamps.
+  - In `jh/db.py`: Add `get_ready_to_apply_count()` tracking jobs with passing R1, R5, and R7 document sets.
+  - Ensure Radar alert queries fresh matches only.
 
 ---
 
-## 3. FRONTEND Tasks (Phase 2 - Completed)
+## 3. FRONTEND Tasks (Phase 2 - Deferred until Backend complete)
 
-### Task F1: `F1-UI-BANNER-STRIP` [x]
-- **Target Files:** `webapp/index.html`, `webapp/app.js`, `public/index.html`, `public/app.js`, `jh/v5_tools.py`
+### Task F1: `F1-R9-FRESHNESS-UI`
+- **Target Files:** `webapp/app.js`, `public/app.js`, `webapp/styles.css`, `public/styles.css`
 - **Actions:**
-  - Progress view streaming matches (sources done, jobs found, matches).
-  - Filter strip showing human active criteria (e.g. "Internship PFE, Tunisia, On-site, Full Stack. Edit") with "Edit" trigger.
-  - Banner: "N questions are waiting in the chat" until Round 2 is answered or skipped.
-  - "Change resume" button triggering `jh_replace_resume` without server restart.
-  - Modern Header button: "Radar found N new signals".
-  - Verified by `tests/test_ui_banner_strip.py`. Pushed to main (commit `df7d2cb`).
+  - In job card rendering: Display `posted N hours ago` (or days if >= 48h) and `<span class="badge badge-fresh">fresh, under 48 hours</span>`.
+  - Inside filtered matches, sort fresh jobs first.
+  - Display "Ready to apply: N" counter in header/metrics bar.
 
-### Task F2: `F2-EXTENSION-AUTOFILL` [x]
-- **Target Files:** `extension/manifest.json`, `extension/content.js`
+### Task F2: `F2-R4-KEYWORD-UI`
+- **Target Files:** `webapp/app.js`, `public/app.js`
 - **Actions:**
-  - Autofill ATS portals from verified profile only.
-  - Leave unknown screening questions blank and highlight in orange (`#f97316`).
-  - Auto-decline EEO / demographic disclosures ("I prefer not to disclose" / "Decline to self-identify").
-  - Eliminate auto-submit / countdown. Stop at Review / Submit button, show badge: `"N fields filled, M needs you"`.
-  - Verified by `tests/test_extension_autofill.py`.
+  - Display "keyword coverage: N of M, gaps: ..." in the job details and document review panel before sending.
 
 ---
 
-## 4. AUDIT & SELF-SCORING CRITERIA
-Each phase evaluated on 4 dimensions (0 to 10 each):
-1. **Completeness:** Are all requirements and edge cases covered?
-2. **Correctness:** Do all unit, integration, and offline acceptance tests pass?
-3. **Quality:** Minimal diff, no slop, clean error handling, backward compatibility.
-4. **Resilience:** Survives process termination, invalid tickets, missing network.
-Target: Minimum 9/10 in each dimension.
+## 4. AUDIT & ACCEPTANCE (Phase 3)
 
----
-
-## 5. PHASE 1 BACKEND AUDIT RESULTS
-
-| Dimension | Score (0-10) | Evaluation Notes |
-|:---|:---:|:---|
-| **Completeness** | **10 / 10** | Steps 1-13 fully implemented and mapped to Tasks B1-B12. 12 automated verification checks in `tests/test_v4_checks.py`. |
-| **Correctness** | **10 / 10** | 824/824 tests passing (100% green). Protected LinkedIn SHA hashes intact. |
-| **Quality** | **10 / 10** | Strict de-slop compliance, clean envelope returns, zero ungrounded inventions. |
-| **Resilience** | **10 / 10** | Detached process architecture, 2-hour ticket expiration and binding, atomic SQLite state management. |
-
-**Overall Backend Score: 10/10**. All checks passing. Pushed to main (`c55ceb7`).
-
----
-
-## 6. PHASE 2 FRONTEND AUDIT RESULTS
-
-| Dimension | Score (0-10) | Evaluation Notes |
-|:---|:---:|:---|
-| **Completeness** | **10 / 10** | Both UI and Extension requirements from Steps 5, 8, 11 fulfilled. |
-| **Correctness** | **10 / 10** | Automated tests `test_ui_banner_strip.py` and `test_extension_autofill.py` pass 100%. |
-| **Quality** | **10 / 10** | Follows Impeccable principles: high scanability, restrained craft, no automatic form submissions, clear orange highlighting for user attention. |
-| **Resilience** | **10 / 10** | Shadow DOM isolation protects from page CSS; graceful fallback when server endpoints are offline or unconfigured. |
-
-**Overall Frontend Score: 10/10**. All checks passing.
-
-
+### Task A1: `A1-ACCEPTANCE-AUDIT`
+- **Target Files:** `tests/test_v5_quality.py`
+- **Actions:**
+  - Comprehensive acceptance test suite verifying all 12 scripted checks (R1-R9).
+  - Self-audit score across Completeness, Correctness, Quality, and Resilience (threshold >= 9/10).
+  - Manual test of 10 lines or fewer.

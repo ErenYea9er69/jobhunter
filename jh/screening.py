@@ -277,11 +277,13 @@ def solve_screening_question(question, profile, job=None, question_type="auto", 
 
 
 def answer_screening_question(question: str, profile: dict[str, Any]) -> dict[str, Any]:
-    """Screening question evaluator for ATS autofill:
-    - Answers known questions strictly from profile facts.
+    """Screening question evaluator for ATS autofill (Rule R8):
+    - Answers known questions strictly from profile facts and confirmed facts.
     - Leaves unknown questions empty with flagged=True (highlight in orange for user).
     - Automatically declines EEO and diversity self-identification disclosures.
+    - Runs slop check (R7) on answered content.
     """
+    from . import slop
     q_low = (question or "").lower()
 
     # 1. EEO & Diversity Disclosures -> Auto-decline
@@ -345,7 +347,29 @@ def answer_screening_question(question: str, profile: dict[str, Any]) -> dict[st
                 "category": "sponsorship",
             }
 
-    # 5. Unknown question / clearance / unlisted certifications -> Leave empty, flagged=True
+    # 5. Check confirmed facts (R1 & R8)
+    confirmed_facts = profile.get("confirmed_facts") or []
+    if not confirmed_facts:
+        try:
+            from . import db
+            confirmed_facts = db.get_confirmed_facts()
+        except Exception:
+            confirmed_facts = []
+
+    for cf in confirmed_facts:
+        f_text = cf.get("fact", "") if isinstance(cf, dict) else str(cf)
+        words = [w for w in re.findall(r"\w+", q_low) if len(w) > 3 and w not in ("tell", "about", "your", "have", "with")]
+        if words and sum(1 for w in words if w in f_text.lower()) >= len(words) * 0.5:
+            clean_ans, _, _ = slop.rewrite_slop(f_text, kind="screening_answer", profile=profile)
+            return {
+                "question": question,
+                "answer": clean_ans,
+                "answered": True,
+                "flagged": False,
+                "category": "confirmed_fact",
+            }
+
+    # 6. Unknown question / unverified facts -> Leave empty, flagged=True
     return {
         "question": question,
         "answer": "",

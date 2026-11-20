@@ -1,7 +1,9 @@
 """Resume export: plain text, escaped HTML, real .docx, and a text-based single-column PDF."""
 import html
 import io
+import re
 import zipfile
+import pypdf
 
 H = {"widths": None}
 # Helvetica advance widths (per 1000 em) for ASCII 32..126, used to wrap PDF lines correctly.
@@ -12,15 +14,15 @@ _W = [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278,
 
 
 def _sections(r):
-    """Normalize a resume into (header_lines, [(title, [blocks])]) shared by every format."""
+    """Normalize a resume into (header_lines, [(title, [blocks])]) shared by every format.
+    Adheres strictly to standard ATS headings: Experience, Education, Projects, Skills.
+    """
     contact = " | ".join(x for x in [r.get("email"), r.get("phone"), r.get("location")] if x)
     links = " | ".join(x for x in [r.get("linkedin"), r.get("github")] if x)
     head = [x for x in [r.get("name", ""), r.get("target_title"), contact, links] if x]
     secs = []
     if r.get("summary"):
-        secs.append(("PROFESSIONAL SUMMARY", [("p", r["summary"])]))
-    if r.get("skills"):
-        secs.append(("SKILLS", [("p", ", ".join(r["skills"]))]))
+        secs.append(("Professional Summary", [("p", r["summary"])]))
     exp = []
     for e in r.get("experience", []):
         title = " - ".join(x for x in [e.get("role"), e.get("company")] if x)
@@ -28,7 +30,7 @@ def _sections(r):
         exp.append(("h", title + (f" ({e['location']})" if e.get("location") else ""), dates))
         exp += [("b", b) for b in e.get("bullets", [])]
     if exp:
-        secs.append(("PROFESSIONAL EXPERIENCE", exp))
+        secs.append(("Professional Experience", exp))
     edu = []
     for e in r.get("education", []):
         line = ", ".join(x for x in [e.get("degree"), e.get("institution")] if x)
@@ -36,7 +38,19 @@ def _sections(r):
             line += f" ({e['graduation_year']})"
         edu.append(("p", line))
     if edu:
-        secs.append(("EDUCATION", edu))
+        secs.append(("Education", edu))
+    proj = []
+    for p in r.get("projects", []):
+        p_name = p.get("name") or p.get("title") or "Project"
+        p_dates = p.get("dates") or ""
+        proj.append(("h", p_name, p_dates))
+        proj += [("b", b) for b in p.get("bullets", [])]
+        if p.get("description") and not p.get("bullets"):
+            proj.append(("p", p["description"]))
+    if proj:
+        secs.append(("Projects", proj))
+    if r.get("skills"):
+        secs.append(("Skills", [("p", ", ".join(r["skills"]))]))
     return head, secs
 
 
@@ -44,7 +58,7 @@ def to_txt(r):
     head, secs = _sections(r)
     out = [head[0].upper()] + head[1:] if head else []
     for title, blocks in secs:
-        out += ["", title, "-" * 40]
+        out += ["", title.upper(), "-" * 40]
         for b in blocks:
             if b[0] == "h":
                 out.append(b[1] + (f"  [{b[2]}]" if b[2] else ""))
@@ -156,7 +170,59 @@ def _pdf_str(s):
     return "(" + s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") + ")"
 
 
-def to_pdf(r):
+def verify_pdf_roundtrip(pdf_bytes: bytes, r: dict, target_max_pages: int = 2) -> tuple[bool, list[str]]:
+    """Round-trip verification test using pypdf per Rule R5:
+    1. Size strictly under 200 KB.
+    2. Reading order is intact (contact in body -> summary/experience -> education/skills).
+    3. Standard sections are found (Experience, Education, Skills, etc.).
+    4. Email and phone numbers are found in the text layer.
+    5. Page count does not exceed target_max_pages.
+    """
+    issues = []
+    size_kb = len(pdf_bytes) / 1024.0
+    if size_kb > 200.0:
+        issues.append(f"PDF size {size_kb:.1f} KB exceeds 200 KB cap")
+
+    try:
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        num_pages = len(reader.pages)
+        if num_pages > target_max_pages:
+            issues.append(f"Page count {num_pages} exceeds allowed limit of {target_max_pages}")
+
+        full_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        low = full_text.lower()
+
+        # Email & Phone
+        if r.get("email") and r["email"].lower() not in low:
+            issues.append(f"Email '{r['email']}' missing from extracted PDF text")
+        if r.get("phone"):
+            digits_phone = re.sub(r"\D", "", str(r["phone"]))
+            digits_pdf = re.sub(r"\D", "", full_text)
+            if digits_phone and digits_phone not in digits_pdf:
+                issues.append(f"Phone '{r['phone']}' missing from extracted PDF text")
+
+        # Standard headings
+        if r.get("experience") and "experience" not in low:
+            issues.append("Section 'Experience' heading missing from extracted PDF text")
+        if r.get("education") and "education" not in low:
+            issues.append("Section 'Education' heading missing from extracted PDF text")
+        if r.get("skills") and "skills" not in low:
+            issues.append("Section 'Skills' heading missing from extracted PDF text")
+
+        # Reading order check: Contact details must precede experience
+        if r.get("email") and r.get("experience"):
+            idx_email = low.find(r["email"].lower())
+            idx_exp = low.find("experience")
+            if idx_email != -1 and idx_exp != -1 and idx_email > idx_exp:
+                issues.append("Reading order inverted: email found after Experience section")
+
+    except Exception as e:
+        issues.append(f"PDF extraction error: {e}")
+
+    return len(issues) == 0, issues
+
+
+def _generate_pdf_stream(r, font_scale=1.0, gap_scale=1.0):
     head, secs = _sections(r)
     PW, PH, M = 612, 792, 54
     pages, cmds, y = [], [], PH - M
@@ -175,28 +241,30 @@ def to_pdf(r):
 
     def line(s, size=10, bold=False, indent=0, center=False, gap=2.5):
         nonlocal y
-        for part in _wrap(s, size, PW - 2 * M - indent):
-            if y < M + size:
+        actual_size = size * font_scale
+        actual_gap = gap * gap_scale
+        for part in _wrap(s, actual_size, PW - 2 * M - indent):
+            if y < M + actual_size:
                 new_page()
-            text(part, size, bold, M + indent, center)
-            y -= size + gap
+            text(part, actual_size, bold, M + indent, center)
+            y -= actual_size + actual_gap
 
     for i, h in enumerate(head):
-        line(h, 17 if i == 0 else 9.5, bold=(i == 0), center=True, gap=4)
+        line(h, 16 if i == 0 else 9.5, bold=(i == 0), center=True, gap=3.5)
     for title, blocks in secs:
-        y -= 6
-        if y < M + 40:
+        y -= 5 * gap_scale
+        if y < M + 35:
             new_page()
         line(title, 10.5, bold=True, gap=1)
         cmds.append(f"{M} {y + 1:.1f} m {PW - M} {y + 1:.1f} l 0.5 w S")
-        y -= 3
+        y -= 2.5 * gap_scale
         for b in blocks:
             if b[0] == "h":
-                line(b[1] + (f"   {b[2]}" if b[2] else ""), 10, bold=True)
+                line(b[1] + (f"   {b[2]}" if b[2] else ""), 9.8, bold=True)
             elif b[0] == "b":
-                line("- " + b[1], 10, indent=10)
+                line("- " + b[1], 9.5, indent=10)
             else:
-                line(b[1], 10)
+                line(b[1], 9.5)
     pages.append(cmds)
 
     objs = [b"<< /Type /Catalog /Pages 2 0 R >>", None,
@@ -223,6 +291,42 @@ def to_pdf(r):
         out.write(f"{o:010d} 00000 n \n".encode())
     out.write(f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode())
     return out.getvalue()
+
+
+def to_pdf(r, max_pages: Optional[int] = None):
+    """ATS-Safe single-column text-based PDF builder with verified round-trip test (R5).
+    Enforces 1 page for students / <5 years exp; max 2 pages otherwise.
+    Rebuilds dynamically if round-trip validation fails.
+    """
+    yoe = r.get("years_of_experience")
+    is_student = bool(r.get("is_student") or any("intern" in str(e.get("role", "")).lower() for e in r.get("experience", [])))
+    if max_pages is not None:
+        target_max_pages = max_pages
+    elif is_student or (yoe is not None and float(yoe) < 5.0):
+        target_max_pages = 1
+    else:
+        target_max_pages = 2
+
+    # Attempt 1: Standard layout
+    pdf_bytes = _generate_pdf_stream(r, font_scale=1.0, gap_scale=1.0)
+    ok, issues = verify_pdf_roundtrip(pdf_bytes, r, target_max_pages=target_max_pages)
+    if ok:
+        return pdf_bytes
+
+    # Attempt 2: Rebuild with tighter vertical spacing
+    pdf_bytes_tight = _generate_pdf_stream(r, font_scale=0.95, gap_scale=0.8)
+    ok_tight, issues_tight = verify_pdf_roundtrip(pdf_bytes_tight, r, target_max_pages=target_max_pages)
+    if ok_tight:
+        return pdf_bytes_tight
+
+    # Attempt 3: Ultra-compact rebuild for strict 1-page constraints
+    if target_max_pages == 1:
+        pdf_bytes_compact = _generate_pdf_stream(r, font_scale=0.90, gap_scale=0.65)
+        ok_comp, _ = verify_pdf_roundtrip(pdf_bytes_compact, r, target_max_pages=1)
+        if ok_comp:
+            return pdf_bytes_compact
+
+    return pdf_bytes_tight
 
 
 

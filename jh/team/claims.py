@@ -105,6 +105,20 @@ class FactBase:
         profile, job = profile or {}, job or {}
         self.profile = profile
         parts = _strings({k: v for k, v in profile.items()})
+
+        # Ingest confirmed facts (R1 Quality Layer)
+        confirmed = profile.get("confirmed_facts") or []
+        if not confirmed:
+            try:
+                from .. import db
+                confirmed = db.get_confirmed_facts()
+            except Exception:
+                confirmed = []
+        for cf in confirmed:
+            f_str = cf.get("fact", "") if isinstance(cf, dict) else str(cf)
+            if f_str:
+                parts.append(f_str)
+
         self.corpus = " \n ".join(parts).lower()
         self.employers = {(e.get("company") or "").split(",")[0].strip().lower() for e in profile.get("experience") or [] if e.get("company")}
         self.roles = " ".join(str(e.get("role", "")) for e in profile.get("experience") or []).lower() + " " + str(profile.get("target_title", "")).lower()
@@ -114,6 +128,9 @@ class FactBase:
         self.skills = {str(s).lower() for s in profile.get("skills") or []} | {s.lower() for s in sk.extract(self.corpus)}
         no_months = re.sub(r"\b((?:19|20)\d{2})-\d{1,2}\b", r"\1", self.corpus)      # "2021-12" is the year 2021, not the number 12
         self.numbers = [v for v, _ in quantities(no_months)]
+        phone = profile.get("phone") or ""
+        if phone:
+            self.numbers += [v for v, _ in quantities(phone)]
         for e in profile.get("experience") or []:       # dates are numbers too: "2022-01" holds 2022 and 1
             for key in ("start_date", "end_date"):
                 self.numbers += [float(x) for x in re.findall(r"(?:19|20)\d{2}", str(e.get(key, "")))]   # years only, not months
@@ -291,12 +308,19 @@ def _check_skills(s: str, fb: FactBase, out: list[Claim], resume_like: bool) -> 
         out.append(Claim(s, BLOCK, "skill", "Skill(s) stated as experience that are not on the resume: " + ", ".join(missing[:5]) + "."))
 
 
+_EMAIL_RX = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+_PHONE_RX = re.compile(r"\+?\d[\d\s().-]{7,}\d")
+
+
 def _check_quantities(s: str, fb: FactBase, out: list[Claim]) -> None:
     if _LEARNING.search(s) and not re.search(r"\d", s):
         return
+    if _EMAIL_RX.search(s) or (_PHONE_RX.search(s) and len(s.split()) <= 14):
+        return
+    s_clean = re.sub(r"\b(?:19|20)\d{2}(?:-\d{1,2})?\b", "", s)
     bad = []
-    for v, surface in quantities(s):
-        if v <= 2 or _YEAR.match(str(int(v))) and v == int(v):
+    for v, surface in quantities(s_clean):
+        if v <= 2 or (_YEAR.match(str(int(v))) and v == int(v)):
             continue
         is_years = re.search(re.escape(surface) + r"\+?\s*(?:years?|yrs?)\b", s, re.I) or surface.lower() == "decade" or re.search(r"\b(?:a|one)\s+decade\b", s, re.I) and v == 10
         if is_years:
