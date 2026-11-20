@@ -6,7 +6,7 @@ import os
 import re
 import sqlite3
 import threading
-from typing import Any
+from typing import Any, Optional
 import uuid
 
 from . import config
@@ -941,11 +941,11 @@ def get_live_profiles():
 
 
 
-def save_profile(data, profile_id=None):
+def save_profile(data, profile_id=None, session_id=None):
     data = dict(data)
     data.pop("_is_empty", None)
     data.pop("_updated_at", None)
-    pid = profile_id or data.pop("_profile_id", None) or "master"
+    pid = profile_id or session_id or data.pop("_profile_id", None) or "master"
     pname = data.pop("_profile_name", None) or ("Master Resume" if pid == "master" else "Resume Variant")
     is_master = 1 if pid == "master" or data.pop("_is_master", False) else 0
     is_active = 1 if data.pop("_is_active", True) else 0
@@ -3195,7 +3195,12 @@ def wipe_all_data() -> dict:
 
 # ------------------------------------------------------------ Confirmed Facts (R1 & R2)
 
-def add_confirmed_fact(fact: str, category: str = "general", session_id: str = "default") -> str:
+def add_confirmed_fact(
+    fact: str,
+    category: str = "general",
+    label: str = "user_confirmed",
+    session_id: str = "default",
+) -> str:
     """Store a chat-confirmed fact with timestamp and label user_confirmed."""
     fact_clean = (fact or "").strip()
     if not fact_clean:
@@ -3205,8 +3210,8 @@ def add_confirmed_fact(fact: str, category: str = "general", session_id: str = "
     with session() as c:
         c.execute(
             """INSERT OR REPLACE INTO confirmed_facts (id, session_id, fact, category, label, created_at)
-               VALUES (?, ?, ?, ?, 'user_confirmed', ?)""",
-            (fact_id, session_id, fact_clean, category, now),
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (fact_id, session_id, fact_clean, category, label, now),
         )
     return fact_id
 

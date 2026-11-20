@@ -1500,10 +1500,10 @@ def jh_confirm_metric(
 
     fact_text = f"Metric confirmed for {bullet_ref or question_id}: {metric_value.strip()}"
     fact_id = db.add_confirmed_fact(
-        session_id=session_id,
-        fact=fact_text,
+        fact_text,
         category="metric",
         label="user_confirmed",
+        session_id=session_id,
     )
 
     profile = db.get_profile(session_id) or db.get_profile() or {}
@@ -1517,7 +1517,7 @@ def jh_confirm_metric(
                 if bi < len(bullets):
                     orig = bullets[bi].rstrip(".")
                     bullets[bi] = f"{orig} ({metric_value.strip()})."
-                    db.save_profile(profile, session_id=session_id)
+                    db.save_profile(profile, profile_id=session_id)
 
     return {
         "status": "confirmed",

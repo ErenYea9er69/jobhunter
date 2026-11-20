@@ -6,6 +6,7 @@ same facts. Nothing is invented: when the resume has no evidence the answer says
 import datetime
 import json
 import re
+from typing import Any, Optional
 
 from . import config, refit
 from .util import clean_text

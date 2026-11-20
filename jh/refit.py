@@ -6,6 +6,7 @@ import copy
 import json
 import os
 import re
+from typing import Any, Optional
 
 from . import config, db, skills as sk
 from .util import http_get

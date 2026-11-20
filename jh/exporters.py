@@ -3,6 +3,7 @@ import html
 import io
 import re
 import zipfile
+from typing import Any, Optional
 import pypdf
 
 H = {"widths": None}
