@@ -43,6 +43,35 @@ def compute_new_ttl(current_ttl: int, new_ratio: float) -> int:
     return ttl
 
 
+def get_ttl(source: str) -> int:
+    """Retrieve current TTL in hours for a source."""
+    st = db.get_refresh_state(source)
+    ttl_sec = st.get("ttl_seconds") or BASE_TTL
+    return int(ttl_sec / 3600)
+
+
+def calculate_adaptive_ttl(current_ttl_hours: float, new_ratio: float) -> float:
+    """Calculate new adaptive TTL in hours based on yield."""
+    curr_sec = int(current_ttl_hours * 3600)
+    new_sec = compute_new_ttl(curr_sec, new_ratio)
+    return round(new_sec / 3600.0, 1)
+
+
+def get_cooldown_remaining(source: str) -> float:
+    """Remaining cooldown seconds before source can be refreshed again."""
+    st = db.get_refresh_state(source)
+    last_run = st.get("last_run_at")
+    if not last_run:
+        return 0.0
+    try:
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        last_dt = datetime.datetime.fromisoformat(last_run.replace("Z", "+00:00"))
+        elapsed = (now_dt - last_dt).total_seconds()
+        return max(0.0, float(COOLDOWN_SECONDS - elapsed))
+    except Exception:
+        return 0.0
+
+
 def get_all_refresh_status() -> dict[str, Any]:
     """Retrieve refresh state, next due time, and health for all non-Radar sources."""
     now_dt = datetime.datetime.now(datetime.timezone.utc)

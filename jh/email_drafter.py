@@ -333,6 +333,37 @@ def _format_draft_lines(
     return subject, body
 
 
+def draft_cold_email(signal: Dict[str, Any], profile: Dict[str, Any], contact: Dict[str, Any]) -> Dict[str, Any]:
+    """Draft cold email: 3-4 lines, 40-80 words, portfolio on last line, free of slop."""
+    p_name = profile.get("name") or "Alex"
+    first_name = p_name.strip().split()[0] if p_name.strip() else "Alex"
+    portfolio_url = profile.get("portfolio") or profile.get("portfolio_url") or ""
+
+    detail = signal.get("detail") or "engineering updates"
+    quoted = " ".join(re.findall(r"\b\w+\b", detail)[:4])
+
+    line_1 = f"Caught your recent update mentioning \"{quoted}\" earlier this week."
+    proof = _select_proof_point(profile)
+    clean_proof = proof.strip().rstrip(".")
+    if clean_proof.lower().startswith("engineered"):
+        proof_text = f"built and {clean_proof.lower()}"
+    elif not clean_proof.lower().startswith("i "):
+        proof_text = f"focused on {clean_proof}"
+    else:
+        proof_text = clean_proof
+    line_2 = f"At my previous team, I {proof_text}."
+    line_3 = "Would you have fifteen minutes for a quick chat? Attached one page for context."
+    last_line = f"{first_name} | {portfolio_url}" if portfolio_url else first_name
+
+    body = f"{line_1}\n{line_2}\n{line_3}\n{last_line}"
+    return {
+        "subject": "Note on your open role",
+        "body": body,
+        "recipient": contact.get("email", ""),
+        "company": contact.get("company", ""),
+    }
+
+
 def draft_short_email(
     contact_id: str,
     signal_id: str = "",

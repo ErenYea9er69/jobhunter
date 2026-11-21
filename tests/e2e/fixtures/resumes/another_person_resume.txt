@@ -1,0 +1,26 @@
+Tarek Mansour
+tarek.mansour@example.tn | +216 71 123 456 | Tunis, Tunisia
+linkedin.com/in/tarek-mansour | github.com/tarekm-ops
+
+DevOps & Cloud Engineer
+
+SUMMARY
+DevOps Engineer with 3 years of hands-on experience in infrastructure as code, cloud migrations, and container orchestration using Terraform, AWS, and Kubernetes.
+
+SKILLS
+Terraform, AWS, Kubernetes, Docker, Helm, CI/CD, Prometheus, Grafana, Linux, Bash, Python, Git
+
+EXPERIENCE
+CloudNets Tunisia, Tunis, Tunisia
+DevOps Engineer | Jan 2022 - Present
+- Provisioned scalable AWS multi-region infrastructure using Terraform and CloudFormation.
+- Managed production Kubernetes (EKS) clusters serving 500,000 monthly active users.
+- Automated zero-downtime CI/CD canary deployments with GitLab CI and ArgoCD.
+
+DataTel Services, Ariana, Tunisia
+Junior Systems Administrator | Sep 2020 - Dec 2021
+- Configured Linux servers, Nginx reverse proxies, and automated backup schedules.
+- Monitored server health and network telemetry using Prometheus and Grafana dashboards.
+
+EDUCATION
+National Engineering Diploma in Telecommunications, SUP'COM, 2020

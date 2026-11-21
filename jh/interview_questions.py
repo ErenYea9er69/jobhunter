@@ -104,8 +104,17 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
     
     questions = [
         {
-            "id": "job_type",
+            "id": "location",
             "number": 1,
+            "title": "Location & Relocation",
+            "question": "What locations are you targeting (e.g. specific city like Sfax or Berlin, a country, region, remote within a timezone range, or countries abroad)? Are you willing to relocate?",
+            "choices": [suggested_region, "Remote worldwide", "Tunisia", "Europe / Abroad", "any"],
+            "recommended": suggested_region,
+            "note": f"Suggested: {suggested_region} (from resume/guess)",
+        },
+        {
+            "id": "job_type",
+            "number": 2,
             "title": "Job Type & Start Date",
             "question": "What job type are you seeking, and when is your earliest available start date?",
             "choices": ["internship (PFE)", "junior full-time", "full-time", "contract", "any"],
@@ -114,7 +123,7 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
         },
         {
             "id": "work_mode",
-            "number": 2,
+            "number": 3,
             "title": "Work Mode",
             "question": "What is your preferred work mode?",
             "choices": ["on-site", "hybrid", "remote", "any"],
@@ -122,7 +131,7 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
         },
         {
             "id": "visa",
-            "number": 3,
+            "number": 4,
             "title": "Visa & Work Rights",
             "question": "Do you require visa sponsorship, and which countries do you hold legal work rights for?",
             "choices": ["no sponsorship needed", "visa sponsorship required", "any"],
@@ -130,7 +139,7 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
         },
         {
             "id": "pay",
-            "number": 4,
+            "number": 5,
             "title": "Target Compensation",
             "question": "What is your minimum acceptable compensation (or monthly stipend for internships), currency, and pay period?",
             "choices": ["any / market rate", "specify amount"],
@@ -138,38 +147,29 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
         },
         {
             "id": "company_type",
-            "number": 5,
+            "number": 6,
             "title": "Company Type & Exclusions",
             "question": "What company types do you prefer (startup, consulting, enterprise), and are there any companies or keywords you wish to skip?",
             "choices": ["any company type", "early-stage startup", "growth-stage / scale-up", "enterprise / big tech"],
             "recommended": "any company type",
-        },
-        {
-            "id": "location",
-            "number": 6,
-            "title": "Location & Relocation",
-            "question": "What locations are you targeting (e.g. Tunisia local, remote worldwide, remote in timezone, or abroad in specific countries)? Are you willing to relocate?",
-            "choices": [suggested_region, "Remote worldwide", "Tunisia", "Europe / Abroad", "any"],
-            "recommended": suggested_region,
-            "note": f"Suggested: {suggested_region}",
         },
     ]
 
     formatted_lines = [
         "Please answer the following Round 2 preferences to filter your matches live:",
         "",
-        "1. Job Type: internship (PFE), junior full-time, full-time, or contract? (What is your target start date?)",
+        f"1. Location: {suggested_region}, specific city (e.g. Sfax, Berlin), remote worldwide, timezone range, or countries abroad? Open to relocation?",
+        f"   [Suggested default: {suggested_region} (guess)]",
+        "2. Job Type: internship (PFE), junior full-time, full-time, or contract? (What is your target start date?)",
         f"   [Suggested default: {suggested_type}]",
-        "2. Work Mode: on-site, hybrid, remote, or any?",
+        "3. Work Mode: on-site, hybrid, remote, or any?",
         "   [Suggested default: any]",
-        "3. Visa Sponsorship: do you require visa sponsorship, and where do you have work rights?",
+        "4. Visa Sponsorship: do you require visa sponsorship, and where do you have work rights?",
         "   [Suggested default: no sponsorship needed]",
-        "4. Pay / Compensation: minimum acceptable compensation, stipend, or any?",
+        "5. Pay / Compensation: minimum acceptable compensation, stipend, or any?",
         "   [Suggested default: any / market rate]",
-        "5. Company Type & Exclusions: startup, consulting, enterprise? Any companies or keywords to skip?",
+        "6. Company Type & Exclusions: startup, consulting, enterprise? Any companies or keywords to skip?",
         "   [Suggested default: any company type]",
-        f"6. Location: {suggested_region}, remote worldwide, specific countries, or willing to relocate?",
-        f"   [Suggested default: {suggested_region}]",
         "",
         "(You can reply with your answers in plain text, or say 'skip all' / 'any' to proceed with defaults.)"
     ]

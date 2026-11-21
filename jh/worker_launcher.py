@@ -20,11 +20,13 @@ import webbrowser
 from pathlib import Path
 from typing import Any, Optional
 
-from . import config, db, pipeline, util
+from . import config, db, home, pipeline, util
 
 log = logging.getLogger("jobhunter.launcher")
 ROOT = Path(__file__).resolve().parent.parent
-RUN_DIR = ROOT / "jobmcp" / "run"
+
+def get_run_dir() -> Path:
+    return home.get_home() / "run"
 
 _ACTIVE_SEARCH_JOBS: dict[str, dict[str, Any]] = {}
 _ACTIVE_SEARCH_LOCK = threading.Lock()
@@ -59,8 +61,9 @@ def is_server_healthy(host: str = "127.0.0.1", port: int = 8080, timeout: float 
 
 def get_running_server_info(host: str = "127.0.0.1") -> Optional[dict[str, Any]]:
     """Check if an active server is recorded in jobmcp/run and answering /health."""
-    pid_file = RUN_DIR / "server.pid"
-    port_file = RUN_DIR / "server.port"
+    run_dir = get_run_dir()
+    pid_file = run_dir / "server.pid"
+    port_file = run_dir / "server.port"
     if pid_file.is_file() and port_file.is_file():
         try:
             pid = int(pid_file.read_text(encoding="utf-8").strip())
@@ -92,7 +95,8 @@ def start_detached_server(host: str = "127.0.0.1", preferred_port: int = 8080, w
     
     Returns in < 500ms.
     """
-    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    run_dir = get_run_dir()
+    run_dir.mkdir(parents=True, exist_ok=True)
     existing = get_running_server_info(host=host)
     if existing:
         return {
@@ -128,8 +132,8 @@ def start_detached_server(host: str = "127.0.0.1", preferred_port: int = 8080, w
     proc = subprocess.Popen(cmd, **kwargs)
 
     # Write port file early
-    (RUN_DIR / "server.port").write_text(str(port), encoding="utf-8")
-    (RUN_DIR / "server.pid").write_text(str(proc.pid), encoding="utf-8")
+    (run_dir / "server.port").write_text(str(port), encoding="utf-8")
+    (run_dir / "server.pid").write_text(str(proc.pid), encoding="utf-8")
 
     # Start health poller in background thread (never block caller)
     poll_health_in_background(host, port, max_seconds=15)
@@ -301,7 +305,8 @@ def open_browser(url: str) -> bool:
 def stop_worker(session_id: str = "") -> dict[str, Any]:
     """Gracefully terminate detached server worker and background jobs."""
     stopped_pid = None
-    pid_file = RUN_DIR / "server.pid"
+    run_dir = get_run_dir()
+    pid_file = run_dir / "server.pid"
     if pid_file.is_file():
         try:
             pid = int(pid_file.read_text(encoding="utf-8").strip())
@@ -314,9 +319,9 @@ def stop_worker(session_id: str = "") -> dict[str, Any]:
             pass
 
     try:
-        (RUN_DIR / "server.pid").unlink(missing_ok=True)
-        (RUN_DIR / "server.lock").unlink(missing_ok=True)
-        (RUN_DIR / "server.port").unlink(missing_ok=True)
+        (run_dir / "server.pid").unlink(missing_ok=True)
+        (run_dir / "server.lock").unlink(missing_ok=True)
+        (run_dir / "server.port").unlink(missing_ok=True)
     except Exception:
         pass
 

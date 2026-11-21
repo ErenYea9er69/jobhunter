@@ -124,10 +124,11 @@ def find_latest_date_in_history(text: str) -> Optional[datetime.date]:
 
 
 def check_resume(
-    path_or_text: str | Path | None,
+    path_or_text: str | Path | None = None,
     saved_profile: Optional[dict[str, Any]] = None,
     resume_text: str = "",
     filename: str = "",
+    text: str = "",
 ) -> dict[str, Any]:
     """Run thorough local inspection on a candidate resume document.
     
@@ -135,6 +136,9 @@ def check_resume(
     """
     issues: list[str] = []
     warnings: list[str] = []
+
+    if text and not resume_text:
+        resume_text = text
 
     if resume_text and resume_text.strip():
         text = resume_text.strip()

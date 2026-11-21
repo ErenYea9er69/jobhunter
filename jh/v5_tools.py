@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import socket
 import threading
 import time
@@ -485,6 +486,36 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     """Phase B1: Entry point for any job request. Runs resume check and job-name inference, saves profile, creates session, and replies with needs_resume, needs_role, or ready with ticket."""
     sess = ticket_manager.get_or_create_session(session_id)
 
+    # Multi-resume check: attached together (e.g. separated by semicolon, newline, or ' and ')
+    resume_str = str(resume_path) if resume_path else ""
+    if resume_str and any(sep in resume_str for sep in [";", "\n", " and "]):
+        parts = [p.strip() for p in re.split(r"[;\n]| and ", resume_str) if p.strip()]
+        if len(parts) > 1:
+            names = [Path(p).name for p in parts]
+            reply = {
+                "status": "multiple_resumes",
+                "session_id": session_id,
+                "step": 1,
+                "message_for_user": (
+                    f"Multiple resumes provided ({', '.join(names)}). "
+                    f"Which resume would you like to use for this search ({' or '.join(names)}), or would you like to search for both?"
+                ),
+                "ask_user": f"Which resume should I use ({', '.join(names)}), or should I search for both?",
+                "options": {
+                    "choices": names + ["both"],
+                    "recommended": names[0],
+                },
+                "next_tool": "jh_begin",
+                "data": {"resume_candidates": parts}
+            }
+            sess["last_status"] = "multiple_resumes"
+            sess["last_reply"] = reply
+            return reply
+
+    # Central home directory setup & first reply notice
+    home.ensure_home_dirs()
+    notice = home.get_first_reply_notice()
+
     # Gate 5: calling jh_begin twice before answering returns same status and questions again
     if sess.get("last_status") in ("needs_resume", "needs_role") and not resume_path and not resume_text:
         return sess["last_reply"]
@@ -499,13 +530,18 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     sess["check_result"] = check_res
 
     if not check_res["ok"]:
+        stop_body = (
+            f"Resume Check Failed:\n" + "\n".join(f"- {issue}" for issue in check_res["issues"]) +
+            "\n\nPlease provide a path to a valid PDF, DOCX, TXT, or MD resume, or paste the text directly."
+        )
+        if notice:
+            stop_body = f"{notice}\n\n{stop_body}"
         reply = {
             "status": "needs_resume",
+            "session_id": session_id,
             "step": 1,
-            "message_for_user": ticket_manager.build_stop_message(
-                f"Resume Check Failed:\n" + "\n".join(f"- {issue}" for issue in check_res["issues"]) +
-                "\n\nPlease provide a path to a valid PDF, DOCX, TXT, or MD resume, or paste the text directly."
-            ),
+            "notice": notice,
+            "message_for_user": ticket_manager.build_stop_message(stop_body),
             "ask_user": "Please provide a valid resume file (PDF, DOCX, TXT, MD) or paste your resume text.",
             "next_tool": "jh_begin",
             "data": {
@@ -528,30 +564,54 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     sess["resume_id"] = util.stable_id(prof.get("name") or "candidate", check_res.get("text_chars", 0))
 
     ask_role = (len(inf.get("role_focus", [])) == 0)
-    step3_q = interview_questions.build_step_3_target_questions(
-        inf["roles"], inf["region_guess"], ask_role=ask_role
+    round_2_q = interview_questions.build_round_2_questions(
+        prof, inf["job_type_guess"], inf["region_guess"]
     )
-    sess["last_questions"] = step3_q
+    sess["pending_questions"] = round_2_q["questions"]
+    sess["last_questions"] = round_2_q
     sess["role_focus"] = inf.get("role_focus", [])
 
+    top_role = inf["roles"][0]["role"] if inf.get("roles") else "Software Engineer"
+    suggested_region = (inf.get("region_guess", {}).get("value") or "Tunisia").strip()
+    subagent_brief = (
+        f"Target role: {top_role}. Target location: {suggested_region}. "
+        f"Search jobs, filter results, and prepare outreach for qualified leads."
+    )
+
+    if not ask_role:
+        ticket = ticket_manager.issue_ticket(session_id, sess["resume_id"])
+        status_name = "ready"
+    else:
+        ticket = None
+        status_name = "needs_role"
+
     warnings_lines = "\n".join(check_res["warnings"]) if check_res["warnings"] else ""
-    header_parts = [inf.get("one_line_summary") or inf.get("profile_summary", "")]
+    header_parts = []
+    if notice:
+        header_parts.append(notice)
+    header_parts.append(inf.get("one_line_summary") or inf.get("profile_summary", ""))
     if warnings_lines:
         header_parts.append(warnings_lines)
     header_parts.append("")
-    header_parts.append(step3_q["formatted_text"])
+    header_parts.append(round_2_q["formatted_text"])
     header_text = "\n".join(header_parts)
 
-    status_name = "needs_role" if ask_role else "needs_target"
     reply = {
         "status": status_name,
+        "session_id": session_id,
+        "ticket": ticket,
         "step": 2,
+        "subagent_brief": subagent_brief,
+        "pending_questions": round_2_q["questions"],
+        "notice": notice,
         "message_for_user": ticket_manager.build_stop_message(header_text),
-        "ask_user": step3_q["formatted_text"],
-        "options": step3_q,
-        "next_tool": "jh_confirm",
+        "ask_user": round_2_q["formatted_text"],
+        "options": round_2_q,
+        "next_tool": "jh_launch" if not ask_role else "jh_confirm",
         "data": {
             "name": check_res["name"],
+            "session_id": session_id,
+            "ticket": ticket,
             "one_line_summary": inf.get("one_line_summary", ""),
             "inferred_roles": inf["roles"],
             "role_focus": inf.get("role_focus", []),
@@ -559,7 +619,8 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
             "region_guess": inf["region_guess"],
             "warnings": check_res["warnings"],
             "profile_summary": inf["profile_summary"],
-            "questions": step3_q["questions"],
+            "pending_questions": round_2_q["questions"],
+            "questions": round_2_q["questions"],
         }
     }
     sess["last_status"] = status_name
@@ -804,8 +865,10 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
         f"{r2['formatted_text']}"
     )
 
+    launch_status = "reused" if server_res["status"] == "reused" and search_status == "already_running" else "started"
+
     return {
-        "status": "ok",
+        "status": launch_status,
         "step": 4,
         "server_status": server_res["status"],
         "ui_url": ui_url,
@@ -845,15 +908,17 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
 
     if user_reply and ticket_manager.is_explicit_skip(user_reply):
         ticket_manager.record_user_skip(session_id, "round_2", user_reply)
-        for field in ["job_type", "work_mode", "visa", "pay", "company_type", "location"]:
+        for field in ["job_type", "work_mode", "visa", "pay", "company_type", "location", "locations"]:
             if field not in sess["answers"]:
                 sess["answers"][field] = "any"
+        sess["pending_questions"] = []
+        db.set_session_state("round_2_skipped", last_tool="jh_answer")
     else:
         if user_reply:
             sess["user_reply_log"] = sess.get("user_reply_log", []) + [user_reply]
             clean_reply = user_reply.lower()
             if "intern" in clean_reply or "pfe" in clean_reply or "stage" in clean_reply:
-                answers["job_type"] = "internship (PFE)"
+                answers["job_type"] = "internship"
             elif "full" in clean_reply or "junior" in clean_reply:
                 answers["job_type"] = "full-time"
             if "remote" in clean_reply:
@@ -861,16 +926,36 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
             elif "hybrid" in clean_reply:
                 answers["work_mode"] = "hybrid"
             elif "onsite" in clean_reply or "on-site" in clean_reply:
-                answers["work_mode"] = "onsite"
-            if "tunisia" in clean_reply or "tunis" in clean_reply:
+                answers["work_mode"] = "on-site"
+            if "sfax" in clean_reply:
+                answers["locations"] = ["Sfax"]
+            elif "tunisia" in clean_reply or "tunis" in clean_reply:
                 answers["locations"] = ["Tunisia"]
             elif "remote worldwide" in clean_reply or "worldwide" in clean_reply:
                 answers["locations"] = ["worldwide"]
 
-        sess["answers"].update(answers)
+        if "location" in answers and "locations" not in answers:
+            loc = answers["location"]
+            answers["locations"] = [loc] if isinstance(loc, str) else list(loc)
 
-    # Persist answers into view filters
+        sess["answers"].update(answers)
+        sess["pending_questions"] = []
+        db.set_session_state("round_2_answered", last_tool="jh_answer")
+
+    # Persist answers into view filters & user preferences
     db.save_view_filters(sess["answers"], session_id=session_id)
+    try:
+        from . import preferences
+        pref_updates = {}
+        if "locations" in sess["answers"]:
+            pref_updates["cities"] = [l for l in sess["answers"]["locations"] if l.lower() != "any"]
+            pref_updates["target_countries"] = [l for l in sess["answers"]["locations"] if l.lower() != "any"]
+        if "work_mode" in sess["answers"] and sess["answers"]["work_mode"].lower() != "any":
+            pref_updates["work_mode"] = sess["answers"]["work_mode"].capitalize()
+        if pref_updates:
+            preferences.save(pref_updates)
+    except Exception:
+        pass
 
     # Re-evaluate SQL query filters
     q_res = db.query_jobs(session_id=session_id)
@@ -884,6 +969,7 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
     return {
         "status": "ok",
         "step": 5,
+        "filters": sess["answers"],
         "message_for_user": (
             f"Filters updated live. {q_res['count']} jobs match your preferences ({hidden_count} hidden by your filters). "
             f"The web UI at {ui_url} shows the matches live. Chat remains clean."
@@ -1269,7 +1355,7 @@ def jh_open_ui(port: int = 8765, host: str = "127.0.0.1") -> dict[str, Any]:
 
 
 @_coaching_envelope
-def jh_status(session_id: str = "default") -> dict[str, Any]:
+def jh_status(session_id: str = "default", include_matches: bool = False) -> dict[str, Any]:
     """Inspect full JobHunter state: active method, workspace path, session state, radar, refresh states, cleanup status, and top 5 matches."""
     home_dir = home.get_home()
     session_state = db.get_session_state()
@@ -1279,6 +1365,7 @@ def jh_status(session_id: str = "default") -> dict[str, Any]:
     profile = db.get_profile()
     filters = db.get_view_filters(session_id)
     active_method = config.get_method()
+    sess = ticket_manager.get_or_create_session(session_id)
 
     with db.session() as c:
         total_jobs = c.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
@@ -1303,12 +1390,18 @@ def jh_status(session_id: str = "default") -> dict[str, Any]:
     port = port_info["port"] if port_info else 8080
     ui_url = f"http://127.0.0.1:{port}/?session={session_id}"
 
-    questions_waiting = 0
+    questions_waiting = len(sess.get("pending_questions", []))
     curr_state_str = session_state.get("current_state", "") if isinstance(session_state, dict) else str(session_state)
-    if curr_state_str in ("round_2_pending", "round_1_done", "ready"):
+    if questions_waiting == 0 and curr_state_str in ("round_2_pending", "round_1_done", "ready"):
         questions_waiting = 6
     if curr_state_str in ("round_2_answered", "round_2_skipped"):
         questions_waiting = 0
+
+    has_pending = bool(sess.get("pending_questions")) or (questions_waiting > 0 and curr_state_str not in ("round_2_answered", "round_2_skipped"))
+    if has_pending or not include_matches:
+        top_matches = []
+    else:
+        top_matches = top_5
 
     if active_method == "modern":
         method_summary = (
@@ -1339,6 +1432,8 @@ def jh_status(session_id: str = "default") -> dict[str, Any]:
     return {
         "status": "ok",
         "step": "status",
+        "session_id": session_id,
+        "top_matches": top_matches,
         "message_for_user": msg,
         "ask_user": None,
         "options": {
@@ -1350,7 +1445,8 @@ def jh_status(session_id: str = "default") -> dict[str, Any]:
             "method": active_method,
             "session_id": session_id,
             "matches": matches_count,
-            "top_5_matches": top_5,
+            "top_5_matches": top_matches,
+            "top_matches": top_matches,
             "hidden_by_filters": hidden_count,
             "ui_url": ui_url,
             "total_jobs": total_jobs,
@@ -1371,6 +1467,25 @@ def jh_status(session_id: str = "default") -> dict[str, Any]:
             "remaining_cap": remaining_cap,
         }
     }
+
+
+def build_ai_task_payload(task: str, job: dict[str, Any] | None = None, profile: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Ensure AI payload receives strictly the minimal fields needed for the task, with no DB or contact dumps."""
+    clean_payload: dict[str, Any] = {"task": task}
+    if job:
+        clean_payload["job"] = {
+            "title": job.get("title", ""),
+            "company": job.get("company", ""),
+            "description": (job.get("description", "") or "")[:1500],
+            "skills": job.get("required_skills", []) or job.get("skills", []),
+        }
+    if profile:
+        clean_payload["profile"] = {
+            "target_title": profile.get("target_title", ""),
+            "skills": profile.get("skills", [])[:20],
+            "experience_summary": profile.get("summary", ""),
+        }
+    return clean_payload
 
 
 @_coaching_envelope

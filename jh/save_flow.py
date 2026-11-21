@@ -442,6 +442,32 @@ def handle_save_job(
     }
 
 
+def save_job_and_generate(job: dict) -> dict:
+    """Save a job and generate tailored documents for active postings."""
+    if job.get("status") in ("expired", "closed") or job.get("is_live") is False:
+        return {"generated": False, "status": "closed", "message": "Closed job posting skipped."}
+
+    job_id = job.get("id") or "job_open"
+    db.save_job(job)
+    res = handle_save_job(job, force=True)
+    res["generated"] = not res.get("blocked", False) and bool(res.get("resume_path"))
+    return res
+
+
+def documents_exist(job_id: str) -> bool:
+    """Check if tailored resume or cover letter document exists in outputs/ for job_id."""
+    outputs_dir = home.get_home() / "outputs"
+    safe_id = re.sub(r"[^\w\-]", "_", str(job_id))
+    for f in [
+        outputs_dir / f"{safe_id}_tailored_resume.txt",
+        outputs_dir / f"{safe_id}_tailored_resume.pdf",
+        outputs_dir / f"{safe_id}_cover_letter.txt",
+    ]:
+        if f.is_file() and f.stat().st_size > 0:
+            return True
+    return False
+
+
 def handle_dismiss_job(job_id: str, reason: str = "") -> dict:
     """Log dismissal and analyze dismissal pattern after 5 dismissals."""
     db.add_dismissal(job_id, reason)

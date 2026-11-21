@@ -91,6 +91,23 @@ def liveness_check(url: str, job_id: Optional[str] = None) -> dict[str, Any]:
     return {"is_live": is_live, "status_code": status_code, "reason": reason, "cached": False}
 
 
+def ingest_job(job: dict[str, Any], conn: Any = None) -> dict[str, Any]:
+    """Ingest job with deduplication and lifecycle management."""
+    return db.ingest_job(job, conn=conn)
+
+
+def mark_expired(job_id: str, reason: str = "Expired") -> None:
+    """Mark a job posting as expired with 24h grace deletion."""
+    _mark_job_closed(job_id, reason)
+
+
+def is_deleted(job_id: str) -> bool:
+    """True if job no longer exists in jobs table."""
+    with db.session() as c:
+        row = c.execute("SELECT id FROM jobs WHERE id=? OR job_key=?", (job_id, job_id)).fetchone()
+        return row is None
+
+
 def _mark_job_closed(job_id: str, reason: str) -> None:
     """Set job state to expired and initialize delete_at with cleanup_grace_hours."""
     grace_hours = int(db.get_setting("cleanup_grace_hours", "24"))
@@ -100,7 +117,17 @@ def _mark_job_closed(job_id: str, reason: str) -> None:
     with db.session() as c:
         row = c.execute("SELECT keep_flag, delete_at FROM jobs WHERE id=? OR job_key=?", (job_id, job_id)).fetchone()
         if row:
-            if not row["keep_flag"]:
+            app_row = c.execute("SELECT id FROM applications WHERE job_id=? OR job_id=?", (job_id, job_id)).fetchone()
+            if row["keep_flag"] or app_row:
+                c.execute("""
+                    UPDATE jobs SET
+                        freshness_state='expired',
+                        closed_checked_at=?,
+                        keep_flag=1,
+                        delete_at=NULL
+                    WHERE id=? OR job_key=?
+                """, (iso_now, job_id, job_id))
+            else:
                 target_delete = row["delete_at"] or delete_dt
                 c.execute("""
                     UPDATE jobs SET
@@ -109,13 +136,6 @@ def _mark_job_closed(job_id: str, reason: str) -> None:
                         delete_at=?
                     WHERE id=? OR job_key=?
                 """, (iso_now, target_delete, job_id, job_id))
-            else:
-                c.execute("""
-                    UPDATE jobs SET
-                        freshness_state='expired',
-                        closed_checked_at=?
-                    WHERE id=? OR job_key=?
-                """, (iso_now, job_id, job_id))
 
 
 def keep_jobs(job_ids: list[str]) -> int:

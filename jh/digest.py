@@ -69,6 +69,23 @@ def send_digest():
     return {"file": path, "emailed": emailed, "jobs": len(d["digest_jobs"])}
 
 
+def generate_daily_digest(new_matches_count: int = 0, due_followups: list | None = None) -> dict[str, Any]:
+    """Generate daily digest summary covering new matches, due followups, and status."""
+    due_followups = due_followups or []
+    lines = [
+        f"Daily Digest: {new_matches_count} new match(es) discovered.",
+    ]
+    if due_followups:
+        lines.append(f"Due follow-ups ({len(due_followups)}):")
+        for f in due_followups:
+            lines.append(f"- {f.get('contact', '')} at {f.get('company', '')}")
+    return {
+        "new_matches_count": new_matches_count,
+        "due_followups": due_followups,
+        "summary": "\n".join(lines),
+    }
+
+
 def start_scheduler():
     """Run send_digest once a day at JH_DIGEST_TIME (HH:MM, local time). Does nothing when unset."""
     if not config.DIGEST_TIME:

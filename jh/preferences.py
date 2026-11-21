@@ -304,3 +304,9 @@ def famous_mode(prefs: dict[str, Any] | None = None) -> str:
     """Map company_focus to the ``famous_mode`` the pipeline understands."""
     focus = (prefs or load()).get("company_focus", "any")
     return {"avoid_big_names": "hide", "only_big_names": "only"}.get(focus, "all")
+
+
+def query_jobs(filters: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Query stored jobs filtered live against view criteria."""
+    from . import db
+    return db.query_jobs(view_filters=filters)

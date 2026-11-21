@@ -1,0 +1,31 @@
+Alex Mercer
+alex.mercer@example.com | +1 555-019-2831 | Austin, TX, USA
+linkedin.com/in/alex-mercer | github.com/alexm-dev
+
+Senior Backend Engineer
+
+SUMMARY
+Senior Backend Engineer with 4 years of experience specializing in high-throughput distributed systems, REST APIs, and database optimization in Python, FastAPI, and PostgreSQL.
+
+SKILLS
+Python, FastAPI, Django, PostgreSQL, Redis, Docker, Kubernetes, AWS, Kafka, Microservices, CI/CD, Git
+
+EXPERIENCE
+Fintech Global, Austin, TX, USA
+Backend Engineer | Jan 2022 - Present
+- Engineered asynchronous ledger service handling 5,000 tps with 99.99% uptime using FastAPI and PostgreSQL.
+- Optimized database queries and Redis caching layer, reducing p99 latency by 35%.
+- Maintained core transaction APIs and implemented CI/CD deployment pipelines on AWS with Docker.
+
+CloudScale Inc, Austin, TX, USA
+Junior Backend Developer | Mar 2020 - Dec 2021
+- Developed REST microservice endpoints in Python, Docker, and PostgreSQL.
+- Authored automated integration test suites raising overall code coverage from 45% to 85%.
+- Resolved production incident tickets and participated in on-call rotations.
+
+PROJECTS
+OpenLedger: Distributed transactional log engine built in Python and Redis with Raft consensus protocol.
+FastCache: Python Redis client wrapper with connection pooling and circuit-breaker support.
+
+EDUCATION
+Bachelor of Science in Computer Science, University of Texas at Austin, 2020

@@ -46,6 +46,11 @@ def generate_ticket(session_id: str, resume_id: str, roles: list[str], method: s
     return ticket
 
 
+def issue_ticket(session_id: str, resume_id: str = "", roles: list[str] | None = None, method: str = "modern", location: str = "", **kwargs) -> str:
+    """Issue ticket alias."""
+    return generate_ticket(session_id=session_id, resume_id=resume_id, roles=roles or [], method=method, location=location)
+
+
 def validate_ticket(session_id: str, ticket: str) -> tuple[bool, Optional[str]]:
     """Validate ticket existence, session binding, and expiration."""
     if not ticket or not isinstance(ticket, str):

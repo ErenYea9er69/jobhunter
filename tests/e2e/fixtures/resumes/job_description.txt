@@ -1,0 +1,18 @@
+Senior Software Engineer - Full Stack
+
+About the Role:
+We are looking for an experienced Senior Software Engineer to join our growing product engineering team. You will be responsible for designing, building, and deploying mission-critical features across our frontend and backend microservices.
+
+Key Responsibilities:
+- Design and architect resilient RESTful APIs and real-time event-driven pipelines.
+- Partner with product managers, UX designers, and quality assurance engineers to deliver customer delight.
+- Write thorough unit and automated integration tests to ensure system stability and performance.
+- Mentor junior engineers and conduct rigorous peer code reviews.
+
+Basic Qualifications & Requirements:
+- 5+ years of software engineering experience building production systems.
+- Demonstrated proficiency in modern web technologies, databases, and cloud infrastructure.
+- Strong knowledge of data structures, algorithms, and system design principles.
+- Excellent communication and collaboration skills.
+
+Apply now by submitting your resume and portfolio. We offer competitive compensation, comprehensive health benefits, and flexible remote work options.

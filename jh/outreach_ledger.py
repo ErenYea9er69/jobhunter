@@ -17,7 +17,7 @@ import logging
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import config, db
+from . import config, db, util
 from .mcp_helpers import Result, ToolError, envelope
 
 log = logging.getLogger("jobhunter.outreach_ledger")
@@ -38,6 +38,26 @@ FIRST_DRAFT_LEGAL_NOTICE = (
 # 1. Gate: Already Contacted?
 # =====================================================================
 
+def record_contact(email: str, company: str = "") -> None:
+    """Record outreach contact in ledger with 90-day cooldown."""
+    db.init_db()
+    clean_email = email.strip().lower()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    stable_outreach_id = util.stable_id(clean_email, "contact")
+    with db.session() as c:
+        c.execute(
+            """INSERT INTO outreach (id, contact_id, recipient_email, company, status, drafted_at, sent_at, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'sent', ?, ?, ?, ?)""",
+            (f"out_{stable_outreach_id}", clean_email, clean_email, company or "Company", now, now, now, now),
+        )
+
+
+def can_contact(email: str) -> bool:
+    """Check if contact can be reached under 90-day ledger rules."""
+    res = check_already_contacted(contact_id="", email=email)
+    return bool(res.get("allowed", False))
+
+
 def check_already_contacted(contact_id: str, email: str = "") -> Dict[str, Any]:
     """Check contact outreach history over past 90 days.
 
@@ -48,6 +68,7 @@ def check_already_contacted(contact_id: str, email: str = "") -> Dict[str, Any]:
     - If contacted <4 days ago: skip (cooldown).
     - If contacted >= 4 days ago with no reply: allow ONE follow-up.
     """
+    db.init_db()
     cutoff_90d = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=90)).isoformat()
     clean_email = email.strip().lower()
 

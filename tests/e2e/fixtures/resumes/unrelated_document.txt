@@ -1,0 +1,13 @@
+Master Services Agreement & Terms of Service
+
+1. ACCEPTANCE OF TERMS
+By accessing or using our software applications, API endpoints, developer tools, or websites, you agree to be legally bound by these Terms of Service. If you do not agree to these terms, you must discontinue all use of the platform immediately.
+
+2. INTELLECTUAL PROPERTY RIGHTS
+All copyrights, trademarks, trade secrets, patents, software code, UI designs, and related intellectual property rights remain the exclusive property of the company or its licensors. You may not reverse engineer, decompile, disassemble, or copy any software components without prior written consent.
+
+3. LIMITATION OF LIABILITY
+In no event shall the company, its affiliates, officers, directors, employees, agents, or suppliers be liable for any indirect, incidental, special, consequential, or punitive damages, including loss of profits, data, or goodwill.
+
+4. GOVERNING LAW
+These Terms shall be governed by and interpreted in accordance with the substantive laws of the State of Delaware, without regard to conflict of law principles.

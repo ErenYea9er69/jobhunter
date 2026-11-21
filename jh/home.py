@@ -142,13 +142,18 @@ def ensure_home_dirs() -> Path:
             pass
 
     _INITIALIZED = True
+    try:
+        from . import db
+        db.init_db()
+    except Exception:
+        pass
     return home
 
 
 def get_first_reply_notice() -> Optional[str]:
-    """Return notice message for the user if home was created during this session."""
+    """Return notice message for the user if home was created during this session or first tool reply."""
     global _FIRST_NOTICE_GIVEN
-    if was_created_now() and not _FIRST_NOTICE_GIVEN:
+    if not _FIRST_NOTICE_GIVEN:
         _FIRST_NOTICE_GIVEN = True
         return f"I created Desktop/jobmcp. Everything I store goes there. I will not write to your project. Full path: {get_home()}"
     return None

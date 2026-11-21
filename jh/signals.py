@@ -350,6 +350,16 @@ def evaluate_signal_freshness(sig_type: str, posted_at: str, likes: int = 0) -> 
     return "fresh"
 
 
+def is_funding_fresh(fund: Dict[str, Any]) -> bool:
+    """True if funding news signal is < 14 days old."""
+    return evaluate_signal_freshness("funding", fund.get("posted_at") or fund.get("date") or "", fund.get("likes", 0)) == "fresh"
+
+
+def is_hiring_post_fresh(post: Dict[str, Any]) -> bool:
+    """True if hiring post signal is < 24 hours old and < 100 likes."""
+    return evaluate_signal_freshness("hiring_post", post.get("posted_at") or post.get("date") or "", post.get("likes", 0)) == "fresh"
+
+
 def score_signal(signal: Dict[str, Any], profile: Dict[str, Any], target_role: str = "", target_stage: str = "any", target_region: str = "any") -> int:
     """Score signal from 0 to 100:
     - Freshness: 40 points

@@ -14,13 +14,14 @@ from . import skills as sk
 
 def evaluate_mock_interview(
     question: str,
-    candidate_answer: str,
+    candidate_answer: str = "",
     role_level: str = "senior",
     rubric: str = "standard",
+    user_answer: str = "",
 ) -> dict[str, Any]:
     """Grade a candidate's practice interview answer across 4 core dimensions."""
     q_text = str(question or "").strip()
-    ans = str(candidate_answer or "").strip()
+    ans = str(user_answer or candidate_answer or "").strip()
     ans_lower = ans.lower()
 
     # 1. Personal ownership (0-25)
@@ -109,6 +110,14 @@ def evaluate_mock_interview(
     )
 
     return {
+        "scores": {
+            "ownership": round(ownership_score * 10.0 / 25.0, 1),
+            "metrics": round(evidence_score * 10.0 / 25.0, 1),
+            "structure": round(structure_score * 10.0 / 25.0, 1),
+            "relevance": round(tech_score * 10.0 / 25.0, 1),
+        },
+        "quote": ans[:120] + "..." if len(ans) > 120 else ans,
+        "concrete_fix": improvements[0] if improvements else "Quantify business and engineering outcomes.",
         "dimension_scores": {
             "technical_precision": tech_score,
             "structure_clarity": structure_score,

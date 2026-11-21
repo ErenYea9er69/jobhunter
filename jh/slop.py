@@ -262,6 +262,17 @@ def slop_check(
     return len(flags) == 0, flags
 
 
+def check_slop(
+    text: str | dict[str, Any],
+    kind: str = "general",
+    job: Optional[dict[str, Any]] = None,
+    profile: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Dict-returning wrapper for slop_check."""
+    passed, violations = slop_check(text, kind=kind, job=job, profile=profile)
+    return {"passed": passed, "violations": violations}
+
+
 import difflib
 
 COMMON_TYPOS = {
@@ -422,4 +433,33 @@ def rewrite_slop(
     return current, passed, flags
 
 
-check_slop = slop_check
+class SlopResult(tuple):
+    """Tuple subclass supporting both tuple unpacking (passed, flags) and dict access .get('passed')."""
+    def __new__(cls, passed: bool, violations: list[str]):
+        return super().__new__(cls, (passed, violations))
+
+    @property
+    def passed(self) -> bool:
+        return self[0]
+
+    @property
+    def violations(self) -> list[str]:
+        return self[1]
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if key == "passed":
+            return self[0]
+        if key == "violations":
+            return self[1]
+        return default
+
+
+def check_slop(
+    text: str | dict[str, Any],
+    kind: str = "general",
+    job: Optional[dict[str, Any]] = None,
+    profile: Optional[dict[str, Any]] = None,
+) -> SlopResult:
+    """Slop check returning SlopResult (acts as both tuple and dict)."""
+    passed, violations = slop_check(text, kind=kind, job=job, profile=profile)
+    return SlopResult(passed, violations)

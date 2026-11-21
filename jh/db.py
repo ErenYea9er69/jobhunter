@@ -1977,6 +1977,7 @@ def update_radar_state(**kwargs):
 
 def get_refresh_states():
     """Retrieve refresh state for all non-Radar sources."""
+    init_db()
     with session() as c:
         rows = c.execute("SELECT * FROM refresh_state ORDER BY source ASC").fetchall()
         return [dict(r) for r in rows]
@@ -1984,6 +1985,7 @@ def get_refresh_states():
 
 def get_refresh_state(source):
     """Retrieve refresh state for a specific source."""
+    init_db()
     with session() as c:
         row = c.execute("SELECT * FROM refresh_state WHERE source=?", (source,)).fetchone()
         if row:
@@ -2285,6 +2287,37 @@ def store_jobs(jobs, query="", location=""):
     return {"inserted": inserted, "merged": merged, "tombstoned": tombstoned, "total": len(jobs)}
 
 
+def save_job(job: dict) -> str:
+    """Convenience alias to store a single job in DB."""
+    init_db()
+    store_jobs([job])
+    return str(job.get("id") or "")
+
+
+def get_user_preferences() -> dict:
+    from . import preferences
+    return preferences.load()
+
+
+def update_application_status(job_id: str, status: str) -> None:
+    """Update application status or create application record if missing."""
+    with session() as c:
+        row = c.execute("SELECT id FROM applications WHERE id=? OR job_id=?", (job_id, job_id)).fetchone()
+        now = now_iso()
+        if row:
+            c.execute("UPDATE applications SET status=?, updated_at=? WHERE id=?", (status, now, row["id"]))
+        else:
+            job_row = c.execute("SELECT company, title FROM jobs WHERE id=? OR job_key=?", (job_id, job_id)).fetchone()
+            comp = (job_row["company"] if job_row and job_row["company"] else "") or "Saved Company"
+            title = (job_row["title"] if job_row and job_row["title"] else "") or "Saved Role"
+            c.execute(
+                "INSERT INTO applications(id, job_id, company, title, status, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
+                (f"app_{job_id}", job_id, comp, title, status, now, now),
+            )
+        if status in ("saved", "applied"):
+            c.execute("UPDATE jobs SET keep_flag=1, delete_at=NULL WHERE id=? OR job_key=?", (job_id, job_id))
+
+
 def query_jobs(view_filters=None, session_id="default"):
     """
     Applies hard filters in SQL and soft preferences in ranking score.
@@ -2386,15 +2419,17 @@ def query_jobs(view_filters=None, session_id="default"):
             return "remote" in j_wm or "remote" in j_loc or j.get("country") == "worldwide"
         if "hybrid" in wm_filter:
             return "hybrid" in j_wm or "hybrid" in j_loc
-        if "onsite" in wm_filter:
-            return "remote" not in j_wm and "hybrid" not in j_wm
+        if "onsite" in wm_filter or "on-site" in wm_filter:
+            return ("remote" not in j_wm and "hybrid" not in j_wm) or "onsite" in j_wm or "on-site" in j_wm
         return True
 
     def _check_location(j):
         if not locs_filter or relocation:
             return True
-        j_loc = (j.get("location") or "").lower()
+        j_loc = f"{j.get('location', '')} {j.get('city', '')} {j.get('country', '')}".lower()
         j_wm = (j.get("work_mode") or "").lower()
+        if "onsite" in wm_filter or "on-site" in wm_filter:
+            return any(loc in j_loc for loc in locs_filter)
         if "remote" in j_wm or "remote" in j_loc or j.get("country") == "worldwide":
             return True
         return any(loc in j_loc for loc in locs_filter)

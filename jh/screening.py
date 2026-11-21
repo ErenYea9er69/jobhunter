@@ -306,7 +306,7 @@ def answer_screening_question(question: str, profile: dict[str, Any]) -> dict[st
 
     # 2. Known profile facts: Years of experience
     if any(k in q_low for k in ["how many years", "years of experience", "years of hands-on", "total years"]):
-        yoe = profile.get("years_of_experience")
+        yoe = profile.get("years_of_experience") or profile.get("years_experience")
         if yoe is None:
             exps = profile.get("experience") or []
             yoe = calculate_experience_years(exps)
@@ -382,4 +382,11 @@ def answer_screening_question(question: str, profile: dict[str, Any]) -> dict[st
         "flagged": True,
         "reason": "Fact not present in verified profile ledger",
     }
+
+
+def answer_eeo_question(field: str, setting: str = "decline") -> str:
+    """Return standard EEO decline answer or custom choice."""
+    if not setting or str(setting).lower() in ("decline", "prefer_not_to_say", "do_not_wish"):
+        return "I prefer to decline"
+    return str(setting)
 

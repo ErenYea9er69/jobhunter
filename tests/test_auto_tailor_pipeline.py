@@ -11,8 +11,13 @@ def clean_db(tmp_path, monkeypatch):
     monkeypatch.setattr("jh.config.DB_PATH", str(test_db))
     monkeypatch.setattr("jh.config.DATA_DIR", str(tmp_path))
     db.init_db()
+    import gc
     yield
-    test_db.unlink(missing_ok=True)
+    gc.collect()
+    try:
+        test_db.unlink(missing_ok=True)
+    except PermissionError:
+        pass
 
 
 def test_auto_tailor_application_populates_resume_and_cover_letter():
