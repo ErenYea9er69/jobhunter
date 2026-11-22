@@ -1,0 +1,30 @@
+Sarah Connor
+sarah.connor@example.com | +1 555-839-1029 | San Francisco, CA, USA
+linkedin.com/in/sarah-connor | github.com/sarahc-ui
+
+Frontend Engineer
+
+SUMMARY
+Creative Frontend Engineer with 3 years of experience crafting responsive web applications, design systems, and accessible user interfaces in React, TypeScript, and Next.js.
+
+SKILLS
+React, TypeScript, Next.js, JavaScript, TailwindCSS, HTML5, CSS3, GraphQL, Webpack, Figma, Jest, Cypress
+
+EXPERIENCE
+DesignCraft Studio, San Francisco, CA, USA
+Frontend Engineer | Feb 2022 - Present
+- Designed and delivered reusable React component library adopted across 4 major web applications.
+- Improved Core Web Vitals and page load times by 40% through code splitting and image optimization.
+- Collaborated closely with product designers to implement WCAG 2.1 AA accessible workflows.
+
+PixelWorks Web, San Jose, CA, USA
+Junior Web Developer | Jul 2020 - Jan 2022
+- Built interactive client dashboard interfaces using Next.js and TailwindCSS.
+- Integrated REST and GraphQL APIs and wrote unit tests with Jest and React Testing Library.
+
+PROJECTS
+UI-Tokens: Token-based design system engine supporting dynamic theme switching and dark mode.
+DevCanvas: Browser-based wireframing canvas tool built with React and HTML5 Canvas API.
+
+EDUCATION
+Bachelor of Arts in Interactive Media and Web Design, San Francisco State University, 2020

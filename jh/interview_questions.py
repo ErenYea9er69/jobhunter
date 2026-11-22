@@ -98,7 +98,7 @@ def build_round_1_role_questions(inferred_roles: list[dict[str, Any]]) -> dict[s
 
 
 def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, Any], region_guess: dict[str, Any]) -> dict[str, Any]:
-    """Generates Round 2 refinement batch (<= 6 questions) asked while background search is executing."""
+    """Generates Round 2 refinement batch (7 questions in exact prompt order) asked while background search is executing."""
     suggested_type = job_type_guess.get("value") or "full-time"
     suggested_region = region_guess.get("value") or "Any"
     
@@ -113,8 +113,17 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
             "note": f"Suggested: {suggested_region} (from resume/guess)",
         },
         {
-            "id": "job_type",
+            "id": "level",
             "number": 2,
+            "title": "Level & Way of Search",
+            "question": "What level or way of search do you prefer: match my level (default), one level up (reach), one level down (safe), or a different role (pivot)?",
+            "choices": ["match my level", "one level up (reach)", "one level down (safe)", "different role (pivot)"],
+            "recommended": "match my level",
+            "note": "Suggested default: match my level",
+        },
+        {
+            "id": "job_type",
+            "number": 3,
             "title": "Job Type & Start Date",
             "question": "What job type are you seeking, and when is your earliest available start date?",
             "choices": ["internship (PFE)", "junior full-time", "full-time", "contract", "any"],
@@ -123,19 +132,11 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
         },
         {
             "id": "work_mode",
-            "number": 3,
+            "number": 4,
             "title": "Work Mode",
             "question": "What is your preferred work mode?",
             "choices": ["on-site", "hybrid", "remote", "any"],
             "recommended": "any",
-        },
-        {
-            "id": "visa",
-            "number": 4,
-            "title": "Visa & Work Rights",
-            "question": "Do you require visa sponsorship, and which countries do you hold legal work rights for?",
-            "choices": ["no sponsorship needed", "visa sponsorship required", "any"],
-            "recommended": "no sponsorship needed",
         },
         {
             "id": "pay",
@@ -146,8 +147,16 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
             "recommended": "any / market rate",
         },
         {
-            "id": "company_type",
+            "id": "visa",
             "number": 6,
+            "title": "Visa & Work Rights",
+            "question": "Do you require visa sponsorship, and which countries do you hold legal work rights for?",
+            "choices": ["no sponsorship needed", "visa sponsorship required", "any"],
+            "recommended": "no sponsorship needed",
+        },
+        {
+            "id": "company_type",
+            "number": 7,
             "title": "Company Type & Exclusions",
             "question": "What company types do you prefer (startup, consulting, enterprise), and are there any companies or keywords you wish to skip?",
             "choices": ["any company type", "early-stage startup", "growth-stage / scale-up", "enterprise / big tech"],
@@ -160,15 +169,17 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
         "",
         f"1. Location: {suggested_region}, specific city (e.g. Sfax, Berlin), remote worldwide, timezone range, or countries abroad? Open to relocation?",
         f"   [Suggested default: {suggested_region} (guess)]",
-        "2. Job Type: internship (PFE), junior full-time, full-time, or contract? (What is your target start date?)",
+        "2. Level / Way of Search: match my level (default), one level up (reach), one level down (safe), or a different role (pivot)?",
+        "   [Suggested default: match my level]",
+        "3. Job Type: internship (PFE), junior full-time, full-time, or contract? (What is your target start date?)",
         f"   [Suggested default: {suggested_type}]",
-        "3. Work Mode: on-site, hybrid, remote, or any?",
+        "4. Work Mode: on-site, hybrid, remote, or any?",
         "   [Suggested default: any]",
-        "4. Visa Sponsorship: do you require visa sponsorship, and where do you have work rights?",
-        "   [Suggested default: no sponsorship needed]",
         "5. Pay / Compensation: minimum acceptable compensation, stipend, or any?",
         "   [Suggested default: any / market rate]",
-        "6. Company Type & Exclusions: startup, consulting, enterprise? Any companies or keywords to skip?",
+        "6. Visa Sponsorship: do you require visa sponsorship, and where do you have work rights?",
+        "   [Suggested default: no sponsorship needed]",
+        "7. Company Type & Exclusions: startup, consulting, enterprise? Any companies or keywords to skip?",
         "   [Suggested default: any company type]",
         "",
         "(You can reply with your answers in plain text, or say 'skip all' / 'any' to proceed with defaults.)"

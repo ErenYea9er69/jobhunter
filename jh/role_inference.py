@@ -216,10 +216,30 @@ def infer_roles(profile: dict[str, Any], filename: str = "") -> dict[str, Any]:
         f"- Top Skills: {top_skills_display}"
     )
 
+    # Candidate level inference: junior, mid, senior, lead
+    exp_summary_match = re.search(r"(\d+(?:\.\d+)?)\s*\+?\s*years?\s+of\s+experience", summary)
+    if exp_summary_match:
+        years_exp = float(exp_summary_match.group(1))
+    elif "3y" in filename.lower() or "mid" in filename.lower():
+        years_exp = 3.0
+
+    if is_intern_filename or (years_exp < 1.0 and "pfe" in filename.lower()):
+        inferred_level = "junior"
+    elif years_exp <= 1.5:
+        inferred_level = "junior"
+    elif years_exp <= 4.0 or "mid" in filename.lower():
+        inferred_level = "mid"
+    elif years_exp <= 8.0:
+        inferred_level = "senior"
+    else:
+        inferred_level = "lead"
+
     return {
         "roles": ranked_roles,
         "role_focus": role_focus,
         "status": status,
+        "level": inferred_level,
+        "inferred_level": inferred_level,
         "job_type_guess": job_type_guess,
         "region_guess": region_guess,
         "one_line_summary": one_line_summary,

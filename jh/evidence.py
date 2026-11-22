@@ -492,6 +492,16 @@ def audit_grounding(text: str, master_facts: list[str]) -> dict[str, Any]:
     facts_lower = [str(f).lower().strip() for f in (master_facts or []) if f and str(f).strip()]
     t_lower = text.lower()
 
+    # Check for title inflation
+    inflated_keywords = ["chief", "vp", "executive", "principal", "director"]
+    for kw in inflated_keywords:
+        if kw in t_lower and not any(kw in f for f in facts_lower):
+            return {
+                "passed": False,
+                "reason": f"Inflated title seniority '{kw}' not grounded in master facts",
+                "violations": [kw],
+            }
+
     m = re.search(r"(?:experience at|worked at|employed by)\s+([A-Za-z0-9_]+)", text, re.I)
     if m:
         comp = m.group(1).lower()

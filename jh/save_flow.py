@@ -442,15 +442,23 @@ def handle_save_job(
     }
 
 
-def save_job_and_generate(job: dict) -> dict:
+def save_job_and_generate(job: dict, profile: dict | None = None) -> dict:
     """Save a job and generate tailored documents for active postings."""
     if job.get("status") in ("expired", "closed") or job.get("is_live") is False:
         return {"generated": False, "status": "closed", "message": "Closed job posting skipped."}
 
     job_id = job.get("id") or "job_open"
     db.save_job(job)
-    res = handle_save_job(job, force=True)
+    res = handle_save_job(job, force=True, profile_override=profile)
     res["generated"] = not res.get("blocked", False) and bool(res.get("resume_path"))
+    if res.get("resume_path") and os.path.isfile(res["resume_path"]):
+        try:
+            with open(res["resume_path"], "r", encoding="utf-8") as f:
+                res["tailored_resume_text"] = f.read()
+        except Exception:
+            res["tailored_resume_text"] = ""
+    else:
+        res["tailored_resume_text"] = ""
     return res
 
 

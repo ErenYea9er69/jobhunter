@@ -1842,6 +1842,9 @@ DEFAULT_VIEW_FILTERS = {
 }
 
 
+_SESSION_VIEW_FILTERS: dict[str, dict[str, Any]] = {}
+
+
 def get_view_filters(session_id="default"):
     """Retrieve current view filters for a session."""
     with session() as c:
@@ -1849,6 +1852,7 @@ def get_view_filters(session_id="default"):
         if not row:
             res = dict(DEFAULT_VIEW_FILTERS)
             res["session_id"] = session_id
+            res.update(_SESSION_VIEW_FILTERS.get(session_id, {}))
             return res
         d = dict(row)
         for list_col in ("roles", "locations", "visa_countries", "contract_types", "seniority", "company_sizes", "industries", "excluded_companies", "excluded_keywords"):
@@ -1863,11 +1867,13 @@ def get_view_filters(session_id="default"):
         d["relocation"] = bool(d.get("relocation"))
         d["visa_need"] = bool(d.get("visa_need"))
         d["show_unknown_salary"] = bool(d.get("show_unknown_salary"))
+        d.update(_SESSION_VIEW_FILTERS.get(session_id, {}))
         return d
 
 
 def save_view_filters(filters, session_id="default"):
     """Save or update view filters for a session."""
+    _SESSION_VIEW_FILTERS.setdefault(session_id, {}).update(filters)
     d = dict(DEFAULT_VIEW_FILTERS)
     d.update(filters)
     d["session_id"] = session_id
@@ -2141,8 +2147,8 @@ def ingest_job(j, conn=None):
     source_name = j.get("source") or (j.get("source_names", [""])[0] if j.get("source_names") else "Search")
 
     # Calculate hashes
-    url_hash = dedup.build_url_hash(url, linkedin_id=j.get("linkedin_id", ""))
-    fingerprint = dedup.build_fingerprint(company, title, location, work_mode)
+    url_hash = j.get("url_hash") or dedup.build_url_hash(url, linkedin_id=j.get("linkedin_id", ""))
+    fingerprint = j.get("fingerprint") or dedup.build_fingerprint(company, title, location, work_mode)
 
     # Tombstone check: permanent deleted jobs never return as new
     if is_tombstoned(url_hash=url_hash, fingerprint=fingerprint):
@@ -2228,6 +2234,9 @@ def ingest_job(j, conn=None):
         existing_by_key = c.execute("SELECT id FROM jobs WHERE job_key=?", (job_key,)).fetchone()
         if existing_by_key and existing_by_key["id"] != new_id:
             job_key = f"{job_key}_{new_id[:6]}"
+        j_created = j.get("created_at") or j.get("date_posted") or iso_now
+        j_first_seen = j.get("first_seen_at") or j_created
+        j_last_seen = j.get("last_seen_at") or iso_now
         c.execute("""
             INSERT INTO jobs (
                 id, job_key, title, company, location, work_mode, source, url, url_hash,
@@ -2247,9 +2256,9 @@ def ingest_job(j, conn=None):
         """, (
             new_id, job_key, title, company, location, work_mode, source_name, url, url_hash,
             fingerprint, clean_text(j.get("description") or ""), score, fit_score, opp_score, iso_now,
-            iso_now, iso_now,
+            j_first_seen, j_last_seen,
             possible_dup, freshness_state,
-            json.dumps(j), iso_now, iso_now, category, job_type, seniority, country,
+            json.dumps(j), j_created, iso_now, category, job_type, seniority, country,
             min_sal, max_sal, company_size, industry, visa_sponsor, skills_text
         ))
 
@@ -2318,7 +2327,7 @@ def update_application_status(job_id: str, status: str) -> None:
             c.execute("UPDATE jobs SET keep_flag=1, delete_at=NULL WHERE id=? OR job_key=?", (job_id, job_id))
 
 
-def query_jobs(view_filters=None, session_id="default"):
+def query_jobs(view_filters=None, session_id="default", profile=None):
     """
     Applies hard filters in SQL and soft preferences in ranking score.
     Never deletes rows. Excludes expired jobs and returns them in closing_soon.
@@ -2327,6 +2336,12 @@ def query_jobs(view_filters=None, session_id="default"):
     filters = get_view_filters(session_id)
     if view_filters and isinstance(view_filters, dict):
         filters.update(view_filters)
+
+    if profile is None:
+        try:
+            profile = get_profile()
+        except Exception:
+            profile = {}
 
     # 1. Candidate jobs from DB
     with session() as c:
@@ -2580,6 +2595,15 @@ def query_jobs(view_filters=None, session_id="default"):
         key=lambda j: (1 if j.get("is_fresh_48h") else 0, j.get("rank_score", 0), j.get("score", 0)),
         reverse=True,
     )
+
+    from . import scoring, lifecycle
+    level_shift = int(filters.get("level_shift", 0))
+    for j in matching_jobs:
+        lbl, gaps = scoring.classify_job_fit(j, profile=profile, level_shift=level_shift)
+        j["label"] = lbl
+        j["top_gaps"] = gaps
+        flags = lifecycle.evaluate_job_flags(j)
+        j.update(flags)
 
     # 6. Usable Gate: [10, 300]
     total_count = len(matching_jobs)

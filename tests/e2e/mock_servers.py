@@ -20,8 +20,23 @@ class MockJobBoards:
         q = (query or "").lower().strip()
         r = (region or "").lower().strip()
         for j in self.jobs:
-            if q and q not in j["title"].lower() and q not in j["description"].lower() and q not in j["role_focus"].lower():
+            title_lower = j["title"].lower()
+            is_senior = any(w in title_lower for w in ["senior", "lead", "staff", "sr."])
+            is_junior = any(w in title_lower for w in ["junior", "intern", "entry", "pfe", "stage", "jr."])
+
+            # Query rule: returns senior or junior jobs only when query holds those words
+            if is_senior and not any(w in q for w in ["senior", "lead", "staff", "sr"]):
                 continue
+            if is_junior and not any(w in q for w in ["junior", "intern", "entry", "pfe", "stage", "jr"]):
+                continue
+
+            # Core title/keyword matching for non-level terms
+            base_terms = [w for w in q.split() if w not in ["senior", "junior", "lead", "intern", "entry", "staff", "sr", "jr", "pfe", "stage"]]
+            if base_terms:
+                haystack = f"{j['title']} {j['description']} {j.get('role_focus', '')}".lower()
+                if not any(term in haystack for term in base_terms):
+                    continue
+
             if r and r not in j["country"].lower() and r not in j["city"].lower() and r not in j["location"].lower():
                 continue
             results.append(j)

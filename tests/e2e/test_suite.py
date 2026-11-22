@@ -48,6 +48,7 @@ from jh import (
     resume_checker,
     role_inference,
     save_flow,
+    scoring,
     screening,
     signals,
     slop,
@@ -77,6 +78,7 @@ def e2e_env(tmp_path, monkeypatch):
 
     # Set environment variables for home isolation
     monkeypatch.setenv("JOBMCP_HOME", str(temp_home))
+    monkeypatch.setenv("JOBHUNTER_NO_BROWSER", "1")
     monkeypatch.setattr(config, "WORKSPACE_DIR", str(empty_repo))
     monkeypatch.setattr(config, "DATA_DIR", str(temp_home / "data"))
     monkeypatch.setattr(config, "DB_PATH", str(temp_home / "data" / "engine.db"))
@@ -92,6 +94,7 @@ def e2e_env(tmp_path, monkeypatch):
     home._HOME_CREATED_IN_SESSION = False
     home._FIRST_NOTICE_GIVEN = False
     preferences._cache.update(mtime=None, path=None, data=None)
+    db._SESSION_VIEW_FILTERS.clear()
 
     # Hard block internet access
     def _fail_net(*args, **kwargs):
@@ -200,6 +203,34 @@ def test_t2_resume_check_several_resumes_wrong_files(e2e_env):
     r_swap = client.jh_replace_resume(session_id=sid, resume_path=valid_sarah)
     assert r_swap.get("status") in ("ready", "success", "ok")
 
+    # 11. Assert filesystem boundary isolation: no scandir/listdir outside path
+    original_scandir = os.scandir
+    accessed_paths = []
+    def _tracking_scandir(path="."):
+        accessed_paths.append(str(path))
+        return original_scandir(path)
+    with patch("os.scandir", side_effect=_tracking_scandir):
+        client.jh_begin(resume_path=valid_path)
+    # Ensure no desktop-wide or user-home directory traversal occurred
+    for p in accessed_paths:
+        assert "Desktop" not in p or "jobmcp" in p or "jobhunter" in p
+
+    # 12. Multiple profiles: jobs carry profile id and Save picks higher fit
+    prof_alex = resume_checker.check_resume(valid_path)["profile"]
+    prof_alex["profile_id"] = "prof_alex"
+    prof_sarah = resume_checker.check_resume(valid_sarah)["profile"]
+    prof_sarah["profile_id"] = "prof_sarah"
+    db.save_profile(prof_alex, profile_id="prof_alex")
+    db.save_profile(prof_sarah, profile_id="prof_sarah")
+
+    job_fe = {"id": "j_fe_test", "title": "Frontend React Specialist", "company": "PixelCo", "skills": ["React", "TypeScript"]}
+    score_alex = scoring.score_job_best(job_fe, prof_alex).get("score", 0)
+    score_sarah = scoring.score_job_best(job_fe, prof_sarah).get("score", 0)
+    # Sarah (frontend) must have higher fit than Alex (backend) for frontend role
+    assert score_sarah > score_alex
+    best_profile_id = "prof_sarah" if score_sarah >= score_alex else "prof_alex"
+    assert best_profile_id == "prof_sarah"
+
 
 # =====================================================================
 # T3: Role inference
@@ -246,12 +277,14 @@ def test_t4_targeting_questions(e2e_env):
     assert r_beg.get("status") == "ready"
     assert "pending_questions" in r_beg
 
-    # Check location question is first in questions
+    # Check questions order (batch of 7 questions in exact order):
+    # 1: location, 2: level / way of search, 3: job type, 4: work mode, 5: pay, 6: visa, 7: company type / exclusions
     p_qs = r_beg.get("pending_questions", [])
-    assert len(p_qs) > 0
-    first_q = p_qs[0]
-    q_text = str(first_q.get("question") or first_q.get("title") or first_q.get("id") or "").lower()
-    assert "location" in q_text or "place" in q_text or "target_place" in q_text, f"Location must come first, got: {first_q}"
+    assert len(p_qs) >= 6, f"Expected 6 or 7 questions in batch, got {len(p_qs)}"
+    q1_id = (p_qs[0].get("id") or "").lower()
+    q2_id = (p_qs[1].get("id") or "").lower()
+    assert "location" in q1_id or "place" in q1_id, f"Question 1 must be location, got {p_qs[0]}"
+    assert "level" in q2_id or "search_level" in q2_id or "way_of_search" in q2_id, f"Question 2 must be level / way of search, got {p_qs[1]}"
 
     # Status check before answering: no top matches allowed!
     sid = r_beg.get("session_id")
@@ -520,6 +553,73 @@ def test_t13_duplicates_and_old_jobs(e2e_env):
     lifecycle.mark_expired("j_saved")
     assert not lifecycle.is_deleted("j_saved")
 
+    # 3. Job over 60 days old gets marked expired with 24h warning, then deleted with tombstone
+    now_dt = datetime.now(timezone.utc)
+    old_job = {
+        "id": "j_60d",
+        "url": "https://board.example/old60",
+        "url_hash": "hash_old60",
+        "fingerprint": "fp_old60",
+        "company": "AncientCo",
+        "title": "Cobol Dev",
+        "date_posted": (now_dt - timedelta(days=65)).isoformat(),
+        "created_at": (now_dt - timedelta(days=65)).isoformat(),
+    }
+    db.save_job(old_job)
+    lifecycle.run_cleanup()
+    # Expired job gets delete_at 24h ahead
+    with db.session() as c:
+        row = c.execute("SELECT freshness_state, delete_at FROM jobs WHERE id='j_60d'").fetchone()
+        assert row is not None
+        assert row["freshness_state"] == "expired"
+        assert row["delete_at"] is not None
+
+    # Simulate 24 hours passing -> permanent deletion leaves tombstone
+    with db.session() as c:
+        c.execute("UPDATE jobs SET delete_at=? WHERE id='j_60d'", ((now_dt - timedelta(hours=1)).isoformat(),))
+    del_res = lifecycle.run_cleanup()
+    assert del_res["deleted_count"] >= 1
+    assert lifecycle.is_deleted("j_60d")
+    # Tombstone exists
+    with db.session() as c:
+        tomb = c.execute("SELECT * FROM tombstones WHERE url_hash='hash_old60' OR fingerprint='fp_old60'").fetchone()
+        assert tomb is not None
+
+    # 4. Flags: Ghost score, Scam warning, Unverified flag
+    # Scam posting: asks for money or move to Telegram/WhatsApp
+    scam_job = {
+        "title": "Remote Data Clerk",
+        "company": "QuickCash Ltd",
+        "description": "Please contact us on Telegram @scamrecruiter and pay a $50 registration fee for equipment.",
+        "salary_min": 0,
+    }
+    flags_scam = lifecycle.evaluate_job_flags(scam_job)
+    assert flags_scam.get("scam_warning") is True
+    assert "money" in flags_scam.get("scam_reason", "").lower() or "chat" in flags_scam.get("scam_reason", "").lower()
+
+    # Ghost posting: 45 days old, 3 reposts, no salary
+    ghost_job = {
+        "title": "Senior Ghost Developer",
+        "company": "GhostCorp",
+        "days_old": 50,
+        "repost_count": 3,
+        "salary_min": 0,
+        "salary_max": 0,
+    }
+    flags_ghost = lifecycle.evaluate_job_flags(ghost_job)
+    assert flags_ghost.get("ghost_score", 0) >= 60
+    assert "ghost_reason" in flags_ghost and len(flags_ghost["ghost_reason"]) > 0
+
+    # Unverified posting: missing from company career board
+    unverified_job = {
+        "title": "Backend Dev",
+        "company": "PrivateCorp",
+        "source": "aggregator_board",
+        "is_direct_ats": False,
+    }
+    flags_unverified = lifecycle.evaluate_job_flags(unverified_job, career_board_jobs=[])
+    assert flags_unverified.get("unverified") is True
+
 
 # =====================================================================
 # T14: Modern: company brief and contacts
@@ -713,3 +813,171 @@ def test_t20_privacy_safety_resilience_speed(e2e_env):
     payload = v5_tools.build_ai_task_payload(task="score_job", job={"title": "Dev"}, profile={"name": "Alex"})
     assert "database" not in payload
     assert "contacts" not in payload
+
+
+# =====================================================================
+# T21: Level, pivot, and honest customization
+# =====================================================================
+def test_t21_level_pivot_and_honest_customization(e2e_env):
+    """T21: Infers level from resume. Default search matches it.
+    'search senior' -> mock source returns senior jobs only after query holds word -> Reach with top 3 gaps.
+    'search lower' -> junior jobs arrive -> Safe.
+    'DevOps instead' -> role pivot, scope changes, fit scores change.
+    Save Reach job: resume diff shows reordering/rephrasing only, zero changed titles/dates/years.
+    Audit fails inflated title draft.
+    """
+    res_dir = FIXTURES_DIR / "resumes"
+    sarah_path = str(res_dir / "mid_level_frontend_3y.txt")
+    if not pathlib.Path(sarah_path).exists():
+        sarah_path = str(res_dir / "valid_sarah_frontend.txt")
+
+    # 1. Infer candidate level: 3 years frontend -> mid
+    prof = resume_checker.check_resume(sarah_path)["profile"]
+    inf = role_inference.infer_roles(prof, "mid_level_frontend_3y.txt")
+    assert inf.get("level") == "mid" or "mid" in str(inf.get("inferred_level", "")).lower()
+
+    # 2. Client setup
+    client = ScriptedMCPClient(mode="direct")
+    r_beg = client.jh_begin(resume_path=sarah_path)
+    sid = r_beg["session_id"]
+    tkt = r_beg["ticket"]
+
+    with patch("webbrowser.open", return_value=True):
+        client.jh_launch(session_id=sid, ticket=tkt)
+
+    # Ingest fixture jobs
+    mock_boards = MockJobBoards()
+    for j in mock_boards.jobs:
+        db.save_job(j)
+
+    # 3. Say "search senior" / "aim higher"
+    senior_jobs_before = mock_boards.search(query="Frontend Engineer")
+    assert not any("Senior" in j["title"] for j in senior_jobs_before)
+
+    ans_senior = client.jh_answer(session_id=sid, user_reply="search senior", answers={"level_shift": 1})
+    senior_jobs_after = mock_boards.search(query="Senior Frontend Engineer")
+    assert any("Senior" in j["title"] for j in senior_jobs_after)
+
+    for j in senior_jobs_after:
+        db.save_job(j)
+
+    q_senior = preferences.query_jobs({"roles": ["Frontend Engineer"], "level_shift": 1}, profile=prof)
+    reach_jobs = [j for j in q_senior.get("jobs", []) if j.get("label") == "Reach"]
+    assert len(reach_jobs) > 0, "Expected senior jobs to be labeled Reach for mid-level profile"
+    assert "top_gaps" in reach_jobs[0] and len(reach_jobs[0]["top_gaps"]) <= 3
+
+    # 4. Say "search lower" -> Safe
+    junior_jobs = mock_boards.search(query="Junior Frontend Engineer")
+    for j in junior_jobs:
+        db.save_job(j)
+    q_junior = preferences.query_jobs({"roles": ["Frontend Engineer"], "level_shift": -1}, profile=prof)
+    safe_jobs = [j for j in q_junior.get("jobs", []) if j.get("label") == "Safe"]
+    assert len(safe_jobs) > 0, "Expected junior jobs to be labeled Safe for mid-level profile"
+
+    # 5. Say "DevOps instead" -> Role pivot
+    devops_jobs = mock_boards.search(query="DevOps Engineer")
+    for j in devops_jobs:
+        db.save_job(j)
+    q_pivot = preferences.query_jobs({"roles": ["DevOps Engineer"], "role_pivot": "DevOps Engineer"}, profile=prof)
+    assert len(q_pivot.get("jobs", [])) > 0
+
+    # 6. Honest customization on Save of a Reach job
+    reach_job = reach_jobs[0]
+    tailored = save_flow.save_job_and_generate(reach_job, profile=prof)
+    tailored_text = tailored.get("tailored_resume_text", "")
+    assert "Frontend Engineer" in tailored_text
+    master_titles = [e.get("role") or e.get("title") for e in prof.get("work_experience", []) if isinstance(e, dict)]
+    audit_pass = evidence.audit_grounding(tailored_text, master_facts=list(prof.get("skills", [])) + master_titles + [prof.get("name", "")])
+    assert audit_pass.get("passed") is True
+
+    # 7. Injected draft that inflates title -> audit MUST fail
+    inflated_draft = tailored_text.replace("Frontend Engineer", "Chief Executive Principal Architect VP")
+    audit_fail = evidence.audit_grounding(inflated_draft, master_facts=list(prof.get("skills", [])) + master_titles + [prof.get("name", "")])
+    assert audit_fail.get("passed") is False
+
+
+# =====================================================================
+# T22: Steering in my own words
+# =====================================================================
+def test_t22_steering_in_my_own_words(e2e_env):
+    """T22: User steers in natural language: place, pay, level, role, method, exclusions.
+    AI maps words to jh_answer fields, confirms with one-line statement:
+    'I read this as: <mapping>. Say if wrong.'
+    Neither filter change nor scope change restarts worker.
+    """
+    client = ScriptedMCPClient(mode="direct")
+    res_dir = FIXTURES_DIR / "resumes"
+    valid_path = str(res_dir / "valid_alex_backend.txt")
+    r_beg = client.jh_begin(resume_path=valid_path)
+    sid = r_beg["session_id"]
+    tkt = r_beg["ticket"]
+
+    with patch("webbrowser.open", return_value=True):
+        client.jh_launch(session_id=sid, ticket=tkt)
+
+    mock_boards = MockJobBoards()
+    for j in mock_boards.jobs:
+        db.save_job(j)
+
+    test_cases = [
+        ("only remote", "work_mode", "remote"),
+        ("at least 1500 TND a month", "min_salary", 1500),
+        ("somewhere in Europe", "locations", ["Europe"]),
+        ("not consulting", "excluded_keywords", ["consulting"]),
+        ("go higher", "level_shift", 1),
+        ("forget DevOps", "role_pivot", None),
+    ]
+
+    for words, expected_field, expected_val in test_cases:
+        ans = client.jh_answer(session_id=sid, user_reply=words)
+        msg = ans.get("message_for_user", "")
+        assert "read this as" in msg.lower(), f"Expected reading statement in reply: {msg}"
+        assert ans.get("status") in ("ok", "success", "updated")
+        filters = db.get_view_filters(session_id=sid)
+        if expected_val is not None:
+            if isinstance(expected_val, list):
+                assert any(expected_val[0].lower() in str(x).lower() for x in filters.get(expected_field, []))
+            elif isinstance(expected_val, (int, float)):
+                assert filters.get(expected_field) == expected_val or filters.get("min_salary") == expected_val
+            else:
+                assert str(filters.get(expected_field, "")).lower() == str(expected_val).lower()
+
+
+# =====================================================================
+# T23: Optimization, with numbers
+# =====================================================================
+def test_t23_optimization_with_numbers(e2e_env):
+    """T23: Measures performance optimizations with before and after numbers:
+    - SQLite WAL mode and busy timeout enabled
+    - Key query indexes (url_hash, freshness_state, delete_at)
+    - Resume parsing / match score caching
+    - Memory bounded over Radar simulation
+    """
+    from jh import benchmark
+    res = benchmark.run_optimization_benchmark()
+    assert res.get("wal_enabled") is True
+    assert res.get("indexes_present") is True
+    assert res.get("memory_stable") is True
+    assert res.get("query_speedup_percent", 0) > 0 or res.get("indexed_queries_faster") is True
+
+
+# =====================================================================
+# T24: The UI map
+# =====================================================================
+def test_t24_the_ui_map(e2e_env):
+    """T24: Verifies the UI API endpoints and screen state contracts:
+    - Progress view
+    - Filter strip with answered and pending fields
+    - Match list with Safe, Match, Reach labels, gaps, no-salary flag, unverified & scam flags, hidden counter
+    - Header button for new signals / jobs, deletion banner with Review and Keep these
+    - Closing soon list
+    - Saved jobs with resume diff, cover letter, review step
+    - Modern signals tab with age, likes, score
+    - Contact cards with Found/Pattern/Guess badge
+    - Draft editor with word count, slop flags, PDF download
+    - Settings: method, launch_mode, daily cap, attachment, EEO, Gmail connect, delete my data
+    - Digest and weekly report
+    """
+    from jh import ui_contract
+    res = ui_contract.verify_ui_state_contracts()
+    assert res.get("valid") is True, f"UI state contract verification failed: {res.get('errors')}"

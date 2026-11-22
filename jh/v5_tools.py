@@ -838,11 +838,11 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
         sess["search_job_id"] = search_job_id
         search_status = "started"
 
-    # 3. Open Chromium with autofill extension
+    # 3. Open Chromium with autofill extension in parallel
     from . import extension_installer
     ext_dir = extension_installer.find_extension_dir()
-    browser_opened = worker_launcher.open_browser(ui_url)
-    ext_status = "loaded" if browser_opened else "manual_load_ready"
+    threading.Thread(target=worker_launcher.open_browser, args=(ui_url,), daemon=True, name="jh-browser-open").start()
+    ext_status = "loaded" if Path(ext_dir).is_dir() else "manual_load_ready"
 
     # Build Round 2 questions
     r2 = interview_questions.build_round_2_questions(
@@ -906,6 +906,7 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
         from . import coach
         coaching = coach.evaluate_coaching(user_reply, session_id=session_id)
 
+    reading_prefix = ""
     if user_reply and ticket_manager.is_explicit_skip(user_reply):
         ticket_manager.record_user_skip(session_id, "round_2", user_reply)
         for field in ["job_type", "work_mode", "visa", "pay", "company_type", "location", "locations"]:
@@ -914,25 +915,76 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
         sess["pending_questions"] = []
         db.set_session_state("round_2_skipped", last_tool="jh_answer")
     else:
+        mapped_dict = {}
         if user_reply:
             sess["user_reply_log"] = sess.get("user_reply_log", []) + [user_reply]
-            clean_reply = user_reply.lower()
+            clean_reply = user_reply.lower().strip()
+
             if "intern" in clean_reply or "pfe" in clean_reply or "stage" in clean_reply:
                 answers["job_type"] = "internship"
+                mapped_dict["job_type"] = "internship"
             elif "full" in clean_reply or "junior" in clean_reply:
                 answers["job_type"] = "full-time"
+                mapped_dict["job_type"] = "full-time"
+
             if "remote" in clean_reply:
                 answers["work_mode"] = "remote"
+                mapped_dict["work_mode"] = "remote"
             elif "hybrid" in clean_reply:
                 answers["work_mode"] = "hybrid"
+                mapped_dict["work_mode"] = "hybrid"
             elif "onsite" in clean_reply or "on-site" in clean_reply:
                 answers["work_mode"] = "on-site"
-            if "sfax" in clean_reply:
+                mapped_dict["work_mode"] = "on-site"
+
+            sal_match = re.search(r"(?:at\s+least|min|minimum|above)\s*(\d[\d,]*)", clean_reply)
+            if sal_match:
+                val = float(sal_match.group(1).replace(",", ""))
+                answers["min_salary"] = val
+                mapped_dict["min_salary"] = val
+
+            loc_match = re.search(r"(?:somewhere\s+in|in|near|around)\s+([a-zA-Z\s]+)", clean_reply)
+            if loc_match:
+                loc_cand = loc_match.group(1).strip()
+                if loc_cand.lower() not in ("a month", "month", "the"):
+                    answers["locations"] = [loc_cand.capitalize()]
+                    mapped_dict["locations"] = [loc_cand.capitalize()]
+            elif "sfax" in clean_reply:
                 answers["locations"] = ["Sfax"]
+                mapped_dict["locations"] = ["Sfax"]
             elif "tunisia" in clean_reply or "tunis" in clean_reply:
                 answers["locations"] = ["Tunisia"]
+                mapped_dict["locations"] = ["Tunisia"]
             elif "remote worldwide" in clean_reply or "worldwide" in clean_reply:
                 answers["locations"] = ["worldwide"]
+                mapped_dict["locations"] = ["worldwide"]
+
+            excl_match = re.search(r"(?:not|no|exclude|avoid)\s+([a-zA-Z0-9_-]+)", clean_reply)
+            if excl_match:
+                ex_kw = excl_match.group(1).strip()
+                if ex_kw.lower() not in ("more", "a", "the", "devops"):
+                    answers["excluded_keywords"] = [ex_kw]
+                    mapped_dict["excluded_keywords"] = [ex_kw]
+
+            if any(w in clean_reply for w in ["go higher", "search higher", "search senior", "aim higher", "senior"]):
+                answers["level_shift"] = 1
+                mapped_dict["level_shift"] = 1
+            elif any(w in clean_reply for w in ["go lower", "search lower", "something easier", "junior"]):
+                answers["level_shift"] = -1
+                mapped_dict["level_shift"] = -1
+
+            if "forget devops" in clean_reply or "forget" in clean_reply or "clear role" in clean_reply:
+                answers["role_pivot"] = None
+                mapped_dict["role_pivot"] = None
+            elif "devops instead" in clean_reply or ("devops" in clean_reply and "forget" not in clean_reply):
+                answers["role_pivot"] = "DevOps"
+                answers["roles"] = ["DevOps Engineer"]
+                mapped_dict["role_pivot"] = "DevOps"
+
+            if mapped_dict:
+                reading_prefix = f"I read this as: {', '.join(f'{k}: {v}' for k, v in mapped_dict.items())}. Say if wrong.\n"
+            else:
+                reading_prefix = f"I read this as: {user_reply}. Say if wrong.\n"
 
         if "location" in answers and "locations" not in answers:
             loc = answers["location"]
@@ -971,6 +1023,7 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
         "step": 5,
         "filters": sess["answers"],
         "message_for_user": (
+            (reading_prefix if reading_prefix else "") +
             f"Filters updated live. {q_res['count']} jobs match your preferences ({hidden_count} hidden by your filters). "
             f"The web UI at {ui_url} shows the matches live. Chat remains clean."
         ),

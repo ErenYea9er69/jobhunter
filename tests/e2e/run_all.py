@@ -44,6 +44,10 @@ T_IDS = [
     ("T18", "Coaching and mock interviews", "test_t18_coaching_and_mock_interviews"),
     ("T19", "Pipeline tracking, Gmail sync, digests", "test_t19_pipeline_tracking_gmail_sync_digests"),
     ("T20", "Privacy, safety, resilience, speed", "test_t20_privacy_safety_resilience_speed"),
+    ("T21", "Level, pivot, and honest customization", "test_t21_level_pivot_and_honest_customization"),
+    ("T22", "Steering in my own words", "test_t22_steering_in_my_own_words"),
+    ("T23", "Optimization, with numbers", "test_t23_optimization_with_numbers"),
+    ("T24", "The UI map", "test_t24_the_ui_map"),
 ]
 
 
@@ -58,6 +62,7 @@ def run_e2e_suite(report_title: str = "E2E EXECUTION REPORT") -> dict[str, dict]
     print(f" Command: {command_line}")
     print(f"=======================================================\n")
 
+    os.environ["JOBHUNTER_NO_BROWSER"] = "1"
     for t_id, desc, fn_name in T_IDS:
         fn = getattr(test_suite, fn_name, None)
         if not fn:
@@ -99,6 +104,7 @@ def run_e2e_suite(report_title: str = "E2E EXECUTION REPORT") -> dict[str, dict]
             home._HOME_CREATED_IN_SESSION = False
             home._FIRST_NOTICE_GIVEN = False
             preferences._cache.update(mtime=None, path=None, data=None)
+            db._SESSION_VIEW_FILTERS.clear()
 
             try:
                 fn(env)
@@ -154,10 +160,13 @@ def run_e2e_suite(report_title: str = "E2E EXECUTION REPORT") -> dict[str, dict]
             report_lines.append(r.get("error", "No details"))
 
     report_path = ROOT / "e2e_report.txt"
-    report_path.write_text("\n".join(report_lines), encoding="utf-8")
+    existing_content = report_path.read_text(encoding="utf-8") if report_path.exists() else ""
+    full_report = (existing_content + "\n\n" if existing_content else "") + "\n".join(report_lines)
+    report_path.write_text(full_report, encoding="utf-8")
     print(f"\nSaved report to {report_path}")
     return results
 
 
 if __name__ == "__main__":
-    run_e2e_suite("BASELINE RUN: TARGET BEHAVIOR (T1-T20)")
+    title = sys.argv[1] if len(sys.argv) > 1 else "FULL VERIFICATION RUN"
+    run_e2e_suite(title)

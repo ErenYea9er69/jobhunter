@@ -306,7 +306,7 @@ def famous_mode(prefs: dict[str, Any] | None = None) -> str:
     return {"avoid_big_names": "hide", "only_big_names": "only"}.get(focus, "all")
 
 
-def query_jobs(filters: dict[str, Any] | None = None) -> dict[str, Any]:
+def query_jobs(filters: dict[str, Any] | None = None, profile: dict[str, Any] | None = None) -> dict[str, Any]:
     """Query stored jobs filtered live against view criteria."""
     from . import db
-    return db.query_jobs(view_filters=filters)
+    return db.query_jobs(view_filters=filters, profile=profile)

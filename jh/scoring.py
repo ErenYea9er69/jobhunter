@@ -1108,3 +1108,57 @@ def calculate_explainable_fit(profile: dict, job: dict) -> dict:
         "adjacent_skills": sorted(adjacent),
     }
 
+
+def classify_job_fit(job: dict, profile: dict | None = None, level_shift: int = 0) -> tuple[str, list[str]]:
+    """Classify a job as 'Safe', 'Match', or 'Reach' relative to candidate profile,
+    and return up to 3 top gaps.
+    """
+    profile = profile or {}
+    job_title = job.get("title", "")
+    j_level = level_of(job_title)
+    if j_level is None:
+        sen = (job.get("seniority") or "").lower()
+        if "senior" in sen or "lead" in sen or "staff" in sen or "principal" in sen:
+            j_level = 3
+        elif "junior" in sen or "entry" in sen or "intern" in sen:
+            j_level = 1
+        else:
+            j_level = 2
+
+    c_level = profile.get("level") or profile.get("inferred_level")
+    if isinstance(c_level, str):
+        c_level = _LEVEL_MAP.get(c_level.lower(), 2)
+    elif c_level is None:
+        y = profile.get("years_of_experience") or 0
+        c_level = years_to_level(y)
+
+    diff = (j_level - c_level)
+
+    # When user asks to aim higher or search senior, level_shift is positive
+    if diff > 0 or (level_shift > 0 and (j_level > 2 or "senior" in job_title.lower() or "lead" in job_title.lower())):
+        label = "Reach"
+    elif diff < 0 or (level_shift < 0 and (j_level <= 1 or "junior" in job_title.lower() or "intern" in job_title.lower())):
+        label = "Safe"
+    else:
+        label = "Match"
+
+    # Identify top gaps (up to 3)
+    cand_skills = {str(s).lower() for s in (profile.get("skills") or [])}
+    job_skills = [str(s) for s in (job.get("skills") or [])]
+    missing_skills = [s for s in job_skills if s.lower() not in cand_skills]
+
+    gaps = []
+    if label == "Reach":
+        if diff > 0:
+            gaps.append(f"{diff} level seniority delta ({job_title})")
+        gaps.extend(missing_skills)
+        if not gaps:
+            gaps = ["Senior system architecture", "Technical leadership"]
+    elif label == "Safe":
+        gaps = []
+    else:
+        gaps.extend(missing_skills)
+
+    return label, gaps[:3]
+
+

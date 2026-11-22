@@ -163,6 +163,83 @@ def mark_job_applied(job_id: str) -> None:
     keep_jobs([job_id])
 
 
+def evaluate_job_flags(job: dict[str, Any], career_board_jobs: list[dict] | None = None) -> dict[str, Any]:
+    """Calculate ghost score, scam warning, unverified flag, and salary flags for a job posting."""
+    title = (job.get("title") or "").strip()
+    company = (job.get("company") or "").strip()
+    desc = (job.get("description") or "").lower()
+    days_old = float(job.get("days_old") or 0)
+    if not days_old and job.get("date_posted"):
+        try:
+            posted_dt = datetime.datetime.fromisoformat(str(job["date_posted"]).replace("Z", "+00:00"))
+            days_old = max(0.0, (datetime.datetime.now(datetime.timezone.utc) - posted_dt).total_seconds() / 86400.0)
+        except Exception:
+            days_old = 0.0
+
+    repost_count = int(job.get("repost_count") or 0)
+    salary_min = float(job.get("salary_min") or 0)
+    salary_max = float(job.get("salary_max") or 0)
+    no_salary = (salary_min <= 0 and salary_max <= 0 and not job.get("salary_range"))
+
+    # 1. Scam Warning: asks for money or move to private chat app
+    scam_keywords = ["telegram", "whatsapp", "wire transfer", "cashier's check", "gift card", "crypto", "western union"]
+    money_keywords = ["pay fee", "registration fee", "equipment fee", "training fee", "application fee", "pay a fee", "pay $", "send money"]
+    
+    is_scam = False
+    scam_reasons = []
+    if any(k in desc for k in money_keywords):
+        is_scam = True
+        scam_reasons.append("Posting asks for money or upfront fee")
+    if any(k in desc for k in scam_keywords):
+        is_scam = True
+        scam_reasons.append("Posting directs applicant to private chat app or suspicious payment method")
+
+    # 2. Ghost Score (0 - 100): Age (> 30 days), repost count (>= 2), missing salary
+    ghost_score = 0
+    ghost_reasons = []
+    if days_old >= 60:
+        ghost_score += 45
+        ghost_reasons.append(f"Posting age is {int(days_old)} days")
+    elif days_old >= 30:
+        ghost_score += 30
+        ghost_reasons.append(f"Posting age is {int(days_old)} days")
+
+    if repost_count >= 3:
+        ghost_score += 35
+        ghost_reasons.append(f"Reposted {repost_count} times")
+    elif repost_count >= 1:
+        ghost_score += 20
+        ghost_reasons.append(f"Reposted {repost_count} times")
+
+    if no_salary:
+        ghost_score += 20
+        ghost_reasons.append("No salary disclosed")
+
+    ghost_score = min(100, ghost_score)
+    ghost_reason_str = "; ".join(ghost_reasons) if ghost_reasons else "Active fresh posting"
+
+    # 3. Unverified Flag: Classic job missing from company's own direct ATS / career board
+    unverified = False
+    if career_board_jobs is not None:
+        matching = [
+            cb for cb in career_board_jobs
+            if cb.get("company", "").lower() == company.lower()
+            and (title.lower() in cb.get("title", "").lower() or cb.get("title", "").lower() in title.lower())
+        ]
+        unverified = len(matching) == 0
+    else:
+        unverified = not bool(job.get("is_direct_ats"))
+
+    return {
+        "scam_warning": is_scam,
+        "scam_reason": "; ".join(scam_reasons),
+        "ghost_score": ghost_score,
+        "ghost_reason": ghost_reason_str,
+        "unverified": unverified,
+        "no_salary": no_salary,
+    }
+
+
 def run_cleanup() -> dict[str, Any]:
     """Execute cleanup:
     1. Mark any jobs older than 60 days as expired with a delete_at warning timestamp.
@@ -178,14 +255,25 @@ def run_cleanup() -> dict[str, Any]:
     deleted_count = 0
 
     with db.session() as c:
-        # 1. Initialize delete_at on expired jobs that don't have it yet
+        # 1. Mark jobs older than 60 days as expired with a delete_at warning timestamp
+        cutoff_60d = (now_dt - datetime.timedelta(days=60)).isoformat()
+        c.execute("""
+            UPDATE jobs SET
+                freshness_state='expired',
+                delete_at=?
+            WHERE (created_at < ? OR first_seen_at < ?)
+              AND freshness_state != 'expired'
+              AND keep_flag=0
+        """, (delete_horizon, cutoff_60d, cutoff_60d))
+
+        # 2. Initialize delete_at on expired jobs that don't have it yet
         c.execute("""
             UPDATE jobs SET
                 delete_at=?
             WHERE freshness_state='expired' AND delete_at IS NULL AND keep_flag=0
         """, (delete_horizon,))
 
-        # 2. Find jobs ready for permanent deletion
+        # 3. Find jobs ready for permanent deletion
         # Must have passed delete_at, keep_flag == 0, and not be present in applications
         expired_candidates = c.execute("""
             SELECT id, job_key, url_hash, fingerprint FROM jobs
