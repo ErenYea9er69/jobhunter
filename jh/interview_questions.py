@@ -104,13 +104,18 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
     if not suggested_region or suggested_region.lower() in ("any", "unknown"):
         suggested_region = "Worldwide"
     
+    loc_choices = [suggested_region]
+    for c in ["Remote worldwide", "Worldwide", "Europe / Abroad", "any"]:
+        if c not in loc_choices:
+            loc_choices.append(c)
+
     questions = [
         {
             "id": "location",
             "number": 1,
             "title": "Location & Relocation",
             "question": "What locations are you targeting (e.g. specific city, country, region, remote within a timezone range, or countries abroad)? Are you willing to relocate?",
-            "choices": [suggested_region, "Remote worldwide", "Worldwide", "Europe / Abroad", "any"],
+            "choices": loc_choices,
             "recommended": suggested_region,
             "note": f"Suggested: {suggested_region} (from resume/guess)",
         },

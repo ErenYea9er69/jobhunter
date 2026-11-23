@@ -262,7 +262,8 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             type_param = query.get("type", [""])[0] or None
             limit_param = int(query.get("limit", [100])[0])
             apply_filters = query.get("apply_filters", ["true"])[0].lower() in ("true", "1", "yes")
-            filters = db.get_view_filters() if apply_filters else None
+            session_param = query.get("session", query.get("session_id", ["default"]))[0]
+            filters = db.get_view_filters(session_param) if apply_filters else None
             signals_list = db.get_signals(limit=limit_param, status=status_param, view_filters=filters, sig_type=type_param)
             return self._send_json(200, envelope(status="ok", data={"signals": signals_list, "count": len(signals_list)}))
 
@@ -367,6 +368,19 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
                         pass
                     return
                 time.sleep(0.3)
+
+        if path == "/api/jobs/query":
+            sid = query.get("session", query.get("session_id", ["default"]))[0]
+            res = db.query_jobs(session_id=sid)
+            return self._send_json(200, envelope(status="ok", data={
+                "results": res["jobs"],
+                "count": res["count"],
+                "total_active_pool": res.get("total_active_pool", len(res["jobs"])),
+                "hidden_count": res.get("hidden_count", 0),
+                "hidden_message": res.get("hidden_message", ""),
+                "closing_soon": res.get("closing_soon", []),
+                "counts_removed": res.get("removed_counts", {}),
+            }))
 
         # 2. Static files from public/
         self._serve_static(path)
