@@ -288,20 +288,9 @@ def get_search_job_status(session_id: str) -> dict[str, Any]:
 
 
 def open_browser(url: str) -> bool:
-    """Launch user browser with autofill extension without throwing errors on displayless setups."""
-    if os.environ.get("JOBHUNTER_NO_BROWSER") == "1" or os.environ.get("PYTEST_CURRENT_TEST"):
-        return True
-    try:
-        from . import extension_installer
-        ext_res = extension_installer.launch_browser_with_extension(url=url)
-        if ext_res.get("success"):
-            return True
-    except Exception:
-        pass
-    try:
-        return webbrowser.open(url)
-    except Exception:
-        return False
+    """Log the Web UI URL without automatically opening external browsers."""
+    log.info("JobHunter Web UI available at: %s", url)
+    return True
 
 
 def stop_worker(session_id: str = "") -> dict[str, Any]:

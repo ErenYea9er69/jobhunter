@@ -177,27 +177,13 @@ def infer_roles(profile: dict[str, Any], filename: str = "") -> dict[str, Any]:
         "note": "Suggested default based on experience and file cues. Does not filter until confirmed.",
     }
 
-    # Region guess from contacts or location in resume
-    loc = (profile.get("location") or "").strip()
-    candidate_name = (profile.get("name") or "").strip()
-    if loc and candidate_name and loc.lower() == candidate_name.lower():
-        loc = ""
-    raw_hay = (profile.get("raw_text") or "")[:1500].lower()
-    if "tunis" in loc.lower() or "tunisia" in loc.lower() or "tunisie" in raw_hay or "+216" in raw_hay:
-        region_val = "Tunisia"
-    elif "france" in loc.lower() or "+33" in raw_hay or "paris" in loc.lower():
-        region_val = "France"
-    elif "united states" in loc.lower() or "+1" in raw_hay or "usa" in loc.lower():
-        region_val = "United States"
-    elif "remote" in loc.lower():
-        region_val = "Remote worldwide"
-    else:
-        region_val = loc or "Any"
+    # Default region to Worldwide / anywhere for all candidates
+    region_val = "Worldwide"
 
     region_guess = {
         "value": region_val,
         "guess": True,
-        "note": "Suggested default from contact info. Does not filter until confirmed.",
+        "note": "Default for anywhere in the world. Does not filter until confirmed.",
     }
 
     # Build concise profile summaries

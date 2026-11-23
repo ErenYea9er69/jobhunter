@@ -402,7 +402,7 @@
   function parseHash() {
     const h = (location.hash || "").replace(/^#\/?/, "");
     const parts = h.split("/").filter(Boolean).map((s) => { try { return decodeURIComponent(s); } catch (e) { return s; } });
-    const defaultRoute = state.method === "modern" ? "signals" : "jobs";
+    const defaultRoute = "jobs";
     const name = PAGES[parts[0]] ? parts[0] : defaultRoute;
     return { name, arg: parts[1] || "" };
   }
@@ -1210,7 +1210,7 @@
     try {
       const payload = {
         filters: {
-          job_style: state.query || "tech jobs",
+          job_style: state.query || "",
           work_mode: state.filters.mode || "any",
           contract_types: state.filters.type ? [state.filters.type] : [],
           min_salary: state.filters.min_salary || 0,
@@ -1374,7 +1374,7 @@
 
     if (label) {
       if (count > 0) {
-        label.textContent = isModern ? `${count} new signals` : `${count} new jobs`;
+        label.textContent = isModern ? `Radar found ${count} new signals` : `Radar found ${count} new jobs`;
       } else {
         label.textContent = "Radar";
       }
@@ -2543,7 +2543,11 @@
       const sub = state.active ? "Fit scores compare each role with " + (state.active.name || "your resume") + "." : PAGES.jobs.sub;
       setHead("Jobs", sub, "");
       jobsNotice();
-      renderJobs();
+      if (!state.jobs || state.jobs.length === 0 || !state.searched) {
+        loadJobsQuery();
+      } else {
+        renderJobs();
+      }
     }
     state.selectedId = arg || null;
     if (arg && !currentJob()) {
@@ -4930,7 +4934,7 @@
         const sub = state.active ? "Fit scores compare each role with " + (state.active.name || "your resume") + "." : PAGES.jobs.sub;
         byId("page-sub").textContent = sub;
         byId("page-sub").hidden = false;
-        renderJobs();
+        loadJobsQuery();
         syncSelection();
       }
       if (state.route === "signals") {

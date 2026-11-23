@@ -17,7 +17,7 @@ def build_step_3_target_questions(
     """Generates Step 3 target search interview questions (3 questions max, all skippable)."""
     suggested_region = (region_guess.get("value") or "").strip()
     if not suggested_region or suggested_region.lower() in ("any", "unknown"):
-        suggested_region = "Tunisia"
+        suggested_region = "Worldwide"
 
     role_choices = [r["role"] for r in inferred_roles]
     top_role = role_choices[0] if role_choices else "Software Engineer"
@@ -31,8 +31,8 @@ def build_step_3_target_questions(
         },
         {
             "id": "target_place",
-            "question": f"2. Target place: Tunisia, remote worldwide, remote within a time zone range, abroad (which countries), or a specific city or region? Are you open to relocation?\n   (Suggested: {suggested_region})",
-            "choices": ["Tunisia", "remote worldwide", "remote within timezone", "abroad", suggested_region],
+            "question": f"2. Target place: remote worldwide, within a time zone range, abroad (which countries), or a specific country/city? Are you open to relocation?\n   (Suggested: {suggested_region})",
+            "choices": ["Remote worldwide", "Worldwide", "Europe", "United States", suggested_region],
             "recommended": suggested_region,
         },
     ]
@@ -42,7 +42,7 @@ def build_step_3_target_questions(
         "1. Method: Modern (default) or Classic?",
         "   - Modern catches early funding signals and hiring posts and drafts human outreach to decision-maker emails under a daily cap.",
         "   - Classic searches many job boards and has the Apply button.",
-        f"2. Target place: Tunisia, remote worldwide, remote within a time zone range, abroad (which countries), or a specific city or region? Are you open to relocation? (Suggested: {suggested_region})",
+        f"2. Target place: remote worldwide, within a time zone range, abroad (which countries), or a specific country/city? Are you open to relocation? (Suggested: {suggested_region})",
     ]
 
     if ask_role:
@@ -100,15 +100,17 @@ def build_round_1_role_questions(inferred_roles: list[dict[str, Any]]) -> dict[s
 def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, Any], region_guess: dict[str, Any]) -> dict[str, Any]:
     """Generates Round 2 refinement batch (7 questions in exact prompt order) asked while background search is executing."""
     suggested_type = job_type_guess.get("value") or "full-time"
-    suggested_region = region_guess.get("value") or "Any"
+    suggested_region = (region_guess.get("value") or "").strip()
+    if not suggested_region or suggested_region.lower() in ("any", "unknown"):
+        suggested_region = "Worldwide"
     
     questions = [
         {
             "id": "location",
             "number": 1,
             "title": "Location & Relocation",
-            "question": "What locations are you targeting (e.g. specific city like Sfax or Berlin, a country, region, remote within a timezone range, or countries abroad)? Are you willing to relocate?",
-            "choices": [suggested_region, "Remote worldwide", "Tunisia", "Europe / Abroad", "any"],
+            "question": "What locations are you targeting (e.g. specific city, country, region, remote within a timezone range, or countries abroad)? Are you willing to relocate?",
+            "choices": [suggested_region, "Remote worldwide", "Worldwide", "Europe / Abroad", "any"],
             "recommended": suggested_region,
             "note": f"Suggested: {suggested_region} (from resume/guess)",
         },
@@ -167,8 +169,8 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
     formatted_lines = [
         "Please answer the following Round 2 preferences to filter your matches live:",
         "",
-        f"1. Location: {suggested_region}, specific city (e.g. Sfax, Berlin), remote worldwide, timezone range, or countries abroad? Open to relocation?",
-        f"   [Suggested default: {suggested_region} (guess)]",
+        f"1. Location: {suggested_region}, specific city, remote worldwide, timezone range, or countries abroad? Open to relocation?",
+        f"   [Suggested default: {suggested_region}]",
         "2. Level / Way of Search: match my level (default), one level up (reach), one level down (safe), or a different role (pivot)?",
         "   [Suggested default: match my level]",
         "3. Job Type: internship (PFE), junior full-time, full-time, or contract? (What is your target start date?)",

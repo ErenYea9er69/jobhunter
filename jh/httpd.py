@@ -77,6 +77,13 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------- GET Dispatch
     def do_GET(self) -> None:
+        try:
+            self._dispatch_GET()
+        except Exception as e:
+            log.exception("Unhandled error in do_GET for %s: %s", self.path, e)
+            self._send_json(500, envelope(status="error", error={"code": "server_error", "message": str(e)}))
+
+    def _dispatch_GET(self) -> None:
         _ensure_db()
         parsed = urlparse(self.path)
         path = parsed.path
@@ -366,6 +373,13 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------ POST Dispatch
     def do_POST(self) -> None:
+        try:
+            self._dispatch_POST()
+        except Exception as e:
+            log.exception("Unhandled error in do_POST for %s: %s", self.path, e)
+            self._send_json(500, envelope(status="error", error={"code": "server_error", "message": str(e)}))
+
+    def _dispatch_POST(self) -> None:
         _ensure_db()
         parsed = urlparse(self.path)
         path = parsed.path

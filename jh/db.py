@@ -243,6 +243,7 @@ def _columns(conn, table):
 
 def init_db():
     import os
+    _SESSION_VIEW_FILTERS.clear()
     os.makedirs(config.DATA_DIR, exist_ok=True)
     with _init_lock, session() as c:
         c.execute("CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL)")
@@ -2750,10 +2751,18 @@ def get_signals(limit: int = 100, status: str | None = None, view_filters: dict 
         results.append(d)
 
     if view_filters:
-        target_role = (view_filters.get("job_style") or view_filters.get("role") or "").lower()
-        target_region = (view_filters.get("region") or view_filters.get("locations") or "").lower()
-        if isinstance(target_region, list):
-            target_region = " ".join(target_region).lower()
+        raw_role = view_filters.get("job_style") or view_filters.get("role") or view_filters.get("roles") or ""
+        if isinstance(raw_role, (list, tuple, set)):
+            target_role = " ".join(str(x) for x in raw_role).lower()
+        else:
+            target_role = str(raw_role).lower()
+
+        raw_region = view_filters.get("region") or view_filters.get("locations") or ""
+        if isinstance(raw_region, (list, tuple, set)):
+            target_region = " ".join(str(x) for x in raw_region).lower()
+        else:
+            target_region = str(raw_region).lower()
+
         filtered = []
         for s in results:
             if target_role and s.get("role_guess") and target_role not in s["role_guess"].lower() and s["role_guess"].lower() not in target_role:

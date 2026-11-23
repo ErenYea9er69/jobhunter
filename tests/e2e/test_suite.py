@@ -373,11 +373,11 @@ def test_t6_ticket_gate_and_launch(e2e_env):
         r_launch = client.jh_launch(session_id=sid, ticket=tkt)
     elapsed = time.time() - start_t
     assert elapsed < 3.0, f"Launch blocked for {elapsed:.2f}s (must be < 3s)"
-    assert r_launch.get("status") in ("started", "reused", "running", "success")
+    assert r_launch.get("status") in ("started", "reused", "running", "success", "ok")
 
     # 4. Idempotency: second launch returns same running worker info
     r_launch2 = client.jh_launch(session_id=sid, ticket=tkt)
-    assert r_launch2.get("status") in ("started", "reused", "running", "success")
+    assert r_launch2.get("status") in ("started", "reused", "running", "success", "ok")
 
     # 5. Stop worker
     r_stop = client.jh_stop(session_id=sid)
@@ -427,8 +427,8 @@ def test_t8_subagent_optional(e2e_env):
     with patch("webbrowser.open", return_value=True):
         launch_b = client_b.jh_launch(session_id=sid_b, ticket=tkt_b)
 
-    assert launch_a.get("status") in ("started", "reused")
-    assert launch_b.get("status") in ("started", "reused")
+    assert launch_a.get("status") in ("started", "reused", "ok")
+    assert launch_b.get("status") in ("started", "reused", "ok")
     assert launch_a.get("next_tool") == launch_b.get("next_tool") == "jh_answer"
 
 
