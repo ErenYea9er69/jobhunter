@@ -1,7 +1,7 @@
 # JobHunter Target Behavior Verification & Engineering Task Board
 
 _Authority: Prompt & Target Behavior Specification (T1 to T24)_  
-_Status: BACKEND COMPLETE (24/24 PASS ON DOUBLE-RUN VERIFICATION) | STOPPED WAITING FOR "go frontend"_
+_Status: ALL PHASES COMPLETE & FULLY VERIFIED (BACKEND 24/24 PASS ON DOUBLE-RUN | FRONTEND IMPECCABLE AUDIT PASSED [0 WARNINGS])_
 
 ---
 
@@ -80,14 +80,14 @@ _Status: BACKEND COMPLETE (24/24 PASS ON DOUBLE-RUN VERIFICATION) | STOPPED WAIT
 
 ## SECTION 2: FRONTEND
 
-_Status: HELD per instruction step 5 ("Do the BACKEND phases first, which cover the server and tool parts of the T-ids. Then run the AUDIT, write a BACKEND REPORT, and stop. Wait for me to say 'go frontend'. The FRONTEND phases cover the UI and extension parts.")_
+_Status: COMPLETE & VERIFIED (IMPECCABLE AUDIT PASSED [0 WARNINGS], 100% E2E CONTRACT PASS)_
 
-- **Phase F1**: Progress view & streaming match cards (`webapp/app.js`).
-- **Phase F2**: Filter strip with answered and pending fields ("not answered yet").
-- **Phase F3**: Match list with Safe/Match/Reach badges, gaps, and flags.
-- **Phase F4**: Header button for new signals/jobs and 24h deletion banner with "Review" and "Keep these".
-- **Phase F5**: Draft editor with word count, live slop flags, PDF download, and "I sent it" button.
-- **Phase F6**: Chrome extension ATS form autofill with manual submit confirmation (`extension/`).
+- [x] **Phase F1**: Progress view & streaming match cards (`webapp/app.js`, `webapp/index.html`).
+- [x] **Phase F2**: Filter strip with answered and pending fields ("not answered yet" buttons opening steering prompt) and hidden counter (`webapp/app.js`, `webapp/styles.css`).
+- [x] **Phase F3**: Match list with Safe, Match, Reach badges, top gaps (0-3 chips), Unverified flag, Ghost score badge, and Scam warning alert (`webapp/app.js`, `webapp/styles.css`).
+- [x] **Phase F4**: Header button for new signals/jobs ("N new signals" / "N new jobs", click reloads and marks seen) and 24h deletion banner with "Review" and "Keep these" (`webapp/app.js`, `webapp/index.html`).
+- [x] **Phase F5**: Draft editor with word count (40-80 words), lines count (3-4 lines), live slop flags, PDF download, and "I sent it" button (`webapp/app.js`, `webapp/index.html`).
+- [x] **Phase F6**: Chrome extension ATS form autofill with manual submit confirmation, EEO decline default, and orange missing-field highlighting (`extension/content.js`).
 
 ---
 

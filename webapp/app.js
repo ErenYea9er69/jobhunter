@@ -909,9 +909,33 @@
     const risks = j.risk_factors || j.risks || [];
     const riskLine = risks.length ? `<div class="jc-risk"><svg class="icon icon-sm"><use href="#i-shield-alert"/></svg><span>${esc(risks.join(" • "))}</span></div>` : "";
 
+    // Target Phase F3: Safe, Match, Reach labels, Top Gaps, Unverified flag, Ghost score, Scam warning
+    let labelBadge = "";
+    if (j.label === "Reach") {
+      labelBadge = `<span class="badge badge-fit-reach" title="Seniority or scope exceeds resume baseline (Reach opportunity)">${icon("sparkles", "icon-sm")}Reach</span>`;
+    } else if (j.label === "Safe") {
+      labelBadge = `<span class="badge badge-fit-safe" title="Meets or exceeds all requirements (Safe fit)">${icon("check", "icon-sm")}Safe</span>`;
+    } else if (j.label === "Match" || (j.label && j.label !== "none")) {
+      labelBadge = `<span class="badge badge-fit-match" title="Direct match for your experience">${esc(j.label)}</span>`;
+    }
+
+    const unverifiedBadge = j.unverified ? `<span class="badge badge-unverified" title="Job not found directly on company ATS board">${icon("shield-alert", "icon-sm")}Unverified</span>` : "";
+    const ghostBadge = (j.ghost_score && j.ghost_score >= 60) ? `<span class="badge badge-ghost" title="${esc(j.ghost_reason || 'Likely ghost posting')}">${icon("clock", "icon-sm")}Ghost (${j.ghost_score}%)</span>` : "";
+    const scamLine = j.scam_warning ? `<div class="jc-scam-warning" role="alert"><svg class="icon icon-sm"><use href="#i-triangle-alert"/></svg><span><strong>Warning:</strong> ${esc(j.scam_reason || 'Suspicious posting terms detected')}</span></div>` : "";
+
+    const gaps = Array.isArray(j.top_gaps) ? j.top_gaps.slice(0, 3) : [];
+    const gapsHtml = gaps.length ? `
+      <div class="jc-gaps" aria-label="Top experience or skill gaps">
+        <span class="jc-gaps-label">Top gaps:</span>
+        ${gaps.map(g => `<span class="gap-chip">${esc(g)}</span>`).join("")}
+      </div>` : "";
+
     const meta = [
+      labelBadge,
       top ? `<span class="badge hot">Top fit</span>` : "",
       isNew ? `<span class="badge new">New</span>` : "",
+      unverifiedBadge,
+      ghostBadge,
       sourceBadges,
       loc ? `<span dir="auto">${esc(loc)}</span>` : "",
       wm ? `<span>${esc(wm)}</span>` : "",
@@ -937,7 +961,9 @@
       </div>
       ${meta ? `<div class="jc-meta">${meta}</div>` : ""}
       ${filterTag}
+      ${scamLine}
       ${fitReason ? `<div class="jc-fit-reason">${icon("sparkles", "icon-sm")}<span>${esc(fitReason)}</span></div>` : ""}
+      ${gapsHtml}
       ${riskLine}
       ${sn ? `<p class="jc-desc" dir="auto">${esc(sn)}</p>` : ""}
       ${sk.length ? `<p class="jc-skills" aria-label="Skills from your resume"><span class="sr-only">From your resume: </span>${sk.map((s) => `<span class="mk">${esc(s)}</span>`).join("")}${more > 0 ? `<span class="jc-more">+${more}</span>` : ""}</p>` : ""}
@@ -1347,10 +1373,10 @@
     const count = isModern ? (state.radar.newSignals || 0) : (state.radar.matches || state.radar.newJobs || 0);
 
     if (label) {
-      if (isModern) {
-        label.textContent = `Radar found ${count} new signals`;
+      if (count > 0) {
+        label.textContent = isModern ? `${count} new signals` : `${count} new jobs`;
       } else {
-        label.textContent = count > 0 ? `Radar: ${count} new` : "Radar";
+        label.textContent = "Radar";
       }
     }
 
@@ -2113,18 +2139,33 @@
     if (f.seniority && f.seniority !== "any") chips.push({ key: "seniority", label: "Seniority", val: f.seniority });
     if (f.fit && Number(f.fit) > 0) chips.push({ key: "fit", label: "Fit", val: f.fit + "%+" });
 
+    const TARGETING_FIELDS = [
+      { id: "place", label: "Location", answered: Boolean(state.place || (f.locations && f.locations.length && f.locations[0] !== "any")) },
+      { id: "level", label: "Level", answered: Boolean((f.seniority && f.seniority !== "any") || f.level_shift) },
+      { id: "type", label: "Job type", answered: Boolean(f.job_type || f.type) },
+      { id: "mode", label: "Work mode", answered: Boolean((f.mode && f.mode !== "any") || (f.work_mode && f.work_mode !== "any")) },
+      { id: "pay", label: "Pay", answered: Boolean(f.min_salary && Number(f.min_salary) > 0) },
+      { id: "visa", label: "Visa", answered: Boolean(f.visa && f.visa !== "any") },
+      { id: "exclusions", label: "Exclusions", answered: Boolean((f.excluded_keywords && f.excluded_keywords.length) || (f.excluded_companies && f.excluded_companies.length)) },
+    ];
+
+    const pending = TARGETING_FIELDS.filter(q => !q.answered);
+    const pendingChips = pending.slice(0, 3).map(q => `
+      <button class="filter-chip pending-question" type="button" data-prompt-field="${esc(q.id)}" title="Click to steer ${esc(q.label)}">
+        <span class="chip-label">${esc(q.label)}:</span>
+        <span class="chip-val">not answered yet</span>
+      </button>
+    `).join("");
+
     if (chipsList) {
-      if (!chips.length) {
-        chipsList.innerHTML = `<span class="mute" style="font-size:var(--text-xs)">No active filters</span>`;
-      } else {
-        chipsList.innerHTML = chips.map(c => `
-          <span class="filter-chip" data-chip="${esc(c.key)}">
-            <span class="chip-label">${esc(c.label)}:</span>
-            <span class="chip-val">${esc(c.val)}</span>
-            <button class="chip-remove" type="button" data-remove-chip="${esc(c.key)}" aria-label="Remove ${esc(c.label)} filter">&times;</button>
-          </span>
-        `).join("");
-      }
+      const activeMarkup = chips.map(c => `
+        <span class="filter-chip" data-chip="${esc(c.key)}">
+          <span class="chip-label">${esc(c.label)}:</span>
+          <span class="chip-val">${esc(c.val)}</span>
+          <button class="chip-remove" type="button" data-remove-chip="${esc(c.key)}" aria-label="Remove ${esc(c.label)} filter">&times;</button>
+        </span>
+      `).join("");
+      chipsList.innerHTML = (activeMarkup + pendingChips) || `<span class="mute" style="font-size:var(--text-xs)">No active filters</span>`;
     }
 
     const totalInPool = state.jobs.length;
@@ -2196,6 +2237,24 @@
           renderFilterStrip();
           if (state.searched) loadJobsQuery();
           else renderJobs();
+          return;
+        }
+
+        const pendingBtn = e.target.closest(".pending-question");
+        if (pendingBtn) {
+          const field = pendingBtn.dataset.promptField;
+          const userVal = prompt(`Specify value for ${field} (or answer in chat):`);
+          if (userVal != null && userVal.trim()) {
+            if (field === "place") { state.place = userVal.trim(); byId("loc").value = state.place; }
+            else if (field === "mode") { state.filters.mode = userVal.trim().toLowerCase(); }
+            else if (field === "pay") { state.filters.min_salary = parseFloat(userVal.replace(/[^0-9.]/g, "")) || 0; }
+            else if (field === "type") { state.filters.job_type = userVal.trim(); }
+            else if (field === "level") { state.filters.seniority = userVal.trim(); }
+            renderFilterSegs();
+            renderFilterStrip();
+            if (state.searched) loadJobsQuery();
+            else renderJobs();
+          }
           return;
         }
 
