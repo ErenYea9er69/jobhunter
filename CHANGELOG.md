@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+### Fixed
+- **Browser Launch (D7)**: Suppressed Google Chrome first-run experience (FRE) and sign-in onboarding prompt by touching `First Run` sentinel, setting `Preferences` (`signin.allowed=false`, `sync_promo.user_skipped=true`), and adding flags `--no-first-run`, `--no-default-browser-check`, `--disable-fre`, `--disable-search-engine-choice-screen`.
+
 ## 1.1.0
 
 ### V7 Ask-First Flow & Guard Enforcements (D1 to D12)

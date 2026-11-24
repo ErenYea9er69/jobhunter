@@ -186,7 +186,41 @@ def launch_browser_with_extension(url: str | None = None, browser_type: str = "a
     user_data_dir = str(home.get_home() / "browser_profile")
     os.makedirs(user_data_dir, exist_ok=True)
 
-    cmd = [target["path"], f"--user-data-dir={user_data_dir}", f"--load-extension={ext_dir}"]
+    # Suppress Chromium First-Run Experience (FRE) and sign-in onboarding prompts
+    first_run_sentinel = os.path.join(user_data_dir, "First Run")
+    if not os.path.exists(first_run_sentinel):
+        try:
+            with open(first_run_sentinel, "w", encoding="utf-8") as f:
+                f.write("")
+        except OSError:
+            pass
+
+    default_pref_dir = os.path.join(user_data_dir, "Default")
+    os.makedirs(default_pref_dir, exist_ok=True)
+    pref_file = os.path.join(default_pref_dir, "Preferences")
+    if not os.path.exists(pref_file):
+        try:
+            import json as _json
+            initial_prefs = {
+                "signin": {"allowed": False},
+                "sync_promo": {"user_skipped": True},
+                "browser": {"has_seen_welcome_page": True, "check_default_browser": False},
+                "profile": {"exit_type": "Normal"}
+            }
+            with open(pref_file, "w", encoding="utf-8") as f:
+                _json.dump(initial_prefs, f)
+        except OSError:
+            pass
+
+    cmd = [
+        target["path"],
+        f"--user-data-dir={user_data_dir}",
+        f"--load-extension={ext_dir}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-fre",
+        "--disable-search-engine-choice-screen",
+    ]
     if url:
         cmd.append(url)
 
