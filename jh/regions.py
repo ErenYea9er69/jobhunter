@@ -195,15 +195,21 @@ def resolve_targets(prefs: Optional[dict] = None, profile: Optional[dict] = None
         if code and code not in out:
             out.append(code)
 
+    remote_keywords = ("remote", "anywhere", "worldwide", "remote worldwide", "global remote", "remote worldwide (global)")
+    loc_clean = (location or "").strip().lower()
+
     for c in prefs.get("target_countries") or []:
         add(to_code(c) or country_of_location(c))
-    if location and location.strip().lower() not in ("remote", "anywhere", "worldwide"):
+    if loc_clean and loc_clean not in remote_keywords:
         add(country_of_location(location) or to_code(location))
-    if not out:
+    elif loc_clean and loc_clean in remote_keywords:
+        return []
+
+    if not out and not (loc_clean in remote_keywords):
         add(country_of_location(profile.get("location", "")))
         for loc in profile.get("preferred_locations") or []:
             add(country_of_location(loc) or to_code(loc))
-    if not out:
+    if not out and not (loc_clean in remote_keywords):
         add(to_code(prefs.get("home_country", "")))
     return out
 

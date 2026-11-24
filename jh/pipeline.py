@@ -393,8 +393,11 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
     targets = regions.resolve_targets(prefs, profile, location)
     remote_ok = regions.wants_remote(prefs, profile)
     loc_clean = (location or "").lower().strip()
+    is_tunisia = loc_clean in ("tunisia", "tunis", "sousse", "sfax") or (len(targets) == 1 and targets[0].upper() == "TN")
     is_specific_country = bool(targets) and loc_clean not in ("remote", "worldwide", "remote worldwide", "any", "")
-    if is_specific_country:
+    if is_tunisia:
+        remote_ok = False
+    elif is_specific_country:
         wm = (prefs.get("work_mode") or profile.get("work_mode") or "").lower()
         if "remote" not in wm and "worldwide" not in wm:
             remote_ok = False
@@ -653,9 +656,9 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
                 continue
         filtered.append(j)
 
-    # Smart Graceful Fallback: if location yielded 0 results, find Worldwide Remote opportunities
+    # Smart Graceful Fallback: if location yielded 0 results, find Worldwide Remote opportunities (disabled for specific countries like Tunisia)
     fallback_notice = ""
-    if not filtered and location and location.lower() not in ("remote", "worldwide", "any"):
+    if not filtered and location and location.lower() not in ("remote", "worldwide", "any") and not is_tunisia:
         from .scoring import classify_job_country
         req_country = classify_job_country(location)
         fallback_candidates = []

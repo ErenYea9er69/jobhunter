@@ -31,8 +31,8 @@ def build_step_3_target_questions(
         },
         {
             "id": "target_place",
-            "question": f"2. Target place: remote worldwide, within a time zone range, abroad (which countries), or a specific country/city? Are you open to relocation?\n   (Suggested: {suggested_region})",
-            "choices": ["Remote worldwide", "Worldwide", "Europe", "United States", suggested_region],
+            "question": f"2. Target place: Tunisia, remote worldwide, remote within a time zone range, abroad (which countries), or a specific city or region? Are you open to relocation?\n   (Suggested: {suggested_region})",
+            "choices": ["Tunisia", "Remote worldwide", "Worldwide", "Europe", "United States", suggested_region],
             "recommended": suggested_region,
         },
     ]
@@ -42,7 +42,7 @@ def build_step_3_target_questions(
         "1. Method: Modern (default) or Classic?",
         "   - Modern catches early funding signals and hiring posts and drafts human outreach to decision-maker emails under a daily cap.",
         "   - Classic searches many job boards and has the Apply button.",
-        f"2. Target place: remote worldwide, within a time zone range, abroad (which countries), or a specific country/city? Are you open to relocation? (Suggested: {suggested_region})",
+        f"2. Target place: Tunisia, remote worldwide, remote within a time zone range, abroad (which countries), or a specific city or region? Are you open to relocation? (Suggested: {suggested_region})",
     ]
 
     if ask_role:
