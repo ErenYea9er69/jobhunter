@@ -45,16 +45,18 @@ def test_build_canonical_posting_separation_of_urls():
 
 
 def test_freshness_evaluation_states():
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
     # 1. Closed job
-    closed_job = {"is_closed": True, "posted_at": "2026-10-20T00:00:00Z"}
+    closed_job = {"is_closed": True, "posted_at": (now - timedelta(days=5)).isoformat()}
     assert evaluate_freshness(closed_job) == FreshnessState.CLOSED
 
     # 2. Fresh open job
-    recent_job = {"is_closed": False, "posted_at": "2026-10-25T00:00:00Z"}
+    recent_job = {"is_closed": False, "posted_at": (now - timedelta(days=5)).isoformat()}
     assert evaluate_freshness(recent_job, max_age_days=30) == FreshnessState.OPEN
 
     # 3. Stale job older than window
-    old_job = {"is_closed": False, "posted_at": "2025-01-01T00:00:00Z"}
+    old_job = {"is_closed": False, "posted_at": (now - timedelta(days=45)).isoformat()}
     assert evaluate_freshness(old_job, max_age_days=30) == FreshnessState.STALE
 
     # 4. Unknown when no dates and no verification

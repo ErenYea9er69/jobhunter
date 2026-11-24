@@ -1,156 +1,154 @@
-# JobHunter Target Behavior Verification & Engineering Task Board
+# JobHunter V7 Task Tracking & Defect Remediation
 
-_Authority: Prompt & Target Behavior Specification (T1 to T24)_  
-_Status: ALL PHASES COMPLETE & FULLY VERIFIED (BACKEND 24/24 PASS ON DOUBLE-RUN | FRONTEND IMPECCABLE AUDIT PASSED [0 WARNINGS])_
+## Gap Table
 
----
-
-## 1. Traceability & Baseline Matrix (T1 to T24)
-
-| T-ID | Target Requirement Summary | Baseline Status | Final Run 1 | Final Run 2 | Audit Score | Verification Scenario |
-| :--- | :-------------------------- | :-------------- | :---------- | :---------- | :---------- | :-------------------- |
-| **T1** | Clean install and one home folder (`Desktop/jobmcp`, 0 files in repo) | **PASS** | **PASS** | **PASS** | 10/10 | `test_t1_clean_install_and_home_folder` |
-| **T2** | Resume check, several resumes, wrong files, filesystem isolation | **FAIL** | **PASS** | **PASS** | 10/10 | `test_t2_resume_check_several_resumes_wrong_files` |
-| **T3** | Role inference (roles from content, confidence >=0.5 gives ready) | **PASS** | **PASS** | **PASS** | 10/10 | `test_t3_role_inference` |
-| **T4** | Targeting questions (7 questions in exact order, location first, level second) | **FAIL** | **PASS** | **PASS** | 10/10 | `test_t4_targeting_questions` |
-| **T5** | Method choice (Modern default, Classic switchable, keep data) | **PASS** | **PASS** | **PASS** | 10/10 | `test_t5_method_choice` |
-| **T6** | Ticket gate and launch (gated, detached worker, <3s, idempotent) | **FAIL** | **PASS** | **PASS** | 10/10 | `test_t6_ticket_gate_and_launch` |
-| **T7** | Browser and extension (launch loads extension or returns fallback) | **PASS** | **PASS** | **PASS** | 10/10 | `test_t7_browser_and_extension` |
-| **T8** | Subagent is optional (Mode A direct, Mode B subagent brief, same state) | **PASS** | **PASS** | **PASS** | 10/10 | `test_t8_subagent_optional` |
-| **T9** | Search and live filters (broad search, query-time filter, hidden count) | **PASS** | **PASS** | **PASS** | 10/10 | `test_t9_search_and_live_filters` |
-| **T10** | Chat and UI split (short chat status, top 5 matches only after Qs) | **PASS** | **PASS** | **PASS** | 10/10 | `test_t10_chat_and_ui_split` |
-| **T11** | Radar and signals (always-on, hiring <24h & <100 likes, funding <14d) | **PASS** | **PASS** | **PASS** | 10/10 | `test_t11_radar_and_signals` |
-| **T12** | Refresh of other sources (adaptive TTL, cooldown, radar untouched) | **PASS** | **PASS** | **PASS** | 10/10 | `test_t12_refresh_of_other_sources` |
-| **T13** | Duplicates, old jobs (merge, 60d expiry, 24h grace, ghost & scam flags) | **FAIL** | **PASS** | **PASS** | 10/10 | `test_t13_duplicates_and_old_jobs` |
-| **T14** | Modern: company brief and contacts (by size, Found/Pattern/Guess, no crawl)| **PASS** | **PASS** | **PASS** | 10/10 | `test_t14_modern_company_brief_and_contacts` |
-| **T15** | Modern: resume and email (3-4 lines, 40-80w, portfolio link, cap 20) | **PASS** | **PASS** | **PASS** | 10/10 | `test_t15_modern_resume_and_email` |
-| **T16** | Classic save flow (generation ONLY after Save, fit <60 gate, audit) | **PASS** | **PASS** | **PASS** | 10/10 | `test_t16_classic_save_flow` |
-| **T17** | Extension & screening answers (from verified facts, blank flag, EEO decline)| **PASS** | **PASS** | **PASS** | 10/10 | `test_t17_extension_and_screening_answers` |
-| **T18** | Coaching and mock interviews (only on trigger, 0-10 rubric with quotes) | **PASS** | **PASS** | **PASS** | 10/10 | `test_t18_coaching_and_mock_interviews` |
-| **T19** | Pipeline tracking, Gmail sync, digests (read-only, ledger filter, digest) | **PASS** | **PASS** | **PASS** | 10/10 | `test_t19_pipeline_tracking_gmail_sync_digests` |
-| **T20** | Privacy, safety, resilience, speed (<3s launch, isolated payload, no key)| **PASS** | **PASS** | **PASS** | 10/10 | `test_t20_privacy_safety_resilience_speed` |
-| **T21** | Level, pivot, and honest customization (inferred level, Safe/Match/Reach, gaps)| **FAIL** | **PASS** | **PASS** | 10/10 | `test_t21_level_pivot_and_honest_customization` |
-| **T22** | Steering in my own words (natural language mapping, one-line read confirm) | **FAIL** | **PASS** | **PASS** | 10/10 | `test_t22_steering_in_my_own_words` |
-| **T23** | Optimization, with numbers (WAL mode, query indexes, memory bounds, cache) | **FAIL** | **PASS** | **PASS** | 10/10 | `test_t23_optimization_with_numbers` |
-| **T24** | The UI map (API state contracts, flags, badges, closing soon, banner) | **FAIL** | **PASS** | **PASS** | 10/10 | `test_t24_the_ui_map` |
+| Defect | Requirement | Status | Evidence | Files | Action |
+|---|---|---|---|---|---|
+| D1 | Session state machine (NEW, RESUME_OK, ASKED, ANSWERED, LAUNCHED, ROUND2_DONE). Old tools check state, refuse out of order calls with needs_input + questions. 2h ticket. | BROKEN | `jh/ticket_manager.py:78` has loose states; `jh/mcp_tools.py:158` search_jobs has zero state checks; `jh/v5_tools.py:621` auto-issues ticket. | `jh/ticket_manager.py`, `jh/v5_tools.py`, `jh/mcp_tools.py` | Implement rigid SessionStateMachine enum and check_state gate on all tools. |
+| D2 | Preferences/filters written only via jh_confirm/jh_answer with user_reply. Reject empty, <2 chars, == questions, <5s interval. Audit log. MCP elicitation check + chat fallback. | BROKEN | `jh/v5_tools.py:430` jh_set_filters bypasses validation; no audit log; no 5s delay check. | `jh/ticket_manager.py`, `jh/v5_tools.py`, `jh/db.py`, `jh/elicitation.py` | Add timing gate, length/equality validation, DB audit log table, and elicitation helper. |
+| D3 | Split storage into guesses and answers. Guesses from resume never filter search. Roles with conf >= 0.5 set scope. | BROKEN | `jh/db.py:660` merges guesses directly into profiles.preferences; non-role guesses narrow search. | `jh/db.py`, `jh/role_inference.py`, `jh/pipeline.py` | Create guesses and answers tables; query_jobs reads answers only; role conf threshold 0.5. |
+| D4 | Round 1 mandatory before ticket. STOP prompt first line. Place question + route sources (Tunisia -> Tunisia/MENA/ATS, no global remote; Remote worldwide -> global; Abroad -> country). | BROKEN | `jh/v5_tools.py:621` skips round 1; `jh/pipeline.py:80` runs global scrapers on Tunisia searches. | `jh/interview_questions.py`, `jh/v5_tools.py`, `jh/pipeline.py`, `jh/source_registry.py` | Enforce Round 1 gate with fixed STOP text; source router filters out global feeds for Tunisia. |
+| D5 | Store method in session. Branch on it: Modern -> Signal Radar, UI signals; Classic -> multi-board search, UI jobs. Switch method anytime preserving both. | PARTIAL | `jh/v5_tools.py:107` has method switch, but search/UI lack clean separation and launch gating. | `jh/v5_tools.py`, `jh/radar.py`, `jh/pipeline.py`, `jh/server.py` | Bind method to session state, gate Radar vs multi-board on launch. |
+| D6 | Detached worker under 3s (Windows DETACHED_PROCESS+CREATE_NEW_PROCESS_GROUP, POSIX start_new_session, pid/lock in jobmcp/run). Remove blocking search. Strip job cards from tool replies. | BROKEN | `jh/mcp_tools.py:158` search_jobs blocks 57s and returns job lists; `jh/worker_launcher.py:40` lacks process group flags. | `jh/worker_launcher.py`, `jh/mcp_tools.py`, `jh/v5_tools.py` | Implement true detached process flags, pid file in jobmcp/run; strip job objects from AI replies. |
+| D7 | Chromium launch at http://127.0.0.1:PORT/?session=ID with extension loaded on progress view. Dedicated profile in jobmcp. UI calls /api/ping, server stores ui_seen. browser_opened, ui_seen in replies. | BROKEN | `jh/v5_tools.py:885` disables browser open (`browser_opened: False`), no extension loaded, no /api/ping handler. | `jh/worker_launcher.py`, `jh/server.py`, `jh/v5_tools.py`, `webapp/app.js` | Implement Chromium launcher with extension flag and dedicated profile; add /api/ping and ui_seen tracking. |
+| D8 | Round 2 questions carried until answered/skipped. UI banner "N questions waiting". jh_answer filters DB view live without search restart. "N hidden by filters" counter. | BROKEN | `jh/v5_tools.py:942` drops pending questions in some responses; UI lacks question banner and hidden counter. | `jh/v5_tools.py`, `webapp/index.html`, `webapp/app.js`, `jh/server.py` | Carry ask_user in replies; add banner and counter in webapp and /api/jobs/query. |
+| D9 | Visa-needing jobs flagged "work rights not confirmed" before visa answered, hidden only after answered. Chat never lists them. | BROKEN | `jh/pipeline.py` and `jh/ats.py` do not attach visa confirmation flag to jobs. | `jh/ats.py`, `jh/server.py`, `webapp/app.js` | Add visa_confirmed flag logic; show badge in UI; hide only when user specifies no sponsorship. |
+| D10 | tailor_resume, cover_letter, outreach_message, score_fit check saved_by == 'ui'. Save click is HTTP action in UI with page token. Remove "next steps" from replies. | BROKEN | `jh/mcp_tools.py:563` tailors unsaved jobs without checking saved_by; prompts include next steps. | `jh/mcp_tools.py`, `jh/server.py`, `webapp/app.js`, `prompts/` | Enforce saved_by == 'ui'; add UI save endpoint with session token; strip next steps advice. |
+| D11 | interview_prep, coaching, track_application run only on explicit user request or UI click. Remove coaching next-steps. | BROKEN | `jh/mcp_helpers.py:350` automatically appends unsolicited coaching advice to envelopes. | `jh/mcp_helpers.py`, `jh/mcp_tools.py` | Suppress unsolicited coaching envelopes and suggestions unless explicitly triggered. |
+| D12 | Server returns profile_line (name, roles with confidence, years, skills, 'tell me if this is wrong'). AI says it before R1. Post-launch 1-line summary. | BROKEN | `jh/v5_tools.py:485` jh_begin returns generic header without standardized profile_line field. | `jh/v5_tools.py`, `jh/role_inference.py` | Add structured profile_line to jh_begin output and concise launch message to jh_launch. |
+| NEW-1 | `test_freshness_evaluation_states` hardcoded date (2026-10-25) expired on 2026-11-24 causing 1 test failure. | BROKEN | `tests/unit/test_normalization_and_freshness.py:54` AssertionError. | `tests/unit/test_normalization_and_freshness.py` | Use relative timestamp (now - 5 days) so test remains valid across dates. |
 
 ---
 
-## SECTION 1: BACKEND (ALL PHASES VERIFIED & CLOSED)
+## Coverage Matrix
 
-### Phase B1: Multi-Resume Scoring & Launch Speed Gate (T2, T6)
-- [x] Fix `test_suite.py` imports for `scoring`.
-- [x] Optimize detached process launch in `jh/worker_launcher.py` (< 500ms).
-- [x] Ensure multi-resume job attribution in `jh/v5_tools.py` and `jh/scoring.py`.
-- [x] Verify T2 and T6 scenarios with double-run PASS.
+| Defect ID | Task ID(s) | Status |
+|---|---|---|
+| D1 | TASK-B3 | Covered (100%) |
+| D2 | TASK-B1 | Covered (100%) |
+| D3 | TASK-B2 | Covered (100%) |
+| D4 | TASK-B4 | Covered (100%) |
+| D5 | TASK-B5 | Covered (100%) |
+| D6 | TASK-B6 | Covered (100%) |
+| D7 | TASK-B12, TASK-F1 | Covered (100%) |
+| D8 | TASK-B7, TASK-F2 | Covered (100%) |
+| D9 | TASK-B8, TASK-F3 | Covered (100%) |
+| D10 | TASK-B9, TASK-F4 | Covered (100%) |
+| D11 | TASK-B10 | Covered (100%) |
+| D12 | TASK-B11 | Covered (100%) |
+| NEW-1 | TASK-B0 | Covered (100%) |
 
-### Phase B2: Targeting Questions Batch & Level Ordering (T4)
-- [x] Add Level question as Question #2 in `build_round_2_questions` in `jh/interview_questions.py`.
-- [x] Ensure `jh_answer` processes `level` / `way_of_search` steering.
-- [x] Verify T4 scenario with double-run PASS.
-
-### Phase B3: Lifecycle 60-Day Expiry & Ghost/Scam/Unverified Flags (T13)
-- [x] Implement 60-day auto-expiry check in `jh/lifecycle.py:run_cleanup()`.
-- [x] Implement `evaluate_job_flags(job, career_board_jobs=None)` in `jh/lifecycle.py`.
-- [x] Verify T13 scenario with double-run PASS.
-
-### Phase B4: Level Shift, Role Pivot & Honest Customization (T21)
-- [x] Update `jh/role_inference.py:infer_roles()` to return candidate `level`.
-- [x] Update `jh/scoring.py` and `jh/preferences.py` to label jobs `Safe`, `Match`, `Reach` with `top_gaps`.
-- [x] Wire scope expansion for senior/junior/pivot query additions without worker restart.
-- [x] Implement audit grounding check for ungrounded title inflation in `jh/evidence.py`.
-- [x] Verify T21 scenario with double-run PASS.
-
-### Phase B5: Natural Language Steering & Confirmation Mapping (T22)
-- [x] Add natural language phrase mapping in `jh_answer()`.
-- [x] Prepend one-line reading statement (`"I read this as: <mapping>. Say if wrong."`) to `message_for_user`.
-- [x] Verify T22 scenario with double-run PASS.
-
-### Phase B6: Optimization & Benchmarks (WAL, Indexes, Memory Bounds) (T23)
-- [x] Enable WAL mode and `busy_timeout = 30000` in `jh/db.py`.
-- [x] Add performance indexes in `jh/db.py`.
-- [x] Implement `jh/benchmark.py` running benchmark simulation.
-- [x] Verify T23 scenario with double-run PASS.
-
-### Phase B7: UI Map & State Contract Readiness (T24 Backend)
-- [x] Implement `jh/ui_contract.py` validating UI contract endpoints (`/api/status`, `/api/jobs`, `/api/signals`, `/api/contacts`, `/api/settings`).
-- [x] Verify T24 scenario with double-run PASS.
+**Overall Coverage: 100%**
 
 ---
 
-## SECTION 2: FRONTEND
+## Tasks
 
-_Status: COMPLETE & VERIFIED (IMPECCABLE AUDIT PASSED [0 WARNINGS], 100% E2E CONTRACT PASS)_
+### BACKEND
 
-- [x] **Phase F1**: Progress view & streaming match cards (`webapp/app.js`, `webapp/index.html`).
-- [x] **Phase F2**: Filter strip with answered and pending fields ("not answered yet" buttons opening steering prompt) and hidden counter (`webapp/app.js`, `webapp/styles.css`).
-- [x] **Phase F3**: Match list with Safe, Match, Reach badges, top gaps (0-3 chips), Unverified flag, Ghost score badge, and Scam warning alert (`webapp/app.js`, `webapp/styles.css`).
-- [x] **Phase F4**: Header button for new signals/jobs ("N new signals" / "N new jobs", click reloads and marks seen) and 24h deletion banner with "Review" and "Keep these" (`webapp/app.js`, `webapp/index.html`).
-- [x] **Phase F5**: Draft editor with word count (40-80 words), lines count (3-4 lines), live slop flags, PDF download, and "I sent it" button (`webapp/app.js`, `webapp/index.html`).
-- [x] **Phase F6**: Chrome extension ATS form autofill with manual submit confirmation, EEO decline default, and orange missing-field highlighting (`extension/content.js`).
+- [ ] `TASK-B0` (NEW-1): Fix date drift in `tests/unit/test_normalization_and_freshness.py` to restore 100% green baseline.
+  - Defect: NEW-1
+  - Test: `tests/unit/test_normalization_and_freshness.py`
+  - Commit: Pending
 
----
+- [ ] `TASK-B1` (D2): Preferences/filters written only via `jh_confirm`/`jh_answer` with user words. Validate length >= 2, reject empty, reject matching questions, reject interval < 5s. DB audit log table. MCP elicitation check + chat fallback.
+  - Defect: D2
+  - Test: `tests/test_d2_preferences_audit.py`
+  - Commit: Pending
 
-## SECTION 3: AUDIT
+- [ ] `TASK-B2` (D3): Split storage into `guesses` and `answers` tables in `jh/db.py`. Query jobs and scrapers read answers only. Top role confidence >= 0.5 sets search scope; non-role guesses never filter.
+  - Defect: D3
+  - Test: `tests/test_d3_guesses_vs_answers.py`
+  - Commit: Pending
 
-Score each T-ID from 0 to 10 on Completeness, Correctness, Quality, and Resilience. Pass mark: 9+.
+- [ ] `TASK-B3` (D1): Server session state machine (`NEW`, `RESUME_OK`, `ASKED`, `ANSWERED`, `LAUNCHED`, `ROUND2_DONE`). Every tool checks state first, old aliases return `needs_input` + pending questions. 2-hour ticket.
+  - Defect: D1
+  - Test: `tests/test_d1_state_machine.py`
+  - Commit: Pending
 
-| T-ID | Completeness | Correctness | Quality | Resilience | Overall Score | Status |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **T1** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T2** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T3** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T4** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T5** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T6** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T7** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T8** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T9** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T10** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T11** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T12** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T13** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T14** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T15** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T16** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T17** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T18** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T19** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T20** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T21** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T22** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T23** | 10 | 10 | 10 | 10 | **10** | PASS |
-| **T24** | 10 | 10 | 10 | 10 | **10** | PASS |
+- [ ] `TASK-B4` (D4): Mandatory Round 1 questions before ticket with fixed "STOP." prompt. Method, place (Tunisia, Remote worldwide, Abroad), and role (if conf < 0.5). Source routing (Tunisia excludes global remote feeds).
+  - Defect: D4
+  - Test: `tests/test_d4_round1_routing.py`
+  - Commit: Pending
 
----
+- [ ] `TASK-B5` (D5): Method stored in session. Modern starts Signal Radar, Classic starts multi-board search. Switching method preserves both datasets.
+  - Defect: D5
+  - Test: `tests/test_d5_method_branching.py`
+  - Commit: Pending
 
-## SECTION 4: NON-TESTABLES & REASONS
+- [ ] `TASK-B6` (D6): Detached worker launch in under 3s (`DETACHED_PROCESS` / `CREATE_NEW_PROCESS_GROUP`, `start_new_session`, pid/lock in `jobmcp/run`). Remove blocking search from old tools. Strip job cards from tool replies.
+  - Defect: D6
+  - Test: `tests/test_d6_detached_and_strip.py`
+  - Commit: Pending
 
-1. **Live LinkedIn Network Scraping**: Protected by cryptographic SHA-256 hash assertions in `tests/test_protected_linkedin.py` per owner working rules in `AGENTS.md`. Verified hermetically offline using fixtures and hash invariants.
-2. **Interactive Google OAuth Consent UI**: Mocked using hermetic `MockGmailAPI` fixture to avoid requiring interactive browser authentication or exposing personal API keys during test automation.
-3. **Automated Live Email Sending**: The application strictly prohibits sending external emails automatically (per Modern outreach safety contract; draft is generated and handed to user to review and send).
-4. **Display-Dependent Browser Rendering**: Tested via hermetic contract verification and headless browser profile creation (`JOBHUNTER_NO_BROWSER=1`) to prevent window manager lockups on multi-process automated runners.
+- [ ] `TASK-B7` (D8): Carry `ask_user` with round 2 questions in `jh_launch`, `jh_status`, `jh_answer` until answered/skipped. `jh_answer` filters DB view live without restarting search.
+  - Defect: D8
+  - Test: `tests/test_d8_round2_filter.py`
+  - Commit: Pending
 
----
+- [ ] `TASK-B8` (D9): Visa sponsorship detection and "work rights not confirmed" flag before visa answered. Jobs hidden only after explicit visa answer.
+  - Defect: D9
+  - Test: `tests/test_d9_visa_handling.py`
+  - Commit: Pending
 
-## SECTION 5: LIVE AGENT SCRIPT
+- [ ] `TASK-B9` (D10): Enforce `saved_by == 'ui'` on `tailor_resume`, `cover_letter`, `outreach_message`, `score_fit`. Remove "next steps" suggestions.
+  - Defect: D10
+  - Test: `tests/test_d10_save_gate.py`
+  - Commit: Pending
 
-The following concise (12 lines) live agent script tests all 4 required checkpoints:
+- [ ] `TASK-B10` (D11): Suppress unsolicited coaching and tracking advice from MCP replies.
+  - Defect: D11
+  - Test: `tests/test_d11_coaching_gate.py`
+  - Commit: Pending
 
-```python
-# live_agent_script.py: 12 lines testing checkpoints 1-4
-from jh import v5_tools as jh, resume_checker as rc, evidence as ev, save_flow as sf
-p1, p2 = "tests/e2e/fixtures/resumes/valid_alex_backend.txt", "tests/e2e/fixtures/resumes/mid_level_frontend_3y.txt"
-r_2res = jh.jh_begin(resume_path=f"{p1};{p2}") # Checkpoint 2: asks which resume
-assert "which" in r_2res["message_for_user"].lower() or r_2res["status"] == "needs_input"
-r_beg = jh.jh_begin(resume_path=p2)
-assert "method" in r_beg["message_for_user"].lower() # Checkpoint 1: asks method
-r_lnch = jh.jh_launch(r_beg["session_id"], r_beg["ticket"])
-assert r_lnch["round_2_questions"]["questions"][0]["id"] == "location" # Checkpoint 1: asks location first
-r_steer = jh.jh_answer(r_beg["session_id"], user_reply="aim higher")
-assert "read this as" in r_steer["message_for_user"].lower() # Checkpoint 3: states mapping
-j_reach = jh.db.query_jobs(view_filters={"roles":["Frontend Engineer"], "level_shift":1})["jobs"][0]
-assert j_reach["label"] == "Reach" # Checkpoint 3: Reach jobs appear
-diff = sf.save_job_and_generate(j_reach, rc.check_resume(p2)["profile"])["tailored_resume_text"]
-assert ev.audit_grounding(diff, ["Frontend Engineer", "React", "TypeScript", "Sarah Connor"])["passed"] # Checkpoint 4: 0 inflated facts
-```
+- [ ] `TASK-B11` (D12): Structured `profile_line` in `jh_begin` output; concise 1-line status in `jh_launch`.
+  - Defect: D12
+  - Test: `tests/test_d12_profile_line.py`
+  - Commit: Pending
+
+- [ ] `TASK-B12` (D7 Backend): Chromium launcher with extension flag and dedicated profile in `jobmcp`. `/api/ping` endpoint on server, `ui_seen` state tracking.
+  - Defect: D7
+  - Test: `tests/test_d7_browser_and_ping.py`
+  - Commit: Pending
+
+### FRONTEND
+
+- [ ] `TASK-F1` (D7 Frontend): Web UI calls `/api/ping` on page load to confirm `ui_seen: true`.
+  - Defect: D7
+  - Test: `tests/test_d7_browser_and_ping.py`
+  - Commit: Pending
+
+- [ ] `TASK-F2` (D8 Frontend): UI banner "N questions are waiting in the chat" and counter "N hidden by your filters".
+  - Defect: D8
+  - Test: `tests/test_ui_banner_strip.py`
+  - Commit: Pending
+
+- [ ] `TASK-F3` (D9 Frontend): UI badge "work rights not confirmed" on visa-requiring jobs when visa is not confirmed.
+  - Defect: D9
+  - Test: `tests/test_d9_visa_handling.py`
+  - Commit: Pending
+
+- [ ] `TASK-F4` (D10 Frontend): UI Save button calls `/api/jobs/:id/save` with session page token to set `saved_by = 'ui'`.
+  - Defect: D10
+  - Test: `tests/test_d10_save_gate.py`
+  - Commit: Pending
+
+### ADVERSARIAL SCRIPT & AUDIT
+
+- [ ] `TASK-ADV` (Step 3): Comprehensive adversarial script testing all short-path shortcuts, invalid answers, rapid calls, unsaved tailoring, and old tool names.
+  - Test: `tests/test_adversarial_v7.py`
+  - Commit: Pending
+
+- [ ] `TASK-AUD` (Step 4): Self-audit scoring D1 to D12 across completeness, correctness, quality, and resilience with concrete evidence.
+  - Commit: Pending
+
+### CLEAN SLATE, TESTER & SHIP
+
+- [ ] `TASK-CS1` (Step 4b): Clean slate backup, worker stop, delete old data, build & install local wheel, verify clean environment.
+  - Commit: Pending
+
+- [ ] `TASK-TST` (Step 5): Black-box tester subagent verification across scenarios (lazy path, correct modern/classic, bad inputs).
+  - Commit: Pending
+
+- [ ] `TASK-SHIP` (Step 6): Bump version to 1.1.0, update CHANGELOG and README, tag git release, publish, update client MCP config.
+  - Commit: Pending

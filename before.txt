@@ -1,0 +1,54 @@
+JOBHUNTER V7 BASELINE DEFECT REPRODUCTION TRANSCRIPT (before.txt)
+Date: 2026-11-24T10:54:00+01:00
+Installed Client Version: 1.0.0
+Client MCP Command: C:\Users\hp\AppData\Local\Python\pythoncore-3.14-64\Scripts\uvx.exe jobhunter-mcp
+Active Workspace: C:\Users\hp\Desktop\jobhunter
+JobMCP Home: C:\Users\hp\Desktop\jobmcp
+
+================================================================================
+EXACT USER MESSAGE REPLAY
+"use jobhunter mcp (don't search on my desktop file but use the mcp config you have in antigravity) to find me job"
+[Attached Resume: Rayen Ben Aissa - Cloud Software Engineering Intern (2027 graduation)]
+================================================================================
+
+ORDER OF TOOL CALLS AND REPRODUCTION LOG:
+1. 10:52:23 - jh_status
+   - Result: total_jobs: 116, signals_count: 1, method: modern.
+   - DEFECT D2: Preferences were already marked synchronized (_prefs_applied: true) with locations ["South Asia", "Tunisia", "Worldwide", "Remote"] and job types ["Internship", "Full-time"] that user never explicitly specified.
+   - Tool that wrote preferences: jh_begin / scan_and_sync / infer_roles wrote guessed preferences directly into the database as user preferences.
+
+2. 10:53:50 - list_resumes & get_resume
+   - Result: Inferred target_roles: ["Cloud Software Engineering Intern", "Software Engineering Intern", "Cloud Engineer", ...]
+   - DEFECT D3: Target title was extracted from file/header and directly locked as search target without confirmation.
+
+3. 10:54:55 - jh_start(prompt="use jobhunter mcp ... find me job")
+   - Result: Returned guided questions, but server state machine did NOT enforce ordering across old tools.
+
+4. 10:54:58 - search_jobs(query="software engineer")
+   - DEFECT D1: Called search_jobs with no ticket and in uninitialized session state. Server allowed execution.
+   - DEFECT D4: No round 1 question asked before scraping. Sources were not filtered by country (Tunisia mixed with US/worldwide).
+   - DEFECT D6: search_jobs ran synchronously in foreground, blocking the client for 57 seconds (10:54:58 to 10:55:55).
+   - Server returned error/crash on duplicate key, but scraping loop ran unblocked.
+
+5. 10:56:40 - get_saved_jobs()
+   - Returned 111 scraped jobs stored in database. 0 jobs were saved by user via UI.
+
+6. 10:56:50 - tailor_resume(job_id="36f0313540f9c479")
+   - DEFECT D10: Successfully generated tailored resume, executive hook, and wrote output files for a job that was NOT saved in the UI (saved_by != 'ui').
+   - DEFECT D11: Tools returned "Next steps" advice and coaching offers before user action.
+
+7. 10:56:53 - score_fit(job_id="36f0313540f9c479")
+   - Scored unsaved job without requiring user to save it first.
+
+8. Web UI & Chromium check:
+   - DEFECT D7: No Chromium instance opened with ATS autofill extension.
+   - Server returned browser_opened: False and logged URL only.
+
+9. Round 2 Questions:
+   - DEFECT D8: Round 2 questions were skipped or ignored before search ran.
+
+10. Visa Filtering:
+   - DEFECT D9: Roles from USA/LATAM/Canada (e.g. Canonical) were retrieved without visa confirmation flag.
+
+11. Profile Summary:
+   - DEFECT D12: No one-line profile returned to user with roles, confidence, years, skills, and "tell me if this is wrong".
