@@ -109,8 +109,13 @@ def jh_set_method(method: str = "modern", session_id: str = "default") -> dict[s
     Preserves all existing data across switches.
     """
     clean = config.set_method(method)
+    sess = ticket_manager.get_or_create_session(session_id)
+    sess["method"] = clean
+    db.store_answer(session_id, "method", clean, user_reply=f"method set to {clean}")
     db.set_session_state(f"method_{clean}", last_tool="jh_set_method")
     if clean == "modern":
+        from . import radar
+        radar.start_radar_worker()
         msg = (
             "Switched to Modern method: outreach first. Catch fresh hiring posts and seed funding news, "
             "find decision-maker emails, and send a short human email before the crowd applies. "
@@ -769,41 +774,51 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
 
     ticket_manager.mark_ticket_launched(ticket)
 
+    active_method = (sess.get("method") or db.get_confirmed_answer(session_id, "method") or config.get_method()).lower().strip()
+
     # 1. Start server.py detached if down
     server_res = worker_launcher.start_detached_server(preferred_port=8080)
     port = server_res["port"]
-    ui_url = f"http://127.0.0.1:{port}/?session={session_id}#/jobs"
+    # Modern UI points to #/signals; Classic points to #/jobs (D5)
+    ui_route = "#/signals" if active_method == "modern" else "#/jobs"
+    ui_url = f"http://127.0.0.1:{port}/?session={session_id}{ui_route}"
     sess["worker_port"] = port
     sess["ui_url"] = ui_url
 
-    # 2. Scope roles: confirmed role or roles with confidence >= 0.5 (D3)
-    confirmed_role = db.get_confirmed_answer(session_id, "role")
-    if confirmed_role:
-        query = confirmed_role
-    else:
-        role_guesses = db.get_guesses(session_id, category="role")
-        high_conf = [r["value"] for r in role_guesses if r.get("confidence", 0.0) >= 0.5]
-        if high_conf:
-            query = ", ".join(high_conf)
-        else:
-            query = ", ".join(sess.get("role_focus", ["Software Engineer"]))
-
-    # Confirmed target place ONLY from answers table; guessed location never filters!
-    target_loc = db.get_confirmed_answer(session_id, "target_place") or sess.get("target_place") or ""
-
-    if sess.get("search_job_id"):
-        search_job_id = sess["search_job_id"]
-        search_status = "already_running"
-    else:
-        search_res = worker_launcher.start_background_search(
-            session_id=session_id,
-            query=query,
-            location=target_loc,
-            role_focus=sess.get("role_focus", []),
-        )
-        search_job_id = search_res["search_job_id"]
+    # 2. Start method-specific engine: Modern -> Signal Radar; Classic -> Multi-board search (D5)
+    if active_method == "modern":
+        from . import radar
+        radar.start_radar_worker()
+        search_status = "radar_started"
+        search_job_id = sess.get("search_job_id") or "radar_worker"
         sess["search_job_id"] = search_job_id
-        search_status = "started"
+    else:
+        confirmed_role = db.get_confirmed_answer(session_id, "role")
+        if confirmed_role:
+            query = confirmed_role
+        else:
+            role_guesses = db.get_guesses(session_id, category="role")
+            high_conf = [r["value"] for r in role_guesses if r.get("confidence", 0.0) >= 0.5]
+            if high_conf:
+                query = ", ".join(high_conf)
+            else:
+                query = ", ".join(sess.get("role_focus", ["Software Engineer"]))
+
+        target_loc = db.get_confirmed_answer(session_id, "target_place") or sess.get("target_place") or ""
+
+        if sess.get("search_job_id"):
+            search_job_id = sess["search_job_id"]
+            search_status = "already_running"
+        else:
+            search_res = worker_launcher.start_background_search(
+                session_id=session_id,
+                query=query,
+                location=target_loc,
+                role_focus=sess.get("role_focus", []),
+            )
+            search_job_id = search_res["search_job_id"]
+            sess["search_job_id"] = search_job_id
+            search_status = "started"
 
     # 3. Log Web UI link without launching external browser
     from . import extension_installer
