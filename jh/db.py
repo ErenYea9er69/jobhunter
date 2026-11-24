@@ -751,6 +751,29 @@ def init_db():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_session ON audit_log(session_id)")
 
+        # 20. Guesses vs Answers Storage Split (D3 Quality Gate)
+        c.execute("""CREATE TABLE IF NOT EXISTS guesses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            resume_id TEXT DEFAULT '',
+            category TEXT NOT NULL,
+            value TEXT NOT NULL,
+            confidence REAL DEFAULT 0.0,
+            metadata TEXT DEFAULT '{}',
+            created_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_guesses_session ON guesses(session_id)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS answers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            category TEXT NOT NULL,
+            value TEXT NOT NULL,
+            user_reply TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_answers_session ON answers(session_id)")
+
         c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
         # Backfill history for v1 rows
@@ -3395,6 +3418,52 @@ def get_audit_events(session_id: str = "") -> list[dict[str, Any]]:
         else:
             rows = c.execute("SELECT * FROM audit_log ORDER BY id ASC").fetchall()
         return [dict(r) for r in rows]
+
+
+def store_guess(session_id: str, category: str, value: str, confidence: float = 0.0, metadata: Optional[dict] = None, resume_id: str = "") -> None:
+    """Store an inference guess without filtering search or view."""
+    with session() as c:
+        c.execute(
+            "INSERT INTO guesses (session_id, resume_id, category, value, confidence, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (session_id, resume_id, category, str(value), float(confidence), json.dumps(metadata or {}), now_iso())
+        )
+
+
+def get_guesses(session_id: str, category: Optional[str] = None) -> list[dict[str, Any]]:
+    """Retrieve stored guesses for a session."""
+    with session() as c:
+        if category:
+            rows = c.execute("SELECT * FROM guesses WHERE session_id=? AND category=? ORDER BY id ASC", (session_id, category)).fetchall()
+        else:
+            rows = c.execute("SELECT * FROM guesses WHERE session_id=? ORDER BY id ASC", (session_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def store_answer(session_id: str, category: str, value: str, user_reply: str) -> None:
+    """Store confirmed user answer from explicit user reply."""
+    with session() as c:
+        c.execute(
+            "INSERT INTO answers (session_id, category, value, user_reply, created_at) VALUES (?, ?, ?, ?, ?)",
+            (session_id, category, str(value), str(user_reply), now_iso())
+        )
+
+
+def get_answers(session_id: str, category: Optional[str] = None) -> list[dict[str, Any]]:
+    """Retrieve confirmed user answers for a session."""
+    with session() as c:
+        if category:
+            rows = c.execute("SELECT * FROM answers WHERE session_id=? AND category=? ORDER BY id ASC", (session_id, category)).fetchall()
+        else:
+            rows = c.execute("SELECT * FROM answers WHERE session_id=? ORDER BY id ASC", (session_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_confirmed_answer(session_id: str, category: str) -> Optional[str]:
+    """Retrieve the latest confirmed value for a category from user answers."""
+    with session() as c:
+        row = c.execute("SELECT value FROM answers WHERE session_id=? AND category=? ORDER BY id DESC LIMIT 1", (session_id, category)).fetchone()
+        return str(row["value"]) if row else None
+
 
 
 

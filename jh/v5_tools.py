@@ -547,6 +547,14 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     sess["inference_result"] = inf
     sess["resume_id"] = util.stable_id(prof.get("name") or "candidate", check_res.get("text_chars", 0))
 
+    # D3: Store inferences into guesses table (never filters search/view)
+    for r in inf.get("roles", []):
+        db.store_guess(session_id, "role", r.get("role", ""), confidence=float(r.get("confidence", 0.0)), resume_id=sess["resume_id"])
+    if inf.get("job_type_guess"):
+        db.store_guess(session_id, "job_type", inf["job_type_guess"].get("value", ""), confidence=float(inf["job_type_guess"].get("confidence", 0.0)), resume_id=sess["resume_id"])
+    if inf.get("region_guess"):
+        db.store_guess(session_id, "location", inf["region_guess"].get("value", ""), confidence=float(inf["region_guess"].get("confidence", 0.0)), resume_id=sess["resume_id"])
+
     ask_role = (len(inf.get("role_focus", [])) == 0)
 
     legacy_test_sessions = {"test_sess_01", "summary_sess", "chk2_good", "alias_sess_2"}
@@ -759,6 +767,11 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
         method=chosen_method,
         location=chosen_place,
     )
+    # D3: Store confirmed answers from user reply into answers table
+    db.store_answer(session_id, "method", chosen_method, user_reply=user_reply)
+    db.store_answer(session_id, "target_place", chosen_place, user_reply=user_reply)
+    if role_focus:
+        db.store_answer(session_id, "role", ", ".join(role_focus), user_reply=user_reply)
 
     subagent_brief = (
         f"You are the JobHunter runner. Call jh_launch with session_id '{session_id}' and ticket '{ticket}'. "
@@ -820,13 +833,20 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
     sess["worker_port"] = port
     sess["ui_url"] = ui_url
 
-    # 2. Start search as background job (idempotent reuse within session)
-    query = ", ".join(sess.get("role_focus", ["Software Engineer"]))
-    target_loc = sess.get("target_place") or sess.get("location") or ""
-    if not target_loc:
-        inf = sess.get("inference_result", {})
-        region_guess = inf.get("region_guess", {}).get("value", "")
-        target_loc = region_guess if region_guess != "Any" else ""
+    # 2. Scope roles: confirmed role or roles with confidence >= 0.5 (D3)
+    confirmed_role = db.get_confirmed_answer(session_id, "role")
+    if confirmed_role:
+        query = confirmed_role
+    else:
+        role_guesses = db.get_guesses(session_id, category="role")
+        high_conf = [r["value"] for r in role_guesses if r.get("confidence", 0.0) >= 0.5]
+        if high_conf:
+            query = ", ".join(high_conf)
+        else:
+            query = ", ".join(sess.get("role_focus", ["Software Engineer"]))
+
+    # Confirmed target place ONLY from answers table; guessed location never filters!
+    target_loc = db.get_confirmed_answer(session_id, "target_place") or sess.get("target_place") or ""
 
     if sess.get("search_job_id"):
         search_job_id = sess["search_job_id"]
