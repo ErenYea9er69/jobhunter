@@ -95,6 +95,9 @@ def ws(tmp_path, monkeypatch):
     preferences._cache.update(mtime=None, path=None, data=None)
     company_directory._cache.clear()
     sources.reset_breakers()
+    from jh import ticket_manager
+    ticket_manager.transition_session_state("default", ticket_manager.SessionState.LAUNCHED)
+    ticket_manager.generate_ticket("default", "ahmed_backend", ["Backend Engineer"])
     return tmp_path
 
 

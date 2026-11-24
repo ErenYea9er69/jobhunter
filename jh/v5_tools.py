@@ -1275,7 +1275,7 @@ def jh_search(
             "removed_counts": view_res["removed_counts"],
             "closing_soon_count": view_res["closing_soon_count"],
             "usable_gate": usable_gate,
-            "jobs_preview": view_res["jobs"][:10],
+            "ui_url": f"http://127.0.0.1:{worker_launcher.get_running_server_info()['port'] if worker_launcher.get_running_server_info() else 8080}/?session={session_id}",
         }
     }
 
@@ -1306,8 +1306,7 @@ def jh_query(filters: Optional[dict[str, Any]] = None, session_id: str = "defaul
             "removed_counts": q_res["removed_counts"],
             "closing_soon_count": q_res["closing_soon_count"],
             "usable_gate": usable_gate,
-            "jobs": q_res["jobs"][:25],
-            "closing_soon": q_res["closing_soon"][:5],
+            "ui_url": f"http://127.0.0.1:{worker_launcher.get_running_server_info()['port'] if worker_launcher.get_running_server_info() else 8080}/?session={session_id}",
         }
     }
 
@@ -1481,7 +1480,6 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
         "status": "ok",
         "step": "status",
         "session_id": session_id,
-        "top_matches": top_matches,
         "message_for_user": msg,
         "ask_user": None,
         "options": {
@@ -1493,8 +1491,6 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
             "method": active_method,
             "session_id": session_id,
             "matches": matches_count,
-            "top_5_matches": top_matches,
-            "top_matches": top_matches,
             "hidden_by_filters": hidden_count,
             "ui_url": ui_url,
             "total_jobs": total_jobs,

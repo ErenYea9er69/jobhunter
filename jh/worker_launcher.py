@@ -131,9 +131,10 @@ def start_detached_server(host: str = "127.0.0.1", preferred_port: int = 8080, w
 
     proc = subprocess.Popen(cmd, **kwargs)
 
-    # Write port file early
+    # Write port, pid, and lock files early (D6)
     (run_dir / "server.port").write_text(str(port), encoding="utf-8")
     (run_dir / "server.pid").write_text(str(proc.pid), encoding="utf-8")
+    (run_dir / "server.lock").write_text(str(proc.pid), encoding="utf-8")
 
     # Start health poller in background thread (never block caller)
     poll_health_in_background(host, port, max_seconds=15)
