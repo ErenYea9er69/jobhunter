@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jobhunter-mcp"
-version = "1.0.0"
+version = "1.1.0"
 description = "MCP server for job search: many sources, resume-grounded scoring, truthful document tailoring, application tracking"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,13 +38,13 @@ jobhunter-mcp = "mcp_server:main"
 jobhunter = "run:main"
 
 [tool.setuptools]
-py-modules = ["mcp_server", "desktop", "run"]
+py-modules = ["mcp_server", "desktop", "run", "server"]
 
 [tool.setuptools.packages.find]
-include = ["jh*", "prompts*"]
+include = ["jh*", "prompts*", "webapp*", "extension*", "public*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.md", "*.json", "*.html", "*.css", "*.js"]
+"*" = ["*.md", "*.json", "*.html", "*.css", "*.js", "*.png", "*.svg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

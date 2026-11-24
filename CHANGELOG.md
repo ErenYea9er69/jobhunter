@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.0
+
+### V7 Ask-First Flow & Guard Enforcements (D1 to D12)
+- **Session State Machine (D1)**: Strict server-side state machine (`NEW`, `RESUME_OK`, `ASKED`, `ANSWERED`, `LAUNCHED`, `ROUND2_DONE`). Any out-of-order tool call returns `needs_input` with pending questions. Tools and search aliases require valid 2-hour tickets bound to session and resume.
+- **Audit Logging & Reply Validation (D2)**: Added `audit_log` table storing raw user words and timestamps. Rejects user replies under 2 characters, echoes of questions, or submitted under 5 seconds from question presentation.
+- **Guesses vs Answers Separation (D3)**: Separated DB storage into `guesses` (inferred from resume/filename with confidence scores) and `answers` (explicit user input). Scrapers and filters strictly query `answers`; inferred roles with confidence >= 0.5 define initial scope only.
+- **Mandatory Round 1 Questions & Source Routing (D4)**: Round 1 prompt starts with `"STOP. Ask the user the questions below and wait for the answer. Do not call another tool."` Routing respects location: Tunisia exclusively queries MENA/Tunisia boards and ATS feeds without unrequested global remote clutter.
+- **Modern vs Classic Execution Branching (D5)**: Modern starts Signal Radar (funding & hiring posts), Classic launches multi-board job search. Session stores method and supports live switching.
+- **Detached Background Worker & Zero Job Cards in Chat (D6)**: `jh_launch` detaches process in under 3 seconds using `DETACHED_PROCESS` / `CREATE_NEW_PROCESS_GROUP`. Removed job cards (titles, companies, links, scores) from all tool responses; jobs travel exclusively from SQLite DB to Web UI over HTTP.
+- **Dedicated Chromium Session & UI Ping (D7)**: Dedicated browser profile in jobmcp home with ATS autofill extension. `/api/ping` tracks `ui_seen` and issues one-time `page_token`.
+- **Live Filtering & Round 2 Questions (D8)**: Pending questions returned in `ask_user` until answered; answers apply live database view filtering without restarting background scrapers.
+- **Visa Warning Flagging (D9)**: International on-site roles are flagged with "work rights not confirmed" instead of silent exclusion before visa preference answer.
+- **UI Save Guard for Document Generation (D10)**: `tailor_resume`, `cover_letter`, `outreach_message` require jobs to have `saved_by = 'ui'`. Save button in Web UI signs requests using `page_token`.
+- **Suppressed Proactive Coaching Offers (D11)**: Coaching and tracking tools run on explicit user demand only.
+- **Profile Line & Concise Status (D12)**: Server generates a single-line summary (`profile_line`) with roles, confidence, experience, and top skills, followed by clean post-launch status.
+
 ## 1.0.0
 
 A review of every prompt (`docs/prompts.md`).
