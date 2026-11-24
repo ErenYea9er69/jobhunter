@@ -118,7 +118,7 @@ LLM_MODEL = os.environ.get("JH_LLM_MODEL", "")
 LLM_TIMEOUT_SECONDS = float(os.environ.get("JH_LLM_TIMEOUT", "40"))
 OLLAMA_ENDPOINT = os.environ.get("JH_OLLAMA_ENDPOINT", "http://127.0.0.1:11434")
 
-USER_AGENT = "JobHunter/1.1.1 (+local personal job search tool)"
+USER_AGENT = "JobHunter/1.1.2 (+local personal job search tool)"
 
 
 def configure_mcp_environment(workspace_path: str = ""):

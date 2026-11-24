@@ -198,19 +198,30 @@ def launch_browser_with_extension(url: str | None = None, browser_type: str = "a
     default_pref_dir = os.path.join(user_data_dir, "Default")
     os.makedirs(default_pref_dir, exist_ok=True)
     pref_file = os.path.join(default_pref_dir, "Preferences")
-    if not os.path.exists(pref_file):
-        try:
-            import json as _json
-            initial_prefs = {
-                "signin": {"allowed": False},
-                "sync_promo": {"user_skipped": True},
-                "browser": {"has_seen_welcome_page": True, "check_default_browser": False},
-                "profile": {"exit_type": "Normal"}
-            }
-            with open(pref_file, "w", encoding="utf-8") as f:
-                _json.dump(initial_prefs, f)
-        except OSError:
-            pass
+    try:
+        import json as _json
+        existing_prefs = {}
+        if os.path.exists(pref_file):
+            try:
+                with open(pref_file, "r", encoding="utf-8") as f:
+                    existing_prefs = _json.load(f)
+            except Exception:
+                existing_prefs = {}
+        existing_prefs.setdefault("signin", {})["allowed"] = False
+        existing_prefs.setdefault("sync_promo", {}).update({
+            "user_skipped": True,
+            "startup_count": 99,
+            "view_count": 99,
+        })
+        existing_prefs.setdefault("browser", {}).update({
+            "has_seen_welcome_page": True,
+            "check_default_browser": False,
+        })
+        existing_prefs.setdefault("profile", {})["exit_type"] = "Normal"
+        with open(pref_file, "w", encoding="utf-8") as f:
+            _json.dump(existing_prefs, f, indent=2)
+    except OSError:
+        pass
 
     cmd = [
         target["path"],
@@ -220,6 +231,8 @@ def launch_browser_with_extension(url: str | None = None, browser_type: str = "a
         "--no-default-browser-check",
         "--disable-fre",
         "--disable-search-engine-choice-screen",
+        "--disable-features=SyncPromo,SignInProfileCreationDesktop,ChromeWhatsNewUI",
+        "--password-store=basic",
     ]
     if url:
         cmd.append(url)

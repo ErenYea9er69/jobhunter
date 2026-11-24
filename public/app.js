@@ -1001,7 +1001,7 @@
       bar.hidden = true;
       list.innerHTML = "";
       const t = state.active && state.active.target_title;
-      st.innerHTML = `<div class="empty">${icon("search", "icon-lg")}<h2>Start with one search</h2><p>${t ? "JobHunter can look for roles that match your resume." : "Type a role and press Search jobs. Add your resume to see how well each role fits."}</p>${t ? `<button class="btn btn-primary" type="button" data-search-target>${icon("search")}<span>Search for ${esc(t)}</span></button>` : ""}</div>`;
+      st.innerHTML = `<div class="empty"><div class="empty-icon-wrap">${icon("search", "icon-lg")}</div><h2>Start with one search</h2><p>${t ? "JobHunter can look for roles that match your resume." : "Type a role and press Search jobs. Add your resume to see how well each role fits."}</p>${t ? `<div class="empty-actions"><button class="btn btn-primary" type="button" data-search-target>${icon("search")}<span>Search for ${esc(t)}</span></button></div>` : ""}</div>`;
       return;
     }
     const items = visibleJobs();
@@ -1010,7 +1010,7 @@
     if (!state.jobs.length) {
       bar.hidden = true;
       list.innerHTML = "";
-      st.innerHTML = `<div class="empty">${icon("inbox", "icon-lg")}<h2>No jobs found</h2><p>Try a broader title, remove the place, or check the words you skip in Settings.</p><div class="form-foot"><button class="btn btn-secondary" type="button" data-clear-place>Search without a place</button><a class="btn btn-quiet" href="#/settings/search">Open search settings</a></div></div>`;
+      st.innerHTML = `<div class="empty"><div class="empty-icon-wrap">${icon("inbox", "icon-lg")}</div><h2>No jobs found</h2><p>Try a broader title, remove the place, or check the words you skip in Settings.</p><div class="empty-actions"><button class="btn btn-secondary btn-sm" type="button" data-clear-place>Search without a place</button><a class="btn btn-quiet btn-sm" href="#/settings/search">Open search settings</a></div></div>`;
       return;
     }
     bar.hidden = false;
@@ -1024,7 +1024,7 @@
     byId("results-meta").textContent = totalHidden > 0 ? totalHidden + " hidden by filters" : "";
     if (!items.length) {
       list.innerHTML = "";
-      st.innerHTML = `<div class="empty"><h2>Filters hide all ${state.jobs.length} jobs</h2><p>Loosen a filter to see them.</p><button class="btn btn-secondary" type="button" data-clear-filters>Clear filters</button></div>`;
+      st.innerHTML = `<div class="empty"><div class="empty-icon-wrap">${icon("filter", "icon-lg")}</div><h2>Filters hide all ${state.jobs.length} jobs</h2><p>Loosen a filter to see them.</p><div class="empty-actions"><button class="btn btn-secondary btn-sm" type="button" data-clear-filters>Clear filters</button></div></div>`;
       return;
     }
     list.innerHTML = items.map(jobCardHtml).join("");
@@ -2447,14 +2447,45 @@
     if (!btnOpen || !dlg || btnOpen.dataset.bound) return;
     btnOpen.dataset.bound = "true";
 
-    closeOnBackdrop(dlg);
-    btnOpen.addEventListener("click", () => {
+    let selectedFile = null;
+
+    function resetModal() {
       const msg = byId("cr-status-msg");
       if (msg) msg.hidden = true;
       const tIn = byId("cr-text-input");
       if (tIn) tIn.value = "";
       const fIn = byId("cr-file-input");
       if (fIn) fIn.value = "";
+      selectedFile = null;
+      const fSelected = byId("cr-file-selected");
+      if (fSelected) fSelected.hidden = true;
+      const dPrompt = byId("cr-drop-prompt");
+      if (dPrompt) dPrompt.hidden = false;
+      const dZone = byId("cr-drop-zone");
+      if (dZone) dZone.classList.remove("drag-over");
+    }
+
+    function setFile(file) {
+      if (!file) return;
+      selectedFile = file;
+      const nameEl = byId("cr-file-name");
+      const sizeEl = byId("cr-file-size");
+      if (nameEl) nameEl.textContent = file.name;
+      if (sizeEl) {
+        const kb = (file.size / 1024).toFixed(1);
+        sizeEl.textContent = file.size > 1048576 ? `${(file.size / 1048576).toFixed(1)} MB` : `${kb} KB`;
+      }
+      const fSelected = byId("cr-file-selected");
+      if (fSelected) fSelected.hidden = false;
+      const dPrompt = byId("cr-drop-prompt");
+      if (dPrompt) dPrompt.hidden = true;
+      const msg = byId("cr-status-msg");
+      if (msg) msg.hidden = true;
+    }
+
+    closeOnBackdrop(dlg);
+    btnOpen.addEventListener("click", () => {
+      resetModal();
       dlg.showModal();
     });
 
@@ -2483,6 +2514,61 @@
       });
     }
 
+    // Drag-and-drop & file selection
+    const dropZone = byId("cr-drop-zone");
+    const fileInput = byId("cr-file-input");
+    const btnClearFile = byId("btn-cr-file-clear");
+
+    if (dropZone && fileInput) {
+      ["dragenter", "dragover"].forEach((evt) => {
+        dropZone.addEventListener(evt, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.add("drag-over");
+        });
+      });
+
+      ["dragleave", "dragend", "drop"].forEach((evt) => {
+        dropZone.addEventListener(evt, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.remove("drag-over");
+        });
+      });
+
+      dropZone.addEventListener("drop", (e) => {
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (files && files.length > 0) {
+          setFile(files[0]);
+        }
+      });
+
+      dropZone.addEventListener("click", (e) => {
+        if (e.target.closest("#btn-cr-file-clear")) return;
+        fileInput.click();
+      });
+
+      dropZone.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          fileInput.click();
+        }
+      });
+
+      fileInput.addEventListener("change", () => {
+        if (fileInput.files && fileInput.files[0]) {
+          setFile(fileInput.files[0]);
+        }
+      });
+
+      if (btnClearFile) {
+        btnClearFile.addEventListener("click", (e) => {
+          e.stopPropagation();
+          resetModal();
+        });
+      }
+    }
+
     const form = byId("form-change-resume");
     if (form && !form.dataset.bound) {
       form.dataset.bound = "true";
@@ -2495,37 +2581,67 @@
 
         try {
           const isText = paneText && !paneText.hidden;
-          let resumeText = "";
-          let resumePath = "";
 
           if (isText) {
-            resumeText = (byId("cr-text-input").value || "").trim();
+            const resumeText = (byId("cr-text-input").value || "").trim();
             if (resumeText.length < 300) {
               throw new Error("Resume text must have at least 300 characters.");
             }
+            const res = await apiPost("/api/session/replace-resume", {
+              session_id: state.sessionId,
+              resume_path: "",
+              resume_text: resumeText,
+            });
+            if (!res || res.status === "error") {
+              const err = (res && res.error && res.error.message) || (res && res.message_for_user) || "Failed to update resume.";
+              throw new Error(err);
+            }
           } else {
-            const file = byId("cr-file-input").files[0];
+            const file = selectedFile || (fileInput && fileInput.files[0]);
             if (!file) throw new Error("Please select a resume file.");
-            resumeText = await file.text();
+
+            // Read binary or text file safely via base64 upload
+            const b64 = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => {
+                const res = reader.result || "";
+                const commaIdx = res.indexOf(",");
+                resolve(commaIdx >= 0 ? res.slice(commaIdx + 1) : res);
+              };
+              reader.onerror = () => reject(new Error("Failed to read file"));
+              reader.readAsDataURL(file);
+            });
+
+            const uploadRes = await apiPost("/api/resumes/upload", {
+              filename: file.name,
+              content_base64: b64,
+              activate: true,
+            });
+
+            if (!uploadRes || uploadRes.status === "error") {
+              const err = (uploadRes && uploadRes.error && uploadRes.error.message) || "Failed to upload and process resume.";
+              throw new Error(err);
+            }
+
+            const uploadedPath = (uploadRes.data && uploadRes.data.path) || file.name;
+            const res = await apiPost("/api/session/replace-resume", {
+              session_id: state.sessionId,
+              resume_path: uploadedPath,
+              resume_text: "",
+            });
+
+            if (!res || res.status === "error") {
+              const err = (res && res.error && res.error.message) || (res && res.message_for_user) || "Failed to update resume.";
+              throw new Error(err);
+            }
           }
 
-          const res = await apiPost("/api/session/replace-resume", {
-            session_id: state.sessionId,
-            resume_path: resumePath,
-            resume_text: resumeText,
-          });
-
-          if (res && res.status !== "error") {
-            dlg.close();
-            toast("Resume updated successfully. Jobs re-scored.");
-            await pollSessionStatus();
-            await loadJobsQuery();
-          } else {
-            const err = (res && res.error && res.error.message) || (res && res.message_for_user) || "Failed to update resume.";
-            if (statusMsg) {
-              statusMsg.textContent = err;
-              statusMsg.hidden = false;
-            }
+          dlg.close();
+          toast("Resume updated successfully. Jobs re-scored.");
+          await pollSessionStatus();
+          await loadJobsQuery();
+          if (typeof loadSignalsQuery === "function") {
+            await loadSignalsQuery();
           }
         } catch (err) {
           if (statusMsg) {
@@ -2760,7 +2876,28 @@
 
     if (!fresh.length && !late.length) {
       if (st) {
-        st.innerHTML = `<div class="empty">${icon("inbox", "icon-lg")}<h2>No signals match filters</h2><p>Radar is actively scanning Hacker News, Reddit, and Seed funding news. Try loosening stage or keyword filters.</p></div>`;
+        st.innerHTML = `<div class="empty"><div class="empty-icon-wrap">${icon("inbox", "icon-lg")}</div><h2>No signals match filters</h2><p>Radar is actively scanning Hacker News, Reddit, and Seed funding news. Try loosening stage or keyword filters.</p><div class="empty-actions"><button class="btn btn-secondary btn-sm" id="btn-empty-reset-sig" type="button">Reset filters</button><button class="btn btn-primary btn-sm" id="btn-empty-switch-classic" type="button">Switch to Classic Jobs</button></div></div>`;
+        const btnReset = byId("btn-empty-reset-sig");
+        if (btnReset) {
+          btnReset.addEventListener("click", () => {
+            const q = byId("sig-q"); if (q) q.value = "";
+            const stage = byId("sig-stage"); if (stage) stage.value = "";
+            const type = byId("sig-type"); if (type) type.value = "";
+            if (state.signalsFilter) {
+              state.signalsFilter.q = "";
+              state.signalsFilter.stage = "";
+              state.signalsFilter.type = "";
+            }
+            loadSignalsQuery();
+          });
+        }
+        const btnClassic = byId("btn-empty-switch-classic");
+        if (btnClassic) {
+          btnClassic.addEventListener("click", () => {
+            const segClassic = byId("btn-method-classic");
+            if (segClassic) segClassic.click();
+          });
+        }
       }
       return;
     }

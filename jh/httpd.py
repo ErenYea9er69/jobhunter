@@ -39,7 +39,7 @@ def _ensure_db() -> None:
 
 
 class JobHunterRequestHandler(BaseHTTPRequestHandler):
-    server_version = "JobHunter/1.1.1"
+    server_version = "JobHunter/1.1.2"
 
     def log_message(self, format: str, *args: Any) -> None:
         """Override to ensure all HTTP logging goes strictly to stderr, keeping stdout clean."""
@@ -623,6 +623,7 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             return self._send_json(200, envelope(status="ok", data={
                 "success": True,
                 "filename": safe_name,
+                "path": str(target_path),
                 "variant": var,
                 "profile": prof_data or {},
                 "active": registry.get_active_variant(),

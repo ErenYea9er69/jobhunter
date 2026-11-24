@@ -1012,215 +1012,259 @@
 </dialog>
 
 <!-- Company Brief & Learning Pack Dialog -->
-<dialog id="dlg-company-brief" class="dialog-body dlg-lg" aria-labelledby="brief-dialog-title">
-  <div class="dialog-header" style="display:flex;justify-content:space-between;align-items:flex-start">
-    <div>
-      <h2 id="brief-dialog-title" style="margin:0">Company Research &amp; Learning Pack</h2>
-      <p class="mute" id="brief-company-sub" style="margin:var(--s1) 0 0;font-size:var(--text-sm)"></p>
+<dialog id="dlg-company-brief" class="dlg-lg" aria-labelledby="brief-dialog-title">
+  <div class="dialog-body">
+    <div class="dialog-header">
+      <div class="dialog-header-title">
+        <svg class="icon text-primary"><use href="#i-building-2"/></svg>
+        <div>
+          <h2 id="brief-dialog-title">Company Research &amp; Learning Pack</h2>
+          <p class="mute" id="brief-company-sub"></p>
+        </div>
+      </div>
+      <button class="btn btn-quiet btn-icon" id="btn-brief-close" type="button" aria-label="Close dialog"><svg class="icon"><use href="#i-x"/></svg></button>
     </div>
-    <button class="btn btn-quiet btn-icon" id="btn-brief-close" type="button" aria-label="Close dialog"><svg class="icon"><use href="#i-x"/></svg></button>
-  </div>
 
-  <div class="seg" role="tablist" id="brief-tabs" style="margin-block:var(--s3)">
-    <button type="button" role="tab" class="btn-seg active" id="tab-brief-facts" aria-selected="true">Factual Company Brief</button>
-    <button type="button" role="tab" class="btn-seg" id="tab-brief-learning" aria-selected="false">Learning Pack &amp; Talking Points</button>
-  </div>
+    <div class="seg" role="tablist" id="brief-tabs" style="margin-block:var(--s3)">
+      <button type="button" role="tab" class="btn-seg active" id="tab-brief-facts" aria-selected="true">Factual Company Brief</button>
+      <button type="button" role="tab" class="btn-seg" id="tab-brief-learning" aria-selected="false">Learning Pack &amp; Talking Points</button>
+    </div>
 
-  <!-- Pane 1: Factual Brief -->
-  <div class="brief-pane" id="pane-brief-facts">
-    <div class="brief-section">
-      <h3>What They Do</h3>
-      <p id="brief-what-they-do"></p>
-      <div class="source-link" id="brief-src-what"></div>
+    <!-- Pane 1: Factual Brief -->
+    <div class="brief-pane" id="pane-brief-facts">
+      <div class="brief-section">
+        <h3>What They Do</h3>
+        <p id="brief-what-they-do"></p>
+        <div class="source-link" id="brief-src-what"></div>
+      </div>
+      <div class="brief-section">
+        <h3>Business Model</h3>
+        <p id="brief-business-model"></p>
+        <div class="source-link" id="brief-src-biz"></div>
+      </div>
+      <div class="brief-section">
+        <h3>Tech Stack</h3>
+        <p id="brief-tech-stack"></p>
+        <div class="source-link" id="brief-src-tech"></div>
+      </div>
+      <div class="brief-section">
+        <h3>Recent News &amp; Funding</h3>
+        <p id="brief-recent-news"></p>
+        <div class="source-link" id="brief-src-news"></div>
+      </div>
     </div>
-    <div class="brief-section">
-      <h3>Business Model</h3>
-      <p id="brief-business-model"></p>
-      <div class="source-link" id="brief-src-biz"></div>
-    </div>
-    <div class="brief-section">
-      <h3>Tech Stack</h3>
-      <p id="brief-tech-stack"></p>
-      <div class="source-link" id="brief-src-tech"></div>
-    </div>
-    <div class="brief-section">
-      <h3>Recent News &amp; Funding</h3>
-      <p id="brief-recent-news"></p>
-      <div class="source-link" id="brief-src-news"></div>
-    </div>
-  </div>
 
-  <!-- Pane 2: Learning Pack -->
-  <div class="brief-pane" id="pane-brief-learning" hidden>
-    <div class="brief-section">
-      <h3>3 Smart Questions for First Conversation</h3>
-      <ul class="numbered-list" id="pack-questions"></ul>
+    <!-- Pane 2: Learning Pack -->
+    <div class="brief-pane" id="pane-brief-learning" hidden>
+      <div class="brief-section">
+        <h3>3 Smart Questions for First Conversation</h3>
+        <ul class="numbered-list" id="pack-questions"></ul>
+      </div>
+      <div class="brief-section">
+        <h3>Skill Gaps &amp; Study List</h3>
+        <ul class="gap-study-list" id="pack-gaps"></ul>
+      </div>
+      <div class="brief-section">
+        <h3>5 Talking Points (Connecting Candidate Experience)</h3>
+        <ul class="talking-points-list" id="pack-talking-points"></ul>
+      </div>
+      <div class="brief-section">
+        <h3>5-Line Summary</h3>
+        <div class="summary-box" id="pack-summary"></div>
+      </div>
     </div>
-    <div class="brief-section">
-      <h3>Skill Gaps &amp; Study List</h3>
-      <ul class="gap-study-list" id="pack-gaps"></ul>
-    </div>
-    <div class="brief-section">
-      <h3>5 Talking Points (Connecting Candidate Experience)</h3>
-      <ul class="talking-points-list" id="pack-talking-points"></ul>
-    </div>
-    <div class="brief-section">
-      <h3>5-Line Summary</h3>
-      <div class="summary-box" id="pack-summary"></div>
-    </div>
-  </div>
 
-  <div class="dialog-foot">
-    <button class="btn btn-primary" id="btn-brief-done" type="button">Close</button>
+    <div class="dialog-foot">
+      <button class="btn btn-primary" id="btn-brief-done" type="button">Close</button>
+    </div>
   </div>
 </dialog>
 
 <!-- First-Visit Onboarding Modal -->
-<dialog id="dlg-method-onboarding" class="dialog-body dlg-lg" aria-labelledby="onboarding-method-title">
-  <div class="dialog-header">
-    <svg class="icon text-primary"><use href="#i-sparkles"/></svg>
-    <h2 id="onboarding-method-title">Choose Your Job Search Method</h2>
-  </div>
-  <p class="mute" style="margin-block-end:var(--s4)">JobHunter supports two distinct approaches. You can switch at any time in the header, and all data stays in place.</p>
-  
-  <div class="method-cards-grid">
-    <div class="method-card method-card-highlighted" id="card-choice-modern">
-      <div class="method-card-badge">Default &amp; Recommended</div>
-      <h3>Modern: Outreach First</h3>
-      <p class="method-desc">Catch fresh hiring posts and seed funding news, find decision makers, and send a short human email before the crowd applies.</p>
-      <ul class="method-features">
-        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Signal Radar: hiring posts &amp; funding news</li>
-        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Decision maker finder with size-based titles &amp; MX check</li>
-        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Anti-slop 3-4 line email drafts &amp; 1-page tailored resume</li>
-        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Outreach ledger with 20/day cap &amp; follow-up nudges</li>
-      </ul>
-      <button class="btn btn-primary btn-block" id="btn-select-modern" type="button">Start with Modern</button>
+<dialog id="dlg-method-onboarding" class="dlg-lg" aria-labelledby="onboarding-method-title">
+  <div class="dialog-body">
+    <div class="dialog-header">
+      <div class="dialog-header-title">
+        <svg class="icon text-primary"><use href="#i-sparkles"/></svg>
+        <h2 id="onboarding-method-title">Choose Your Job Search Method</h2>
+      </div>
+      <button class="btn btn-quiet btn-icon" id="btn-onboarding-close" type="button" aria-label="Close dialog"><svg class="icon"><use href="#i-x"/></svg></button>
     </div>
+    <p class="mute" style="margin-block-end:var(--s4)">JobHunter supports two distinct approaches. You can switch at any time in the header, and all data stays in place.</p>
+    
+    <div class="method-cards-grid">
+      <div class="method-card method-card-highlighted" id="card-choice-modern">
+        <div class="method-card-badge">Default &amp; Recommended</div>
+        <h3>Modern: Outreach First</h3>
+        <p class="method-desc">Catch fresh hiring posts and seed funding news, find decision makers, and send a short human email before the crowd applies.</p>
+        <ul class="method-features">
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Signal Radar: hiring posts &amp; funding news</li>
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Decision maker finder with size-based titles &amp; MX check</li>
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Anti-slop 3-4 line email drafts &amp; 1-page tailored resume</li>
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Outreach ledger with 20/day cap &amp; follow-up nudges</li>
+        </ul>
+        <button class="btn btn-primary btn-block" id="btn-select-modern" type="button">Start with Modern</button>
+      </div>
 
-    <div class="method-card" id="card-choice-classic">
-      <h3>Classic: Job Boards &amp; Apply</h3>
-      <p class="method-desc">Search job boards, tailor resumes and cover letters for each posting, and apply through standard ATS forms.</p>
-      <ul class="method-features">
-        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Broad search across Greenhouse, Lever, Ashby, LinkedIn</li>
-        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Job cards with fit breakdown &amp; grounding audit</li>
-        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Tailored resume, cover letter &amp; interview prep</li>
-        <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Extension autofill on career sites</li>
-      </ul>
-      <button class="btn btn-secondary btn-block" id="btn-select-classic" type="button">Use Classic</button>
+      <div class="method-card" id="card-choice-classic">
+        <h3>Classic: Job Boards &amp; Apply</h3>
+        <p class="method-desc">Search job boards, tailor resumes and cover letters for each posting, and apply through standard ATS forms.</p>
+        <ul class="method-features">
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Broad search across Greenhouse, Lever, Ashby, LinkedIn</li>
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Job cards with fit breakdown &amp; grounding audit</li>
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Tailored resume, cover letter &amp; interview prep</li>
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Extension autofill on career sites</li>
+        </ul>
+        <button class="btn btn-secondary btn-block" id="btn-select-classic" type="button">Use Classic</button>
+      </div>
     </div>
   </div>
 </dialog>
 
 <!-- Draft 2-Line Follow-up Dialog -->
-<dialog id="dlg-followup-draft" class="dialog-body" aria-labelledby="followup-draft-title">
-  <div class="dialog-header">
-    <svg class="icon"><use href="#i-mail"/></svg>
-    <h2 id="followup-draft-title">Draft 2-Line Follow-up</h2>
-  </div>
-  <p class="mute" id="followup-contact-info"></p>
-  <div class="field" style="margin-block:var(--s3)">
-    <label for="followup-body">Follow-up message</label>
-    <textarea class="textarea mono" id="followup-body" rows="4"></textarea>
-  </div>
-  <div class="dialog-foot">
-    <button class="btn btn-quiet" id="btn-followup-cancel" type="button">Cancel</button>
-    <button class="btn btn-secondary" id="btn-followup-copy" type="button"><svg class="icon icon-sm"><use href="#i-copy"/></svg>Copy</button>
-    <button class="btn btn-primary" id="btn-followup-mailto" type="button"><svg class="icon icon-sm"><use href="#i-send"/></svg>Open in mail app</button>
+<dialog id="dlg-followup-draft" class="dlg-md" aria-labelledby="followup-draft-title">
+  <div class="dialog-body">
+    <div class="dialog-header">
+      <div class="dialog-header-title">
+        <svg class="icon text-primary"><use href="#i-mail"/></svg>
+        <h2 id="followup-draft-title">Draft 2-Line Follow-up</h2>
+      </div>
+      <button class="btn btn-quiet btn-icon" id="btn-followup-x" type="button" aria-label="Close dialog"><svg class="icon"><use href="#i-x"/></svg></button>
+    </div>
+    <p class="mute" id="followup-contact-info"></p>
+    <div class="field" style="margin-block:var(--s3)">
+      <label for="followup-body">Follow-up message</label>
+      <textarea class="textarea mono" id="followup-body" rows="4"></textarea>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-quiet" id="btn-followup-cancel" type="button">Cancel</button>
+      <button class="btn btn-secondary" id="btn-followup-copy" type="button"><svg class="icon icon-sm"><use href="#i-copy"/></svg>Copy</button>
+      <button class="btn btn-primary" id="btn-followup-mailto" type="button"><svg class="icon icon-sm"><use href="#i-send"/></svg>Open in mail app</button>
+    </div>
   </div>
 </dialog>
 
 <!-- Record Reply Dialog -->
-<dialog id="dlg-reply-record" class="dialog-body" aria-labelledby="reply-record-title">
-  <div class="dialog-header">
-    <svg class="icon text-ok"><use href="#i-sparkles"/></svg>
-    <h2 id="reply-record-title">Record Reply</h2>
-  </div>
-  <p class="mute" id="reply-contact-info"></p>
-  <div class="field" style="margin-block:var(--s3)">
-    <label>What kind of reply did they send?</label>
-    <div class="chip-list" id="reply-chips">
-      <button type="button" class="chip-btn" data-reply="interested"><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Interested / Wants to chat</button>
-      <button type="button" class="chip-btn" data-reply="declined"><svg class="icon icon-sm text-danger"><use href="#i-x"/></svg> Not hiring / Declined</button>
-      <button type="button" class="chip-btn" data-reply="neutral"><svg class="icon icon-sm"><use href="#i-clock"/></svg> Neutral / Later</button>
+<dialog id="dlg-reply-record" class="dlg-md" aria-labelledby="reply-record-title">
+  <div class="dialog-body">
+    <div class="dialog-header">
+      <div class="dialog-header-title">
+        <svg class="icon text-ok"><use href="#i-sparkles"/></svg>
+        <h2 id="reply-record-title">Record Reply</h2>
+      </div>
+      <button class="btn btn-quiet btn-icon" id="btn-reply-x" type="button" aria-label="Close dialog"><svg class="icon"><use href="#i-x"/></svg></button>
     </div>
-  </div>
-  <div id="reply-callprep-result" hidden style="margin-block:var(--s4);padding:var(--s3);background:var(--panel-quiet);border-radius:var(--radius)">
-    <h3 style="margin:0 0 var(--s2);font-size:var(--text-md)"><svg class="icon icon-sm text-primary"><use href="#i-sparkles"/></svg> Call Prep Pack Generated!</h3>
-    <p style="font-size:var(--text-xs)" class="mute">Review smart questions and talking points before your call:</p>
-    <div id="reply-prep-content" style="font-size:var(--text-sm);display:grid;gap:var(--s2)"></div>
-  </div>
-  <div class="dialog-foot">
-    <button class="btn btn-quiet" id="btn-reply-cancel" type="button">Close</button>
+    <p class="mute" id="reply-contact-info"></p>
+    <div class="field" style="margin-block:var(--s3)">
+      <label>What kind of reply did they send?</label>
+      <div class="chip-list" id="reply-chips">
+        <button type="button" class="chip-btn" data-reply="interested"><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Interested / Wants to chat</button>
+        <button type="button" class="chip-btn" data-reply="declined"><svg class="icon icon-sm text-danger"><use href="#i-x"/></svg> Not hiring / Declined</button>
+        <button type="button" class="chip-btn" data-reply="neutral"><svg class="icon icon-sm"><use href="#i-clock"/></svg> Neutral / Later</button>
+      </div>
+    </div>
+    <div id="reply-callprep-result" hidden style="margin-block:var(--s4);padding:var(--s3);background:var(--panel-quiet);border-radius:var(--radius)">
+      <h3 style="margin:0 0 var(--s2);font-size:var(--text-md)"><svg class="icon icon-sm text-primary"><use href="#i-sparkles"/></svg> Call Prep Pack Generated!</h3>
+      <p style="font-size:var(--text-xs)" class="mute">Review smart questions and talking points before your call:</p>
+      <div id="reply-prep-content" style="font-size:var(--text-sm);display:grid;gap:var(--s2)"></div>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-quiet" id="btn-reply-cancel" type="button">Close</button>
+    </div>
   </div>
 </dialog>
 
 <!-- Weekly Report Dialog -->
-<dialog id="dlg-weekly-report" class="dialog-body dlg-lg" aria-labelledby="weekly-report-title">
-  <div class="dialog-header" style="display:flex;justify-content:space-between;align-items:flex-start">
-    <div>
-      <h2 id="weekly-report-title" style="margin:0">Weekly Outreach Report</h2>
-      <p class="mute" id="weekly-report-period" style="margin:var(--s1) 0 0;font-size:var(--text-sm)"></p>
+<dialog id="dlg-weekly-report" class="dlg-lg" aria-labelledby="weekly-report-title">
+  <div class="dialog-body">
+    <div class="dialog-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div class="dialog-header-title">
+        <svg class="icon text-primary"><use href="#i-sparkles"/></svg>
+        <div>
+          <h2 id="weekly-report-title" style="margin:0">Weekly Outreach Report</h2>
+          <p class="mute" id="weekly-report-period" style="margin:var(--s1) 0 0;font-size:var(--text-sm)"></p>
+        </div>
+      </div>
+      <button class="btn btn-quiet btn-icon" id="btn-report-close" type="button" aria-label="Close report"><svg class="icon"><use href="#i-x"/></svg></button>
     </div>
-    <button class="btn btn-quiet btn-icon" id="btn-report-close" type="button" aria-label="Close report"><svg class="icon"><use href="#i-x"/></svg></button>
-  </div>
 
-  <div class="report-stats-grid" id="report-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:var(--s3);margin-block:var(--s4)">
-    <div class="metric-card"><span class="metric-label">Total Sent</span><div class="metric-val" id="rep-sent">0</div></div>
-    <div class="metric-card"><span class="metric-label">Total Replies</span><div class="metric-val" id="rep-replies">0</div></div>
-    <div class="metric-card"><span class="metric-label">Reply Rate</span><div class="metric-val" id="rep-rate">0%</div></div>
-  </div>
-
-  <div class="report-breakdowns" style="display:grid;grid-template-columns:1fr 1fr;gap:var(--s4);margin-block-end:var(--s4)">
-    <div class="report-box" style="padding:var(--s3);background:var(--panel-quiet);border-radius:var(--radius)">
-      <h3 style="margin-top:0;font-size:var(--text-sm)">By Source</h3>
-      <ul class="breakdown-list" id="rep-sources" style="padding-left:var(--s4);font-size:var(--text-xs);margin:0"></ul>
+    <div class="report-stats-grid" id="report-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:var(--s3);margin-block:var(--s4)">
+      <div class="metric-card"><span class="metric-label">Total Sent</span><div class="metric-val" id="rep-sent">0</div></div>
+      <div class="metric-card"><span class="metric-label">Total Replies</span><div class="metric-val" id="rep-replies">0</div></div>
+      <div class="metric-card"><span class="metric-label">Reply Rate</span><div class="metric-val" id="rep-rate">0%</div></div>
     </div>
-    <div class="report-box" style="padding:var(--s3);background:var(--panel-quiet);border-radius:var(--radius)">
-      <h3 style="margin-top:0;font-size:var(--text-sm)">By Attachment</h3>
-      <ul class="breakdown-list" id="rep-attachments" style="padding-left:var(--s4);font-size:var(--text-xs);margin:0"></ul>
+
+    <div class="report-breakdowns" style="display:grid;grid-template-columns:1fr 1fr;gap:var(--s4);margin-block-end:var(--s4)">
+      <div class="report-box" style="padding:var(--s3);background:var(--panel-quiet);border-radius:var(--radius)">
+        <h3 style="margin-top:0;font-size:var(--text-sm)">By Source</h3>
+        <ul class="breakdown-list" id="rep-sources" style="padding-left:var(--s4);font-size:var(--text-xs);margin:0"></ul>
+      </div>
+      <div class="report-box" style="padding:var(--s3);background:var(--panel-quiet);border-radius:var(--radius)">
+        <h3 style="margin-top:0;font-size:var(--text-sm)">By Attachment</h3>
+        <ul class="breakdown-list" id="rep-attachments" style="padding-left:var(--s4);font-size:var(--text-xs);margin:0"></ul>
+      </div>
     </div>
-  </div>
 
-  <div class="recommendation-callout" style="padding:var(--s3);background:var(--panel-quiet);border-left:3px solid var(--action);border-radius:var(--radius)">
-    <strong style="display:block;margin-block-end:var(--s1)">Suggested Change for Next Week:</strong>
-    <span id="rep-suggested-change">Keep sending consistent short messages.</span>
-  </div>
+    <div class="recommendation-callout" style="padding:var(--s3);background:var(--panel-quiet);border-left:3px solid var(--action);border-radius:var(--radius)">
+      <strong style="display:block;margin-block-end:var(--s1)">Suggested Change for Next Week:</strong>
+      <span id="rep-suggested-change">Keep sending consistent short messages.</span>
+    </div>
 
-  <div class="dialog-foot" style="margin-top:var(--s4)">
-    <button class="btn btn-primary" id="btn-report-done" type="button">Done</button>
+    <div class="dialog-foot" style="margin-top:var(--s4)">
+      <button class="btn btn-primary" id="btn-report-done" type="button">Done</button>
+    </div>
   </div>
 </dialog>
 
 <!-- V3 Change Resume Modal Dialog (Phase F5) -->
-<dialog id="dlg-change-resume" class="dialog-body" aria-labelledby="dlg-change-title" style="max-width:540px;width:90%">
-  <div class="dialog-header" style="display:flex;justify-content:space-between;align-items:center;margin-block-end:var(--s3)">
-    <h2 id="dlg-change-title" style="margin:0">Change Resume</h2>
-    <button class="btn btn-quiet btn-icon" id="btn-cr-close" type="button" aria-label="Close dialog"><svg class="icon"><use href="#i-x"/></svg></button>
+<dialog id="dlg-change-resume" class="dlg-md" aria-labelledby="dlg-change-title">
+  <div class="dialog-body">
+    <div class="dialog-header">
+      <div class="dialog-header-title">
+        <svg class="icon text-primary"><use href="#i-file-up"/></svg>
+        <h2 id="dlg-change-title" style="margin:0">Change Resume</h2>
+      </div>
+      <button class="btn btn-quiet btn-icon" id="btn-cr-close" type="button" aria-label="Close dialog"><svg class="icon"><use href="#i-x"/></svg></button>
+    </div>
+    <form id="form-change-resume" autocomplete="off">
+      <p class="hint" style="margin-block-end:var(--s3)">Upload a new resume or paste text. Re-scoring updates jobs in place while keeping background search running.</p>
+      <div class="seg" role="tablist" style="margin-block-end:var(--s3)">
+        <button type="button" class="btn-seg active" id="tab-cr-file">Upload file</button>
+        <button type="button" class="btn-seg" id="tab-cr-text">Paste text</button>
+      </div>
+      <div id="pane-cr-file">
+        <div class="drop-zone" id="cr-drop-zone" tabindex="0" role="button" aria-label="Drop or click to upload resume">
+          <input class="sr-only" type="file" id="cr-file-input" accept=".pdf,.docx,.txt,.md">
+          <div class="drop-zone-prompt" id="cr-drop-prompt">
+            <div class="drop-zone-icon"><svg class="icon icon-lg"><use href="#i-file-up"/></svg></div>
+            <div class="drop-zone-title">Drop your resume here, or <span class="drop-browse">browse files</span></div>
+            <div class="drop-zone-hint">Supports PDF, DOCX, TXT, or Markdown</div>
+          </div>
+          <div class="drop-zone-file" id="cr-file-selected" hidden>
+            <div class="file-badge">
+              <svg class="icon text-primary"><use href="#i-file-text"/></svg>
+              <div class="file-info">
+                <span class="file-name" id="cr-file-name">filename.pdf</span>
+                <span class="file-size" id="cr-file-size">124 KB</span>
+              </div>
+              <button type="button" class="btn btn-quiet btn-icon btn-sm" id="btn-cr-file-clear" aria-label="Remove selected file"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="pane-cr-text" hidden>
+        <div class="field" style="margin-block-end:var(--s3)">
+          <label for="cr-text-input">Resume text</label>
+          <textarea class="textarea" id="cr-text-input" rows="7" placeholder="Paste your complete resume text here (minimum 300 characters)..." style="width:100%;box-sizing:border-box"></textarea>
+        </div>
+      </div>
+      <div id="cr-status-msg" class="hint" style="color:var(--flag);margin-block-end:var(--s2)" hidden></div>
+      <div class="dialog-foot" style="display:flex;justify-content:flex-end;gap:var(--s2)">
+        <button class="btn btn-quiet" type="button" id="btn-cr-cancel">Cancel</button>
+        <button class="btn btn-primary" type="submit" id="btn-submit-change-resume">Update resume</button>
+      </div>
+    </form>
   </div>
-  <form id="form-change-resume" autocomplete="off">
-    <p class="hint" style="margin-block-end:var(--s3)">Upload a new resume or paste text. Re-scoring updates jobs in place while keeping background search running.</p>
-    <div class="seg" role="tablist" style="margin-block-end:var(--s3)">
-      <button type="button" class="btn-seg active" id="tab-cr-file">Upload file</button>
-      <button type="button" class="btn-seg" id="tab-cr-text">Paste text</button>
-    </div>
-    <div id="pane-cr-file">
-      <div class="field" style="margin-block-end:var(--s3)">
-        <label for="cr-file-input">Resume file (PDF, DOCX, TXT, Markdown)</label>
-        <input class="input" type="file" id="cr-file-input" accept=".pdf,.docx,.txt,.md">
-      </div>
-    </div>
-    <div id="pane-cr-text" hidden>
-      <div class="field" style="margin-block-end:var(--s3)">
-        <label for="cr-text-input">Resume text</label>
-        <textarea class="textarea" id="cr-text-input" rows="8" placeholder="Paste your complete resume text here (minimum 300 characters)..." style="width:100%;box-sizing:border-box"></textarea>
-      </div>
-    </div>
-    <div id="cr-status-msg" class="hint" style="color:var(--c-red,#ef4444);margin-block-end:var(--s2)" hidden></div>
-    <div class="dialog-foot" style="display:flex;justify-content:flex-end;gap:var(--s2)">
-      <button class="btn btn-quiet" type="button" id="btn-cr-cancel">Cancel</button>
-      <button class="btn btn-primary" type="submit" id="btn-submit-change-resume">Update resume</button>
-    </div>
-  </form>
 </dialog>
 
 <div class="drop-overlay" id="drop-overlay" hidden><div>Drop your resume to add it</div></div>

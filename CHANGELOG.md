@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.2
+
+### UI / UX & Browser Polish (Impeccable & Chrome First-Run Fixes)
+- **Dialog Stacking & Styling (UI/UX)**: Re-structured `<dialog>` tags to isolate `.dialog-body` inside inner containers and enforced `dialog:not([open]) { display: none !important; }`, permanently preventing un-opened modals from rendering in the flow.
+- **Elevation, Backdrops & Transitions**: Added backdrop blur (`backdrop-filter: blur(8px)`), modal scale-in animations, centered elevation, and deep slate theme styling (`#0a0b0e`/`#13151c`).
+- **Drag-and-Drop Resume Upload**: Replaced crude browser native file input with a modern drag-and-drop dropzone with format pills, file size indicator, clear button, and base64 binary upload to `/api/resumes/upload` to avoid raw string corruption.
+- **Empty State & Scrollbar Polish**: Centered empty states with pulse icon wrap and contextual action buttons (Reset filters, Switch to Classic). Replaced default browser scrollbars with themed subtle scrollbars.
+- **Chrome First-Run Suppression**: Merged `Preferences` (`signin.allowed=false`, `sync_promo.user_skipped=true`) and appended `--disable-features=SyncPromo,SignInProfileCreationDesktop,ChromeWhatsNewUI` and `--password-store=basic` to eliminate "Connectez-vous à Chrome" screen on launch.
+
 ## 1.1.1
 
 ### Fixed
