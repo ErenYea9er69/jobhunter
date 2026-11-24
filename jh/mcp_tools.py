@@ -509,6 +509,13 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             location: Optional location for pasted text.
             resume_name: Resume variant. Empty means the active resume.
         """
+        if job_id and not db.is_job_saved_by_ui(job_id):
+            return {
+                "status": "not_saved",
+                "success": False,
+                "message_for_user": f"Job '{job_id}' is not saved. Save the job in the web UI before scoring or generating application materials.",
+                "data": {"status": "not_saved", "job_id": job_id, "hint": "Save the job in the web UI at the provided link."}
+            }
         return score_job(job_id=job_id, job_title=job_title, company=company, description=description,
                          salary=salary, location=location, resume_name=resume_name)
 
@@ -589,6 +596,13 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             resume_name: Resume variant. Empty means the active resume.
             save: Write the result to .jobhunter/output/tailored.
         """
+        if job_id and not db.is_job_saved_by_ui(job_id):
+            return {
+                "status": "not_saved",
+                "success": False,
+                "message_for_user": f"Job '{job_id}' is not saved. Tailoring can only be generated for jobs saved in the web UI.",
+                "data": {"status": "not_saved", "job_id": job_id, "hint": "Save the job in the web UI before tailoring."}
+            }
         arch = ARCHETYPE_ALIASES.get(archetype.strip().lower())
         if not arch:
             raise ToolError(f"Unknown archetype '{archetype}'.", hint=f"Use one of: {', '.join(sorted(set(ARCHETYPE_ALIASES.values())))}")
@@ -622,6 +636,13 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             resume_name: Resume variant. Empty means the active resume.
             save: Write the result to .jobhunter/output/tailored.
         """
+        if job_id and not db.is_job_saved_by_ui(job_id):
+            return {
+                "status": "not_saved",
+                "success": False,
+                "message_for_user": f"Job '{job_id}' is not saved. Rewriting can only be generated for jobs saved in the web UI.",
+                "data": {"status": "not_saved", "job_id": job_id, "hint": "Save the job in the web UI before rewriting."}
+            }
         return tailor_resume(job_id=job_id, job_title=job_title, company=company, description=description,
                              archetype=archetype, resume_name=resume_name, save=save)
 
@@ -640,6 +661,13 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             resume_name: Resume variant. Empty means the active resume.
             format: txt, docx or pdf.
         """
+        if job_id and not db.is_job_saved_by_ui(job_id):
+            return {
+                "status": "not_saved",
+                "success": False,
+                "message_for_user": f"Job '{job_id}' is not saved. Cover letters can only be generated for jobs saved in the web UI.",
+                "data": {"status": "not_saved", "job_id": job_id, "hint": "Save the job in the web UI before generating a cover letter."}
+            }
         fmt = format.strip().lower()
         if fmt not in ("txt", "docx", "pdf"):
             raise ToolError("format must be txt, docx or pdf.")
@@ -807,6 +835,13 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             message_type: all, linkedin, email or follow_up.
             resume_name: Resume variant. Empty means the active resume.
         """
+        if job_id and not db.is_job_saved_by_ui(job_id):
+            return {
+                "status": "not_saved",
+                "success": False,
+                "message_for_user": f"Job '{job_id}' is not saved. Outreach messages can only be generated for jobs saved in the web UI.",
+                "data": {"status": "not_saved", "job_id": job_id, "hint": "Save the job in the web UI before generating outreach."}
+            }
         job, profile = job_and_profile(job_id, job_title, company, description, resume_name)
         return refit.generate_recruiter_outreach(job, profile, message_type=message_type)
 

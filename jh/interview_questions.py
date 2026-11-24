@@ -97,8 +97,8 @@ def build_round_1_role_questions(inferred_roles: list[dict[str, Any]]) -> dict[s
     }
 
 
-def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, Any], region_guess: dict[str, Any]) -> dict[str, Any]:
-    """Generates Round 2 refinement batch (7 questions in exact prompt order) asked while background search is executing."""
+def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, Any], region_guess: dict[str, Any], method: str = "modern") -> dict[str, Any]:
+    """Generates Round 2 refinement batch asked while background search is executing."""
     suggested_type = job_type_guess.get("value") or "full-time"
     suggested_region = (region_guess.get("value") or "").strip()
     if not suggested_region or suggested_region.lower() in ("any", "unknown"):
@@ -111,26 +111,8 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
 
     questions = [
         {
-            "id": "location",
-            "number": 1,
-            "title": "Location & Relocation",
-            "question": "What locations are you targeting (e.g. specific city, country, region, remote within a timezone range, or countries abroad)? Are you willing to relocate?",
-            "choices": loc_choices,
-            "recommended": suggested_region,
-            "note": f"Suggested: {suggested_region} (from resume/guess)",
-        },
-        {
-            "id": "level",
-            "number": 2,
-            "title": "Level & Way of Search",
-            "question": "What level or way of search do you prefer: match my level (default), one level up (reach), one level down (safe), or a different role (pivot)?",
-            "choices": ["match my level", "one level up (reach)", "one level down (safe)", "different role (pivot)"],
-            "recommended": "match my level",
-            "note": "Suggested default: match my level",
-        },
-        {
             "id": "job_type",
-            "number": 3,
+            "number": 1,
             "title": "Job Type & Start Date",
             "question": "What job type are you seeking, and when is your earliest available start date?",
             "choices": ["internship (PFE)", "junior full-time", "full-time", "contract", "any"],
@@ -139,31 +121,31 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
         },
         {
             "id": "work_mode",
-            "number": 4,
+            "number": 2,
             "title": "Work Mode",
             "question": "What is your preferred work mode?",
             "choices": ["on-site", "hybrid", "remote", "any"],
             "recommended": "any",
         },
         {
-            "id": "pay",
-            "number": 5,
-            "title": "Target Compensation",
-            "question": "What is your minimum acceptable compensation (or monthly stipend for internships), currency, and pay period?",
-            "choices": ["any / market rate", "specify amount"],
-            "recommended": "any / market rate",
-        },
-        {
             "id": "visa",
-            "number": 6,
+            "number": 3,
             "title": "Visa & Work Rights",
             "question": "Do you require visa sponsorship, and which countries do you hold legal work rights for?",
             "choices": ["no sponsorship needed", "visa sponsorship required", "any"],
             "recommended": "no sponsorship needed",
         },
         {
+            "id": "pay",
+            "number": 4,
+            "title": "Target Compensation",
+            "question": "What is your minimum acceptable compensation (or monthly stipend for internships), currency, and pay period?",
+            "choices": ["any / market rate", "specify amount"],
+            "recommended": "any / market rate",
+        },
+        {
             "id": "company_type",
-            "number": 7,
+            "number": 5,
             "title": "Company Type & Exclusions",
             "question": "What company types do you prefer (startup, consulting, enterprise), and are there any companies or keywords you wish to skip?",
             "choices": ["any company type", "early-stage startup", "growth-stage / scale-up", "enterprise / big tech"],
@@ -172,25 +154,42 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
     ]
 
     formatted_lines = [
-        "Please answer the following Round 2 preferences to filter your matches live:",
+        "Please answer the following Round 2 preferences to filter your matches live in the UI:",
         "",
-        f"1. Location: {suggested_region}, specific city, remote worldwide, timezone range, or countries abroad? Open to relocation?",
-        f"   [Suggested default: {suggested_region}]",
-        "2. Level / Way of Search: match my level (default), one level up (reach), one level down (safe), or a different role (pivot)?",
-        "   [Suggested default: match my level]",
-        "3. Job Type: internship (PFE), junior full-time, full-time, or contract? (What is your target start date?)",
+        f"1. Job Type & Start Date: internship (PFE), junior full-time, full-time, or contract? Target start date?",
         f"   [Suggested default: {suggested_type}]",
-        "4. Work Mode: on-site, hybrid, remote, or any?",
+        "2. Work Mode: on-site, hybrid, remote, or any?",
         "   [Suggested default: any]",
-        "5. Pay / Compensation: minimum acceptable compensation, stipend, or any?",
-        "   [Suggested default: any / market rate]",
-        "6. Visa Sponsorship: do you require visa sponsorship, and where do you have work rights?",
+        "3. Visa & Work Rights: do you require visa sponsorship, and where do you have work rights?",
         "   [Suggested default: no sponsorship needed]",
-        "7. Company Type & Exclusions: startup, consulting, enterprise? Any companies or keywords to skip?",
+        "4. Pay / Compensation: minimum acceptable compensation, monthly stipend, or any?",
+        "   [Suggested default: any / market rate]",
+        "5. Company Type & Exclusions: startup, consulting, enterprise? Any companies or keywords to skip?",
         "   [Suggested default: any company type]",
-        "",
-        "(You can reply with your answers in plain text, or say 'skip all' / 'any' to proceed with defaults.)"
     ]
+
+    if str(method).lower() == "modern":
+        questions.append({
+            "id": "daily_email_cap",
+            "number": 6,
+            "title": "Daily Email Cap",
+            "question": "What daily outreach email cap do you prefer? (Default: 20)",
+            "choices": ["20 (default)", "10", "30", "50"],
+            "recommended": "20",
+        })
+        questions.append({
+            "id": "voice_samples",
+            "number": 7,
+            "title": "Voice Samples",
+            "question": "Please provide 2 or 3 short messages or sample phrases you have written so outreach matches your authentic voice:",
+            "choices": ["provide samples", "skip / use standard polite professional"],
+            "recommended": "skip / use standard polite professional",
+        })
+        formatted_lines.append("6. Daily Email Cap: maximum outreach emails per day? [Suggested default: 20]")
+        formatted_lines.append("7. Voice Samples: 2 or 3 sample messages/sentences you wrote for your authentic voice [or 'skip']")
+
+    formatted_lines.append("")
+    formatted_lines.append("(You can reply in plain text, or say 'skip all' / 'any' to proceed with defaults.)")
 
     return {
         "round": 2,

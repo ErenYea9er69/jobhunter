@@ -390,6 +390,7 @@ def init_db():
             ("cover_letter_path", "TEXT DEFAULT ''"),
             ("fit_score", "INTEGER DEFAULT 0"),
             ("grounding_result", "TEXT DEFAULT ''"),
+            ("saved_by", "TEXT DEFAULT ''"),
         ]:
             if col not in app_cols:
                 c.execute(f"ALTER TABLE applications ADD COLUMN {col} {col_type}")
@@ -484,6 +485,7 @@ def init_db():
             ("industry", "TEXT DEFAULT ''"),
             ("visa_sponsor", "INTEGER DEFAULT 0"),
             ("skills_text", "TEXT DEFAULT ''"),
+            ("saved_by", "TEXT DEFAULT ''"),
         ]:
             if col not in jobs_cols:
                 c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {col_type}")
@@ -3463,6 +3465,42 @@ def get_confirmed_answer(session_id: str, category: str) -> Optional[str]:
     with session() as c:
         row = c.execute("SELECT value FROM answers WHERE session_id=? AND category=? ORDER BY id DESC LIMIT 1", (session_id, category)).fetchone()
         return str(row["value"]) if row else None
+
+
+def is_job_saved_by_ui(job_id_or_key: str) -> bool:
+    """Check if a job has saved_by == 'ui' in jobs or applications table."""
+    if not job_id_or_key:
+        return False
+    with session() as c:
+        row = c.execute(
+            "SELECT saved_by FROM jobs WHERE id=? OR url_hash=? OR job_key=?",
+            (job_id_or_key, job_id_or_key, job_id_or_key)
+        ).fetchone()
+        if row and (row["saved_by"] == "ui" or row[0] == "ui"):
+            return True
+        app_row = c.execute(
+            "SELECT saved_by FROM applications WHERE id=? OR job_id=?",
+            (job_id_or_key, job_id_or_key)
+        ).fetchone()
+        if app_row and (app_row["saved_by"] == "ui" or app_row[0] == "ui"):
+            return True
+    return False
+
+
+def mark_job_saved_by_ui(job_id_or_key: str) -> None:
+    """Mark a job as saved by UI in jobs and applications tables."""
+    if not job_id_or_key:
+        return
+    with session() as c:
+        c.execute(
+            "UPDATE jobs SET saved_by='ui', keep_flag=1 WHERE id=? OR url_hash=? OR job_key=?",
+            (job_id_or_key, job_id_or_key, job_id_or_key)
+        )
+        c.execute(
+            "UPDATE applications SET saved_by='ui' WHERE id=? OR job_id=?",
+            (job_id_or_key, job_id_or_key)
+        )
+
 
 
 

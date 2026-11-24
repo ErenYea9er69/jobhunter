@@ -298,6 +298,12 @@
       state.candidate = (s && s.candidate_name) || null;
       state.online = null; // force a redraw of the label
       setOnline(true);
+      try {
+        const pingRes = await apiGet("/api/ping?session=" + encodeURIComponent(state.session_id || "default"));
+        if (pingRes && pingRes.data && pingRes.data.page_token) {
+          state.page_token = pingRes.data.page_token;
+        }
+      } catch (e) {}
     } catch (e) { /* setOnline(false) already ran */ }
   }
 
@@ -930,12 +936,15 @@
         ${gaps.map(g => `<span class="gap-chip">${esc(g)}</span>`).join("")}
       </div>` : "";
 
+    const workRightsBadge = j.work_rights_not_confirmed ? `<span class="badge badge-warning">work rights not confirmed</span>` : "";
+
     const meta = [
       labelBadge,
       top ? `<span class="badge hot">Top fit</span>` : "",
       isNew ? `<span class="badge new">New</span>` : "",
       unverifiedBadge,
       ghostBadge,
+      workRightsBadge,
       sourceBadges,
       loc ? `<span dir="auto">${esc(loc)}</span>` : "",
       wm ? `<span>${esc(wm)}</span>` : "",
@@ -1582,6 +1591,8 @@
       location: j.location || "",
       salary: j.salary || "",
       url: jobUrl(j),
+      session_id: state.session_id || "default",
+      page_token: state.page_token || "",
       force: !!opts.force,
       confirm_closed: !!opts.confirm_closed,
       job_data: j

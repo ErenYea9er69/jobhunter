@@ -15,6 +15,10 @@ def seeded(tools, net):
     net.fixture("workingnomads.com/api/exposed_jobs", "workingnomads.json")
     res = tools.call("search_jobs", query="backend engineer", limit=10)
     assert res["success"], res
+    from jh import db
+    with db.session() as c:
+        c.execute("UPDATE jobs SET saved_by='ui'")
+        c.execute("UPDATE applications SET saved_by='ui'")
     return tools
 
 

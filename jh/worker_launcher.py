@@ -289,9 +289,15 @@ def get_search_job_status(session_id: str) -> dict[str, Any]:
 
 
 def open_browser(url: str) -> bool:
-    """Log the Web UI URL without automatically opening external browsers."""
+    """Launch Chromium browser with ATS extension and dedicated profile."""
     log.info("JobHunter Web UI available at: %s", url)
-    return True
+    try:
+        from . import extension_installer
+        res = extension_installer.launch_browser_with_extension(url)
+        return bool(res.get("success", False))
+    except Exception as e:
+        log.warning("Could not launch browser automatically: %s", e)
+        return False
 
 
 def stop_worker(session_id: str = "") -> dict[str, Any]:

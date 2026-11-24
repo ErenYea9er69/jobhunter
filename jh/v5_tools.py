@@ -560,6 +560,19 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     if inf.get("region_guess"):
         db.store_guess(session_id, "location", inf["region_guess"].get("value", ""), confidence=float(inf["region_guess"].get("confidence", 0.0)), resume_id=sess["resume_id"])
 
+    # Profile Line formatting (D12)
+    cand_name = check_res.get("name") or prof.get("name") or "Candidate"
+    roles_with_conf = [f"{r.get('role', '')} ({float(r.get('confidence', 0.0)):.2f})" for r in inf.get("roles", [])[:2]]
+    roles_str = ", ".join(roles_with_conf) if roles_with_conf else "General"
+    years = prof.get("years_experience")
+    years_str = f"{years} years" if years else "Intern / Student"
+    skills = prof.get("skills", [])[:5]
+    if isinstance(skills, dict):
+        skills = list(skills.keys())[:5]
+    skills_str = ", ".join(skills) if skills else "Software Engineering"
+    profile_line = f"Profile: {cand_name} | Roles: {roles_str} | Exp: {years_str} | Top Skills: {skills_str}. Tell me if this is wrong."
+    sess["profile_line"] = profile_line
+
     ask_role = (len(inf.get("role_focus", [])) == 0)
 
     # Mandatory Round 1 Questions (D1, D4)
@@ -573,7 +586,7 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     header_parts = []
     if notice:
         header_parts.append(notice)
-    header_parts.append(inf.get("one_line_summary") or inf.get("profile_summary", ""))
+    header_parts.append(profile_line)
     if warnings_lines:
         header_parts.append(warnings_lines)
     header_parts.append("")
@@ -591,6 +604,7 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
         "ticket": None,
         "step": 2,
         "notice": notice,
+        "profile_line": profile_line,
         "message_for_user": ticket_manager.build_stop_message(header_text),
         "ask_user": step3_q["formatted_text"],
         "options": step3_q,
@@ -599,6 +613,7 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
             "name": check_res["name"],
             "session_id": session_id,
             "ticket": None,
+            "profile_line": profile_line,
             "one_line_summary": inf.get("one_line_summary", ""),
             "inferred_roles": inf["roles"],
             "role_focus": inf.get("role_focus", []),
@@ -820,29 +835,34 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
             sess["search_job_id"] = search_job_id
             search_status = "started"
 
-    # 3. Log Web UI link without launching external browser
+    # 3. Launch Chromium with dedicated profile and ATS autofill extension (D7)
     from . import extension_installer
     ext_dir = extension_installer.find_extension_dir()
-    worker_launcher.open_browser(ui_url)
+    browser_opened = worker_launcher.open_browser(ui_url)
+    sess["browser_opened"] = browser_opened
     ext_status = "loaded" if Path(ext_dir).is_dir() else "manual_load_ready"
+    ui_seen = bool(sess.get("ui_seen", False))
 
-    # Build Round 2 questions
+    # Build Round 2 questions (incorporating method: Modern vs Classic) (D8)
+    chosen_method = sess.get("method", "modern")
     r2 = interview_questions.build_round_2_questions(
         sess.get("profile", {}),
         sess.get("inference_result", {}).get("job_type_guess", {}),
         sess.get("inference_result", {}).get("region_guess", {}),
+        method=chosen_method,
     )
     sess["round_2_questions"] = r2
 
+    if ui_seen:
+        ui_line = f"The Web UI is open at {ui_url}"
+    else:
+        ui_line = f"Web UI available at {ui_url} (seen: False)"
+
+    post_launch_line = f"{ui_line}. Search status: {search_status}. Questions come next."
+
     msg = (
-        f"JobHunter launched successfully in background.\n"
-        f"- Web UI: {ui_url}\n"
-        f"- Search Job ID: {search_job_id}\n"
-        f"- Server Status: {server_res['status']} (port {port})\n"
-        f"- Extension Status: {ext_status} ({ext_dir})\n\n"
-        f"INSTRUCTION FOR AI: Tell the user that the search is running and provide the web UI link: {ui_url}. "
-        f"Do not open an external browser; the user can open the link in their browser. "
-        f"Do not list jobs in chat; results are displayed live in the web UI. "
+        f"{post_launch_line}\n\n"
+        f"INSTRUCTION FOR AI: Output the single line above. Do not list jobs in chat; results are displayed live in the web UI. "
         f"Then ask the Round 2 questions below. Call jh_status at most once and NEVER poll in a loop.\n\n"
         f"While search runs, please answer these preferences to filter results live in the UI:\n"
         f"{r2['formatted_text']}"
@@ -858,9 +878,12 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
         "step": 4,
         "server_status": server_res["status"],
         "ui_url": ui_url,
+        "browser_opened": browser_opened,
+        "ui_seen": ui_seen,
         "extension_status": ext_status,
         "search_status": search_status,
         "search_job_id": search_job_id,
+        "post_launch_summary": post_launch_line,
         "message_for_user": msg,
         "ask_user": r2["formatted_text"],
         "options": r2,
@@ -872,7 +895,8 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
             "server_status": server_res["status"],
             "extension_status": ext_status,
             "extension_dir": ext_dir,
-            "browser_opened": False,
+            "browser_opened": browser_opened,
+            "ui_seen": ui_seen,
             "round_2_questions": r2["questions"],
         }
     }
@@ -917,6 +941,8 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
             if field not in sess["answers"]:
                 sess["answers"][field] = "any"
         sess["pending_questions"] = []
+        sess["round_2_done"] = True
+        ticket_manager.transition_session_state(session_id, ticket_manager.SessionState.ROUND2_DONE)
         db.set_session_state("round_2_skipped", last_tool="jh_answer")
     else:
         mapped_dict = {}
@@ -1001,6 +1027,21 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
                 answers["roles"] = ["DevOps Engineer"]
                 mapped_dict["role_pivot"] = "DevOps"
 
+            if "visa" in clean_reply or "sponsor" in clean_reply:
+                if any(w in clean_reply for w in ["no sponsor", "no visa", "citizen", "authorized", "don't need", "dont need", "none"]):
+                    answers["visa_need"] = False
+                    mapped_dict["visa_need"] = False
+                elif any(w in clean_reply for w in ["need sponsor", "require sponsor", "sponsorship required", "visa required", "need visa", "yes"]):
+                    answers["visa_need"] = True
+                    mapped_dict["visa_need"] = True
+
+            cap_match = re.search(r"(?:cap|limit|daily)\s*(?:of|is|:)?\s*(\d+)", clean_reply)
+            if cap_match:
+                c_val = int(cap_match.group(1))
+                answers["daily_email_cap"] = c_val
+                mapped_dict["daily_email_cap"] = c_val
+                config.set_daily_cap(c_val)
+
             if mapped_dict:
                 reading_prefix = f"I read this as: {', '.join(f'{k}: {v}' for k, v in mapped_dict.items())}. Say if wrong.\n"
             else:
@@ -1010,8 +1051,24 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
             loc = answers["location"]
             answers["locations"] = [loc] if isinstance(loc, str) else list(loc)
 
+        if mapped_dict.get("locations"):
+            new_loc = mapped_dict["locations"][0]
+            if new_loc != sess.get("target_place"):
+                sess["target_place"] = new_loc
+                try:
+                    worker_launcher.start_background_search(
+                        session_id=session_id,
+                        query=sess.get("role_focus", ["Software Engineer"])[0],
+                        location=new_loc,
+                        role_focus=sess.get("role_focus", []),
+                    )
+                except Exception:
+                    pass
+
         sess["answers"].update(answers)
         sess["pending_questions"] = []
+        sess["round_2_done"] = True
+        ticket_manager.transition_session_state(session_id, ticket_manager.SessionState.ROUND2_DONE)
         db.set_session_state("round_2_answered", last_tool="jh_answer")
 
     # Persist answers into view filters & user preferences
@@ -1468,6 +1525,29 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
             f"- Cleanup Grace: {cleanup.get('grace_hours')}h"
         )
 
+    from . import extension_installer
+    ext_dir = extension_installer.find_extension_dir()
+    ext_status = "loaded" if Path(ext_dir).is_dir() else "manual_load_ready"
+    ui_seen = bool(sess.get("ui_seen", False))
+    browser_opened = bool(sess.get("browser_opened", False))
+
+    # Force D8: until round 2 is answered or skipped, every reply carries ask_user with pending questions
+    state_enum = ticket_manager.get_session_state_name(session_id)
+    r2_pending = (state_enum == ticket_manager.SessionState.LAUNCHED) and not sess.get("round_2_done")
+    if r2_pending:
+        r2 = sess.get("round_2_questions")
+        if not r2:
+            r2 = interview_questions.build_round_2_questions(
+                sess.get("profile", {}),
+                sess.get("inference_result", {}).get("job_type_guess", {}),
+                sess.get("inference_result", {}).get("region_guess", {}),
+                method=active_method,
+            )
+            sess["round_2_questions"] = r2
+        ask_user_val = r2.get("formatted_text")
+    else:
+        ask_user_val = None
+
     msg = (
         f"JobHunter Status:\n"
         f"- Workspace: {home_dir}\n"
@@ -1481,7 +1561,7 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
         "step": "status",
         "session_id": session_id,
         "message_for_user": msg,
-        "ask_user": None,
+        "ask_user": ask_user_val,
         "options": {
             "choices": ["jh_start", "jh_set_method", "jh_open_ui"],
             "recommended": "jh_start"
@@ -1493,6 +1573,9 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
             "matches": matches_count,
             "hidden_by_filters": hidden_count,
             "ui_url": ui_url,
+            "browser_opened": browser_opened,
+            "ui_seen": ui_seen,
+            "extension_status": ext_status,
             "total_jobs": total_jobs,
             "active_jobs": active_jobs,
             "workspace_home": str(home_dir),

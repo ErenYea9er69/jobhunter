@@ -389,10 +389,10 @@ def handle_save_job(
             "job_id": job_id,
         }
 
-    # 4. Save Job in DB (keep_flag=1, clear delete_at)
+    # 4. Save Job in DB (keep_flag=1, clear delete_at, saved_by='ui')
     with db.session() as c:
         c.execute(
-            "UPDATE jobs SET keep_flag=1, delete_at=NULL WHERE id=? OR url_hash=? OR job_key=?",
+            "UPDATE jobs SET keep_flag=1, delete_at=NULL, saved_by='ui' WHERE id=? OR url_hash=? OR job_key=?",
             (job_id, job_id, job_id),
         )
 
@@ -406,10 +406,11 @@ def handle_save_job(
         "status": "saved",
         "job_data": job,
         "fit_score": fit_score,
+        "saved_by": "ui",
     }
     app_id = tracker.upsert_application(app_data)
     with db.session() as c:
-        c.execute("UPDATE applications SET fit_score=? WHERE id=?", (fit_score, app_id))
+        c.execute("UPDATE applications SET fit_score=?, saved_by='ui' WHERE id=?", (fit_score, app_id))
 
     # 5. Generate tailored documents
     if background:

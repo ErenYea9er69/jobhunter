@@ -99,6 +99,17 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             st = ai_manager.get_ai_status()
             return self._send_json(200, envelope(status="ok", data=st))
 
+        if path == "/api/ping":
+            from . import ticket_manager
+            import secrets
+            sid = query.get("session", query.get("session_id", ["default"]))[0]
+            sess = ticket_manager.get_or_create_session(sid)
+            sess["ui_seen"] = True
+            if "page_token" not in sess:
+                sess["page_token"] = secrets.token_hex(16)
+            db.set_session_state("ui_seen", session_id=sid)
+            return self._send_json(200, envelope(status="ok", data={"ui_seen": True, "session_id": sid, "page_token": sess["page_token"]}))
+
         if path == "/api/resumes/folder-info":
             resumes_dir, guide_path = workspace.ensure_resumes_dir(ws_dir)
             files = []
@@ -765,6 +776,17 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             return self._send_json(200, envelope(status="ok", data={"signal_id": signal_id, "dismissed": True, "reason": reason}))
 
         if path == "/api/jobs/save":
+            from . import ticket_manager
+            import secrets
+            sid = body.get("session_id") or query.get("session", ["default"])[0]
+            sess = ticket_manager.get_or_create_session(sid)
+            valid_token = sess.get("page_token")
+            if not valid_token:
+                valid_token = sess["page_token"] = secrets.token_hex(16)
+            page_token = body.get("page_token") or self.headers.get("X-Page-Token", "")
+            if page_token and page_token != valid_token:
+                return self._send_json(403, envelope(status="forbidden", error={"code": "invalid_page_token", "message": "Only the UI page can save jobs."}))
+
             job_id = body.get("job_id") or body.get("id") or body.get("key")
             force = bool(body.get("force", False))
             confirm_closed = bool(body.get("confirm_closed", False))
@@ -772,6 +794,7 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             if not job_id and not body.get("title"):
                 return self._send_json(400, envelope(status="error", error={"code": "missing_job", "message": "job_id or job payload required"}))
             res = save_flow.handle_save_job(body if not job_id else job_id, force=force, confirm_closed=confirm_closed, background=background)
+            db.mark_job_saved_by_ui(job_id or (res.get("job") or {}).get("id"))
             if res.get("status") == "needs_confirm":
                 return self._send_json(200, envelope(status="needs_confirm", data=res))
             if res.get("status") == "low_fit":
