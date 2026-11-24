@@ -740,6 +740,17 @@ def init_db():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_base_resumes_session ON base_resumes(session_id)")
 
+        # 19. Audit Log (D2 Quality Gate)
+        c.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            user_reply TEXT NOT NULL,
+            action TEXT NOT NULL,
+            details TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_session ON audit_log(session_id)")
+
         c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
         # Backfill history for v1 rows
@@ -3365,6 +3376,26 @@ def get_ready_to_apply_count(session_id: str = "default") -> int:
                  AND resume_path IS NOT NULL AND resume_path != ''""",
         ).fetchone()
         return int(row["count"]) if row else 0
+
+
+def log_audit_event(session_id: str, user_reply: str, action: str, details: str = "") -> None:
+    """Store raw user words, timestamp, and action into audit log."""
+    with session() as c:
+        c.execute(
+            "INSERT INTO audit_log (session_id, user_reply, action, details, created_at) VALUES (?, ?, ?, ?, ?)",
+            (session_id, str(user_reply), str(action), str(details), now_iso()),
+        )
+
+
+def get_audit_events(session_id: str = "") -> list[dict[str, Any]]:
+    """Retrieve audit log events."""
+    with session() as c:
+        if session_id:
+            rows = c.execute("SELECT * FROM audit_log WHERE session_id=? ORDER BY id ASC", (session_id,)).fetchall()
+        else:
+            rows = c.execute("SELECT * FROM audit_log ORDER BY id ASC").fetchall()
+        return [dict(r) for r in rows]
+
 
 
 

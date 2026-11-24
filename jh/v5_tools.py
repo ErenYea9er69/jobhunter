@@ -427,54 +427,38 @@ def jh_confirm_profile(confirmed: bool = True, overrides: Optional[dict[str, Any
 
 
 @_coaching_envelope
-def jh_set_filters(filters: dict[str, Any], session_id: str = "default") -> dict[str, Any]:
+def jh_set_filters(filters: dict[str, Any], session_id: str = "default", user_reply: str = "") -> dict[str, Any]:
     """Step 4: Set or update query-time view filters with clash detection and round-based checks."""
     if not isinstance(filters, dict):
         raise ToolError("filters must be a dictionary of criteria.")
 
-    # Run clash detection
-    clashes = check_filter_clashes(filters)
-
-    # Check for triggered Round 2 questions
-    wm = (filters.get("work_mode") or "any").lower().strip()
-    visa = bool(filters.get("visa_need"))
-    round_2_triggers = []
-
-    if wm == "remote" and not filters.get("time_zone"):
-        round_2_triggers.append({"id": "time_zone", "question": "For remote work, do you prefer specific time zones (US, Europe, APAC, or Any)?", "recommended": "any"})
-    if wm in ("onsite", "hybrid") and "relocation" not in filters:
-        round_2_triggers.append({"id": "relocation", "question": "Are you willing to relocate for this position?", "recommended": "no", "choices": ["no", "yes"]})
-    if visa and not filters.get("visa_countries"):
-        round_2_triggers.append({"id": "visa_countries", "question": "Which destination countries do you need visa sponsorship for?", "recommended": "United States"})
-
-    saved = db.save_view_filters(filters, session_id=session_id)
-    db.set_session_state("filters_set", last_tool="jh_set_filters")
-
-    msg = "View filters saved successfully."
-    if clashes:
-        msg += f" Notice: {'; '.join(clashes)}"
-
-    ask = None
-    if round_2_triggers:
-        ask = "Please answer the conditional Round 2 questions if applicable:"
-
-    return {
-        "status": "ok",
-        "step": 4,
-        "message_for_user": msg,
-        "ask_user": ask,
-        "options": {
-            "round_2_questions": round_2_triggers if round_2_triggers else None,
-            "recommended": "jh_search" if saved.get("job_style") else "jh_set_filters",
-            "choices": ["jh_search", "jh_query", "jh_set_filters"]
-        },
-        "next_tool": "jh_search" if saved.get("job_style") else "jh_set_filters",
-        "data": {
-            "filters": saved,
-            "clashes": clashes,
-            "round_2_triggered": bool(round_2_triggers)
+    # Defect D2 gate: Preferences and filters may be written ONLY through jh_confirm or jh_answer with user words in user_reply
+    if not user_reply:
+        return {
+            "status": "needs_input",
+            "step": 4,
+            "message_for_user": ticket_manager.build_stop_message(
+                "Preferences and filters may be written only through jh_confirm or jh_answer, and only with user words in user_reply."
+            ),
+            "ask_user": "Please provide your answers in user_reply via jh_answer.",
+            "next_tool": "jh_answer",
+            "data": {"error": "direct_filter_write_prohibited"},
         }
-    }
+
+    valid, err = ticket_manager.validate_user_reply(session_id, user_reply)
+    if not valid:
+        return {
+            "status": "needs_input",
+            "step": 4,
+            "message_for_user": ticket_manager.build_stop_message(
+                f"Invalid input: {err}\nPreferences and filters may be written only through jh_confirm or jh_answer, and only with user words in user_reply."
+            ),
+            "ask_user": "Please provide your answers via jh_answer.",
+            "next_tool": "jh_answer",
+            "data": {"error": err},
+        }
+
+    return jh_answer(session_id=session_id, answers=filters, user_reply=user_reply)
 
 
 # ==============================================================================
@@ -679,48 +663,24 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
         from . import coach
         coaching = coach.evaluate_coaching(user_reply, session_id=session_id)
 
-    # Reject empty user_reply
-    if not user_reply or not str(user_reply).strip():
+    # Validate user reply (D2 gate: non-empty, >= 2 chars, not question echo, >= 5s elapsed)
+    valid, err = ticket_manager.validate_user_reply(session_id, user_reply)
+    if not valid:
         return {
             "status": "needs_input",
             "step": 2,
             "message_for_user": ticket_manager.build_stop_message(
-                "Invalid input: user_reply is empty. Please provide the user's exact words to answer the target search questions."
+                f"Invalid input: {err}\nPlease provide the user's actual answers to the target search questions."
             ),
             "ask_user": "Please answer the target search questions (Method, Target place, and Role).",
             "next_tool": "jh_confirm",
+            "data": {"error": err},
         }
 
-    # Reject repetition of question
-    clean_reply = str(user_reply).strip().lower()
-    last_q = sess.get("last_questions") or {}
-    last_q_text = (last_q.get("formatted_text") or "").lower()
-    q_signatures = [
-        "method: modern (default) or classic",
-        "method: modern or classic",
-        "target place: tunisia, remote worldwide",
-        "target place: tunisia",
-        "what target job title or role are you aiming for",
-        "stop. ask the user the questions below",
-    ]
-    is_echo = (
-        (last_q_text and clean_reply in last_q_text and len(clean_reply) > 20)
-        or any(sig in clean_reply for sig in q_signatures)
-        or (clean_reply.endswith("?") and not any(k in clean_reply for k in ["tunis", "france", "germany", "remote", "developer", "engineer", "designer"]))
-    )
-    if is_echo:
-        return {
-            "status": "needs_input",
-            "step": 2,
-            "message_for_user": ticket_manager.build_stop_message(
-                "Invalid input: user_reply merely repeats the question. Please provide the user's actual answers."
-            ),
-            "ask_user": "Please answer the target search questions (Method, Target place, and Role).",
-            "next_tool": "jh_confirm",
-        }
-
-    # Record verbatim words in session log
+    # Record verbatim words in session log and persistent audit log
     ticket_manager.record_user_reply(session_id, user_reply)
+    db.log_audit_event(session_id, user_reply, action="jh_confirm", details=str(answers or {}))
+    clean_reply = str(user_reply).strip().lower()
     answers = answers or {}
 
     # 1. Parse Method (default Modern)
@@ -951,6 +911,24 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
     if user_reply:
         from . import coach
         coaching = coach.evaluate_coaching(user_reply, session_id=session_id)
+
+    # Validate user reply (D2 gate: non-empty, >= 2 chars, not question echo, >= 5s elapsed)
+    valid, err = ticket_manager.validate_user_reply(session_id, user_reply)
+    if not valid:
+        return {
+            "status": "needs_input",
+            "step": 4,
+            "message_for_user": ticket_manager.build_stop_message(
+                f"Invalid input: {err}\nPlease provide the user's actual reply to the Round 2 questions."
+            ),
+            "ask_user": "Please answer the Round 2 questions.",
+            "next_tool": "jh_answer",
+            "data": {"error": err},
+        }
+
+    # Record verbatim words in session log and persistent audit log
+    ticket_manager.record_user_reply(session_id, user_reply)
+    db.log_audit_event(session_id, user_reply, action="jh_answer", details=str(answers or {}))
 
     reading_prefix = ""
     if user_reply and ticket_manager.is_explicit_skip(user_reply):

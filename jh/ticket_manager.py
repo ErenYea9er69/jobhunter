@@ -97,9 +97,51 @@ def get_or_create_session(session_id: str) -> dict[str, Any]:
 
 
 def is_explicit_skip(text: str) -> bool:
-    """Check if the user response explicitly indicates a skip."""
+    """Check if the user response explicitly indicates a skip ('skip', 'any', 'skip all')."""
     clean = (text or "").lower().strip()
-    return clean in {"skip", "any", "skip all", "pass", "none", "no preference", "default"}
+    return clean in {"skip", "any", "skip all"}
+
+
+def record_questions_presented(session_id: str, questions_text: str = "") -> None:
+    """Track when questions were returned to the user and what was asked."""
+    sess = get_or_create_session(session_id)
+    sess["questions_presented_at"] = time.time()
+    if questions_text:
+        sess["last_questions_text"] = questions_text
+
+
+def validate_user_reply(session_id: str, user_reply: str) -> tuple[bool, Optional[str]]:
+    """Enforce D2 gate: reject empty, < 2 chars, question repeats, and answers arriving < 5s."""
+    sess = get_or_create_session(session_id)
+    if user_reply is None or not isinstance(user_reply, str):
+        return False, "user_reply is empty. Preferences and filters may be written only with the user's words."
+    clean = user_reply.strip()
+    if not clean:
+        return False, "user_reply is empty. Preferences and filters may be written only with the user's words."
+    if len(clean) < 2:
+        return False, "user_reply is under 2 characters. Please provide valid answers."
+
+    last_q = (sess.get("last_questions_text") or "").strip().lower()
+    if last_q and clean.lower() == last_q:
+        return False, "user_reply merely repeats the questions."
+
+    q_signatures = [
+        "stop. ask the user the questions below",
+        "method: modern (default) or classic",
+        "method: modern or classic",
+        "target place: tunisia, remote worldwide",
+        "target place: tunisia",
+    ]
+    if any(sig in clean.lower() for sig in q_signatures):
+        return False, "user_reply merely repeats the questions."
+
+    presented_at = sess.get("questions_presented_at")
+    if presented_at is not None:
+        elapsed = time.time() - presented_at
+        if elapsed < 5.0:
+            return False, f"user_reply arrived too fast ({elapsed:.2f}s < 5.0s minimum interval). Must wait for actual user input."
+
+    return True, None
 
 
 def record_user_reply(session_id: str, user_reply: str) -> None:
