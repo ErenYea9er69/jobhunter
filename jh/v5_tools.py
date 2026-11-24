@@ -557,66 +557,13 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
 
     ask_role = (len(inf.get("role_focus", [])) == 0)
 
-    legacy_test_sessions = {"test_sess_01", "summary_sess", "chk2_good", "alias_sess_2"}
-    if session_id in legacy_test_sessions:
-        step3_q = interview_questions.build_step_3_target_questions(
-            inf["roles"], inf["region_guess"], ask_role=ask_role
-        )
-        sess["last_questions"] = step3_q
-        sess["role_focus"] = inf.get("role_focus", [])
-        warnings_lines = "\n".join(check_res["warnings"]) if check_res["warnings"] else ""
-        header_parts = [inf.get("one_line_summary") or inf.get("profile_summary", "")]
-        if warnings_lines:
-            header_parts.append(warnings_lines)
-        header_parts.append("")
-        header_parts.append(step3_q["formatted_text"])
-        header_text = "\n".join(header_parts)
-        status_name = "needs_role" if ask_role else "needs_target"
-        reply = {
-            "status": status_name,
-            "session_id": session_id,
-            "step": 2,
-            "message_for_user": ticket_manager.build_stop_message(header_text),
-            "ask_user": step3_q["formatted_text"],
-            "options": step3_q,
-            "next_tool": "jh_confirm",
-            "data": {
-                "name": check_res["name"],
-                "one_line_summary": inf.get("one_line_summary", ""),
-                "inferred_roles": inf["roles"],
-                "role_focus": inf.get("role_focus", []),
-                "job_type_guess": inf["job_type_guess"],
-                "region_guess": inf["region_guess"],
-                "warnings": check_res["warnings"],
-                "profile_summary": inf["profile_summary"],
-                "questions": step3_q["questions"],
-            }
-        }
-        sess["last_status"] = status_name
-        sess["last_reply"] = reply
-        return reply
-
-    round_2_q = interview_questions.build_round_2_questions(
-        prof, inf["job_type_guess"], inf["region_guess"]
+    # Mandatory Round 1 Questions (D1, D4)
+    step3_q = interview_questions.build_step_3_target_questions(
+        inf["roles"], inf["region_guess"], ask_role=ask_role
     )
-    sess["pending_questions"] = round_2_q["questions"]
-    sess["last_questions"] = round_2_q
+    sess["last_questions"] = step3_q
+    sess["pending_questions"] = step3_q["questions"]
     sess["role_focus"] = inf.get("role_focus", [])
-
-    top_role = inf["roles"][0]["role"] if inf.get("roles") else "Software Engineer"
-    suggested_region = (inf.get("region_guess", {}).get("value") or "Worldwide").strip()
-    subagent_brief = (
-        f"Target role: {top_role}. Target location: {suggested_region}. "
-        f"Search jobs, filter results, and prepare outreach for qualified leads."
-    )
-
-    if not ask_role:
-        ticket = ticket_manager.issue_ticket(session_id, sess["resume_id"])
-        status_name = "ready"
-    else:
-        ticket = None
-        status_name = "needs_role"
-
     warnings_lines = "\n".join(check_res["warnings"]) if check_res["warnings"] else ""
     header_parts = []
     if notice:
@@ -625,25 +572,28 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     if warnings_lines:
         header_parts.append(warnings_lines)
     header_parts.append("")
-    header_parts.append(round_2_q["formatted_text"])
+    header_parts.append(step3_q["formatted_text"])
     header_text = "\n".join(header_parts)
+    status_name = "needs_role" if ask_role else "needs_target"
+
+    # Transition state machine to ASKED and record presented questions
+    ticket_manager.transition_session_state(session_id, ticket_manager.SessionState.ASKED)
+    ticket_manager.record_questions_presented(session_id, step3_q["formatted_text"])
 
     reply = {
         "status": status_name,
         "session_id": session_id,
-        "ticket": ticket,
+        "ticket": None,
         "step": 2,
-        "subagent_brief": subagent_brief,
-        "pending_questions": round_2_q["questions"],
         "notice": notice,
         "message_for_user": ticket_manager.build_stop_message(header_text),
-        "ask_user": round_2_q["formatted_text"],
-        "options": round_2_q,
-        "next_tool": "jh_launch" if not ask_role else "jh_confirm",
+        "ask_user": step3_q["formatted_text"],
+        "options": step3_q,
+        "next_tool": "jh_confirm",
         "data": {
             "name": check_res["name"],
             "session_id": session_id,
-            "ticket": ticket,
+            "ticket": None,
             "one_line_summary": inf.get("one_line_summary", ""),
             "inferred_roles": inf["roles"],
             "role_focus": inf.get("role_focus", []),
@@ -651,8 +601,7 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
             "region_guess": inf["region_guess"],
             "warnings": check_res["warnings"],
             "profile_summary": inf["profile_summary"],
-            "pending_questions": round_2_q["questions"],
-            "questions": round_2_q["questions"],
+            "questions": step3_q["questions"],
         }
     }
     sess["last_status"] = status_name
@@ -773,6 +722,9 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
     if role_focus:
         db.store_answer(session_id, "role", ", ".join(role_focus), user_reply=user_reply)
 
+    # D1: Transition session state machine to ANSWERED
+    ticket_manager.transition_session_state(session_id, ticket_manager.SessionState.ANSWERED)
+
     subagent_brief = (
         f"You are the JobHunter runner. Call jh_launch with session_id '{session_id}' and ticket '{ticket}'. "
         f"Then report one line: ui_url, server_status, search status. "
@@ -810,19 +762,10 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
     """Phase B4: Detached launch of HTTP daemon, background search, and browser in under 3 seconds."""
     sess = ticket_manager.get_or_create_session(session_id)
 
-    # Gate 1: Reject without ticket
-    valid, err = ticket_manager.validate_ticket(session_id, ticket)
-    if not valid:
-        return {
-            "status": "needs_input",
-            "step": 1,
-            "message_for_user": ticket_manager.build_stop_message(
-                f"Gate blocked: {err}\nYou must run jh_begin and obtain a ticket before calling jh_launch."
-            ),
-            "ask_user": "Please provide your resume path or text to start the JobHunter process.",
-            "next_tool": "jh_begin",
-            "data": {"error": err},
-        }
+    # D1 State Machine & Ticket Gate
+    ok, err_res = ticket_manager.check_tool_state_gate(session_id, "jh_launch", ticket=ticket)
+    if not ok:
+        return err_res
 
     ticket_manager.mark_ticket_launched(ticket)
 
@@ -891,6 +834,8 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
     )
 
     launch_status = "reused" if server_res["status"] == "reused" and search_status == "already_running" else "started"
+
+    ticket_manager.transition_session_state(session_id, ticket_manager.SessionState.LAUNCHED)
 
     return {
         "status": "ok",
@@ -1255,24 +1200,12 @@ def jh_search(
     ticket: str = "",
     **kwargs,
 ) -> dict[str, Any]:
-    """Step 5 & 6: Search tool with Gate 1 ticket enforcement.
-    Rejects calls without a valid ticket when a ticket or session is provided.
-    Runs broad search across sources and stores results in DB.
+    """Step 5 & 6: Search tool with Gate 1 ticket and session state enforcement.
+    Rejects out-of-order calls before questions are answered.
     """
-    # Ticket gate enforcement for V3 flows
-    if ticket or session_id != "default":
-        valid, err = ticket_manager.validate_ticket(session_id, ticket)
-        if not valid:
-            return {
-                "status": "needs_input",
-                "step": 1,
-                "message_for_user": ticket_manager.build_stop_message(
-                    f"Gate blocked: {err}\nYou must run jh_begin and obtain a ticket before calling jh_search."
-                ),
-                "ask_user": "Please provide your resume path or text to start the JobHunter process.",
-                "next_tool": "jh_begin",
-                "data": {"error": err},
-            }
+    ok, err_res = ticket_manager.check_tool_state_gate(session_id, "jh_search", ticket=ticket)
+    if not ok:
+        return err_res
 
     style = (job_style or "").strip()
 

@@ -358,22 +358,11 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
     @tool
     def search_jobs(query: str = "", location: str = "", work_mode: str = "", min_score: int = 0, limit: int = 25,
                     company_focus: str = "", refresh: bool = False, job_type: str = "", track: str = "") -> dict[str, Any]:
-        """Search every enabled source for your region and return compact job cards ranked by fit.
-
-        Which sources run depends on your preferences (set_preferences): target countries, remote, disabled sources,
-        company boards, custom feeds and career pages. Use get_job_details for the full text of one job.
-
-        Args:
-            query: Job title or keywords. Empty uses your resume or target_titles.
-            location: City or country. Empty uses your target countries.
-            work_mode: Remote, Hybrid or Onsite. Empty uses your preference.
-            min_score: Only return jobs with a fit score at or above this value (0 to 100).
-            limit: Cards to return, 1 to 100.
-            company_focus: any, avoid_big_names or only_big_names. Empty uses your preference.
-            refresh: Skip cached source results.
-            job_type: Full-time, Internship, Contract or Part-time. Empty uses your preference.
-            track: Optional coaching track filter ('bridge', 'target', or 'both').
-        """
+        """Search every enabled source for your region and return compact job cards ranked by fit."""
+        from . import ticket_manager
+        ok, err_res = ticket_manager.check_tool_state_gate("default", "search_jobs")
+        if not ok:
+            return err_res
         profile = h.resolve_profile(overlay=False, require=False)
         if profile.get("_is_empty") and not query:
             raise ToolError("No resume and no query.", code="no_resume", hint="Pass a query, or add a resume and call scan_resumes.")

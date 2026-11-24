@@ -6,6 +6,7 @@ Tracks explicit user skips and maintains idempotency across tool calls.
 """
 from __future__ import annotations
 
+from enum import Enum
 import secrets
 import time
 from typing import Any, Optional
@@ -16,6 +17,109 @@ TICKET_TTL_SECONDS = 2 * 3600  # 2 hours
 
 _TICKETS: dict[str, dict[str, Any]] = {}
 _SESSIONS: dict[str, dict[str, Any]] = {}
+
+
+class SessionState(str, Enum):
+    NEW = "NEW"
+    RESUME_OK = "RESUME_OK"
+    ASKED = "ASKED"
+    ANSWERED = "ANSWERED"
+    LAUNCHED = "LAUNCHED"
+    ROUND2_DONE = "ROUND2_DONE"
+
+
+def get_session_state_name(session_id: str) -> SessionState:
+    """Return canonical session state for session_id."""
+    sess = get_or_create_session(session_id)
+    raw = sess.get("session_state") or SessionState.NEW
+    if isinstance(raw, SessionState):
+        return raw
+    try:
+        return SessionState(str(raw))
+    except ValueError:
+        return SessionState.NEW
+
+
+def transition_session_state(session_id: str, new_state: SessionState) -> None:
+    """Update session state in memory and database."""
+    sess = get_or_create_session(session_id)
+    sess["session_state"] = new_state
+    db.set_session_state(new_state.value, session_id=session_id)
+
+
+def check_tool_state_gate(session_id: str, tool_name: str, ticket: str = "") -> tuple[bool, Optional[dict[str, Any]]]:
+    """Check whether tool_name is permitted in current session state.
+    Returns (True, None) if permitted, or (False, refusal_dict) if out of order.
+    """
+    state = get_session_state_name(session_id)
+    sess = get_or_create_session(session_id)
+
+    # 1. NEW state: only resume ingestion permitted
+    if state == SessionState.NEW:
+        if tool_name not in ("jh_begin", "jh_load_resume", "parse_resume_file", "scan_resumes", "list_resumes", "get_resume"):
+            pending_q = "Please provide your resume path or text to start the JobHunter process."
+            return False, {
+                "status": "needs_input",
+                "step": 1,
+                "message_for_user": build_stop_message(pending_q, f"Session is in state NEW. Tool '{tool_name}' requires a loaded resume."),
+                "ask_user": pending_q,
+                "next_tool": "jh_begin",
+                "data": {"error": f"Tool '{tool_name}' cannot be called before resume is loaded.", "state": state.value}
+            }
+
+    # 2. ASKED state: Round 1 questions pending answer via jh_confirm
+    elif state == SessionState.ASKED:
+        if tool_name not in ("jh_confirm", "jh_begin", "get_resume", "list_resumes"):
+            last_q = sess.get("last_questions") or {}
+            q_text = last_q.get("formatted_text") or sess.get("last_questions_text") or "Please answer the Round 1 target questions (Method and Target place)."
+            return False, {
+                "status": "needs_input",
+                "step": 2,
+                "message_for_user": build_stop_message(q_text, f"Session is in state ASKED. Tool '{tool_name}' is not permitted until Round 1 is answered."),
+                "ask_user": q_text,
+                "next_tool": "jh_confirm",
+                "data": {"error": f"Round 1 questions must be answered first via jh_confirm.", "state": state.value}
+            }
+
+    # 3. jh_launch gate: allowed only in ANSWERED state, requires valid ticket
+    if tool_name == "jh_launch":
+        if state not in (SessionState.ANSWERED, SessionState.LAUNCHED):
+            last_q = sess.get("last_questions_text") or "Please complete the setup questions first."
+            next_t = "jh_confirm" if state in (SessionState.NEW, SessionState.ASKED) else "jh_begin"
+            return False, {
+                "status": "needs_input",
+                "step": 2,
+                "message_for_user": build_stop_message(last_q, f"jh_launch requires state ANSWERED and a valid ticket. Current state: {state.value}."),
+                "ask_user": last_q,
+                "next_tool": next_t,
+                "data": {"error": f"Cannot launch in state '{state.value}'.", "state": state.value}
+            }
+        valid, err = validate_ticket(session_id, ticket)
+        if not valid:
+            return False, {
+                "status": "needs_input",
+                "step": 2,
+                "message_for_user": build_stop_message(f"Gate blocked: {err}\nYou must run jh_confirm to obtain a valid ticket."),
+                "ask_user": "Please answer the Round 1 target questions to obtain a ticket.",
+                "next_tool": "jh_confirm",
+                "data": {"error": err, "state": state.value}
+            }
+
+    # 4. Search tools (jh_search, search_jobs, jh_query, query_jobs)
+    if tool_name in ("jh_search", "search_jobs", "jh_query", "query_jobs"):
+        if state in (SessionState.NEW, SessionState.ASKED):
+            next_t = "jh_confirm" if state == SessionState.ASKED else "jh_begin"
+            q_text = sess.get("last_questions_text") or "Please provide your resume and answer targeting questions first."
+            return False, {
+                "status": "needs_input",
+                "step": 2 if state == SessionState.ASKED else 1,
+                "message_for_user": build_stop_message(q_text, f"Search tool '{tool_name}' cannot be called before questions are answered. Current state: {state.value}."),
+                "ask_user": q_text,
+                "next_tool": next_t,
+                "data": {"error": f"Cannot search in state '{state.value}'.", "state": state.value}
+            }
+
+    return True, None
 
 
 def generate_ticket(session_id: str, resume_id: str, roles: list[str], method: str = "modern", location: str = "") -> str:

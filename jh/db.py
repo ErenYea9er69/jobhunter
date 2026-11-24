@@ -1840,7 +1840,7 @@ def get_session_state():
         return {"current_state": "idle", "last_tool": "", "updated_at": now_iso()}
 
 
-def set_session_state(current_state, last_tool=""):
+def set_session_state(current_state, last_tool="", session_id="default"):
     """Update current conversation/session state."""
     iso = now_iso()
     with session() as c:
