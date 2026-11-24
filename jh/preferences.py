@@ -44,6 +44,7 @@ DEFAULTS: dict[str, Any] = {
     "target_titles": [],             # roles to search for; the first one is the main target
     "min_salary": 0,                 # yearly figure in salary_currency; 0 means no floor
     "salary_currency": "",
+    "min_score": 0,                  # min fit score (0-100)
     "job_types": [],                 # Full-time, Part-time, Contract, Internship
     "seniority": [],                 # junior, mid, senior, ...
     "excluded_keywords": [],
@@ -178,12 +179,13 @@ def validate(updates: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             if not isinstance(value, bool):
                 raise PreferenceError(f"'{key}' must be true or false")
             clean[key] = value
-        elif key in ("min_salary", "max_age_days"):
+        elif key in ("min_salary", "max_age_days", "min_score"):
             try:
                 n = int(float(value))
             except (TypeError, ValueError):
                 raise PreferenceError(f"'{key}' must be a number")
-            if n < 0 or n > (10_000_000 if key == "min_salary" else 3650):
+            max_val = 10_000_000 if key == "min_salary" else (100 if key == "min_score" else 3650)
+            if n < 0 or n > max_val:
                 raise PreferenceError(f"'{key}' is out of range")
             clean[key] = n
         elif key == "salary_currency":

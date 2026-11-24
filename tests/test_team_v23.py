@@ -23,6 +23,9 @@ def hunted(tools, market):
     tools.call("set_preferences", updates={"target_countries": ["Netherlands", "United States"], "work_mode": "Any", "max_age_days": 0, "min_score": 0})
     d = ask(tools, "find engineer jobs", limit=10)
     assert len(d["jobs"]) == 2, d["report"]
+    from jh import db
+    for j in d["jobs"]:
+        db.mark_job_saved_by_ui(j["job_id"])
     return d
 
 

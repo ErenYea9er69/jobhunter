@@ -25,7 +25,10 @@ def run(tools, request, **hints):
 
 
 def first_job(tools):
-    return tools.call("search_jobs", query="backend engineer", limit=5)["data"]["jobs"][0]["job_id"]
+    jid = tools.call("search_jobs", query="backend engineer", limit=5)["data"]["jobs"][0]["job_id"]
+    from jh import db
+    db.mark_job_saved_by_ui(jid)
+    return jid
 
 
 # ------------------------------------------------------------------ roster and surface

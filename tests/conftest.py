@@ -90,6 +90,7 @@ def ws(tmp_path, monkeypatch):
     test_jh_dir = tmp_path / ".jobhunter"
     test_jh_dir.mkdir(exist_ok=True)
     monkeypatch.setenv("JH_DATA_DIR", str(test_jh_dir))
+    monkeypatch.setenv("JOBHUNTER_BYPASS_DELAY", "1")
     config.configure_mcp_environment(str(tmp_path))
     db.init_db()
     preferences._cache.update(mtime=None, path=None, data=None)

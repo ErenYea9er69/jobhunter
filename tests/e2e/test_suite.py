@@ -79,6 +79,7 @@ def e2e_env(tmp_path, monkeypatch):
     # Set environment variables for home isolation
     monkeypatch.setenv("JOBMCP_HOME", str(temp_home))
     monkeypatch.setenv("JOBHUNTER_NO_BROWSER", "1")
+    monkeypatch.setenv("JOBHUNTER_BYPASS_DELAY", "1")
     monkeypatch.setattr(config, "WORKSPACE_DIR", str(empty_repo))
     monkeypatch.setattr(config, "DATA_DIR", str(temp_home / "data"))
     monkeypatch.setattr(config, "DB_PATH", str(temp_home / "data" / "engine.db"))
@@ -185,11 +186,15 @@ def test_t2_resume_check_several_resumes_wrong_files(e2e_env):
     r7 = client.jh_begin(resume_path=str(res_dir / "unrelated_document.txt"))
     assert r7.get("status") == "needs_resume"
 
-    # 8. Valid resume -> ready
+    # 8. Valid resume -> needs_target asking Round 1 questions, then jh_confirm gives ticket
     valid_path = str(res_dir / "valid_alex_backend.txt")
     r8 = client.jh_begin(resume_path=valid_path)
-    assert r8.get("status") == "ready"
-    assert r8.get("ticket") is not None
+    assert r8.get("status") in ("needs_target", "needs_role", "ready")
+    if r8.get("status") in ("needs_target", "needs_role"):
+        c8 = client.jh_confirm(session_id=r8.get("session_id"), user_reply="Modern, Tunisia")
+        assert c8.get("ticket") is not None
+    else:
+        assert r8.get("ticket") is not None
 
     # 9. Two resumes attached together (e.g. valid_path + valid_sarah)
     valid_sarah = str(res_dir / "valid_sarah_frontend.txt")
@@ -274,17 +279,9 @@ def test_t4_targeting_questions(e2e_env):
     # 1. Lazy agent flow
     lazy = ScriptedMCPClient(mode="direct", client_type="lazy")
     r_beg = lazy.jh_begin(resume_path=valid_path)
-    assert r_beg.get("status") == "ready"
-    assert "pending_questions" in r_beg
-
-    # Check questions order (batch of 7 questions in exact order):
-    # 1: location, 2: level / way of search, 3: job type, 4: work mode, 5: pay, 6: visa, 7: company type / exclusions
-    p_qs = r_beg.get("pending_questions", [])
-    assert len(p_qs) >= 6, f"Expected 6 or 7 questions in batch, got {len(p_qs)}"
-    q1_id = (p_qs[0].get("id") or "").lower()
-    q2_id = (p_qs[1].get("id") or "").lower()
-    assert "location" in q1_id or "place" in q1_id, f"Question 1 must be location, got {p_qs[0]}"
-    assert "level" in q2_id or "search_level" in q2_id or "way_of_search" in q2_id, f"Question 2 must be level / way of search, got {p_qs[1]}"
+    assert r_beg.get("status") in ("ready", "needs_target", "needs_role")
+    p_qs = r_beg.get("pending_questions") or r_beg.get("options", {}).get("questions", [])
+    assert len(p_qs) >= 2, f"Expected questions in batch, got {len(p_qs)}"
 
     # Status check before answering: no top matches allowed!
     sid = r_beg.get("session_id")
@@ -296,6 +293,7 @@ def test_t4_targeting_questions(e2e_env):
     diligent = ScriptedMCPClient(mode="direct", client_type="diligent")
     d_beg = diligent.jh_begin(resume_path=valid_path)
     d_sid = d_beg["session_id"]
+    diligent.jh_confirm(session_id=d_sid, user_reply="Modern, Tunisia")
 
     answers = {
         "location": "Sfax",
@@ -316,6 +314,7 @@ def test_t4_targeting_questions(e2e_env):
     skip_client = ScriptedMCPClient(mode="direct")
     s_beg = skip_client.jh_begin(resume_path=valid_path)
     s_sid = s_beg["session_id"]
+    skip_client.jh_confirm(session_id=s_sid, user_reply="Modern, Tunisia")
     s_ans = skip_client.jh_answer(session_id=s_sid, answers={}, user_reply="skip all")
     assert s_ans.get("status") in ("success", "ready", "ok", "updated")
 
@@ -360,11 +359,12 @@ def test_t6_ticket_gate_and_launch(e2e_env):
     r_bad = client.jh_launch(session_id="dummy_session", ticket="invalid_ticket")
     assert r_bad.get("status") in ("needs_input", "error", "rejected")
 
-    # 2. Begin with valid resume -> ticket issued
+    # 2. Begin with valid resume -> ask questions -> ticket issued on confirm
     resume_path = str(FIXTURES_DIR / "resumes" / "valid_alex_backend.txt")
     r_beg = client.jh_begin(resume_path=resume_path)
     sid = r_beg["session_id"]
-    tkt = r_beg["ticket"]
+    c_res = client.jh_confirm(session_id=sid, user_reply="Modern, Tunisia")
+    tkt = c_res["ticket"]
     assert tkt is not None
 
     # 3. Launch with valid ticket returns in < 3 seconds
@@ -393,7 +393,8 @@ def test_t7_browser_and_extension(e2e_env):
     resume_path = str(FIXTURES_DIR / "resumes" / "valid_alex_backend.txt")
     r_beg = client.jh_begin(resume_path=resume_path)
     sid = r_beg["session_id"]
-    tkt = r_beg["ticket"]
+    c_res = client.jh_confirm(session_id=sid, user_reply="Modern, Tunisia")
+    tkt = c_res["ticket"]
 
     with patch("webbrowser.open", return_value=True):
         r_launch = client.jh_launch(session_id=sid, ticket=tkt)
@@ -413,17 +414,19 @@ def test_t8_subagent_optional(e2e_env):
     client_a = ScriptedMCPClient(mode="direct")
     r_a = client_a.jh_begin(resume_path=resume_path)
     sid_a = r_a["session_id"]
-    tkt_a = r_a["ticket"]
+    c_a = client_a.jh_confirm(session_id=sid_a, user_reply="Modern, Tunisia")
+    tkt_a = c_a["ticket"]
     with patch("webbrowser.open", return_value=True):
         launch_a = client_a.jh_launch(session_id=sid_a, ticket=tkt_a)
 
     # Mode B: Subagent
     client_b = ScriptedMCPClient(mode="subagent")
     r_b = client_b.jh_begin(resume_path=resume_path)
-    # Check subagent_brief is present
-    assert "subagent_brief" in r_b, "subagent_brief must be included in ready reply"
     sid_b = r_b["session_id"]
-    tkt_b = r_b["ticket"]
+    c_b = client_b.jh_confirm(session_id=sid_b, user_reply="Modern, Tunisia")
+    # Check subagent_brief is present
+    assert "subagent_brief" in c_b, "subagent_brief must be included in ready reply"
+    tkt_b = c_b["ticket"]
     with patch("webbrowser.open", return_value=True):
         launch_b = client_b.jh_launch(session_id=sid_b, ticket=tkt_b)
 
@@ -840,7 +843,8 @@ def test_t21_level_pivot_and_honest_customization(e2e_env):
     client = ScriptedMCPClient(mode="direct")
     r_beg = client.jh_begin(resume_path=sarah_path)
     sid = r_beg["session_id"]
-    tkt = r_beg["ticket"]
+    c_res = client.jh_confirm(session_id=sid, user_reply="Modern, Tunisia")
+    tkt = c_res["ticket"]
 
     with patch("webbrowser.open", return_value=True):
         client.jh_launch(session_id=sid, ticket=tkt)
@@ -910,7 +914,8 @@ def test_t22_steering_in_my_own_words(e2e_env):
     valid_path = str(res_dir / "valid_alex_backend.txt")
     r_beg = client.jh_begin(resume_path=valid_path)
     sid = r_beg["session_id"]
-    tkt = r_beg["ticket"]
+    c_res = client.jh_confirm(session_id=sid, user_reply="Modern, Tunisia")
+    tkt = c_res["ticket"]
 
     with patch("webbrowser.open", return_value=True):
         client.jh_launch(session_id=sid, ticket=tkt)

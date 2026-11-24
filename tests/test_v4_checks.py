@@ -60,6 +60,7 @@ def clean_v4_state(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "WORKSPACE_DIR", str(ws))
     monkeypatch.setattr(config, "DATA_DIR", str(home_dir / "data"))
     monkeypatch.setattr(config, "DB_PATH", str(home_dir / "data" / "engine.db"))
+    monkeypatch.setenv("JOBHUNTER_BYPASS_DELAY", "1")
 
     ticket_manager._TICKETS.clear()
     ticket_manager._SESSIONS.clear()
@@ -253,7 +254,7 @@ def test_check_08_jh_answer_updates_filters_live_without_new_search():
     ], query="backend")
 
     # Filter remote
-    ans_res = v5_tools.jh_answer(session_id="chk8_ans", answers={"work_mode": "remote"})
+    ans_res = v5_tools.jh_answer(session_id="chk8_ans", answers={"work_mode": "remote"}, user_reply="remote jobs only")
     assert ans_res["status"] == "ok"
     assert ans_res["data"]["matches_count"] >= 1
 

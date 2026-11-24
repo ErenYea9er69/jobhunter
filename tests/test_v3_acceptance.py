@@ -49,6 +49,7 @@ def clean_v3_state(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "WORKSPACE_DIR", str(ws))
     monkeypatch.setattr(config, "DATA_DIR", str(home_dir / "data"))
     monkeypatch.setattr(config, "DB_PATH", str(home_dir / "data" / "engine.db"))
+    monkeypatch.setenv("JOBHUNTER_BYPASS_DELAY", "1")
     
     # Isolate ticket and worker state
     ticket_manager._TICKETS.clear()
@@ -257,7 +258,7 @@ def test_acceptance_09_answer_updates_filters_live_without_restart(clean_v3_stat
     db.store_jobs([sample_job], query="backend")
 
     # Update filter via jh_answer
-    ans_res = v5_tools.jh_answer(session_id="ans_sess", answers={"work_mode": "hybrid"})
+    ans_res = v5_tools.jh_answer(session_id="ans_sess", answers={"work_mode": "hybrid"}, user_reply="hybrid only")
     assert ans_res["status"] == "ok"
     assert ans_res["data"]["matches_count"] >= 1
 
@@ -288,11 +289,11 @@ def test_acceptance_10_status_top_5_matches_and_filter_counts(clean_v3_state):
     db.store_jobs(jobs, query="engineer")
 
     # Filter for remote only
-    v5_tools.jh_answer(session_id="top5_sess", answers={"work_mode": "remote"})
+    v5_tools.jh_answer(session_id="top5_sess", answers={"work_mode": "remote"}, user_reply="remote only")
 
     st = v5_tools.jh_status(session_id="top5_sess")
     assert st["status"] == "ok"
-    assert len(st["data"]["top_5_matches"]) <= 5
+    assert "top_5_matches" not in st["data"]  # D6: Stripped job data
     assert st["data"]["matches"] == 10
     assert st["data"]["hidden_by_filters"] >= 2  # The 2 onsite jobs are hidden
 

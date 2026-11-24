@@ -393,7 +393,7 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
     targets = regions.resolve_targets(prefs, profile, location)
     remote_ok = regions.wants_remote(prefs, profile)
     loc_clean = (location or "").lower().strip()
-    is_tunisia = loc_clean in ("tunisia", "tunis", "sousse", "sfax") or (len(targets) == 1 and targets[0].upper() == "TN")
+    is_tunisia = loc_clean in ("tunisia", "tunis", "sousse", "sfax") or (prefs.get("target_countries") == ["Tunisia"] and not prefs.get("include_worldwide_remote", True))
     is_specific_country = bool(targets) and loc_clean not in ("remote", "worldwide", "remote worldwide", "any", "")
     if is_tunisia:
         remote_ok = False

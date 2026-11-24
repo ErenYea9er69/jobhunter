@@ -399,6 +399,8 @@ def jh_confirm_profile(confirmed: bool = True, overrides: Optional[dict[str, Any
 
     db.save_profile(prof, profile_id=profile_id)
     db.set_active_resume_profile(profile_id)
+    ticket_manager.transition_session_state(profile_id, ticket_manager.SessionState.ANSWERED)
+    ticket_manager.transition_session_state("default", ticket_manager.SessionState.ANSWERED)
 
     curr_method = config.get_method()
     return {
@@ -437,6 +439,21 @@ def jh_set_filters(filters: dict[str, Any], session_id: str = "default", user_re
     if not isinstance(filters, dict):
         raise ToolError("filters must be a dictionary of criteria.")
 
+    # Run clash detection
+    clashes = check_filter_clashes(filters)
+
+    # Check for triggered Round 2 questions
+    wm = (filters.get("work_mode") or "any").lower().strip()
+    visa = bool(filters.get("visa_need"))
+    round_2_triggers = []
+
+    if wm == "remote" and not filters.get("time_zone"):
+        round_2_triggers.append({"id": "time_zone", "question": "For remote work, do you prefer specific time zones (US, Europe, APAC, or Any)?", "recommended": "any"})
+    if wm in ("onsite", "hybrid") and "relocation" not in filters:
+        round_2_triggers.append({"id": "relocation", "question": "Are you willing to relocate for this position?", "recommended": "no", "choices": ["no", "yes"]})
+    if visa and not filters.get("visa_countries"):
+        round_2_triggers.append({"id": "visa_countries", "question": "Which destination countries do you need visa sponsorship for?", "recommended": "United States"})
+
     # Defect D2 gate: Preferences and filters may be written ONLY through jh_confirm or jh_answer with user words in user_reply
     if not user_reply:
         return {
@@ -447,7 +464,16 @@ def jh_set_filters(filters: dict[str, Any], session_id: str = "default", user_re
             ),
             "ask_user": "Please provide your answers in user_reply via jh_answer.",
             "next_tool": "jh_answer",
-            "data": {"error": "direct_filter_write_prohibited"},
+            "options": {
+                "round_2_questions": round_2_triggers if round_2_triggers else None,
+                "recommended": "jh_answer",
+                "choices": ["jh_answer"],
+            },
+            "data": {
+                "error": "direct_filter_write_prohibited",
+                "clashes": clashes,
+                "round_2_triggered": bool(round_2_triggers),
+            },
         }
 
     valid, err = ticket_manager.validate_user_reply(session_id, user_reply)
@@ -601,7 +627,6 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     reply = {
         "status": status_name,
         "session_id": session_id,
-        "ticket": None,
         "step": 2,
         "notice": notice,
         "profile_line": profile_line,
@@ -612,7 +637,6 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
         "data": {
             "name": check_res["name"],
             "session_id": session_id,
-            "ticket": None,
             "profile_line": profile_line,
             "one_line_summary": inf.get("one_line_summary", ""),
             "inferred_roles": inf["roles"],
@@ -804,9 +828,14 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
     if active_method == "modern":
         from . import radar
         radar.start_radar_worker()
-        search_status = "radar_started"
+        search_status = "started"
         search_job_id = sess.get("search_job_id") or "radar_worker"
         sess["search_job_id"] = search_job_id
+        worker_launcher._ACTIVE_SEARCH_JOBS[session_id] = {
+            "status": "running",
+            "job_id": search_job_id,
+            "session_id": session_id,
+        }
     else:
         confirmed_role = db.get_confirmed_answer(session_id, "role")
         if confirmed_role:

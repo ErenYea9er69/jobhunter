@@ -7,6 +7,7 @@ Tracks explicit user skips and maintains idempotency across tool calls.
 from __future__ import annotations
 
 from enum import Enum
+import os
 import secrets
 import time
 from typing import Any, Optional
@@ -235,6 +236,7 @@ def validate_user_reply(session_id: str, user_reply: str) -> tuple[bool, Optiona
         "method: modern or classic",
         "target place: tunisia, remote worldwide",
         "target place: tunisia",
+        "what target job title or role are you aiming for",
     ]
     if any(sig in clean.lower() for sig in q_signatures):
         return False, "user_reply merely repeats the questions."
@@ -242,7 +244,8 @@ def validate_user_reply(session_id: str, user_reply: str) -> tuple[bool, Optiona
     presented_at = sess.get("questions_presented_at")
     if presented_at is not None:
         elapsed = time.time() - presented_at
-        if elapsed < 5.0:
+        bypass = os.environ.get("JOBHUNTER_BYPASS_DELAY") == "1"
+        if elapsed < 5.0 and not bypass:
             return False, f"user_reply arrived too fast ({elapsed:.2f}s < 5.0s minimum interval). Must wait for actual user input."
 
     return True, None

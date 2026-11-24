@@ -408,6 +408,7 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
         _ensure_db()
         parsed = urlparse(self.path)
         path = parsed.path
+        query = parse_qs(parsed.query)
         body = self._read_body_json()
 
         ws_dir = getattr(self.server, "ws_dir", Path.cwd())
