@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.2.0
+
+### Contract Place Rules (Steps 2–3)
+- **Zero resume-guessed location**: Closed the gap where resume addresses, phone numbers, defaults, or profile fallbacks pre-filled or filtered `locations` (`jh/role_inference.py`, `jh/pipeline.py`, `jh/regions.py`), so only explicitly confirmed places can ever restrict results.
+- **Explicit target-place ticket gate**: Closed the gap where skipping or omitting location still issued a launch ticket (`jh/interview_questions.py`, `jh/v5_tools.py`, `jh/regions.py`), so `jh_confirm` always asks for `remote only`, `worldwide remote`, or specific countries/regions plus optional city and refuses ticket issuance until answered.
+- **Confirmed-place SQL filtering**: Closed loose region/country alias matching and mixed remote/country filters (`jh/regions.py`, `jh/db.py`), so Europe, South Asia, USA, France, Worldwide remote, Remote only, and multi-place choices filter accurately and update live via `jh_answer`.
+
+### Job-Seeker Lessons A–E
+- **Lesson A — Title families for search queries only**: Closed narrow single-title searches (`jh/role_inference.py`, `jh/v5_tools.py`) by expanding each inferred/confirmed role into up to ~5 related query variants kept strictly out of `view_filters["roles"]` so recall improves without filtering out valid matches.
+- **Lesson A — Step 5 optional precision preferences**: Closed missing company-type targeting (`jh/interview_questions.py`, `jh/db.py`, `jh/v5_tools.py`) by adding optional live preference parsing and SQL filters for `industry`, `company_stage` (`startup`, `scale-up`, `public`), `market_served`, and `languages` without restarting running searches.
+- **Lesson A — Built In SaaS source (Skipped)**: Skipped adding a Built In scraper because Built In's Terms of Use and Acceptable Use Policy (`builtin.com/terms-of-use`, `builtin.com/acceptable-use-policy`) explicitly forbid automated scraping/crawling and expose no public API, avoiding fragile non-compliant scraping while GreenHouse/Lever/Ashby/Remote/The Muse already cover SaaS postings.
+- **Lesson B — Honest match check and soft vs hard gaps**: Closed opaque or conflated gap messages (`jh/scoring.py`, `jh/refit.py`, `jh/save_flow.py`, `webapp/`, `public/`) by surfacing `strengths`, non-blocking `soft_gaps` (e.g., 3 vs 4 years requested -> apply anyway), and `hard_gaps` (work authorization, citizenship, clearance, required license) on Save so weak matches are transparent without hiding jobs.
+- **Lesson B — Truthful tailored ordering & hype scrubbing**: Closed generic bullet order and residual buzzwords (`jh/refit.py`, `jh/save_flow.py`, `jh/email_drafter.py`) by ordering relevant experience first, stripping inflated hype in both structured PDFs and plain-text outputs, and preserving exact master resume dates, titles, and numbers.
+- **Lesson C — Structured interview prep, talking points & Glassdoor links**: Closed shallow prep and unlinked reputation checks (`jh/refit.py`, `jh/interview.py`, `jh/company_research.py`) by adding `tell_me_about_yourself` story drafts, `recruiter_screen`, `hiring_manager_round`, `peer_round`, Modern brief `talking_points`, and unscraped Glassdoor search URLs (`scraped: False`).
+- **Lesson C — Optional `practice_interview` coach tool**: Closed missing active Q&A rehearsal (`jh/mcp_tools.py`, `jh/team/roles.py`) by adding `practice_interview` under the `coach` role that asks saved-prep questions and grades user answers only after prep output exists, leaving all existing tool contracts untouched.
+- **Lesson D — Confirmed-only side work and contract facts**: Closed omitted bridge/contract work cleanly without hallucination (`jh/interview_questions.py`, `jh/v5_tools.py`, `jh/db.py`, `jh/save_flow.py`, `jh/exporters.py`, `jh/evidence.py`) by capturing `side_work` in `confirmed_facts` and rendering `"Contract and Side Work"` in tailored resumes/PDFs exclusively when user-confirmed.
+- **Lesson E — Pacing note**: Added one plain factual sentence (`pacing_note`) in `jh_status` reminding candidates that wait times often reflect budget timing and hiring pauses rather than fit, adding zero UI clutter or cheerleading.
+
+### Bug Fixes Found During Verification
+- Fixed `jh/role_inference.py` reading `job.get("title")` only (ignoring parsed `job.get("role")`), `jh/v5_tools.py` `years_experience` key mismatch in `profile_line`, `jh/save_flow.py` passing `job` dict instead of `job_id` string to `lifecycle.liveness_check`, `jh/httpd.py` `/api/jobs/query` not persisting UI filter updates directly, and `jh/v5_tools.py` negation regex false positives on `excluded_keywords` / `level_shift`.
+
+### Standards & Verification Sources
+- Verified Python MCP stdio/stderr isolation and schema conventions against [Model Context Protocol Docs](https://modelcontextprotocol.io/docs/develop/build-server).
+- Verified PEP 621 / PEP 517 build, wheel validation, TestPyPI, and Twine publishing workflow against [PyPA Python Packaging User Guide](https://packaging.python.org/en/latest/tutorials/packaging-projects/).
+
 ## 1.1.2
 
 ### UI / UX & Browser Polish (Impeccable & Chrome First-Run Fixes)

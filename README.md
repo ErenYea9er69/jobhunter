@@ -367,6 +367,8 @@ The answer is a short brief. The full report and data are behind it. Every answe
 | `search_depth` | `quick`, `standard` or `deep` (more query variants). |
 | `enabled_sources`, `disabled_sources` | Choose exactly which sources run. |
 | `needs_visa_sponsorship`, `open_to_relocation`, `languages` | Stored and applied to the resume profile. |
+| `confirmed_industries`, `company_stages`, `markets_served` | Optional Step 5 live SQL filters (`startup`/`scale-up`/`public`, industry, market) applied only when confirmed. |
+| `side_work` | Optional confirmed current freelance or contract work; rendered on tailored resumes only when confirmed by you. |
 
 Example: `set_preferences({"target_countries": ["Tunisia", "France"], "company_focus": "avoid_big_names", "excluded_keywords": ["php"]})`.
 
@@ -409,7 +411,13 @@ Honest limits of this reach: the catalog names real local boards, but nobody has
 
 ## Tools
 
-The full list with arguments is in `docs/tool-contracts.md`. The CEO tools (`ceo_run` and six more) are described in `docs/team.md`. Specialist groups: resumes (5), preferences and sources (7), finding jobs (4), analysis (5), documents (7), interview and outreach (4), playbooks (1), tracking (5), coaching (4), server (1).
+The full list with arguments is in `docs/tool-contracts.md`. The CEO tools (`ceo_run` and six more) are described in `docs/team.md`. Specialist groups: resumes (5), preferences and sources (7), finding jobs (4), analysis (5), documents (7), interview and outreach (5, including `practice_interview`), playbooks (1), tracking (5), coaching (4), server (1).
+
+Key 1.2.0 flow guarantees:
+- **Explicit target place**: Resumes never supply location, remote mode, or filters. `jh_confirm` always asks you to confirm `remote only`, `worldwide remote`, or specific countries/regions (plus optional city) before issuing a session ticket.
+- **Title families & live filtering**: Inferred role title families widen search queries only (never filters). Preferences confirmed during the live search filter the SQL view immediately without restarting the background worker.
+- **Honest match check on Save**: Saving shows strengths alongside `soft_gaps` (e.g., 3 vs 4 years requested — marked apply anyway) and `hard_gaps` (work authorization, clearance, required license) without hiding postings.
+- **Structured prep & `practice_interview`**: Interview prep includes "Tell me about yourself", Recruiter Screen, Hiring Manager, Peer Round, and unscraped Glassdoor search links. Run `practice_interview` (under `coach`) after prep exists to rehearse answers and get graded feedback.
 
 Every tool returns one envelope: `status` (`ok`, `partial`, `error`), `success`, `data`, `warnings`, `sources`, `correlation_id`, and `coaching` (`null` by default). Errors carry a `code` and a `hint`. Search results are compact cards, so a search never floods the model's context. Use the `job_id` from a card with any tool.
 
