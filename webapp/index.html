@@ -732,13 +732,17 @@
   <div class="dialog-body">
     <div class="dialog-header">
       <svg class="icon text-amber"><use href="#i-circle-alert"/></svg>
-      <h2 id="low-fit-title">Low Fit Score (<span id="low-fit-score">0</span>%)</h2>
+      <h2 id="low-fit-title">Match Check (<span id="low-fit-score">0</span>%)</h2>
     </div>
-    <p id="low-fit-msg">Fit score is below the 60 threshold. Review the gap analysis before saving:</p>
+    <p id="low-fit-msg">Review your strengths and gaps before deciding whether to save.</p>
     
     <div class="gap-report-content">
+      <div class="gap-section" id="low-fit-strengths-sec">
+        <h3>Strengths</h3>
+        <ul class="gap-list" id="low-fit-strengths"></ul>
+      </div>
       <div class="gap-section">
-        <h3>Missing Requirements</h3>
+        <h3>Gaps &amp; Requirements</h3>
         <ul class="gap-list" id="low-fit-gaps"></ul>
       </div>
       <div class="gap-section">

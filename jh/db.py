@@ -425,8 +425,13 @@ def init_db():
             excluded_keywords TEXT DEFAULT '',
             posting_age INTEGER DEFAULT 30,
             show_unknown_salary INTEGER DEFAULT 1,
+            extra_filters TEXT DEFAULT '{}',
             updated_at TEXT NOT NULL
         )""")
+        try:
+            c.execute("ALTER TABLE view_filters ADD COLUMN extra_filters TEXT DEFAULT '{}'")
+        except Exception:
+            pass
 
         # 5. jobs (unified lifecycle table)
         c.execute("""CREATE TABLE IF NOT EXISTS jobs (
@@ -1872,6 +1877,10 @@ DEFAULT_VIEW_FILTERS = {
     "seniority": [],
     "company_sizes": [],
     "industries": [],
+    "confirmed_industries": [],
+    "company_stages": [],
+    "markets_served": [],
+    "languages": [],
     "excluded_companies": [],
     "excluded_keywords": [],
     "posting_age": 30,
@@ -1880,6 +1889,21 @@ DEFAULT_VIEW_FILTERS = {
 
 
 _SESSION_VIEW_FILTERS: dict[str, dict[str, Any]] = {}
+_EXTRA_LIST_KEYS = ("confirmed_industries", "company_stages", "markets_served", "languages")
+
+
+def _normalize_str_list(val: Any) -> list[str]:
+    if isinstance(val, list):
+        return [str(x).strip() for x in val if str(x).strip()]
+    if isinstance(val, str) and val.strip():
+        try:
+            parsed = json.loads(val)
+            if isinstance(parsed, list):
+                return [str(x).strip() for x in parsed if str(x).strip()]
+        except Exception:
+            pass
+        return [x.strip() for x in val.split(",") if x.strip()]
+    return []
 
 
 def get_view_filters(session_id="default"):
@@ -1890,29 +1914,36 @@ def get_view_filters(session_id="default"):
             res = dict(DEFAULT_VIEW_FILTERS)
             res["session_id"] = session_id
             res.update(_SESSION_VIEW_FILTERS.get(session_id, {}))
+            for k in _EXTRA_LIST_KEYS:
+                res[k] = _normalize_str_list(res.get(k))
             return res
         d = dict(row)
-        for list_col in ("roles", "locations", "visa_countries", "contract_types", "seniority", "company_sizes", "industries", "excluded_companies", "excluded_keywords"):
-            val = d.get(list_col)
-            if isinstance(val, str) and val.strip():
-                try:
-                    d[list_col] = json.loads(val)
-                except Exception:
-                    d[list_col] = [x.strip() for x in val.split(",") if x.strip()]
-            elif not isinstance(val, list):
-                d[list_col] = []
+        extra_raw = d.pop("extra_filters", None)
+        if isinstance(extra_raw, str) and extra_raw.strip():
+            try:
+                extra_obj = json.loads(extra_raw)
+                if isinstance(extra_obj, dict):
+                    for k, v in extra_obj.items():
+                        d.setdefault(k, v)
+            except Exception:
+                pass
+        for list_col in ("roles", "locations", "visa_countries", "contract_types", "seniority", "company_sizes", "industries", "excluded_companies", "excluded_keywords", *_EXTRA_LIST_KEYS):
+            d[list_col] = _normalize_str_list(d.get(list_col))
         d["relocation"] = bool(d.get("relocation"))
         d["visa_need"] = bool(d.get("visa_need"))
         d["show_unknown_salary"] = bool(d.get("show_unknown_salary"))
         d.update(_SESSION_VIEW_FILTERS.get(session_id, {}))
+        for k in _EXTRA_LIST_KEYS:
+            d[k] = _normalize_str_list(d.get(k))
         return d
 
 
 def save_view_filters(filters, session_id="default"):
     """Save or update view filters for a session."""
-    _SESSION_VIEW_FILTERS.setdefault(session_id, {}).update(filters)
+    merged = _SESSION_VIEW_FILTERS.setdefault(session_id, {})
+    merged.update(filters)
     d = dict(DEFAULT_VIEW_FILTERS)
-    d.update(filters)
+    d.update(merged)
     d["session_id"] = session_id
     iso_now = now_iso()
 
@@ -1920,6 +1951,8 @@ def save_view_filters(filters, session_id="default"):
         if isinstance(v, (list, tuple, set)):
             return json.dumps(list(v))
         return str(v or "")
+
+    extra_payload = json.dumps({k: _normalize_str_list(d.get(k)) for k in _EXTRA_LIST_KEYS})
 
     with session() as c:
         existing = c.execute("SELECT id FROM view_filters WHERE session_id=?", (session_id,)).fetchone()
@@ -1930,7 +1963,7 @@ def save_view_filters(filters, session_id="default"):
                     visa_need=?, visa_countries=?, min_salary=?, currency=?, period=?,
                     contract_types=?, seniority=?, company_sizes=?, industries=?,
                     excluded_companies=?, excluded_keywords=?, posting_age=?,
-                    show_unknown_salary=?, updated_at=?
+                    show_unknown_salary=?, extra_filters=?, updated_at=?
                 WHERE id=?
             """, (
                 d.get("job_style", ""),
@@ -1951,6 +1984,7 @@ def save_view_filters(filters, session_id="default"):
                 _ser(d.get("excluded_keywords", [])),
                 int(d.get("posting_age") or 30),
                 1 if d.get("show_unknown_salary", True) else 0,
+                extra_payload,
                 iso_now,
                 existing["id"],
             ))
@@ -1961,8 +1995,8 @@ def save_view_filters(filters, session_id="default"):
                     visa_need, visa_countries, min_salary, currency, period,
                     contract_types, seniority, company_sizes, industries,
                     excluded_companies, excluded_keywords, posting_age,
-                    show_unknown_salary, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    show_unknown_salary, extra_filters, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 session_id,
                 d.get("job_style", ""),
@@ -1983,6 +2017,7 @@ def save_view_filters(filters, session_id="default"):
                 _ser(d.get("excluded_keywords", [])),
                 int(d.get("posting_age") or 30),
                 1 if d.get("show_unknown_salary", True) else 0,
+                extra_payload,
                 iso_now,
             ))
     return get_view_filters(session_id)
@@ -2478,13 +2513,72 @@ def query_jobs(view_filters=None, session_id="default", profile=None):
     def _check_location(j):
         if not locs_filter or relocation:
             return True
-        j_loc = f"{j.get('location', '')} {j.get('city', '')} {j.get('country', '')}".lower()
-        j_wm = (j.get("work_mode") or "").lower()
-        if "onsite" in wm_filter or "on-site" in wm_filter:
-            return any(loc in j_loc for loc in locs_filter)
-        if "remote" in j_wm or "remote" in j_loc or j.get("country") == "worldwide":
+        from . import regions
+        return regions.job_matches_confirmed_places(j, locs_filter, wm_filter)
+
+    confirmed_industries = [i.lower().strip() for i in (filters.get("confirmed_industries") or []) if i and str(i).strip() and str(i).lower().strip() not in ("any", "all")]
+    company_stages = [s.lower().strip() for s in (filters.get("company_stages") or []) if s and str(s).strip() and str(s).lower().strip() not in ("any", "all")]
+    markets_served = [m.lower().strip() for m in (filters.get("markets_served") or []) if m and str(m).strip() and str(m).lower().strip() not in ("any", "all")]
+    languages_filter = [lg.lower().strip() for lg in (filters.get("languages") or []) if lg and str(lg).strip() and str(lg).lower().strip() not in ("any", "all")]
+
+    def _job_hay(j):
+        return f"{j.get('title', '')} {j.get('company', '')} {j.get('industry', '')} {j.get('market_served', '')} {j.get('stage', '')} {j.get('company_size', '')} {j.get('languages', '')} {j.get('language', '')} {' '.join(str(t) for t in (j.get('tags') or []))} {j.get('description', '')}".lower()
+
+    def _check_confirmed_industry(j):
+        if not confirmed_industries:
             return True
-        return any(loc in j_loc for loc in locs_filter)
+        j_ind = (j.get("industry") or "").lower()
+        hay = _job_hay(j)
+        return any(ind in j_ind or re.search(rf"\b{re.escape(ind)}\b", hay) for ind in confirmed_industries)
+
+    def _check_company_stage(j):
+        if not company_stages:
+            return True
+        from . import scoring
+        stage_raw = f"{j.get('stage', '')} {j.get('company_size', '')} {scoring.classify_company_stage(j)}".lower()
+        hay = _job_hay(j)
+        aliases = {
+            "startup": ("startup", "seed", "series a", "early-stage", "early stage"),
+            "scale-up": ("scale-up", "scaleup", "scale up", "series b", "series c", "series d", "growth"),
+            "scaleup": ("scale-up", "scaleup", "scale up", "series b", "series c", "growth"),
+            "scale up": ("scale-up", "scaleup", "scale up", "series b", "series c", "growth"),
+            "public": ("public", "publicly traded", "nasdaq", "nyse", "enterprise", "fortune 500"),
+        }
+        for st in company_stages:
+            terms = aliases.get(st, (st,))
+            if any(t in stage_raw or re.search(rf"\b{re.escape(t)}\b", hay) for t in terms):
+                return True
+        return False
+
+    def _check_market_served(j):
+        if not markets_served:
+            return True
+        hay = _job_hay(j)
+        aliases = {
+            "b2b": ("b2b", "business-to-business", "saas"),
+            "b2c": ("b2c", "consumer", "marketplace"),
+            "enterprise": ("enterprise", "fortune 500", "large organizations"),
+            "smb": ("smb", "small business", "mid-market", "midmarket"),
+            "developer tools": ("developer tools", "devtools", "sdk", "api platform", "for developers"),
+            "devtools": ("developer tools", "devtools", "sdk", "api platform", "for developers"),
+        }
+        for mk in markets_served:
+            terms = aliases.get(mk, (mk,))
+            if any(re.search(rf"\b{re.escape(t)}\b", hay) for t in terms):
+                return True
+        return False
+
+    def _check_languages(j):
+        if not languages_filter:
+            return True
+        hay = _job_hay(j)
+        for lg in languages_filter:
+            if lg == "bilingual":
+                if "bilingual" in hay or ("french" in hay and "english" in hay) or ("arabic" in hay and "french" in hay) or ("spanish" in hay and "english" in hay):
+                    return True
+            elif re.search(rf"\b{re.escape(lg)}\b", hay):
+                return True
+        return False
 
     def _check_visa(j):
         if not visa_need:
@@ -2562,6 +2656,10 @@ def query_jobs(view_filters=None, session_id="default", profile=None):
         "excluded_companies": sum(1 for j in candidate_jobs if not _check_excluded_companies(j)) if excluded_cos else 0,
         "excluded_keywords": sum(1 for j in candidate_jobs if not _check_excluded_keywords(j)) if excluded_kws else 0,
         "posting_age": sum(1 for j in candidate_jobs if not _check_posting_age(j)) if posting_age > 0 else 0,
+        "industry": sum(1 for j in candidate_jobs if not _check_confirmed_industry(j)) if confirmed_industries else 0,
+        "company_stage": sum(1 for j in candidate_jobs if not _check_company_stage(j)) if company_stages else 0,
+        "market_served": sum(1 for j in candidate_jobs if not _check_market_served(j)) if markets_served else 0,
+        "languages": sum(1 for j in candidate_jobs if not _check_languages(j)) if languages_filter else 0,
     }
 
     # 4. Filter
@@ -2584,6 +2682,14 @@ def query_jobs(view_filters=None, session_id="default", profile=None):
         if not _check_excluded_keywords(j):
             continue
         if not _check_posting_age(j):
+            continue
+        if not _check_confirmed_industry(j):
+            continue
+        if not _check_company_stage(j):
+            continue
+        if not _check_market_served(j):
+            continue
+        if not _check_languages(j):
             continue
 
         has_sal = (j.get("max_salary", 0) > 0 or j.get("min_salary", 0) > 0)
@@ -3320,13 +3426,26 @@ def add_confirmed_fact(
     return fact_id
 
 
-def get_confirmed_facts(session_id: str = "default") -> list[dict]:
-    """Retrieve all user-confirmed facts for a session."""
+def get_confirmed_facts(session_id: Optional[str] = None) -> list[dict]:
+    """Retrieve user-confirmed facts for a session (or active session + default when omitted)."""
     with session() as c:
-        rows = c.execute(
-            "SELECT id, session_id, fact, category, label, created_at FROM confirmed_facts WHERE session_id=? ORDER BY created_at ASC",
-            (session_id,),
-        ).fetchall()
+        if session_id is None:
+            row = c.execute("SELECT value FROM settings WHERE key='active_session_id'").fetchone()
+            active_sid = row["value"] if row and row["value"] else "default"
+            if active_sid != "default":
+                rows = c.execute(
+                    "SELECT id, session_id, fact, category, label, created_at FROM confirmed_facts WHERE session_id IN (?, 'default') ORDER BY created_at ASC",
+                    (active_sid,),
+                ).fetchall()
+            else:
+                rows = c.execute(
+                    "SELECT id, session_id, fact, category, label, created_at FROM confirmed_facts WHERE session_id='default' ORDER BY created_at ASC",
+                ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT id, session_id, fact, category, label, created_at FROM confirmed_facts WHERE session_id=? ORDER BY created_at ASC",
+                (session_id,),
+            ).fetchall()
         return [dict(r) for r in rows]
 
 

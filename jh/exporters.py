@@ -50,6 +50,11 @@ def _sections(r):
             proj.append(("p", p["description"]))
     if proj:
         secs.append(("Projects", proj))
+    side_work = r.get("confirmed_side_work") or []
+    if isinstance(side_work, str) and side_work.strip():
+        side_work = [side_work.strip()]
+    if side_work:
+        secs.append(("Contract and Side Work", [("b", str(s).strip()) for s in side_work if str(s).strip()]))
     if r.get("skills"):
         secs.append(("Skills", [("p", ", ".join(r["skills"]))]))
     return head, secs

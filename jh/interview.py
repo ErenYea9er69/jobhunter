@@ -191,6 +191,9 @@ def generate_interview_prep(
             if k in sf:
                 sf[k], _, _ = slop.rewrite_slop(sf[k], kind="general", job=job, profile=profile)
 
+    from . import refit
+    rich_prep = refit.generate_interview_prep(job, profile, use_llm=False)
+
     return {
         "job_title": title,
         "company": comp,
@@ -199,6 +202,11 @@ def generate_interview_prep(
         "system_design_questions": sys_design,
         "behavioral_star_questions": behavioral,
         "interviewer_questions": interviewer_qs,
+        "tell_me_about_yourself": rich_prep.get("tell_me_about_yourself", {}),
+        "recruiter_screen": rich_prep.get("recruiter_screen", {}),
+        "hiring_manager_round": rich_prep.get("hiring_manager_round", {}),
+        "peer_round": rich_prep.get("peer_round", {}),
+        "company_reputation": rich_prep.get("company_reputation", {}),
     }
 
 

@@ -209,10 +209,21 @@ def generate_saved_job_documents(
     outputs_dir = home.get_home() / "outputs"
     os.makedirs(outputs_dir, exist_ok=True)
 
-    # 1. Base Resume Selection and Light Tailoring (R6)
+    # 1. Base Resume Selection and Light Tailoring (R6) with confirmed facts (Lesson D)
+    confirmed_facts = db.get_confirmed_facts()
+    effective_profile = dict(profile)
+    effective_profile["confirmed_facts"] = confirmed_facts
+    side_work = [
+        cf.get("fact", "").strip()
+        for cf in confirmed_facts
+        if isinstance(cf, dict) and cf.get("category") == "side_work" and cf.get("fact")
+    ]
+    if side_work:
+        effective_profile["confirmed_side_work"] = side_work
+
     base_resumes = db.get_base_resumes()
     if not base_resumes:
-        refit.build_role_family_base_resumes(profile)
+        refit.build_role_family_base_resumes(effective_profile)
         base_resumes = db.get_base_resumes()
 
     job_title = (job.get("title") or "").lower()
@@ -227,20 +238,35 @@ def generate_saved_job_documents(
             selected_base = base_resumes[0].get("resume_data")
 
     if selected_base:
-        tailored_resume_dict = refit.tailor_base_resume(selected_base, job)
+        selected_eff = dict(selected_base)
+        selected_eff["confirmed_facts"] = confirmed_facts
+        if side_work:
+            selected_eff["confirmed_side_work"] = side_work
+        tailored_resume_dict = refit.tailor_base_resume(selected_eff, job)
     else:
-        custom_resume_pkg = refit.generate_custom_resume(job, profile)
+        custom_resume_pkg = refit.generate_custom_resume(job, effective_profile)
         tailored_resume_dict = custom_resume_pkg.get("tailored_resume") or custom_resume_pkg
 
-    resume_raw_text = exporters.to_txt(tailored_resume_dict)
-
-    # Anti-slop and proofread pass on resume (R7)
+    # Anti-slop and proofread pass on both structured resume dict (PDF) and text output
     from . import slop
-    resume_raw_text, _, _ = slop.rewrite_slop(resume_raw_text, kind="resume", job=job, profile=profile)
+    if tailored_resume_dict.get("summary"):
+        tailored_resume_dict["summary"], _, _ = slop.rewrite_slop(
+            str(tailored_resume_dict["summary"]), kind="resume", job=job, profile=effective_profile
+        )
+    for exp_item in tailored_resume_dict.get("experience", []) or []:
+        if isinstance(exp_item, dict) and exp_item.get("bullets"):
+            cleaned_bullets = []
+            for b in exp_item["bullets"]:
+                cb, _, _ = slop.rewrite_slop(str(b), kind="resume", job=job, profile=effective_profile)
+                cleaned_bullets.append(cb)
+            exp_item["bullets"] = cleaned_bullets
+
+    resume_raw_text = exporters.to_txt(tailored_resume_dict)
+    resume_raw_text, _, _ = slop.rewrite_slop(resume_raw_text, kind="resume", job=job, profile=effective_profile)
 
     # Grounding check and repair for resume
     res_pass, clean_resume, res_findings = grounding_check_and_repair(
-        resume_raw_text, profile, job, kind="resume"
+        resume_raw_text, effective_profile, job, kind="resume"
     )
 
     resume_filename = f"{safe_id}_tailored_resume.txt"
@@ -259,12 +285,12 @@ def generate_saved_job_documents(
         logger.warning("Could not build PDF: %s", e)
 
     # 2. Cover Letter Generation per Rule R7 (Classic only, ~200 words, no stock openers)
-    cover_raw_text = refit.generate_r7_cover_letter(job, profile)
-    cover_raw_text, _, _ = slop.rewrite_slop(cover_raw_text, kind="cover_letter", job=job, profile=profile)
+    cover_raw_text = refit.generate_r7_cover_letter(job, effective_profile)
+    cover_raw_text, _, _ = slop.rewrite_slop(cover_raw_text, kind="cover_letter", job=job, profile=effective_profile)
 
     # Grounding check and repair for cover letter
     cov_pass, clean_cover, cov_findings = grounding_check_and_repair(
-        cover_raw_text, profile, job, kind="cover_letter"
+        cover_raw_text, effective_profile, job, kind="cover_letter"
     )
 
     cover_filename = f"{safe_id}_cover_letter.txt"
@@ -343,10 +369,10 @@ def handle_save_job(
     job_id = str(job.get("id") or job.get("job_key") or "job_unknown")
     profile = get_master_profile(profile_override)
 
-    # 1. Liveness Check
+    # 1. Liveness Check (pass job_id string, not dict)
     url = job.get("url") or ""
     if url:
-        live_res = lifecycle.liveness_check(url, job)
+        live_res = lifecycle.liveness_check(url, job_id)
         if not live_res.get("is_live", True) and not confirm_closed:
             return {
                 "status": "needs_confirm",
@@ -356,35 +382,38 @@ def handle_save_job(
                 "is_live": False,
             }
 
-    # 2. Fit Scoring
-    fit_info = scoring.calculate_explainable_fit(profile, job)
-    fit_score = int(fit_info.get("fit_score", 0))
-    if fit_score == 0 and (job.get("description") or job.get("title")):
-        alt_score = scoring.score_job(job, profile).get("score", 0)
-        fit_score = max(fit_score, int(alt_score))
+    # 2. Honest Fit & Gap Check (Lesson B: never block user, show strengths & soft/hard gaps)
+    gap_report = refit.generate_gap_report(job, profile)
+    match_eval = gap_report.get("match_evaluation") or scoring.evaluate_honest_match(profile, job)
+    fit_score = int(match_eval.get("fit_score") or scoring.calculate_explainable_fit(profile, job).get("fit_score", 0))
 
-    # 3. Fit Gate (< 60)
+    # 3. Weak-match advisory prompt (< 60 when not forced; user decides via Save anyway)
     if fit_score < 60 and not force:
-        gap_report = refit.generate_gap_report(job, profile)
         real_gaps = gap_report.get("real_gaps", [])
         add_if_true = gap_report.get("add_if_true", [])
 
-        talking_track = []
-        for g in real_gaps:
-            talking_track.append(f"{g.get('skill')}: {g.get('advice')}")
+        talking_track = [f"{g.get('skill')}: {g.get('advice')}" for g in real_gaps]
+        for sg in match_eval.get("soft_gaps", []):
+            talking_track.append(sg.get("advice", ""))
         if not talking_track:
-            talking_track.append("Emphasize strong fundamentals and rapid mastery of related toolchains.")
+            talking_track.append("Focus on verified project examples and direct skill overlap.")
 
         return {
             "status": "low_fit",
             "fit_score": fit_score,
+            "match_evaluation": match_eval,
             "gap_report": {
                 "missing_requirements": [g.get("skill") for g in real_gaps],
                 "real_gaps": real_gaps,
                 "add_this_if_true": add_if_true,
                 "talking_track": talking_track,
+                "strengths": match_eval.get("strengths", []),
+                "soft_gaps": match_eval.get("soft_gaps", []),
+                "hard_gaps": match_eval.get("hard_gaps", []),
+                "plain_summary": match_eval.get("plain_summary", ""),
+                "apply_recommendation": match_eval.get("apply_recommendation", ""),
             },
-            "message": f"Fit score is {fit_score}/100 (below 60 threshold). Save anyway, or skip?",
+            "message": f"{match_eval.get('plain_summary', '')} Save anyway, or skip?",
             "options": ["Save anyway", "Skip"],
             "job_id": job_id,
         }
@@ -426,8 +455,9 @@ def handle_save_job(
             "saved": True,
             "application_id": app_id,
             "fit_score": fit_score,
+            "match_evaluation": match_eval,
             "generating": True,
-            "message": f"Job saved! Tailoring resume & cover letter in background (Fit Score: {fit_score}).",
+            "message": f"Job saved. Tailoring resume & cover letter in background (Fit Score: {fit_score}).",
         }
 
     gen_res = generate_saved_job_documents(job, profile, app_id)
@@ -436,6 +466,8 @@ def handle_save_job(
         "saved": True,
         "application_id": app_id,
         "fit_score": fit_score,
+        "match_evaluation": match_eval,
+        "gap_report": gap_report,
         "resume_path": gen_res["resume_path"],
         "cover_letter_path": gen_res["cover_letter_path"],
         "grounding": gen_res["grounding"],

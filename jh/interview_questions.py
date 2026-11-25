@@ -11,16 +11,21 @@ from typing import Any
 
 def build_step_3_target_questions(
     inferred_roles: list[dict[str, Any]],
-    region_guess: dict[str, Any],
+    region_guess: dict[str, Any] | None = None,
     ask_role: bool = False,
 ) -> dict[str, Any]:
-    """Generates Step 3 target search interview questions (3 questions max, all skippable)."""
-    suggested_region = (region_guess.get("value") or "").strip()
-    if not suggested_region or suggested_region.lower() in ("any", "unknown"):
-        suggested_region = "Worldwide"
-
+    """Generates Step 3 target search interview questions without ever guessing location from the resume."""
     role_choices = [r["role"] for r in inferred_roles]
     top_role = role_choices[0] if role_choices else "Software Engineer"
+
+    place_choices = [
+        "Remote only",
+        "International / Worldwide remote",
+        "France",
+        "Europe",
+        "South Asia",
+        "United States (USA)",
+    ]
 
     questions = [
         {
@@ -31,28 +36,33 @@ def build_step_3_target_questions(
         },
         {
             "id": "target_place",
-            "question": f"2. Target place: Tunisia, remote worldwide, remote within a time zone range, abroad (which countries), or a specific city or region? Are you open to relocation?\n   (Suggested: {suggested_region})",
-            "choices": ["Tunisia", "Remote worldwide", "Worldwide", "Europe", "United States", suggested_region],
-            "recommended": suggested_region,
+            "question": (
+                "2. Target place (required before launch, never guessed from your resume): "
+                "Pick one or several: remote only, international or worldwide remote, or a specific place such as a country or region "
+                "(for example France, Europe, South Asia, or the USA), plus an optional city if you want one."
+            ),
+            "choices": place_choices,
+            "recommended": "",
+            "required": True,
         },
     ]
 
     lines = [
-        "Please answer these target search questions before we launch (all are skippable):",
+        "Please confirm these target search questions before we launch (target place is required; I never guess it from your resume):",
         "1. Method: Modern (default) or Classic?",
         "   - Modern catches early funding signals and hiring posts and drafts human outreach to decision-maker emails under a daily cap.",
         "   - Classic searches many job boards and has the Apply button.",
-        f"2. Target place: Tunisia, remote worldwide, remote within a time zone range, abroad (which countries), or a specific city or region? Are you open to relocation? (Suggested: {suggested_region})",
+        "2. Target place: remote only, international or worldwide remote, or a specific country/region (e.g. France, Europe, South Asia, USA)? You can pick one or several and add a city if you want one.",
     ]
 
     if ask_role:
         questions.append({
             "id": "target_role",
-            "question": f"3. Target role: What target job title or role are you aiming for?\n   (Options: {', '.join(role_choices)}; Suggested: {top_role})",
+            "question": f"3. Target role: What target job title or role are you aiming for?\n   (Options from skill clusters/resume: {', '.join(role_choices)}; or name your own)",
             "choices": role_choices,
             "recommended": top_role,
         })
-        lines.append(f"3. Target role: What target job title or role are you aiming for? (Options: {', '.join(role_choices)}; Suggested: {top_role})")
+        lines.append(f"3. Target role: What target job title or role are you aiming for? (Options: {', '.join(role_choices)}; or name your own)")
 
     formatted_text = "\n".join(lines)
 
@@ -188,6 +198,51 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
         formatted_lines.append("6. Daily Email Cap: maximum outreach emails per day? [Suggested default: 20]")
         formatted_lines.append("7. Voice Samples: 2 or 3 sample messages/sentences you wrote for your authentic voice [or 'skip']")
 
+    optional_questions = [
+        {
+            "id": "industry",
+            "title": "Industry",
+            "question": "Optional - Target industries (e.g. SaaS, Fintech, Healthtech, AI, Cybersecurity, or any)?",
+            "choices": ["any", "SaaS", "Fintech", "AI / ML", "Healthtech", "E-commerce"],
+            "recommended": "any",
+        },
+        {
+            "id": "company_stage",
+            "title": "Company Stage",
+            "question": "Optional - Preferred company stage (startup, scale-up, public, or any)?",
+            "choices": ["any", "startup", "scale-up", "public"],
+            "recommended": "any",
+        },
+        {
+            "id": "market_served",
+            "title": "Market Served",
+            "question": "Optional - Target market served (e.g. B2B, B2C, Enterprise, SMB, Developer Tools, or any)?",
+            "choices": ["any", "B2B", "B2C", "Enterprise", "SMB", "Developer Tools"],
+            "recommended": "any",
+        },
+        {
+            "id": "languages",
+            "title": "Languages",
+            "question": "Optional - Languages you work in (for example English only, French, bilingual English/French, or any)?",
+            "choices": ["any", "English", "French", "Bilingual", "Arabic", "German", "Spanish"],
+            "recommended": "any",
+        },
+        {
+            "id": "side_work",
+            "title": "Current Side / Freelance / Contract Work",
+            "question": "Optional - Do you have any current side work, freelance, or contract work you want listed on tailored resumes (or 'none')?",
+            "choices": ["none", "specify current freelance or contract work"],
+            "recommended": "none",
+        },
+    ]
+
+    formatted_lines.append("")
+    formatted_lines.append("Optional targeting refinements (only your confirmed answers filter the UI):")
+    formatted_lines.append("- Industry: SaaS, Fintech, AI, Healthtech, or any?")
+    formatted_lines.append("- Company stage: startup, scale-up, public, or any?")
+    formatted_lines.append("- Market served: B2B, B2C, Enterprise, SMB, Developer Tools, or any?")
+    formatted_lines.append("- Role languages: e.g. English, French, bilingual, or any?")
+    formatted_lines.append("- Side work / gap cover: any current freelance or contract work to include on your resume?")
     formatted_lines.append("")
     formatted_lines.append("(You can reply in plain text, or say 'skip all' / 'any' to proceed with defaults.)")
 
@@ -195,6 +250,7 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
         "round": 2,
         "count": len(questions),
         "questions": questions,
+        "optional_questions": optional_questions,
         "formatted_text": "\n".join(formatted_lines),
     }
 

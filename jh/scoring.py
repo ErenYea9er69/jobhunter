@@ -1109,6 +1109,150 @@ def calculate_explainable_fit(profile: dict, job: dict) -> dict:
     }
 
 
+def evaluate_honest_match(
+    profile: dict,
+    job: dict,
+    confirmed_facts: list | None = None,
+) -> dict:
+    """Plain, honest match evaluation separating strengths, soft_gaps, and hard_gaps."""
+    fit_info = calculate_explainable_fit(profile, job)
+    fit_score = int(fit_info.get("fit_score", 0))
+    if fit_score == 0 and (job.get("description") or job.get("title")):
+        fit_score = max(fit_score, int(score_job(job, profile).get("score", 0)))
+
+    title = job.get("title") or ""
+    desc = job.get("description") or ""
+    text = f"{title}\n{desc}"
+    low_text = text.lower()
+    cand_corpus = " ".join([
+        str(profile.get("summary") or ""),
+        " ".join(str(s) for s in (profile.get("skills") or [])),
+        " ".join(str(cf.get("fact") if isinstance(cf, dict) else cf) for cf in (confirmed_facts or [])),
+    ]).lower()
+
+    matched = list(fit_info.get("matched_skills") or [])
+    missing = list(fit_info.get("missing_skills") or [])
+    adjacent = list(fit_info.get("adjacent_skills") or [])
+
+    strengths: list[str] = []
+    if matched:
+        strengths.append(f"Direct skill match on {', '.join(matched[:6])}.")
+    if adjacent:
+        strengths.append(f"Adjacent background in {', '.join(adjacent[:4])}.")
+    exp_list = profile.get("experience") or []
+    if exp_list and isinstance(exp_list[0], dict):
+        recent_role = exp_list[0].get("role") or exp_list[0].get("title") or ""
+        recent_co = exp_list[0].get("company") or ""
+        if recent_role:
+            strengths.append(f"Recent role as {recent_role}" + (f" at {recent_co}." if recent_co else "."))
+    if not strengths:
+        strengths.append("Review core skills against the posting before deciding whether to apply.")
+
+    gaps: list[dict] = []
+    soft_gaps: list[dict] = []
+    hard_gaps: list[dict] = []
+
+    # 1. Years of experience comparison: modest shortfall (e.g. 3 vs 4 yrs) -> soft_gap (apply anyway)
+    cand_years = float(
+        profile.get("years_of_experience")
+        if profile.get("years_of_experience") is not None
+        else (profile.get("years_experience") or 0.0)
+    )
+    req_years = 0.0
+    yr_matches = [float(m) for m in re.findall(r"\b(\d+(?:\.\d+)?)\s*\+?\s*(?:-\s*\d+\s*)?years?\b", low_text)]
+    if yr_matches:
+        req_years = max(yr_matches)
+    else:
+        yr_sk = sk.years_required(text)
+        if yr_sk:
+            req_years = float(yr_sk)
+
+    if req_years > 0 and cand_years > 0 and req_years > cand_years:
+        diff_yrs = req_years - cand_years
+        advice = (
+            f"Posting asks for {req_years:g} years and you have {cand_years:g} years. Soft gap: apply anyway."
+            if diff_yrs <= 2.5
+            else f"Posting asks for {req_years:g} years and you have {cand_years:g} years. Stretch requirement: decide based on scope."
+        )
+        item = {
+            "kind": "soft_gap",
+            "requirement": f"{req_years:g} years experience",
+            "candidate_has": f"{cand_years:g} years",
+            "apply_anyway": True,
+            "advice": advice,
+        }
+        soft_gaps.append(item)
+        gaps.append(item)
+
+    # 2. Hard requirements: work authorization / citizenship / clearance / required active license
+    hard_checks = [
+        ("Active security clearance", r"\b(?:active\s+)?(?:top\s+secret|ts/sci|security\s+clearance)\b", ("security clearance", "top secret", "ts/sci")),
+        ("Work authorization or citizenship", r"\b(?:must\s+be\s+(?:a\s+)?(?:us|u\.s\.|eu)\s+citizen|citizenship\s+required|no\s+visa\s+sponsorship|without\s+(?:visa\s+)?sponsorship|(?:requires?|must\s+(?:have|hold)|need)\s+(?:[a-z.]+\s+)?work\s+authorization)\b", ("citizen", "work authorization", "authorized to work")),
+        ("Required active professional license", r"\b(?:active\s+(?:cpa|pe|rn|md|law|bar|medical)\s+license|board\s+certified|bar\s+admission\s+required)\b", ("cpa", "pe license", "rn license", "bar admission", "board certified")),
+    ]
+    for label, pattern, ok_terms in hard_checks:
+        if re.search(pattern, low_text) and not any(t in cand_corpus for t in ok_terms):
+            item = {
+                "kind": "hard_gap",
+                "requirement": label,
+                "candidate_has": "Not verified in resume or confirmed facts",
+                "apply_anyway": False,
+                "advice": f"Hard requirement ({label}): confirm eligibility before spending time applying.",
+            }
+            hard_gaps.append(item)
+            gaps.append(item)
+
+    # 3. Missing required/technical skills (soft or skill gaps)
+    for ms in missing[:6]:
+        is_adj = ms in adjacent
+        item = {
+            "kind": "soft_gap" if is_adj else "skill_gap",
+            "requirement": ms,
+            "candidate_has": "Adjacent skill" if is_adj else "Not listed",
+            "apply_anyway": True,
+            "advice": (
+                f"Related background covers parts of {ms}; clarify honestly if asked."
+                if is_adj
+                else f"Missing {ms} on master resume; do not claim it."
+            ),
+        }
+        gaps.append(item)
+        if is_adj:
+            soft_gaps.append(item)
+
+    fit_level = "strong" if fit_score >= 75 else ("moderate" if fit_score >= 60 else "weak")
+    gap_names = [g["requirement"] for g in gaps[:3]]
+    if hard_gaps:
+        rec = "Hard requirement flagged; verify eligibility before investing time, or Save anyway to proceed."
+    elif fit_level == "weak":
+        rec = "Weak match overall; review strengths and gaps carefully to save time. You can still Save anyway."
+    elif soft_gaps:
+        rec = "Only soft gaps found (such as years requested). Apply anyway using concrete examples."
+    else:
+        rec = "Solid match. Highlight direct skill overlap and real numbers."
+
+    plain_summary = (
+        f"{fit_level.capitalize()} fit ({fit_score}/100). "
+        + (f"Matches: {', '.join(matched[:4])}. " if matched else "Limited direct skill overlap. ")
+        + (f"Gaps: {', '.join(gap_names)}. " if gap_names else "No major gaps detected. ")
+        + rec
+    )
+
+    return {
+        "fit_score": fit_score,
+        "fit_level": fit_level,
+        "plain_summary": plain_summary.strip(),
+        "strengths": strengths,
+        "gaps": gaps,
+        "soft_gaps": soft_gaps,
+        "hard_gaps": hard_gaps,
+        "matched_skills": matched,
+        "missing_skills": missing,
+        "apply_recommendation": rec,
+        "blocking": False,
+    }
+
+
 def classify_job_fit(job: dict, profile: dict | None = None, level_shift: int = 0) -> tuple[str, list[str]]:
     """Classify a job as 'Safe', 'Match', or 'Reach' relative to candidate profile,
     and return up to 3 top gaps.

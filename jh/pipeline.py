@@ -390,7 +390,7 @@ def search(query="", location="", work_mode="Any", min_score=0, famous_mode="all
     from .scoring import derive_target_roles
     extra_terms = [r for r in derive_target_roles(profile) if r.lower() != query.lower()] if is_profile_search else []
     depth = prefs.get("search_depth", "standard")
-    targets = regions.resolve_targets(prefs, profile, location)
+    targets = regions.resolve_targets(prefs, profile, location, allow_profile_fallback=False)
     remote_ok = regions.wants_remote(prefs, profile)
     loc_clean = (location or "").lower().strip()
     is_tunisia = loc_clean in ("tunisia", "tunis", "sousse", "sfax") or (prefs.get("target_countries") == ["Tunisia"] and not prefs.get("include_worldwide_remote", True))

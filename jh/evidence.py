@@ -432,7 +432,7 @@ def _match_claim(
 
 
 def _build_corpus_text(profile: dict[str, Any]) -> str:
-    """Build a text corpus from the profile for number matching."""
+    """Build a text corpus from the profile and confirmed facts for number matching."""
     parts = [
         profile.get("summary", ""),
         " ".join(profile.get("skills", [])),
@@ -442,6 +442,11 @@ def _build_corpus_text(profile: dict[str, Any]) -> str:
         parts.extend([e.get("role", ""), e.get("company", ""), " ".join(e.get("bullets", []))])
     for e in profile.get("education", []):
         parts.extend([e.get("degree", ""), e.get("institution", "")])
+    for cf in profile.get("confirmed_facts", []) or []:
+        parts.append(cf.get("fact", "") if isinstance(cf, dict) else str(cf))
+    if profile.get("confirmed_side_work"):
+        sw = profile.get("confirmed_side_work")
+        parts.extend(sw if isinstance(sw, list) else [str(sw)])
     return "\n".join(parts)
 
 

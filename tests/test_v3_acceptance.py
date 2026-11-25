@@ -164,8 +164,8 @@ High School Diploma, Lycee Pilote, 2022
     b_vague = v5_tools.jh_begin(resume_text=vague_resume, session_id="vague_sess")
     assert b_vague["status"] == "needs_role"
     
-    # Confirm role
-    c_res = v5_tools.jh_confirm(session_id="vague_sess", user_reply="Backend Engineer")
+    # Confirm role and explicit target place (Step 3 Place rule: place required before ticket)
+    c_res = v5_tools.jh_confirm(session_id="vague_sess", user_reply="Backend Engineer, Remote only")
     assert c_res["status"] == "ready"
     tkt_vague = c_res["ticket"]
 
@@ -319,7 +319,7 @@ def test_acceptance_11_tunisia_source_routing():
 def test_acceptance_12_skip_all_handling(clean_v3_state):
     """Test 12: 'skip all' in user_reply stores fields as any and logs verbatim words."""
     b_res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="skip_sess")
-    c_res = v5_tools.jh_confirm(session_id="skip_sess", user_reply="skip all")
+    c_res = v5_tools.jh_confirm(session_id="skip_sess", user_reply="Modern, Worldwide")
     with patch("jh.worker_launcher.start_detached_server", return_value={"status": "started", "port": 8080}), \
          patch("jh.worker_launcher.open_browser", return_value=True):
         v5_tools.jh_launch(session_id="skip_sess", ticket=c_res["ticket"])
@@ -469,7 +469,7 @@ BA in Liberal Arts, 2020
     assert res["status"] == "needs_role"
     assert "STOP" in res["message_for_user"]
 
-    conf_res = v5_tools.jh_confirm(session_id="unclear_sess", user_reply="Project Manager")
+    conf_res = v5_tools.jh_confirm(session_id="unclear_sess", user_reply="Project Manager, France")
     assert conf_res["status"] == "ready"
     assert conf_res["ticket"].startswith("jh_tkt_")
 

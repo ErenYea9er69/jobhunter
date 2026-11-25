@@ -84,6 +84,72 @@ ROLE_CLUSTERS = [
 
 INTERN_KEYWORDS = re.compile(r"\b(pfe|intern|internship|stage|stagiaire|alternance|co-?op|apprentice|etudiant|étudiant|student)\b", re.I)
 
+ROLE_TITLE_FAMILIES: dict[str, list[str]] = {
+    "Cloud / DevOps Engineer": ["Cloud Engineer", "DevOps Engineer", "Site Reliability Engineer", "Platform Engineer", "Infrastructure Engineer"],
+    "Full Stack Software Engineer": ["Full Stack Software Engineer", "Full Stack Developer", "Software Engineer", "Product Engineer", "Web Application Engineer"],
+    "Backend Software Engineer": ["Backend Software Engineer", "Backend Engineer", "API Engineer", "Distributed Systems Engineer", "Platform Backend Engineer"],
+    "Frontend Engineer": ["Frontend Engineer", "Frontend Developer", "UI Software Engineer", "React Engineer", "Web UI Developer"],
+    "AI / ML Engineer": ["AI / ML Engineer", "Machine Learning Engineer", "Applied AI Engineer", "LLM Engineer", "MLOps Engineer"],
+    "Data Engineer": ["Data Engineer", "Analytics Engineer", "ETL Developer", "Data Platform Engineer", "Big Data Engineer"],
+    "Mobile Developer": ["Mobile Developer", "Mobile Software Engineer", "iOS Developer", "Android Developer", "React Native Engineer"],
+    "QA / Test Automation Engineer": ["QA Automation Engineer", "Software Development Engineer in Test", "QA Engineer", "Test Automation Engineer", "Quality Engineer"],
+    "Cybersecurity Analyst / Engineer": ["Cybersecurity Engineer", "Security Analyst", "Application Security Engineer", "Information Security Analyst", "SOC Engineer"],
+    "Embedded / Systems Engineer": ["Embedded Systems Engineer", "Firmware Engineer", "Systems Engineer", "Embedded Software Developer", "RTOS Engineer"],
+    "Software Engineer": ["Software Engineer", "Software Developer", "Application Developer", "Systems Developer", "Associate Software Engineer"],
+    "Product Manager": ["Product Manager", "Technical Product Manager", "Product Owner", "Associate Product Manager", "Platform Product Manager"],
+    "Data Analyst": ["Data Analyst", "Business Intelligence Analyst", "Product Analyst", "Operations Analyst", "Quantitative Analyst"],
+}
+
+
+def expand_title_family(role_name: str) -> list[str]:
+    """Return ~5 closely related standard titles for search query expansion only (never a filter)."""
+    clean = (role_name or "").strip()
+    if not clean:
+        return ["Software Engineer", "Software Developer", "Application Engineer", "Backend Engineer", "Full Stack Developer"]
+    if clean in ROLE_TITLE_FAMILIES:
+        return list(ROLE_TITLE_FAMILIES[clean])
+    low = clean.lower()
+    for canon, fam in ROLE_TITLE_FAMILIES.items():
+        if canon.lower() == low or any(low == f.lower() for f in fam):
+            out = [clean] + [f for f in fam if f.lower() != low]
+            return out[:5]
+    # Generic deterministic expansion preserving role noun + core synonyms
+    variants = [clean]
+    if "engineer" in low:
+        variants.extend([
+            re.sub(r"\bengineer\b", "Developer", clean, flags=re.I),
+            f"{clean} Specialist",
+            f"Associate {clean}",
+            f"Platform {clean}",
+        ])
+    elif "developer" in low:
+        variants.extend([
+            re.sub(r"\bdeveloper\b", "Engineer", clean, flags=re.I),
+            f"Application {clean}",
+            f"Associate {clean}",
+            f"Software {clean}",
+        ])
+    elif "manager" in low:
+        variants.extend([
+            f"Senior {clean}",
+            f"Lead {clean}",
+            f"{clean} Specialist",
+            f"Program {clean}",
+        ])
+    else:
+        variants.extend([
+            f"{clean} Specialist",
+            f"{clean} Lead",
+            f"{clean} Associate",
+            f"{clean} Analyst",
+        ])
+    deduped = []
+    for v in variants:
+        vs = " ".join(v.split())
+        if vs and vs not in deduped:
+            deduped.append(vs)
+    return deduped[:5]
+
 
 def infer_roles(profile: dict[str, Any], filename: str = "") -> dict[str, Any]:
     """Infers top candidate roles and confidence based on profile data and filename."""
@@ -114,15 +180,16 @@ def infer_roles(profile: dict[str, Any], filename: str = "") -> dict[str, Any]:
             # Non-cluster / non-standard title gets moderate confidence (below 0.50 threshold)
             add_score(target_title, 0.40, f"Title declared in resume: '{target_title}'")
 
-    # 2. Work history job titles (weighted by recency)
+    # 2. Work history job titles (weighted by recency; accept both 'role' and 'title')
     for idx, job in enumerate(work_history):
-        title = (job.get("title") or "").strip().lower()
+        raw_title = (job.get("role") or job.get("title") or "").strip()
+        title = raw_title.lower()
         if not title:
             continue
         weight = 0.50 if idx == 0 else (0.35 if idx == 1 else 0.20)
         for c in ROLE_CLUSTERS:
             if any(k in title for k in c["keywords"]):
-                add_score(c["role"], weight, f"Previous role as {job.get('title')}")
+                add_score(c["role"], weight, f"Previous role as {raw_title}")
 
     # 3. Skill clusters
     for c in ROLE_CLUSTERS:
@@ -145,14 +212,22 @@ def infer_roles(profile: dict[str, Any], filename: str = "") -> dict[str, Any]:
             role_scores["Software Engineer"] = 0.20
             role_reasons["Software Engineer"] = ["Unspecified profile"]
 
-    # Normalize confidences to [0.0, 1.0]
+    # Normalize confidences to [0.0, 1.0] and expand each inferred role into ~5 search-query-only title variants
     ranked_roles = []
+    all_title_families: list[str] = []
     for role, raw_score in sorted(role_scores.items(), key=lambda x: x[1], reverse=True)[:3]:
         conf = round(min(1.0, raw_score), 2)
+        family = expand_title_family(role)
+        for t in family:
+            if t not in all_title_families:
+                all_title_families.append(t)
         ranked_roles.append({
             "role": role,
             "confidence": conf,
-            "reason": "; ".join(role_reasons.get(role, []))
+            "reason": "; ".join(role_reasons.get(role, [])),
+            "title_family": family,
+            "is_guess": True,
+            "usage": "search_query_only",
         })
 
     # Confidence >= 0.5 becomes role_focus
@@ -162,7 +237,7 @@ def infer_roles(profile: dict[str, Any], filename: str = "") -> dict[str, Any]:
     # Job type guess (suggestion for round 2 only - NEVER filters results)
     is_intern_filename = bool(INTERN_KEYWORDS.search(filename))
     is_intern_summary = bool(INTERN_KEYWORDS.search(summary))
-    years_exp = float(profile.get("years_of_experience") or 0.0)
+    years_exp = float(profile.get("years_of_experience") if profile.get("years_of_experience") is not None else (profile.get("years_experience") or 0.0))
     
     if is_intern_filename or is_intern_summary or (years_exp <= 1.0 and "pfe" in filename.lower()):
         job_type_guess_val = "internship (PFE)"
@@ -177,13 +252,12 @@ def infer_roles(profile: dict[str, Any], filename: str = "") -> dict[str, Any]:
         "note": "Suggested default based on experience and file cues. Does not filter until confirmed.",
     }
 
-    # Default region to Worldwide / anywhere for all candidates
-    region_val = "Worldwide"
-
+    # Contract Step 2/3 Place Rule: resume NEVER supplies place, remote choice, or filter.
     region_guess = {
-        "value": region_val,
+        "value": "",
         "guess": True,
-        "note": "Default for anywhere in the world. Does not filter until confirmed.",
+        "source": "never_from_resume",
+        "note": "Place is never guessed from resume, address, phone, IP, or language. Confirm explicitly with user.",
     }
 
     # Build concise profile summaries
@@ -223,6 +297,7 @@ def infer_roles(profile: dict[str, Any], filename: str = "") -> dict[str, Any]:
     return {
         "roles": ranked_roles,
         "role_focus": role_focus,
+        "title_families": all_title_families,
         "status": status,
         "level": inferred_level,
         "inferred_level": inferred_level,

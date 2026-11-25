@@ -571,6 +571,7 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     prof = check_res["profile"]
     db.save_profile(prof, profile_id="master")
     db.set_active_resume_profile("master")
+    db.set_setting("active_session_id", session_id)
 
     filename = Path(resume_path).name if resume_path else "pasted_resume.txt"
     inf = role_inference.infer_roles(prof, filename)
@@ -578,19 +579,19 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     sess["inference_result"] = inf
     sess["resume_id"] = util.stable_id(prof.get("name") or "candidate", check_res.get("text_chars", 0))
 
-    # D3: Store inferences into guesses table (never filters search/view)
+    # D3: Store inferences into guesses table (never filters search/view). Never store resume-guessed locations.
     for r in inf.get("roles", []):
         db.store_guess(session_id, "role", r.get("role", ""), confidence=float(r.get("confidence", 0.0)), resume_id=sess["resume_id"])
     if inf.get("job_type_guess"):
         db.store_guess(session_id, "job_type", inf["job_type_guess"].get("value", ""), confidence=float(inf["job_type_guess"].get("confidence", 0.0)), resume_id=sess["resume_id"])
-    if inf.get("region_guess"):
+    if inf.get("region_guess") and inf["region_guess"].get("value"):
         db.store_guess(session_id, "location", inf["region_guess"].get("value", ""), confidence=float(inf["region_guess"].get("confidence", 0.0)), resume_id=sess["resume_id"])
 
     # Profile Line formatting (D12)
     cand_name = check_res.get("name") or prof.get("name") or "Candidate"
     roles_with_conf = [f"{r.get('role', '')} ({float(r.get('confidence', 0.0)):.2f})" for r in inf.get("roles", [])[:2]]
     roles_str = ", ".join(roles_with_conf) if roles_with_conf else "General"
-    years = prof.get("years_experience")
+    years = prof.get("years_of_experience") if prof.get("years_of_experience") is not None else prof.get("years_experience")
     years_str = f"{years} years" if years else "Intern / Student"
     skills = prof.get("skills", [])[:5]
     if isinstance(skills, dict):
@@ -601,13 +602,14 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
 
     ask_role = (len(inf.get("role_focus", [])) == 0)
 
-    # Mandatory Round 1 Questions (D1, D4)
+    # Mandatory Round 1 Questions (D1, D4, Steps 2-3 Place Rule)
     step3_q = interview_questions.build_step_3_target_questions(
         inf["roles"], inf["region_guess"], ask_role=ask_role
     )
     sess["last_questions"] = step3_q
     sess["pending_questions"] = step3_q["questions"]
     sess["role_focus"] = inf.get("role_focus", [])
+    sess["title_families"] = inf.get("title_families", [])
     warnings_lines = "\n".join(check_res["warnings"]) if check_res["warnings"] else ""
     header_parts = []
     if notice:
@@ -641,6 +643,8 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
             "one_line_summary": inf.get("one_line_summary", ""),
             "inferred_roles": inf["roles"],
             "role_focus": inf.get("role_focus", []),
+            "title_families": inf.get("title_families", []),
+            "title_families_note": "Inferred title variants (guesses) used for search queries only; never used to filter results.",
             "job_type_guess": inf["job_type_guess"],
             "region_guess": inf["region_guess"],
             "warnings": check_res["warnings"],
@@ -695,61 +699,56 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
     config.set_method(chosen_method)
     db.set_session_state(f"method_{chosen_method}")
 
-    # 2. Parse Target Place
+    # 2. Parse Target Place (NEVER guess from resume, address, phone, IP, or language)
+    from . import regions
     inf = sess.get("inference_result") or {}
-    resume_country = (inf.get("region_guess", {}).get("value") or "").strip()
-    if not resume_country or resume_country.lower() in ("any", "unknown", ""):
-        resume_country = "Worldwide"
+    parsed_places = regions.parse_confirmed_places(user_reply, answers)
+    places = list(parsed_places.get("places") or [])
+    if not places:
+        return {
+            "status": "needs_input",
+            "step": 2,
+            "ticket": None,
+            "message_for_user": ticket_manager.build_stop_message(
+                "Please confirm your target place before I issue a session ticket (I never guess place from your resume). "
+                "Pick one or several: remote only, international or worldwide remote, or a specific country/region "
+                "(e.g. France, Europe, South Asia, or the USA), plus an optional city."
+            ),
+            "ask_user": "Target place (remote only, international/worldwide remote, or specific country/region + optional city, visa free or sponsoring visa)?",
+            "next_tool": "jh_confirm",
+            "data": {"error": "target_place_required", "ticket": None},
+        }
+    chosen_place = ", ".join(places)
 
-    if ticket_manager.is_explicit_skip(clean_reply) and not any(k in clean_reply for k in ["tunis", "remote", "france", "germany", "us", "asia", "worldwide"]):
-        chosen_place = resume_country
-    elif answers.get("target_place") or answers.get("location"):
-        chosen_place = str(answers.get("target_place") or answers.get("location")).strip()
-    else:
-        if "tunis" in clean_reply or "tunisia" in clean_reply or "tunisie" in clean_reply:
-            chosen_place = "Tunisia"
-        elif "remote worldwide" in clean_reply or "worldwide" in clean_reply or "global remote" in clean_reply:
-            chosen_place = "remote worldwide"
-        elif "remote" in clean_reply:
-            chosen_place = "remote"
-        elif "south asia" in clean_reply or "asia" in clean_reply:
-            chosen_place = "South Asia"
-        elif "france" in clean_reply:
-            chosen_place = "France"
-        elif "germany" in clean_reply or "deutschland" in clean_reply:
-            chosen_place = "Germany"
-        elif "uk" in clean_reply or "united kingdom" in clean_reply:
-            chosen_place = "United Kingdom"
-        elif "us" in clean_reply or "united states" in clean_reply or "usa" in clean_reply:
-            chosen_place = "United States"
-        elif "abroad" in clean_reply:
-            chosen_place = "abroad"
-        elif "any" in clean_reply or "anywhere" in clean_reply:
-            chosen_place = "Worldwide"
-        else:
-            chosen_place = resume_country
-
-    # 3. Parse Target Role
+    # 3. Parse Target Role (keep guesses out of filters unless user explicitly confirms/overrides role)
+    role_confirmed = False
     if answers.get("target_role") or answers.get("role"):
         role_focus = [str(answers.get("target_role") or answers.get("role")).strip()]
-    elif ticket_manager.is_explicit_skip(clean_reply):
-        role_focus = sess.get("role_focus") or [r["role"] for r in inf.get("roles", [])[:1]] or ["Software Engineer"]
+        role_confirmed = True
     else:
-        import re
         m = re.search(r"(?:role(?:\s*is|:)?|target(?:\s*role)?(?:\s*is|:)?|i want|aiming for)\s+([a-zA-Z\s\/\+\#]+?)(?:in|using|with|method|$|,)", user_reply, re.I)
         if m and len(m.group(1).strip().split()) <= 4:
             role_focus = [m.group(1).strip()]
+            role_confirmed = True
         else:
             role_focus = sess.get("role_focus") or [r["role"] for r in inf.get("roles", [])[:1]] or ["Software Engineer"]
 
-    db.save_view_filters({
-        "locations": [chosen_place],
-        "job_style": role_focus[0],
-        "roles": role_focus,
+    view_filter_payload: dict[str, Any] = {
+        "locations": places,
         "method": chosen_method,
-    }, session_id=session_id)
+        "roles": role_focus if role_confirmed else [],
+    }
+    if role_confirmed:
+        view_filter_payload["job_style"] = role_focus[0]
+    if parsed_places.get("remote_only") or parsed_places.get("worldwide_remote"):
+        view_filter_payload["work_mode"] = "remote"
+        sess["answers"]["work_mode"] = "remote"
+
+    db.save_view_filters(view_filter_payload, session_id=session_id)
+    sess["answers"]["locations"] = places
     sess["role_focus"] = role_focus
     sess["target_place"] = chosen_place
+    sess["confirmed_places"] = places
     sess["method"] = chosen_method
 
     resume_id = sess.get("resume_id") or "master"
@@ -760,11 +759,15 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
         method=chosen_method,
         location=chosen_place,
     )
-    # D3: Store confirmed answers from user reply into answers table
+    # D3: Store confirmed answers from user reply into answers & confirmed_facts tables
     db.store_answer(session_id, "method", chosen_method, user_reply=user_reply)
     db.store_answer(session_id, "target_place", chosen_place, user_reply=user_reply)
-    if role_focus:
+    db.add_confirmed_fact(f"target_place: {chosen_place}", category="target_place", session_id=session_id)
+    if parsed_places.get("remote_only") or parsed_places.get("worldwide_remote"):
+        db.add_confirmed_fact("work_mode: remote", category="work_mode", session_id=session_id)
+    if role_confirmed and role_focus:
         db.store_answer(session_id, "role", ", ".join(role_focus), user_reply=user_reply)
+        db.add_confirmed_fact(f"target_role: {', '.join(role_focus)}", category="role", session_id=session_id)
 
     # D1: Transition session state machine to ANSWERED
     ticket_manager.transition_session_state(session_id, ticket_manager.SessionState.ANSWERED)
@@ -838,15 +841,22 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
         }
     else:
         confirmed_role = db.get_confirmed_answer(session_id, "role")
+        inf = sess.get("inference_result") or {}
         if confirmed_role:
+            from . import role_inference
+            family = role_inference.expand_title_family(confirmed_role)
             query = confirmed_role
+            search_role_focus = family
         else:
             role_guesses = db.get_guesses(session_id, category="role")
             high_conf = [r["value"] for r in role_guesses if r.get("confidence", 0.0) >= 0.5]
-            if high_conf:
-                query = ", ".join(high_conf)
-            else:
-                query = ", ".join(sess.get("role_focus", ["Software Engineer"]))
+            base_roles = high_conf or sess.get("role_focus") or ["Software Engineer"]
+            families = inf.get("title_families") or []
+            if not families:
+                from . import role_inference
+                families = role_inference.expand_title_family(base_roles[0])
+            query = ", ".join(base_roles)
+            search_role_focus = families
 
         target_loc = db.get_confirmed_answer(session_id, "target_place") or sess.get("target_place") or ""
 
@@ -858,7 +868,7 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
                 session_id=session_id,
                 query=query,
                 location=target_loc,
-                role_focus=sess.get("role_focus", []),
+                role_focus=search_role_focus,
             )
             search_job_id = search_res["search_job_id"]
             sess["search_job_id"] = search_job_id
@@ -900,6 +910,7 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
     launch_status = "reused" if server_res["status"] == "reused" and search_status == "already_running" else "started"
 
     ticket_manager.transition_session_state(session_id, ticket_manager.SessionState.LAUNCHED)
+    ticket_manager.record_questions_presented(session_id, r2["formatted_text"])
 
     return {
         "status": "ok",
@@ -1003,48 +1014,78 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
                 mapped_dict["min_salary"] = val
 
             clean_reply_no_paren = re.sub(r"\(.*?\)", "", clean_reply).strip()
-            q1_match = re.search(r"(?:^|\n)\s*1[\.\:\)]\s*([^\n\,]+)", clean_reply_no_paren)
-            loc_match = re.search(r"(?:somewhere\s+in|in|near|around)\s+([a-zA-Z\s]+)", clean_reply_no_paren)
-            if q1_match:
-                loc_cand = q1_match.group(1).strip()
-                if "south asia" in loc_cand:
-                    answers["locations"] = ["South Asia"]
-                    mapped_dict["locations"] = ["South Asia"]
-                elif "worldwide" in loc_cand or "remote" in loc_cand or "any" in loc_cand:
-                    answers["locations"] = ["Worldwide"]
-                    mapped_dict["locations"] = ["Worldwide"]
-                elif loc_cand:
-                    answers["locations"] = [loc_cand.title()]
-                    mapped_dict["locations"] = [loc_cand.title()]
-            elif loc_match:
-                loc_cand = loc_match.group(1).strip()
-                if loc_cand.lower() not in ("a month", "month", "the"):
-                    answers["locations"] = [loc_cand.capitalize()]
-                    mapped_dict["locations"] = [loc_cand.capitalize()]
-            elif "south asia" in clean_reply_no_paren:
-                answers["locations"] = ["South Asia"]
-                mapped_dict["locations"] = ["South Asia"]
-            elif "sfax" in clean_reply_no_paren:
-                answers["locations"] = ["Sfax"]
-                mapped_dict["locations"] = ["Sfax"]
-            elif "tunisia" in clean_reply_no_paren or "tunis" in clean_reply_no_paren:
-                answers["locations"] = ["Tunisia"]
-                mapped_dict["locations"] = ["Tunisia"]
-            elif "remote worldwide" in clean_reply_no_paren or "worldwide" in clean_reply_no_paren:
-                answers["locations"] = ["Worldwide"]
-                mapped_dict["locations"] = ["Worldwide"]
+            from . import regions
+            parsed_loc = regions.parse_confirmed_places(user_reply, None)
+            explicit_place_switch = bool(re.search(r"\b(?:location|place|where|city|country|move|relocate|switch|change)\b", clean_reply))
+            non_remote_places = [p for p in (parsed_loc.get("places") or []) if p.lower() not in ("remote",)]
+            if (non_remote_places or (parsed_loc.get("places") and explicit_place_switch)) and not answers.get("locations"):
+                answers["locations"] = non_remote_places or list(parsed_loc["places"])
+                mapped_dict["locations"] = list(answers["locations"])
+                if parsed_loc.get("worldwide_remote") or (parsed_loc.get("remote_only") and explicit_place_switch):
+                    answers["work_mode"] = "remote"
+                    mapped_dict["work_mode"] = "remote"
 
-            excl_match = re.search(r"(?:not|no|exclude|avoid)\s+([a-zA-Z0-9_-]+)", clean_reply)
-            if excl_match:
-                ex_kw = excl_match.group(1).strip()
-                if ex_kw.lower() not in ("more", "a", "the", "devops"):
-                    answers["excluded_keywords"] = [ex_kw]
-                    mapped_dict["excluded_keywords"] = [ex_kw]
+            # Lesson A: Optional Step 5 targeting (industry, company_stage, market_served, languages)
+            if not answers.get("confirmed_industries") and not answers.get("industry"):
+                ind_hits = [ind for ind in ("saas", "fintech", "healthtech", "ai", "cybersecurity", "ecommerce", "e-commerce", "consulting") if re.search(rf"\b{re.escape(ind)}\b", clean_reply)]
+                if ind_hits:
+                    answers["confirmed_industries"] = ind_hits
+                    mapped_dict["confirmed_industries"] = ind_hits
 
-            if any(w in clean_reply for w in ["go higher", "search higher", "search senior", "aim higher", "senior"]):
+            if not answers.get("company_stages") and not answers.get("company_stage"):
+                stage_hits = []
+                if re.search(r"\bstartup\b", clean_reply):
+                    stage_hits.append("startup")
+                if re.search(r"\bscale[-\s]?up\b", clean_reply):
+                    stage_hits.append("scale-up")
+                if re.search(r"\bpublic\b", clean_reply):
+                    stage_hits.append("public")
+                if stage_hits:
+                    answers["company_stages"] = stage_hits
+                    mapped_dict["company_stages"] = stage_hits
+
+            if not answers.get("markets_served") and not answers.get("market_served"):
+                mkt_hits = [m for m in ("b2b", "b2c", "enterprise", "smb", "developer tools", "devtools") if re.search(rf"\b{re.escape(m)}\b", clean_reply)]
+                if mkt_hits:
+                    answers["markets_served"] = mkt_hits
+                    mapped_dict["markets_served"] = mkt_hits
+
+            if not answers.get("languages"):
+                lang_hits = [lg for lg in ("bilingual", "english", "french", "arabic", "german", "spanish") if re.search(rf"\b{re.escape(lg)}\b", clean_reply)]
+                if lang_hits:
+                    answers["languages"] = lang_hits
+                    mapped_dict["languages"] = lang_hits
+
+            # Lesson D: Side work / freelance / contract fact (stored ONLY when explicitly confirmed)
+            if not answers.get("side_work"):
+                side_m = re.search(r"(?:side\s+work|freelance|contract(?:\s+work)?)\s*(?::|is|-)?\s*([^\n.;]+)", user_reply, re.I)
+                if side_m:
+                    sw_val = side_m.group(1).strip()
+                    if sw_val and sw_val.lower() not in ("none", "no", "n/a", "skip"):
+                        answers["side_work"] = sw_val
+                        mapped_dict["side_work"] = sw_val
+
+            _EXCL_STOPWORDS = {
+                "more", "a", "an", "the", "devops", "visa", "sponsor", "sponsorship",
+                "side", "work", "freelance", "contract", "remote", "hybrid", "onsite",
+                "on-site", "senior", "junior", "pay", "salary", "cap", "limit", "need",
+                "needed", "required", "experience", "problem", "worries", "preference",
+                "preferences", "any", "match", "jobs", "roles",
+            }
+            excl_matches = re.findall(r"\b(?:exclude|avoid|not|no)\s+([a-zA-Z0-9_-]+)", clean_reply)
+            filtered_excl = [w.strip().lower() for w in excl_matches if w.strip().lower() not in _EXCL_STOPWORDS]
+            if filtered_excl:
+                answers["excluded_keywords"] = filtered_excl
+                mapped_dict["excluded_keywords"] = filtered_excl
+
+            if not re.search(r"\b(?:no|not)\s+senior\b", clean_reply) and any(
+                w in clean_reply for w in ["go higher", "search higher", "search senior", "aim higher", "senior"]
+            ):
                 answers["level_shift"] = 1
                 mapped_dict["level_shift"] = 1
-            elif any(w in clean_reply for w in ["go lower", "search lower", "something easier", "junior"]):
+            elif not re.search(r"\b(?:no|not)\s+junior\b", clean_reply) and any(
+                w in clean_reply for w in ["go lower", "search lower", "something easier", "junior"]
+            ):
                 answers["level_shift"] = -1
                 mapped_dict["level_shift"] = -1
 
@@ -1079,20 +1120,33 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
         if "location" in answers and "locations" not in answers:
             loc = answers["location"]
             answers["locations"] = [loc] if isinstance(loc, str) else list(loc)
+        if "industry" in answers and "confirmed_industries" not in answers:
+            ind_v = answers["industry"]
+            answers["confirmed_industries"] = [ind_v] if isinstance(ind_v, str) else list(ind_v)
+        if "company_stage" in answers and "company_stages" not in answers:
+            st_v = answers["company_stage"]
+            answers["company_stages"] = [st_v] if isinstance(st_v, str) else list(st_v)
+        if "market_served" in answers and "markets_served" not in answers:
+            mk_v = answers["market_served"]
+            answers["markets_served"] = [mk_v] if isinstance(mk_v, str) else list(mk_v)
 
-        if mapped_dict.get("locations"):
-            new_loc = mapped_dict["locations"][0]
-            if new_loc != sess.get("target_place"):
-                sess["target_place"] = new_loc
-                try:
-                    worker_launcher.start_background_search(
-                        session_id=session_id,
-                        query=sess.get("role_focus", ["Software Engineer"])[0],
-                        location=new_loc,
-                        role_focus=sess.get("role_focus", []),
-                    )
-                except Exception:
-                    pass
+        # Contract Step 5: Never restart search on live filter edits; persist confirmed facts & SQL filters only
+        if answers.get("locations"):
+            sess["target_place"] = ", ".join(str(x) for x in answers["locations"])
+            db.add_confirmed_fact(f"target_place: {sess['target_place']}", category="target_place", session_id=session_id)
+        for fact_cat, ans_key in (
+            ("industry", "confirmed_industries"),
+            ("company_stage", "company_stages"),
+            ("market_served", "markets_served"),
+            ("languages", "languages"),
+        ):
+            if answers.get(ans_key):
+                vals = answers[ans_key] if isinstance(answers[ans_key], list) else [answers[ans_key]]
+                db.add_confirmed_fact(f"{fact_cat}: {', '.join(str(x) for x in vals)}", category=fact_cat, session_id=session_id)
+        if answers.get("side_work"):
+            sw = str(answers["side_work"]).strip()
+            if sw.lower() not in ("none", "no", "skip"):
+                db.add_confirmed_fact(sw, category="side_work", session_id=session_id)
 
         sess["answers"].update(answers)
         sess["pending_questions"] = []
@@ -1101,13 +1155,22 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
         db.set_session_state("round_2_answered", last_tool="jh_answer")
 
     # Persist answers into view filters & user preferences
+    db.set_setting("active_session_id", session_id)
     db.save_view_filters(sess["answers"], session_id=session_id)
     try:
-        from . import preferences
+        from . import preferences, regions as _reg
         pref_updates = {}
         if "locations" in sess["answers"]:
-            pref_updates["cities"] = [l for l in sess["answers"]["locations"] if l.lower() != "any"]
-            pref_updates["target_countries"] = [l for l in sess["answers"]["locations"] if l.lower() != "any"]
+            geo_locs = []
+            for loc_item in sess["answers"]["locations"]:
+                ls = str(loc_item or "").strip()
+                if not ls or ls.lower() in ("any", "remote", "remote only", "worldwide", "worldwide remote", "international remote"):
+                    continue
+                if _reg.to_code(ls) or _reg.country_of_location(ls):
+                    geo_locs.append(ls)
+            if geo_locs:
+                pref_updates["cities"] = geo_locs
+                pref_updates["target_countries"] = geo_locs
         if "work_mode" in sess["answers"] and sess["answers"]["work_mode"].lower() != "any":
             pref_updates["work_mode"] = sess["answers"]["work_mode"].capitalize()
         if pref_updates:
@@ -1172,6 +1235,7 @@ def jh_replace_resume(session_id: str = "default", resume_path: str = "", resume
     prof = check_res["profile"]
     db.save_profile(prof, profile_id="master")
     db.set_active_resume_profile("master")
+    db.set_setting("active_session_id", session_id)
 
     filename = Path(resume_path).name if resume_path else "pasted_resume.txt"
     inf = role_inference.infer_roles(prof, filename)
@@ -1577,12 +1641,14 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
     else:
         ask_user_val = None
 
+    pacing_note = "Waiting on replies often reflects budget timing and hiring pauses rather than fit."
     msg = (
         f"JobHunter Status:\n"
         f"- Workspace: {home_dir}\n"
         f"{method_summary}\n"
         f"- Active Profile: {profile.get('_profile_name')} ({profile.get('target_title') or 'Candidate'})\n"
-        f"- Web UI: {ui_url}"
+        f"- Web UI: {ui_url}\n"
+        f"- Note: {pacing_note}"
     )
 
     return {
@@ -1621,6 +1687,7 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
             "outreach_count": outreach_count,
             "today_sent": today_sent,
             "remaining_cap": remaining_cap,
+            "pacing_note": pacing_note,
         }
     }
 

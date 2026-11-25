@@ -32,7 +32,7 @@ ROSTER: dict[str, Role] = {r.key: r for r in (
          ("tailor_resume", "rewrite_resume", "cover_letter", "solve_screening_questions", "prepare_application", "export_resume",
           "outreach_message", "get_playbook")),
     Role("coach", "Interview Coach", "Prepares interviews, scores practice answers, plans skills to learn.",
-         ("interview_prep", "evaluate_mock_interview", "skill_roadmap",
+         ("interview_prep", "practice_interview", "evaluate_mock_interview", "skill_roadmap",
           "get_coaching_context", "get_coaching_content", "record_coaching_event", "set_coaching_preference")),
     Role("ops", "Chief of Staff", "Keeps resumes, preferences and applications in order. Tracks follow-ups.",
          ("scan_resumes", "list_resumes", "get_resume", "set_active_resume", "parse_resume_file", "get_preferences",

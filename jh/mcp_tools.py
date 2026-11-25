@@ -860,6 +860,170 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         return interview.evaluate_mock_interview(question=question, candidate_answer=candidate_answer, role_level=role_level, rubric=rubric)
 
     @tool
+    def practice_interview(
+        job_id: str = "",
+        round_type: str = "all",
+        action: str = "start",
+        question: str = "",
+        candidate_answer: str = "",
+        session_id: str = "default",
+    ) -> dict[str, Any]:
+        """Run interactive interview practice after prep output exists: ask likely questions and score your spoken answers.
+
+        Args:
+            job_id: Saved job id whose generated interview prep you want to practice with.
+            round_type: all, tell_me_about_yourself, recruiter, hiring_manager, or peer.
+            action: start, next, or answer.
+            question: Question being answered (optional; defaults to current practice question).
+            candidate_answer: Your spoken-style practice answer to grade when action is answer.
+            session_id: Practice session identifier.
+        """
+        # Locate existing prep output on disk (required before practice mode)
+        from . import home as home_mod
+        candidate_dirs = [
+            Path(store.output_dir) / "interview-prep" if hasattr(store, "output_dir") else None,
+            home_mod.get_home() / "outputs" / "interview-prep",
+        ]
+        prep_file: Optional[Path] = None
+        if job_id.strip():
+            job = db.get_job(job_id.strip())
+            if job:
+                cand_name = f"{_slug(job.get('company', ''))}-{_slug(job.get('title', ''))}.json"
+                for d in candidate_dirs:
+                    if d is not None and (d / cand_name).is_file():
+                        prep_file = d / cand_name
+                        break
+        else:
+            for d in candidate_dirs:
+                if d is not None and d.is_dir():
+                    files = sorted(d.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+                    if files:
+                        prep_file = files[0]
+                        break
+
+        if prep_file is None or not prep_file.is_file():
+            return Result(
+                status="needs_prep",
+                data={
+                    "status": "needs_prep",
+                    "message": "Run interview_prep for a saved job first so practice questions use that prep output.",
+                    "prep_exists": False,
+                },
+            )
+
+        try:
+            prep_data = json.loads(prep_file.read_text(encoding="utf-8"))
+        except Exception as e:
+            raise ToolError(f"Could not read saved interview prep: {e}")
+
+        queue: list[dict[str, str]] = []
+        rt = (round_type or "all").strip().lower()
+        tmy = prep_data.get("tell_me_about_yourself") or {}
+        if rt in ("all", "tell_me_about_yourself") and tmy:
+            queue.append({
+                "round": "tell_me_about_yourself",
+                "question": "Tell me about yourself and how your background fits this role.",
+                "tip": str(tmy.get("goal") or "Tell a connected story from your real experience."),
+            })
+        rec = prep_data.get("recruiter_screen") or {}
+        if rt in ("all", "recruiter", "recruiter_screen") and rec:
+            queue.append({
+                "round": "recruiter_screen",
+                "question": f"Why are you interested in this role at {prep_data.get('company', 'this company')}?",
+                "tip": str(rec.get("why_this_company") or ""),
+            })
+        hm = prep_data.get("hiring_manager_round") or {}
+        if rt in ("all", "hiring_manager", "hiring_manager_round"):
+            for item in hm.get("likely_questions", []):
+                if isinstance(item, dict) and item.get("question"):
+                    queue.append({
+                        "round": "hiring_manager_round",
+                        "question": str(item["question"]),
+                        "tip": str(item.get("resume_example") or ""),
+                    })
+        peer = prep_data.get("peer_round") or {}
+        if rt in ("all", "peer", "peer_round"):
+            for pq in peer.get("questions", []):
+                queue.append({
+                    "round": "peer_round",
+                    "question": str(pq),
+                    "tip": str(peer.get("focus") or "Describe day-to-day collaboration concretely."),
+                })
+        for td in prep_data.get("technical_deep_dives", []):
+            if rt == "all" and isinstance(td, dict) and td.get("question"):
+                queue.append({
+                    "round": "technical_deep_dives",
+                    "question": str(td["question"]),
+                    "tip": str(td.get("talking_point") or ""),
+                })
+
+        if not queue:
+            queue.append({
+                "round": "general",
+                "question": "Tell me about yourself and one real project you delivered.",
+                "tip": "Use concrete steps and numbers from your resume.",
+            })
+
+        from . import util
+        state_key = f"practice_idx_{util.stable_id(f'{session_id}:{rt}:{prep_file}')[:10]}"
+        idx_raw = db.get_setting(state_key, "0")
+        try:
+            idx = int(idx_raw or 0)
+        except Exception:
+            idx = 0
+
+        act = (action or "start").strip().lower()
+        if act == "start":
+            idx = 0
+            db.set_setting(state_key, "0")
+            cur = queue[0]
+            return {
+                "status": "ready",
+                "prep_exists": True,
+                "prep_file": str(prep_file),
+                "round": cur["round"],
+                "question_index": 0,
+                "total_questions": len(queue),
+                "question": cur["question"],
+                "tip": cur["tip"],
+            }
+
+        if act == "answer" or candidate_answer.strip():
+            if not candidate_answer.strip():
+                raise ToolError("candidate_answer is required when grading a practice answer.")
+            cur = queue[idx % len(queue)]
+            q_text = question.strip() or cur["question"]
+            grade = interview.evaluate_mock_interview(question=q_text, candidate_answer=candidate_answer)
+            next_idx = (idx + 1) % len(queue)
+            db.set_setting(state_key, str(next_idx))
+            nxt = queue[next_idx]
+            return {
+                "status": "graded",
+                "prep_exists": True,
+                "question": q_text,
+                "evaluation": grade,
+                "next_round": nxt["round"],
+                "next_question": nxt["question"],
+                "question_index": next_idx,
+                "total_questions": len(queue),
+            }
+
+        # action == "next"
+        idx = (idx + 1) % len(queue)
+        db.set_setting(state_key, str(idx))
+        cur = queue[idx]
+        return {
+            "status": "ready",
+            "prep_exists": True,
+            "prep_file": str(prep_file),
+            "round": cur["round"],
+            "question_index": idx,
+            "total_questions": len(queue),
+            "question": cur["question"],
+            "tip": cur["tip"],
+        }
+
+    @tool
     def skill_roadmap(job_id: str = "", resume_name: str = "", top_jobs: int = 15) -> dict[str, Any]:
         """Rank the skills worth learning next, by how many of your saved top jobs ask for them and you lack them.
 

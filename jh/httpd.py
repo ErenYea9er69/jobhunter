@@ -417,9 +417,8 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/jobs/query":
             sid = body.get("session_id") or "default"
             filters = body.get("filters") or {}
-            from . import v5_tools
-            if filters:
-                v5_tools.jh_answer(session_id=sid, answers=filters, user_reply="")
+            if filters and isinstance(filters, dict):
+                db.save_view_filters(filters, session_id=sid)
             res = db.query_jobs(view_filters=filters, session_id=sid)
             return self._send_json(200, envelope(status="ok", data={
                 "results": res["jobs"],

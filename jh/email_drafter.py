@@ -98,8 +98,20 @@ def build_job_resume(
                 "reused": True,
             }
 
+    # Include user-confirmed side/freelance/contract work ONLY when confirmed
+    eff_profile = dict(profile)
+    try:
+        from . import refit
+        sw_items = refit._confirmed_side_work_items(eff_profile)
+        if sw_items:
+            eff_profile["confirmed_side_work"] = sw_items
+        if eff_profile.get("summary"):
+            eff_profile["summary"] = refit._dehype_text(eff_profile["summary"])
+    except Exception:
+        pass
+
     # Generate 1-page PDF using exporters
-    pdf_bytes = exporters.to_pdf(profile)
+    pdf_bytes = exporters.to_pdf(eff_profile)
     size_bytes = len(pdf_bytes)
     size_kb = size_bytes / 1024.0
 

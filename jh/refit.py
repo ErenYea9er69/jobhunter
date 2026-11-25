@@ -23,7 +23,56 @@ def resume_corpus(profile):
         parts += [e.get("role", ""), e.get("company", ""), " ".join(e.get("bullets", []))]
     for e in profile.get("education", []):
         parts += [e.get("degree", ""), e.get("institution", "")]
+    for cf in profile.get("confirmed_facts", []) or []:
+        parts.append(cf.get("fact", "") if isinstance(cf, dict) else str(cf))
+    if profile.get("confirmed_side_work"):
+        sw = profile.get("confirmed_side_work")
+        parts.extend(sw if isinstance(sw, list) else [str(sw)])
     return "\n".join(parts)
+
+
+_HYPE_REPLACEMENTS = (
+    (re.compile(r"\bleveraged\b", re.I), "used"),
+    (re.compile(r"\bspearheaded\b", re.I), "led"),
+    (re.compile(r"\butilized\b", re.I), "used"),
+    (re.compile(r"\borchestrated\b", re.I), "coordinated"),
+    (re.compile(r"\bfacilitated\b", re.I), "ran"),
+    (re.compile(r"\b(?:passionate|results-driven|dynamic|world-class|cutting-edge|best-in-class)\b", re.I), ""),
+)
+
+
+def _dehype_text(text: str) -> str:
+    out = text or ""
+    for rx, rep in _HYPE_REPLACEMENTS:
+        out = rx.sub(rep, out)
+    out = re.sub(r"\s{2,}", " ", out).strip()
+    out = re.sub(r"\s+([,.;:])", r"\1", out)
+    return out
+
+
+def _confirmed_side_work_items(profile: dict) -> list[str]:
+    """Return user-confirmed side/freelance/contract work facts only. Never invents."""
+    items: list[str] = []
+    explicit = profile.get("confirmed_side_work")
+    if isinstance(explicit, list):
+        items.extend(str(x).strip() for x in explicit if str(x).strip())
+    elif isinstance(explicit, str) and explicit.strip():
+        items.append(explicit.strip())
+    for cf in profile.get("confirmed_facts") or []:
+        if isinstance(cf, dict) and cf.get("category") == "side_work" and cf.get("fact"):
+            val = str(cf["fact"]).strip()
+            if val and val not in items:
+                items.append(val)
+    if not items:
+        try:
+            for cf in db.get_confirmed_facts() or []:
+                if isinstance(cf, dict) and cf.get("category") == "side_work" and cf.get("fact"):
+                    val = str(cf["fact"]).strip()
+                    if val and val not in items:
+                        items.append(val)
+        except Exception:
+            pass
+    return items
 
 
 def _nums(text):
@@ -279,24 +328,34 @@ def build_role_family_base_resumes(profile: dict, session_id: str = "default") -
 
 
 def tailor_base_resume(base_resume: dict, job: dict) -> dict[str, Any]:
-    """R6: Pick base resume and lightly tailor in under 5 seconds on Save."""
+    """R6: Pick base resume, place most relevant experience first, cut hype, and attach confirmed side work only."""
     cand_skills = list(base_resume.get("skills", []))
     wanted, job_text = _wanted(job)
     kw_info = partition_keywords(job, base_resume)
 
     tailored = copy.deepcopy(base_resume)
     tailored["target_title"] = job.get("title") or base_resume.get("target_title")
-    tailored["summary"] = generate_r3_summary(job, base_resume)
+    tailored["summary"] = _dehype_text(generate_r3_summary(job, base_resume))
 
-    # Reorder bullets based on relevance to posting
+    # Reorder bullets inside each role and put the most relevant experience entry first
+    # without altering dates, titles, employers, or numbers.
     exps = copy.deepcopy(base_resume.get("experience", []))
-    for e in exps:
+    scored_exps = []
+    for idx, e in enumerate(exps):
         bullets = list(e.get("bullets", []))
         ranked = sorted(range(len(bullets)), key=lambda i: (-_relevance(bullets[i], wanted), i))
         reordered = [bullets[i] for i in ranked]
-        aligned = [_align_terms(b, job_text, cand_skills) for b in reordered]
+        aligned = [_dehype_text(_align_terms(b, job_text, cand_skills)) for b in reordered]
         e["bullets"] = aligned
-    tailored["experience"] = exps
+        role_rel = _relevance(f"{e.get('role', '')} {e.get('title', '')} " + " ".join(aligned), wanted)
+        scored_exps.append((role_rel, idx, e))
+    scored_exps.sort(key=lambda t: (-t[0], t[1]))
+    tailored["experience"] = [t[2] for t in scored_exps]
+
+    # Confirmed side/freelance/contract work ONLY when confirmed
+    side_work_items = _confirmed_side_work_items(base_resume)
+    if side_work_items:
+        tailored["confirmed_side_work"] = side_work_items
 
     # Align Have keywords in skills
     have_set = set(s.lower() for s in kw_info["have"])
@@ -415,11 +474,12 @@ def refit_deterministic(job, profile):
                   else "No skills from the posting matched your list, so the order is unchanged.",
                   "grounded": True})
 
+    scored_exps = []
     for xi, e in enumerate(exps):
         bullets = list(e.get("bullets", []))
         ranked = sorted(range(len(bullets)), key=lambda i: (-_relevance(bullets[i], wanted), i))
         reordered = [bullets[i] for i in ranked]
-        aligned = [_align_terms(b, job_text, cand) for b in reordered]
+        aligned = [_dehype_text(_align_terms(b, job_text, cand)) for b in reordered]
         for bi, (before, after) in enumerate(zip(reordered, aligned)):
             if before != after:
                 diffs.append({"id": f"diff_exp_{xi}_{bi}", "section": f"{e.get('role')} @ {e.get('company')}",
@@ -430,9 +490,16 @@ def refit_deterministic(job, profile):
                           "original": "\n".join(bullets), "proposed": "\n".join(aligned), "status": "reordered",
                           "rationale": "Puts the bullets closest to this job's requirements first.", "grounded": True})
         e["bullets"] = aligned
+        role_rel = _relevance(f"{e.get('role', '')} {e.get('title', '')} " + " ".join(aligned), wanted)
+        scored_exps.append((role_rel, xi, e))
 
+    scored_exps.sort(key=lambda t: (-t[0], t[1]))
     tailored = copy.deepcopy(profile)
-    tailored.update(summary=new_sum, skills=new_skills, experience=exps)
+    new_sum = _dehype_text(new_sum)
+    side_work_items = _confirmed_side_work_items(profile)
+    if side_work_items:
+        tailored["confirmed_side_work"] = side_work_items
+    tailored.update(summary=new_sum, skills=new_skills, experience=[t[2] for t in scored_exps])
     return tailored, diffs, matched, "deterministic"
 
 
@@ -817,10 +884,13 @@ def generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=N
     }
 
     tailored_resume = copy.deepcopy(base_tailored)
-    tailored_resume["summary"] = full_tailored_sum
+    tailored_resume["summary"] = _dehype_text(full_tailored_sum)
     tailored_resume["target_title"] = job_title
     tailored_resume["keyword_partition"] = kw_info
     tailored_resume["keyword_coverage"] = kw_info["coverage_text"]
+    sw_items = _confirmed_side_work_items(profile)
+    if sw_items:
+        tailored_resume["confirmed_side_work"] = sw_items
 
     # 3. LLM Enhancement (if requested and available)
     engine_label = f"deterministic (6-sec {archetype})"
@@ -1090,9 +1160,31 @@ def generate_gap_report(job, profile):
     order = {"required": 0, "responsibility": 1, "preferred": 2}
     add_if_true.sort(key=lambda x: order[x["priority"]])
     real_gaps.sort(key=lambda x: order[x["priority"]])
-    return {"job_title": job.get("title"), "company": job.get("company"),
-            "matched_skills": sorted(s for s in wanted if s in cand), "add_if_true": add_if_true, "real_gaps": real_gaps,
-            "readable_requirements": len(wanted)}
+
+    from . import scoring
+    try:
+        conf_facts = db.get_confirmed_facts()
+    except Exception:
+        conf_facts = None
+    honest = scoring.evaluate_honest_match(profile, job, confirmed_facts=conf_facts)
+
+    return {
+        "job_title": job.get("title"),
+        "company": job.get("company"),
+        "matched_skills": sorted(s for s in wanted if s in cand),
+        "add_if_true": add_if_true,
+        "real_gaps": real_gaps,
+        "readable_requirements": len(wanted),
+        "match_evaluation": honest,
+        "fit_score": honest["fit_score"],
+        "fit_level": honest["fit_level"],
+        "plain_summary": honest["plain_summary"],
+        "strengths": honest["strengths"],
+        "gaps": honest["gaps"],
+        "soft_gaps": honest["soft_gaps"],
+        "hard_gaps": honest["hard_gaps"],
+        "apply_recommendation": honest["apply_recommendation"],
+    }
 
 
 # ------------------------------------------------------------ cover letter
@@ -1506,6 +1598,81 @@ def generate_interview_prep(job, profile, use_llm=None, llm_caller=None):
         asks.append("How does the team handle time zones and handoffs?")
     asks.append("What is the hardest problem the team is working on right now?")
 
+    # Lesson C structured interview rounds + non-scraped Glassdoor reputation link
+    from urllib.parse import quote_plus
+    exps = profile.get("experience") or []
+    first_role = (exps[0].get("role") or exps[0].get("title") or "") if exps and isinstance(exps[0], dict) else (profile.get("target_title") or "software engineering")
+    first_co = (exps[0].get("company") or "") if exps and isinstance(exps[0], dict) else ""
+    first_bullet = ""
+    for exp in exps:
+        if isinstance(exp, dict) and exp.get("bullets"):
+            first_bullet = str(exp["bullets"][0]).strip()
+            break
+    years_val = profile.get("years_of_experience") if profile.get("years_of_experience") is not None else (profile.get("years_experience") or "")
+    years_bit = f" over {years_val:g} years" if isinstance(years_val, (int, float)) and years_val else ""
+
+    tell_me_story = {
+        "goal": "Practice out loud as a connected story from your background to this role, not a sales pitch.",
+        "story": (
+            f"Most recently I worked as a {first_role}"
+            + (f" at {first_co}" if first_co else "")
+            + f"{years_bit}, focusing on {', '.join(matched[:3]) or ', '.join(list(cand)[:3]) or 'core engineering'}. "
+            + (f"One concrete project I led was: {first_bullet} " if first_bullet else "")
+            + f"That work led me to look at the {title} opening at {company}, where those same problems sit at the center of the role."
+        ).strip(),
+        "beats": [
+            f"Where you started and what you built ({first_role}" + (f" at {first_co}" if first_co else "") + ")",
+            f"Concrete work that transfers directly ({first_bullet or ', '.join(matched[:3]) or 'your core projects'})",
+            f"Why this {title} role at {company} is the next logical step",
+        ],
+    }
+
+    recruiter_screen = {
+        "goal": "Show two things: you understand the role, and you have a concrete reason to want it here to help hit their goals.",
+        "role_understanding": f"Summarize what the {title} role owns using the posting: {', '.join(matched[:4]) or 'core deliverables'}.",
+        "why_this_company": f"Point to a concrete product, stage, or technical challenge named in {company}'s posting rather than generic praise.",
+        "how_you_help_goals": (
+            f"Connect your verified work ({first_bullet or ', '.join(matched[:3]) or 'recent delivery'}) directly to what {company} needs to ship first."
+        ),
+    }
+
+    hm_questions = []
+    for item in tech[:3]:
+        hm_questions.append({
+            "question": item["question"],
+            "resume_example": item["talking_point"],
+        })
+    if not hm_questions:
+        hm_questions.append({
+            "question": f"What measurable outcome did your last project achieve for {first_co or 'your team'}?",
+            "resume_example": first_bullet or f"Use your strongest verified bullet as {first_role}.",
+        })
+
+    hiring_manager_round = {
+        "likely_questions": hm_questions,
+        "why_this_job": f"Anchor your reason in {title}'s scope at {company} and how it builds on {first_role}.",
+        "questions_to_ask": asks[:4],
+    }
+
+    peer_round = {
+        "focus": "Day-to-day execution, collaboration, code/design reviews, and what the job feels like in practice.",
+        "questions": [
+            "Walk me through a typical sprint or deployment from spec to production on this team.",
+            "Tell me about a disagreement with a teammate on implementation or priority and how you resolved it.",
+            "How do you handle handing off unfinished work or debugging unfamiliar services?",
+        ],
+        "culture_topics": [
+            "Review speed, incident ownership, documentation habits, and cross-functional handoffs.",
+        ],
+    }
+
+    glassdoor_url = f"https://www.glassdoor.com/Search/results.htm?keyword={quote_plus(company)}"
+    company_reputation = {
+        "glassdoor_url": glassdoor_url,
+        "scraped": False,
+        "note": "Open the Glassdoor link directly to read employee reviews. Reviews are never scraped or fabricated.",
+    }
+
     fallback_result = {
         "role": title,
         "company": company,
@@ -1515,6 +1682,11 @@ def generate_interview_prep(job, profile, use_llm=None, llm_caller=None):
         "technical_deep_dives": tech,
         "gap_talking_points": gaps,
         "questions_to_ask_interviewer": asks,
+        "tell_me_about_yourself": tell_me_story,
+        "recruiter_screen": recruiter_screen,
+        "hiring_manager_round": hiring_manager_round,
+        "peer_round": peer_round,
+        "company_reputation": company_reputation,
         "used_llm": False,
         "provider": "deterministic"
     }
@@ -1568,6 +1740,11 @@ def generate_interview_prep(job, profile, use_llm=None, llm_caller=None):
                     "behavioral_questions": beh,
                     "gap_talking_points": parsed.get("gap_talking_points") or gaps,
                     "questions_to_ask_interviewer": parsed.get("questions_to_ask_interviewer") or asks,
+                    "tell_me_about_yourself": tell_me_story,
+                    "recruiter_screen": recruiter_screen,
+                    "hiring_manager_round": hiring_manager_round,
+                    "peer_round": peer_round,
+                    "company_reputation": company_reputation,
                     "used_llm": True,
                     "provider": ai_cfg.get("provider", "llm"),
                     "model": ai_cfg.get("model", "")

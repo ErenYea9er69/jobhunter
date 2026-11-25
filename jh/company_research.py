@@ -76,11 +76,34 @@ def build_company_brief(signal: Dict[str, Any], profile: Dict[str, Any], source_
     overlap = [s for s in wanted_skills if any(s.lower() == cs.lower() for cs in cand_skills)]
 
     if overlap:
-        candidate_value = f"Strong alignment in {', '.join(overlap[:3])} to accelerate core technical roadmap."
+        candidate_value = f"Matching skills in {', '.join(overlap[:3])} for this role."
     elif cand_skills:
-        candidate_value = f"Core expertise in {', '.join(cand_skills[:3])} matching target role requirements."
+        candidate_value = f"Experience in {', '.join(cand_skills[:3])} relevant to the posting."
     else:
-        candidate_value = "Technical leadership and engineering execution."
+        candidate_value = "Engineering execution grounded in prior delivery."
+
+    # Lesson C: Concise talking points section grounded strictly in signal + master profile
+    from urllib.parse import quote_plus
+    proofs = profile.get("proof_points") or []
+    proof_line = proofs[0] if proofs else ""
+    if not proof_line:
+        for exp in profile.get("experience", []):
+            bullets = exp.get("bullets") or []
+            if bullets:
+                proof_line = bullets[0]
+                break
+
+    talking_points: list[str] = [
+        f"Role alignment: connect {', '.join(overlap[:3]) or ', '.join(cand_skills[:3]) or 'your background'} directly to {company}'s update.",
+    ]
+    if proof_line:
+        talking_points.append(f"Concrete proof point: {proof_line}")
+    if stage != "unknown":
+        talking_points.append(f"Context question: ask how priorities shift at {company}'s {stage} stage.")
+    else:
+        talking_points.append(f"Context question: ask what the first 90 days require at {company}.")
+
+    glassdoor_url = f"https://www.glassdoor.com/Search/results.htm?keyword={quote_plus(company)}"
 
     brief = {
         "company": company,
@@ -99,6 +122,13 @@ def build_company_brief(signal: Dict[str, Any], profile: Dict[str, Any], source_
         },
         "recent_news": {"claim": recent_news, "source_url": source_url if recent_news != "unknown" else "unknown"},
         "candidate_impact": candidate_value,
+        "talking_points": talking_points,
+        "glassdoor_url": glassdoor_url,
+        "company_reputation": {
+            "glassdoor_url": glassdoor_url,
+            "scraped": False,
+            "note": "Open this link directly to read company reviews. Reviews are never scraped or fabricated.",
+        },
         "researched_at": now_iso(),
     }
     return brief

@@ -1591,7 +1591,7 @@
       location: j.location || "",
       salary: j.salary || "",
       url: jobUrl(j),
-      session_id: state.session_id || "default",
+      session_id: state.sessionId || state.session_id || "default",
       page_token: state.page_token || "",
       force: !!opts.force,
       confirm_closed: !!opts.confirm_closed,
@@ -1615,16 +1615,32 @@
           const scoreEl = byId("low-fit-score");
           if (scoreEl) scoreEl.textContent = String(res.fit_score || 0);
 
+          const msgEl = byId("low-fit-msg");
+          const plainSummary = (res.match_evaluation && res.match_evaluation.plain_summary) || (res.gap_report && res.gap_report.plain_summary) || res.message;
+          if (msgEl && plainSummary) msgEl.textContent = plainSummary;
+
+          const strEl = byId("low-fit-strengths");
+          const strengths = (res.match_evaluation && res.match_evaluation.strengths) || (res.gap_report && res.gap_report.strengths) || [];
+          if (strEl) {
+            strEl.innerHTML = strengths.length ? strengths.map((s) => `<li>${esc(s)}</li>`).join("") : "<li>Review direct skills overlap in the posting.</li>";
+          }
+
           const gapsEl = byId("low-fit-gaps");
+          const softGaps = (res.gap_report && res.gap_report.soft_gaps) || [];
+          const hardGaps = (res.gap_report && res.gap_report.hard_gaps) || [];
           const gaps = (res.gap_report && res.gap_report.missing_requirements) || [];
           if (gapsEl) {
-            gapsEl.innerHTML = gaps.length ? gaps.map((g) => `<li>${esc(g)}</li>`).join("") : "<li>No specific skills missing</li>";
+            const gapItems = [];
+            hardGaps.forEach((hg) => gapItems.push(`<li><strong>Hard requirement:</strong> ${esc(hg.requirement || "")} - ${esc(hg.advice || "")}</li>`));
+            softGaps.forEach((sg) => gapItems.push(`<li><strong>Soft gap (apply anyway):</strong> ${esc(sg.requirement || "")} - ${esc(sg.advice || "")}</li>`));
+            gaps.forEach((g) => gapItems.push(`<li>${esc(g)}</li>`));
+            gapsEl.innerHTML = gapItems.length ? gapItems.join("") : "<li>No major missing requirements detected.</li>";
           }
 
           const trackEl = byId("low-fit-track");
           const tracks = (res.gap_report && res.gap_report.talking_track) || [];
           if (trackEl) {
-            trackEl.innerHTML = tracks.length ? tracks.map((t) => `<p>${esc(t)}</p>`).join("") : "<p>Emphasize rapid adaptability and related toolchains.</p>";
+            trackEl.innerHTML = tracks.length ? tracks.map((t) => `<p>${esc(t)}</p>`).join("") : "<p>Focus on verified project examples from your resume.</p>";
           }
 
           const addTrueEl = byId("low-fit-add-true");
