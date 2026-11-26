@@ -21,17 +21,21 @@ def test_d5_modern_method_launches_radar_and_points_to_signals(monkeypatch):
     sess["method"] = "modern"
     ticket = ticket_manager.generate_ticket(sid, "res_123", ["Cloud Engineer"], method="modern")
 
-    # Mock server and radar start
+    # Mock server, radar, and background search start
     radar_started = []
+    board_search_started = []
     monkeypatch.setattr(radar, "start_radar_worker", lambda: radar_started.append(True))
-    
+
     from jh import worker_launcher
     monkeypatch.setattr(worker_launcher, "start_detached_server", lambda preferred_port=8080: {"status": "started", "port": 8080, "pid": 1234})
+    monkeypatch.setattr(worker_launcher, "start_background_search", lambda **kw: board_search_started.append(kw) or {"search_job_id": "board_123", "status": "started"})
 
     res = jh_launch(session_id=sid, ticket=ticket)
     assert res["status"] == "ok"
     assert "#/signals" in res["ui_url"]
     assert len(radar_started) >= 1
+    assert len(board_search_started) == 1
+    assert res["data"]["board_search_job_id"] == "board_123"
 
 
 def test_d5_classic_method_launches_board_search_and_points_to_jobs(monkeypatch):

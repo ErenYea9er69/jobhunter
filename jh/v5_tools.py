@@ -878,6 +878,30 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
     return reply
 
 
+def _resolve_launch_search_params(sess: dict[str, Any], session_id: str) -> tuple[str, str, list[str]]:
+    """Resolve confirmed role/title-family query parameters and target place for background search."""
+    confirmed_role = db.get_confirmed_answer(session_id, "role")
+    inf = sess.get("inference_result") or {}
+    if confirmed_role:
+        from . import role_inference
+        family = role_inference.expand_title_family(confirmed_role)
+        query = confirmed_role
+        search_role_focus = family
+    else:
+        role_guesses = db.get_guesses(session_id, category="role")
+        high_conf = [r["value"] for r in role_guesses if r.get("confidence", 0.0) >= 0.5]
+        base_roles = high_conf or sess.get("role_focus") or ["Software Engineer"]
+        families = inf.get("title_families") or []
+        if not families:
+            from . import role_inference
+            families = role_inference.expand_title_family(base_roles[0])
+        query = ", ".join(base_roles)
+        search_role_focus = families
+
+    target_loc = db.get_confirmed_answer(session_id, "target_place") or sess.get("target_place") or ""
+    return query, target_loc, search_role_focus
+
+
 @_coaching_envelope
 def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
     """Phase B4: Detached launch of HTTP daemon, background search, and browser in under 3 seconds."""
@@ -895,19 +919,20 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
     # 1. Start server.py detached if down
     server_res = worker_launcher.start_detached_server(preferred_port=8080)
     port = server_res["port"]
-    # Modern UI points to #/signals; Classic points to #/jobs (D5)
+    # Modern UI opens #/signals (with full jobs available on #/jobs); Classic opens #/jobs (D5)
     ui_route = "#/signals" if active_method == "modern" else "#/jobs"
     ui_url = f"http://127.0.0.1:{port}/?session={session_id}{ui_route}"
     sess["worker_port"] = port
     sess["ui_url"] = ui_url
 
-    # 2. Start method-specific engine: Modern -> Signal Radar + immediate async poll; Classic -> Multi-board search (D5)
+    # 2. Start search engines: Modern runs Signal Radar AND Multi-Board Search; Classic runs Multi-Board Search (D5)
+    query, target_loc, search_role_focus = _resolve_launch_search_params(sess, session_id)
     if active_method == "modern":
         from . import radar, signals as _signals
         radar.start_radar_worker()
         conf_role = db.get_confirmed_answer(session_id, "role")
         sig_role = conf_role or ((sess.get("role_focus") or ["Software Engineer"])[0])
-        sig_loc = db.get_confirmed_answer(session_id, "target_place") or sess.get("target_place") or "any"
+        sig_loc = target_loc or "any"
 
         def _kick_modern_signals():
             try:
@@ -917,35 +942,20 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
 
         import threading as _th
         _th.Thread(target=_kick_modern_signals, daemon=True, name=f"jh-modern-sig-{session_id}").start()
-        search_status = "started"
+
+        if not sess.get("board_search_job_id"):
+            board_res = worker_launcher.start_background_search(
+                session_id=session_id,
+                query=query,
+                location=target_loc,
+                role_focus=search_role_focus,
+            )
+            sess["board_search_job_id"] = board_res["search_job_id"]
+
+        search_status = "started" if sess.get("search_job_id") != "radar_worker" else "already_running"
         search_job_id = sess.get("search_job_id") or "radar_worker"
         sess["search_job_id"] = search_job_id
-        worker_launcher._ACTIVE_SEARCH_JOBS[session_id] = {
-            "status": "running",
-            "job_id": search_job_id,
-            "session_id": session_id,
-        }
     else:
-        confirmed_role = db.get_confirmed_answer(session_id, "role")
-        inf = sess.get("inference_result") or {}
-        if confirmed_role:
-            from . import role_inference
-            family = role_inference.expand_title_family(confirmed_role)
-            query = confirmed_role
-            search_role_focus = family
-        else:
-            role_guesses = db.get_guesses(session_id, category="role")
-            high_conf = [r["value"] for r in role_guesses if r.get("confidence", 0.0) >= 0.5]
-            base_roles = high_conf or sess.get("role_focus") or ["Software Engineer"]
-            families = inf.get("title_families") or []
-            if not families:
-                from . import role_inference
-                families = role_inference.expand_title_family(base_roles[0])
-            query = ", ".join(base_roles)
-            search_role_focus = families
-
-        target_loc = db.get_confirmed_answer(session_id, "target_place") or sess.get("target_place") or ""
-
         if sess.get("search_job_id"):
             search_job_id = sess["search_job_id"]
             search_status = "already_running"
@@ -1018,6 +1028,7 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
             "ui_url": ui_url,
             "port": port,
             "search_job_id": search_job_id,
+            "board_search_job_id": sess.get("board_search_job_id", ""),
             "server_status": server_res["status"],
             "extension_status": ext_status,
             "extension_dir": ext_dir,
@@ -1695,9 +1706,9 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
 
     if active_method == "modern":
         method_summary = (
-            f"- Method: Modern (Outreach First)\n"
+            f"- Method: Modern (Direct Outreach)\n"
             f"- Signals: {signals_count} stored ({fresh_signals} fresh)\n"
-            f"- Classic Job Boards: not run in Modern mode (switch via jh_set_method('classic') for multi-board job search)\n"
+            f"- Stored Jobs: {total_jobs} ({active_jobs} active) | Matches: {matches_count} ({hidden_count} hidden by filters)\n"
             f"- Contacts Found: {contacts_count}\n"
             f"- Outreach Today: {today_sent} / {daily_cap} sent ({remaining_cap} remaining)\n"
             f"- Send Mode: {config.get_send_mode()} | Follow-up: {config.get_follow_up_days()}d"

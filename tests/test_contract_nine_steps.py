@@ -253,7 +253,7 @@ def test_contract_step4_launch_modern_and_classic_detached(monkeypatch):
     monkeypatch.setattr(radar, "start_radar_worker", lambda *a, **kw: radar_calls.append(True))
     monkeypatch.setattr(worker_launcher, "start_background_search", lambda **kw: search_calls.append(kw) or {"search_job_id": "bg_1", "status": "started"})
 
-    # Modern launch -> Signal Radar + #/signals
+    # Modern launch -> Signal Radar + multi-board search + #/signals
     sid_m = "s4_modern"
     v5_tools.jh_begin(resume_text=SAMPLE_RESUME_TEXT, session_id=sid_m)
     tkt_m = v5_tools.jh_confirm(session_id=sid_m, user_reply="Modern, Remote")["ticket"]
@@ -262,6 +262,7 @@ def test_contract_step4_launch_modern_and_classic_detached(monkeypatch):
     assert "#/signals" in res_m["ui_url"]
     assert res_m["browser_opened"] is True
     assert len(radar_calls) == 1
+    assert len(search_calls) == 1
     assert res_m.get("next_tool") == "jh_answer"
 
     # Classic launch -> multi-board search + #/jobs
@@ -272,7 +273,7 @@ def test_contract_step4_launch_modern_and_classic_detached(monkeypatch):
     assert res_c["status"] == "ok"
     assert "#/jobs" in res_c["ui_url"]
     assert res_c["browser_opened"] is True
-    assert len(search_calls) == 1
+    assert len(search_calls) == 2
 
 
 # ---------------------------------------------------------------------------

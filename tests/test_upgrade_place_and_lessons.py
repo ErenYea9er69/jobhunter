@@ -1010,13 +1010,16 @@ def test_modern_launch_kicks_signal_poll_and_db_get_signals_filters_place_and_la
     assert conf["ticket"]
 
     polled_calls = []
+    board_calls = []
     monkeypatch.setattr(worker_launcher, "start_detached_server", lambda *a, **kw: {"status": "started", "port": 8089})
     monkeypatch.setattr(worker_launcher, "open_browser", lambda *a, **kw: False)
+    monkeypatch.setattr(worker_launcher, "start_background_search", lambda **kw: board_calls.append(kw) or {"search_job_id": "bg_mod_1", "status": "started"})
     monkeypatch.setattr(_radar, "start_radar_worker", lambda: True)
     monkeypatch.setattr(_signals, "poll_modern_signals", lambda target_role="", target_region="", **kw: polled_calls.append((target_role, target_region)) or {"discovered": 0, "new_ingested": 0})
 
     res = v5_tools.jh_launch(session_id="s_mod_sig", ticket=conf["ticket"])
     assert res["status"] == "ok"
+    assert board_calls and board_calls[0]["location"] == "South Asia"
     import time
     for _ in range(20):
         if polled_calls:
