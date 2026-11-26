@@ -17,17 +17,11 @@ def _get_default_data_dir() -> str:
 DEFAULT_DATA_DIR = _get_default_data_dir()
 JOBHUNTER_DIR = os.path.join(WORKSPACE_DIR, ".jobhunter") if WORKSPACE_DIR else ""
 DATA_DIR = os.environ.get("JH_DATA_DIR") or DEFAULT_DATA_DIR
-DB_PATH = os.path.join(DATA_DIR, "engine.db")
+DB_PATH = os.path.join(DATA_DIR, "state")
 
 def _ensure_data_dir() -> None:
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
-        # Migrate legacy data/engine.db only when initializing the user's default home directory
-        if DATA_DIR == DEFAULT_DATA_DIR:
-            legacy_db = os.path.join(BASE_DIR, "data", "engine.db")
-            if os.path.exists(legacy_db) and not os.path.exists(DB_PATH):
-                import shutil
-                shutil.copy2(legacy_db, DB_PATH)
     except Exception:
         pass
 
@@ -134,27 +128,17 @@ def configure_mcp_environment(workspace_path: str = ""):
     return JOBHUNTER_DIR
 
 
-VALID_METHODS = ("modern", "classic", "hybrid")
+VALID_METHODS = ("hybrid",)
 
 
 def get_method() -> str:
-    """Return active search & application method: 'modern' (default), 'classic', or 'hybrid'."""
-    try:
-        from . import db
-        val = db.get_setting("method")
-        if val and val.lower().strip() in VALID_METHODS:
-            return val.lower().strip()
-    except Exception:
-        pass
-    env_m = os.environ.get("JH_METHOD", "modern").lower().strip()
-    return env_m if env_m in VALID_METHODS else "modern"
+    """Return active search & application method: always 'hybrid'."""
+    return "hybrid"
 
 
-def set_method(method: str) -> str:
-    """Set active search & application method: 'modern', 'classic', or 'hybrid'."""
-    clean = (method or "modern").lower().strip()
-    if clean not in VALID_METHODS:
-        clean = "modern"
+def set_method(method: str = "hybrid") -> str:
+    """Enforce Hybrid method (multi-board search + signal radar + tailored resume & outreach)."""
+    clean = "hybrid"
     try:
         from . import db
         db.set_setting("method", clean)
@@ -165,15 +149,13 @@ def set_method(method: str) -> str:
 
 
 def method_uses_modern(method: str | None = None) -> bool:
-    """Return True if the active or given method includes Modern outreach & signals."""
-    m = (method if method is not None else get_method()).lower().strip()
-    return m in ("modern", "hybrid")
+    """Return True: Hybrid mode always includes Signal Radar & decision-maker outreach."""
+    return True
 
 
 def method_uses_classic(method: str | None = None) -> bool:
-    """Return True if the active or given method includes Classic job-board ATS apply."""
-    m = (method if method is not None else get_method()).lower().strip()
-    return m in ("classic", "hybrid")
+    """Return True: Hybrid mode always includes multi-board job search & tailored application docs."""
+    return True
 
 
 def get_daily_cap() -> int:

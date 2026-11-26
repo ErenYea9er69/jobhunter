@@ -16,19 +16,17 @@ def setup_db(tmp_path, monkeypatch):
 
 def test_d8_jh_launch_and_status_carry_round2_questions(monkeypatch):
     from jh import worker_launcher, radar
-    monkeypatch.setattr(worker_launcher, "start_detached_server", lambda *a, **kw: {"status": "started", "port": 8888})
     monkeypatch.setattr(worker_launcher, "start_background_search", lambda *a, **kw: {"search_job_id": "s_123", "status": "started"})
-    monkeypatch.setattr(worker_launcher, "open_browser", lambda *a, **kw: True)
     monkeypatch.setattr(radar, "start_radar_worker", lambda *a, **kw: None)
 
     sid = "test_d8_sess"
     ticket_manager.transition_session_state(sid, ticket_manager.SessionState.ANSWERED)
-    tkt = ticket_manager.generate_ticket(sid, "res_1", ["Engineer"], method="modern", location="Tunisia")
+    tkt = ticket_manager.generate_ticket(sid, "res_1", ["Engineer"], method="hybrid", location="Tunisia")
 
     launch_res = jh_launch(session_id=sid, ticket=tkt)
     assert launch_res["status"] == "ok"
     assert "Job Type & Start Date" in launch_res["ask_user"]
-    assert "Daily Email Cap" in launch_res["ask_user"]  # Modern method has daily email cap
+    assert "Daily Email Cap" in launch_res["ask_user"]
 
     # jh_status in LAUNCHED state carries pending questions
     st_res = jh_status(session_id=sid)

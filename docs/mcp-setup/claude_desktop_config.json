@@ -1,12 +1,12 @@
 {
   "mcpServers": {
     "jobhunter": {
-      "command": "python",
+      "command": "uvx",
       "args": [
-        "c:/Users/hp/Desktop/jobhunter/mcp_server.py"
+        "jobhunter-mcp"
       ],
       "env": {
-        "JH_WORKSPACE": "c:/Users/hp/Desktop/jobhunter"
+        "JH_WORKSPACE": "/path/to/your/resumes-workspace"
       }
     }
   }

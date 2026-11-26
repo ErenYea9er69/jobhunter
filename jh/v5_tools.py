@@ -104,42 +104,20 @@ def check_filter_clashes(filters: dict[str, Any]) -> list[str]:
 
 
 @_coaching_envelope
-def jh_set_method(method: str = "modern", session_id: str = "default") -> dict[str, Any]:
-    """Step 4: Set active job hunting method: 'hybrid' (recommended), 'modern' (default), or 'classic'.
-    Preserves all existing data across switches.
-    """
+def jh_set_method(method: str = "hybrid", session_id: str = "default") -> dict[str, Any]:
+    """Step 4: Confirm the active Hybrid job-hunting method (combines Signal Radar, multi-board search, tailored docs, and outreach)."""
     clean = config.set_method(method)
     sess = ticket_manager.get_or_create_session(session_id)
     sess["method"] = clean
     db.store_answer(session_id, "method", clean, user_reply=f"method set to {clean}")
     db.set_session_state(f"method_{clean}", last_tool="jh_set_method")
-    if clean == "hybrid":
-        from . import radar
-        radar.start_radar_worker()
-        msg = (
-            "Switched to Hybrid method (Recommended): combines Modern Outreach + Classic Job Boards. "
-            "Runs Signal Radar and the 25-board search; saving unlocks tailored resumes, cover letters, "
-            "interview prep, ATS extension autofill, AND decision-maker cold emails with a 20/day cap. "
-            "All existing jobs, signals, and outreach records remain intact."
-        )
-        next_tool = "jh_search"
-    elif clean == "modern":
-        from . import radar
-        radar.start_radar_worker()
-        msg = (
-            "Switched to Modern method: outreach first. Catch fresh hiring posts and seed funding news, "
-            "find decision-maker emails, and send a short human email before the crowd applies. "
-            "All Classic job board data and applications remain intact."
-        )
-        next_tool = "jh_start"
-    else:
-        msg = (
-            "Switched to Classic method: job boards and Apply button. "
-            "Broad search, view filters, and tailored resume & cover letter generation. "
-            "All Modern signals, company briefs, and outreach records remain intact."
-        )
-        next_tool = "jh_search"
-
+    from . import radar
+    radar.start_radar_worker()
+    msg = (
+        "Hybrid method is active: combines Signal Radar + multi-board job search + tailored resumes/cover letters "
+        "+ verified decision-maker outreach drafts (with a 20/day outreach cap). "
+        "All existing jobs, signals, and outreach records remain intact."
+    )
     return {
         "status": "ok",
         "step": 4,
@@ -147,13 +125,13 @@ def jh_set_method(method: str = "modern", session_id: str = "default") -> dict[s
         "ask_user": None,
         "options": {
             "method": clean,
-            "choices": ["hybrid", "modern", "classic"],
-            "recommended": "hybrid"
+            "choices": ["hybrid"],
+            "recommended": "hybrid",
         },
-        "next_tool": next_tool,
+        "next_tool": "jh_search",
         "data": {
             "method": clean,
-        }
+        },
     }
 
 
@@ -241,7 +219,7 @@ def jh_start(prompt: str = "", intent: str = "", session_id: str = "default", **
                 "choices": ["reuse", "edit", "start over"],
                 "recommended": "reuse",
             },
-            "next_tool": "jh_search" if (active_method == "classic" and saved_filters.get("job_style")) else ("jh_open_ui" if active_method == "modern" else "jh_set_filters"),
+            "next_tool": "jh_search" if saved_filters.get("job_style") else "jh_set_filters",
             "data": {
                 "method": active_method,
                 "saved_filters": saved_filters,
@@ -249,68 +227,41 @@ def jh_start(prompt: str = "", intent: str = "", session_id: str = "default", **
             }
         }
 
-    # New search or edit filters: Guided Interview
-    if active_method == "modern":
-        round_1_questions = [
-            {"id": "target_role", "question": "What target role are you looking for? (Required for Signal Radar, e.g. Frontend Engineer, ML Engineer)", "recommended": profile.get("target_title") or "Software Engineer"},
-            {"id": "region", "question": "What is your target region and time zone? (or 'any')", "recommended": "any"},
-            {"id": "stage", "question": "Target company funding stage? (pre-seed, seed, series A, or any)", "recommended": "any", "choices": ["any", "pre-seed", "seed", "series A"]},
-            {"id": "min_salary", "question": "What is your minimum annual compensation? (or 'any')", "recommended": "any"},
-            {"id": "visa_need", "question": "Do you require visa sponsorship?", "recommended": "no", "choices": ["no", "yes"]},
-            {"id": "work_mode", "question": "Preferred work mode?", "recommended": "any", "choices": ["any", "remote", "onsite", "hybrid"]}
-        ]
-        return {
-            "status": "needs_input",
-            "step": 4,
-            "message_for_user": f"Workspace initialized at {home_dir}. Active Method: Modern (outreach first).",
-            "ask_user": "Please review and confirm your Modern outreach criteria (Round 1 of 2; target role is required, others can be 'any'):",
-            "options": {
-                "round": 1,
-                "method": "modern",
-                "questions": round_1_questions,
-                "recommended": {
-                    "target_role": profile.get("target_title") or "Software Engineer",
-                    "job_style": profile.get("target_title") or "tech jobs",
-                    "region": "any",
-                    "stage": "any",
-                    "min_salary": "any",
-                    "visa_need": "no",
-                    "work_mode": "any",
-                }
+    # Hybrid guided interview (Signal Radar + Job Boards)
+    round_1_questions = [
+        {"id": "target_role", "question": "What target role are you looking for? (e.g. Frontend Engineer, Backend Engineer, ML Engineer)", "recommended": profile.get("target_title") or "Software Engineer"},
+        {"id": "region", "question": "What is your target region, country, or 'remote'? (or 'any')", "recommended": ", ".join(saved_filters.get("locations", [])) or "any"},
+        {"id": "stage", "question": "Target company funding stage? (pre-seed, seed, series A, or any)", "recommended": "any", "choices": ["any", "pre-seed", "seed", "series A"]},
+        {"id": "min_salary", "question": "What is your minimum annual compensation? (or 'any')", "recommended": str(saved_filters.get("min_salary", 0)) if saved_filters.get("min_salary") else "any"},
+        {"id": "visa_need", "question": "Do you require visa sponsorship?", "recommended": "yes" if saved_filters.get("visa_need") else "no", "choices": ["no", "yes"]},
+        {"id": "work_mode", "question": "Preferred work mode?", "recommended": saved_filters.get("work_mode") or "any", "choices": ["any", "remote", "onsite", "hybrid"]},
+    ]
+    return {
+        "status": "needs_input",
+        "step": 4,
+        "message_for_user": f"Workspace initialized at {home_dir}. Active Method: Hybrid (Signal Radar + Job Boards).",
+        "ask_user": "Please review and confirm your Hybrid search criteria (target role/place help rank jobs cleanly; others can be 'any'):",
+        "options": {
+            "round": 1,
+            "method": "hybrid",
+            "questions": round_1_questions,
+            "recommended": {
+                "target_role": profile.get("target_title") or "Software Engineer",
+                "job_style": profile.get("target_title") or "tech jobs",
+                "region": "any",
+                "stage": "any",
+                "min_salary": "any",
+                "visa_need": "no",
+                "work_mode": "any",
             },
-            "next_tool": "jh_set_filters",
-            "data": {
-                "method": "modern",
-                "has_profile": has_profile,
-                "interview_rules": "Only target role is required. Any is valid for others. 7 questions max per round.",
-            }
-        }
-    else:
-        round_1_questions = [
-            {"id": "job_style", "question": "What kind of job style or domain are you targeting?", "recommended": saved_filters.get("job_style") or "tech jobs"},
-            {"id": "work_mode", "question": "What is your preferred work mode?", "recommended": saved_filters.get("work_mode") or "any", "choices": ["any", "remote", "hybrid", "onsite"]},
-            {"id": "locations", "question": "What is your target location or country?", "recommended": ", ".join(saved_filters.get("locations", [])) or "any"},
-            {"id": "min_salary", "question": "What is your minimum acceptable annual salary?", "recommended": str(saved_filters.get("min_salary", 0)) if saved_filters.get("min_salary") else "any"},
-            {"id": "visa_need", "question": "Do you require visa sponsorship?", "recommended": "yes" if saved_filters.get("visa_need") else "no", "choices": ["no", "yes"]}
-        ]
-        return {
-            "status": "needs_input",
-            "step": 4,
-            "message_for_user": f"Workspace initialized at {home_dir}. Active Method: Classic (job boards).",
-            "ask_user": "Please review and confirm your initial job criteria (Round 1 of 2):",
-            "options": {
-                "round": 1,
-                "method": "classic",
-                "questions": round_1_questions,
-                "recommended": {"job_style": "tech jobs", "work_mode": "any", "locations": "any", "min_salary": "any", "visa_need": "no"}
-            },
-            "next_tool": "jh_set_filters",
-            "data": {
-                "method": "classic",
-                "has_profile": has_profile,
-                "interview_rules": "Ask in rounds, 7 questions max per round. 'any' is valid. Hard filters hide, soft rank.",
-            }
-        }
+        },
+        "next_tool": "jh_set_filters",
+        "data": {
+            "method": "hybrid",
+            "has_profile": has_profile,
+            "interview_rules": "Only target role/place guide search. Any is valid for others. 7 questions max per round.",
+        },
+    }
 
 
 @_coaching_envelope
@@ -418,29 +369,23 @@ def jh_confirm_profile(confirmed: bool = True, overrides: Optional[dict[str, Any
         "status": "ok",
         "step": 3,
         "message_for_user": (
-            f"Profile '{prof.get('_profile_name')}' confirmed and activated.\n"
+            f"Profile '{prof.get('_profile_name')}' confirmed and activated in Hybrid mode.\n"
             f"- Portfolio: {prof.get('portfolio_url') or 'Not provided'}\n"
-            f"- Proof points: {len(prof.get('proof_points', []))} recorded\n"
-            f"Next: select your job hunting method. Modern (outreach first) is default."
+            f"- Proof points: {len(prof.get('proof_points', []))} recorded"
         ),
-        "ask_user": (
-            "Select your active job hunting method:\n"
-            "1. Modern (Recommended): Outreach first, scan seed funding and fresh hiring posts, contact decision makers before the crowd.\n"
-            "2. Classic: Traditional job boards, broad search, view filters, tailored resume & cover letter for the Apply button.\n"
-            "(No answer defaults to Modern)"
-        ),
+        "ask_user": None,
         "options": {
-            "choices": ["modern", "classic"],
-            "recommended": "modern"
+            "choices": ["hybrid"],
+            "recommended": "hybrid",
         },
-        "next_tool": "jh_set_filters" if curr_method == "classic" else "jh_set_method",
+        "next_tool": "jh_set_filters",
         "data": {
             "active_profile": prof.get("_profile_name"),
             "target_roles": prof.get("target_roles", []),
             "portfolio_url": prof.get("portfolio_url", ""),
             "proof_points": prof.get("proof_points", []),
             "method": curr_method,
-        }
+        },
     }
 
 
@@ -640,12 +585,9 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     if prev_resume_id and prev_resume_id != new_resume_id:
         should_reset_cache = True
     elif not prev_resume_id:
-        with db.session() as c:
-            has_stale_jobs = c.execute("SELECT COUNT(*) FROM jobs WHERE COALESCE(saved_by, '') != 'ui'").fetchone()[0] > 0
-            has_stale_sigs = c.execute("SELECT COUNT(*) FROM signals WHERE COALESCE(status, '') != 'saved'").fetchone()[0] > 0
-            has_stale_filters = c.execute("SELECT COUNT(*) FROM view_filters").fetchone()[0] > 0
-            if (has_stale_jobs or has_stale_sigs) and has_stale_filters:
-                should_reset_cache = True
+        rt_stats = db.count_runtime_stats() if hasattr(db, "count_runtime_stats") else db.count_store_metrics()
+        if (rt_stats.get("has_stale_jobs") or rt_stats.get("has_stale_signals")) and rt_stats.get("has_stale_filters"):
+            should_reset_cache = True
     if should_reset_cache:
         db.reset_stale_search_cache(session_id=session_id)
         db.set_setting(f"ui_seen_{session_id}", "0")
@@ -773,17 +715,8 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
     clean_reply = str(user_reply).strip().lower()
     answers = answers or {}
 
-    # 1. Parse Method (default Modern; support Hybrid / Classic / common typos)
-    ans_method = str(answers.get("method") or "").lower().strip()
-    if "hybrid" in clean_reply or re.search(r"\b(?:hybr?id|hibrid|both)\b", clean_reply) or ans_method == "hybrid":
-        chosen_method = "hybrid"
-    elif "classic" in clean_reply or re.search(r"\b(?:clas+s?ic|classik|job\s*boards?)\b", clean_reply) or ans_method == "classic":
-        chosen_method = "classic"
-    elif "modern" in clean_reply or ans_method == "modern":
-        chosen_method = "modern"
-    else:
-        chosen_method = "modern"
-
+    # 1. Unified Hybrid method
+    chosen_method = "hybrid"
     config.set_method(chosen_method)
     db.set_session_state(f"method_{chosen_method}")
 
@@ -862,13 +795,12 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
 
     subagent_brief = (
         f"You are the JobHunter runner. Call jh_launch with session_id '{session_id}' and ticket '{ticket}'. "
-        f"Then report one line: ui_url, server_status, search status. "
-        f"Use only JobHunter MCP tools. Write no files. Use no terminal. List no jobs."
+        f"Report the Hybrid search status and prompt any remaining filter questions. Use only JobHunter MCP tools."
     )
 
     msg = (
         f"Target search configured: Method={chosen_method.capitalize()}, Target Place={chosen_place}, Role={', '.join(role_focus)}.\n"
-        f"Ticket issued. Ready to launch. Call jh_launch with ticket '{ticket}', or dispatch a subagent with subagent_brief."
+        f"Ticket issued. Call jh_launch with ticket '{ticket}' to start Hybrid search."
     )
 
     reply = {
@@ -890,6 +822,34 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
     sess["last_status"] = "ready"
     sess["last_reply"] = reply
     return reply
+
+
+def _verified_compact_cards(raw_jobs: list[dict[str, Any]], limit: int = 10) -> list[dict[str, Any]]:
+    """Run Reviewer checks on ranked matches and return clean compact cards for Claude Desktop."""
+    from .team import qa
+    cards: list[dict[str, Any]] = []
+    for j in raw_jobs[:max(1, limit * 2)]:
+        rev = qa.review_job({**j, "url": j.get("url") or "https://example.com/posting"})
+        if rev.blocked:
+            continue
+        cards.append({
+            "job_id": j.get("job_key") or j.get("id") or "",
+            "title": j.get("title") or "",
+            "company": j.get("company") or "",
+            "location": j.get("location") or "",
+            "work_mode": j.get("work_mode") or "",
+            "salary": j.get("salary") or "",
+            "score": int(j.get("score") or 0),
+            "rank_score": float(j.get("rank_score") or j.get("score") or 0),
+            "freshness_badge": j.get("freshness_badge") or "",
+            "freshness_label": j.get("freshness_label") or "",
+            "posted_at": j.get("posted_at") or "",
+            "url": j.get("url") or "",
+            "source": j.get("source") or ((j.get("sources") or [""])[0]),
+        })
+        if len(cards) >= limit:
+            break
+    return cards
 
 
 def _resolve_launch_search_params(sess: dict[str, Any], session_id: str) -> tuple[str, str, list[str]]:
@@ -918,107 +878,63 @@ def _resolve_launch_search_params(sess: dict[str, Any], session_id: str) -> tupl
 
 @_coaching_envelope
 def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
-    """Phase B4: Detached launch of HTTP daemon, background search, and browser in under 3 seconds."""
+    """Start headless Hybrid discovery (Signal Radar + Multi-Board Search) and ask optional refinement filters."""
     sess = ticket_manager.get_or_create_session(session_id)
 
-    # D1 State Machine & Ticket Gate
     ok, err_res = ticket_manager.check_tool_state_gate(session_id, "jh_launch", ticket=ticket)
     if not ok:
         return err_res
 
     ticket_manager.mark_ticket_launched(ticket)
+    active_method = "hybrid"
 
-    active_method = (sess.get("method") or db.get_confirmed_answer(session_id, "method") or config.get_method()).lower().strip()
-
-    # 1. Start server.py detached if down
-    server_res = worker_launcher.start_detached_server(preferred_port=8080)
-    port = server_res["port"]
-    # Modern UI opens #/signals (with full jobs available on #/jobs); Classic opens #/jobs (D5)
-    ui_route = "#/signals" if active_method == "modern" else "#/jobs"
-    ui_url = f"http://127.0.0.1:{port}/?session={session_id}{ui_route}"
-    sess["worker_port"] = port
-    sess["ui_url"] = ui_url
-
-    # 2. Start search engines: Modern & Hybrid run Signal Radar AND Multi-Board Search; Classic runs Multi-Board Search (D5)
+    # Start Signal Radar + Multi-Board Search headlessly (no HTTP daemon or browser)
     query, target_loc, search_role_focus = _resolve_launch_search_params(sess, session_id)
-    if config.method_uses_modern(active_method):
-        from . import radar, signals as _signals
-        radar.start_radar_worker()
-        conf_role = db.get_confirmed_answer(session_id, "role")
-        sig_role = conf_role or ((sess.get("role_focus") or ["Software Engineer"])[0])
-        sig_loc = target_loc or "any"
+    from . import radar, signals as _signals
+    radar.start_radar_worker()
+    conf_role = db.get_confirmed_answer(session_id, "role")
+    sig_role = conf_role or ((sess.get("role_focus") or ["Software Engineer"])[0])
+    sig_loc = target_loc or "any"
 
-        def _kick_modern_signals():
-            try:
-                _signals.poll_modern_signals(target_role=sig_role, target_region=sig_loc)
-            except Exception:
-                pass
+    def _kick_modern_signals():
+        try:
+            _signals.poll_modern_signals(target_role=sig_role, target_region=sig_loc)
+        except Exception:
+            pass
 
-        import threading as _th
-        _th.Thread(target=_kick_modern_signals, daemon=True, name=f"jh-modern-sig-{session_id}").start()
+    import threading as _th
+    _th.Thread(target=_kick_modern_signals, daemon=True, name=f"jh-hybrid-sig-{session_id}").start()
 
-        if not sess.get("board_search_job_id"):
-            board_res = worker_launcher.start_background_search(
-                session_id=session_id,
-                query=query,
-                location=target_loc,
-                role_focus=search_role_focus,
-            )
-            sess["board_search_job_id"] = board_res["search_job_id"]
+    already = bool(sess.get("board_search_job_id"))
+    if not already:
+        board_res = worker_launcher.start_background_search(
+            session_id=session_id,
+            query=query,
+            location=target_loc,
+            role_focus=search_role_focus,
+        )
+        sess["board_search_job_id"] = board_res["search_job_id"]
 
-        search_status = "started" if sess.get("search_job_id") != "radar_worker" else "already_running"
-        search_job_id = sess.get("search_job_id") or "radar_worker"
-        sess["search_job_id"] = search_job_id
-    else:
-        if sess.get("search_job_id"):
-            search_job_id = sess["search_job_id"]
-            search_status = "already_running"
-        else:
-            search_res = worker_launcher.start_background_search(
-                session_id=session_id,
-                query=query,
-                location=target_loc,
-                role_focus=search_role_focus,
-            )
-            search_job_id = search_res["search_job_id"]
-            sess["search_job_id"] = search_job_id
-            search_status = "started"
+    search_status = "already_running" if already else "started"
+    search_job_id = sess.get("board_search_job_id") or "hybrid_search"
+    sess["search_job_id"] = search_job_id
 
-    # 3. Launch Chromium with dedicated profile and ATS autofill extension (D7)
-    from . import extension_installer
-    ext_dir = extension_installer.find_extension_dir()
-    browser_opened = worker_launcher.open_browser(ui_url)
-    sess["browser_opened"] = browser_opened
-    ext_status = "loaded" if Path(ext_dir).is_dir() else "manual_load_ready"
-    ui_seen = bool(sess.get("ui_seen", False))
-
-    # Build Round 2 questions (incorporating method: Modern vs Classic) (D8)
-    chosen_method = sess.get("method", "modern")
     r2 = interview_questions.build_round_2_questions(
         sess.get("profile", {}),
         sess.get("inference_result", {}).get("job_type_guess", {}),
         sess.get("inference_result", {}).get("region_guess", {}),
-        method=chosen_method,
+        method=active_method,
     )
     sess["round_2_questions"] = r2
 
-    if ui_seen:
-        ui_line = f"The Web UI is open at {ui_url}"
-    else:
-        ui_line = f"Web UI available at {ui_url} (seen: False)"
-
-    post_launch_line = f"{ui_line}. Search status: {search_status}. Questions come next."
-
     msg = (
-        f"{post_launch_line}\n\n"
-        f"INSTRUCTION FOR AI: Output the single line above. Do not list jobs in chat; results are displayed live in the web UI. "
-        f"Then ask the Round 2 questions below. Call jh_status at most once and NEVER poll in a loop.\n\n"
-        f"While search runs, please answer these preferences to filter results live in the UI:\n"
+        f"Hybrid search started ({query} | {target_loc or 'any'}). "
+        f"Signal Radar and multi-board search are running.\n\n"
+        f"While results arrive, please confirm or refine your preferences (or reply 'skip'):\n"
         f"{r2['formatted_text']}"
     )
 
-    launch_status = "reused" if server_res["status"] == "reused" and search_status == "already_running" else "started"
-
+    launch_status = "reused" if already else "started"
     ticket_manager.transition_session_state(session_id, ticket_manager.SessionState.LAUNCHED)
     ticket_manager.record_questions_presented(session_id, r2["formatted_text"])
 
@@ -1026,30 +942,18 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
         "status": "ok",
         "launch_status": launch_status,
         "step": 4,
-        "server_status": server_res["status"],
-        "ui_url": ui_url,
-        "browser_opened": browser_opened,
-        "ui_seen": ui_seen,
-        "extension_status": ext_status,
         "search_status": search_status,
         "search_job_id": search_job_id,
-        "post_launch_summary": post_launch_line,
         "message_for_user": msg,
         "ask_user": r2["formatted_text"],
         "options": r2,
         "next_tool": "jh_answer",
         "data": {
-            "ui_url": ui_url,
-            "port": port,
+            "method": active_method,
             "search_job_id": search_job_id,
             "board_search_job_id": sess.get("board_search_job_id", ""),
-            "server_status": server_res["status"],
-            "extension_status": ext_status,
-            "extension_dir": ext_dir,
-            "browser_opened": browser_opened,
-            "ui_seen": ui_seen,
             "round_2_questions": r2["questions"],
-        }
+        },
     }
 
 
@@ -1296,13 +1200,9 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
     except Exception:
         pass
 
-    # Re-evaluate SQL query filters
+    # Re-evaluate view filters
     q_res = db.query_jobs(session_id=session_id)
-
-    port_info = worker_launcher.get_running_server_info()
-    port = port_info["port"] if port_info else (sess.get("worker_port") or 8080)
-    ui_url = f"http://127.0.0.1:{port}/?session={session_id}"
-
+    top_cards = _verified_compact_cards(q_res.get("jobs", []), limit=10)
     hidden_count = max(0, q_res.get("total_active_pool", q_res["count"]) - q_res["count"])
 
     return {
@@ -1311,8 +1211,7 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
         "filters": sess["answers"],
         "message_for_user": (
             (reading_prefix if reading_prefix else "") +
-            f"Filters updated live. {q_res['count']} jobs match your preferences ({hidden_count} hidden by your filters). "
-            f"The web UI at {ui_url} shows the matches live. Chat remains clean."
+            f"Filters updated. {len(top_cards)} verified top match(es) shown from {q_res['count']} total matches ({hidden_count} hidden by your filters)."
         ),
         "ask_user": None,
         "next_tool": "jh_status",
@@ -1321,7 +1220,7 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
             "matches_count": q_res["count"],
             "hidden_by_filters": hidden_count,
             "filters_applied": sess["answers"],
-            "ui_url": ui_url,
+            "jobs": top_cards,
         },
         "coaching": coaching,
     }
@@ -1362,18 +1261,7 @@ def jh_replace_resume(session_id: str = "default", resume_path: str = "", resume
     sess["inference_result"] = inf
 
     # Re-score stored jobs against the new profile
-    with db.session() as c:
-        rows = c.execute("SELECT id, job_json FROM jobs").fetchall()
-        for r in rows:
-            try:
-                j = json.loads(r["job_json"])
-                match_res = scoring.score_job_best(j, prof)
-                new_score = match_res.get("score", 0)
-                j["score"] = new_score
-                j["score_breakdown"] = match_res
-                c.execute("UPDATE jobs SET score=?, job_json=? WHERE id=?", (new_score, json.dumps(j), r["id"]))
-            except Exception:
-                pass
+    db.rescore_all_jobs_against_profile(prof)
 
     return {
         "status": "ready",
@@ -1517,24 +1405,24 @@ def jh_search(
     # Store with lifecycle deduplication
     store_stats = db.store_jobs(jobs, query=style, location=region)
 
-    # Query view filters in SQL
+    # Query filtered matches and verify with Reviewer
     view_res = db.query_jobs(session_id=session_id)
     usable_gate = view_res["usable_gate"]
-
-    next_tool = "jh_open_ui" if usable_gate["usable"] else ("jh_set_filters" if usable_gate["status"] == "too_few" else "jh_query")
+    top_cards = _verified_compact_cards(view_res.get("jobs", []), limit=15)
+    next_tool = "prepare_application" if top_cards else ("jh_set_filters" if usable_gate["status"] == "too_few" else "jh_query")
 
     return {
         "status": "ok",
         "step": 7,
         "message_for_user": (
-            f"Broad search for '{style}' completed. Ingested {store_stats['total']} postings "
+            f"Hybrid search for '{style}' completed. Ingested {store_stats['total']} postings "
             f"({store_stats['inserted']} new, {store_stats['merged']} merged). "
-            f"{view_res['count']} jobs match your view filters. {usable_gate['message']}"
+            f"{view_res['count']} jobs match your filters. {usable_gate['message']}"
         ),
-        "ask_user": usable_gate["suggestion"] if not usable_gate["usable"] else None,
+        "ask_user": usable_gate["suggestion"] if not usable_gate["usable"] else "Which job(s) would you like me to tailor a resume or draft outreach for?",
         "options": {
             "choices": usable_gate["actions"],
-            "recommended": usable_gate["actions"][0] if usable_gate["actions"] else "open_ui"
+            "recommended": usable_gate["actions"][0] if usable_gate["actions"] else "prepare_application",
         },
         "next_tool": next_tool,
         "data": {
@@ -1543,8 +1431,8 @@ def jh_search(
             "removed_counts": view_res["removed_counts"],
             "closing_soon_count": view_res["closing_soon_count"],
             "usable_gate": usable_gate,
-            "ui_url": f"http://127.0.0.1:{worker_launcher.get_running_server_info()['port'] if worker_launcher.get_running_server_info() else 8080}/?session={session_id}",
-        }
+            "jobs": top_cards,
+        },
     }
 
 
@@ -1556,16 +1444,17 @@ def jh_query(filters: Optional[dict[str, Any]] = None, session_id: str = "defaul
         filters["track"] = track
     q_res = db.query_jobs(view_filters=filters, session_id=session_id)
     usable_gate = q_res["usable_gate"]
-    next_tool = "jh_open_ui" if usable_gate["usable"] else "jh_set_filters"
+    top_cards = _verified_compact_cards(q_res.get("jobs", []), limit=15)
+    next_tool = "prepare_application" if top_cards else "jh_set_filters"
 
     return {
         "status": "ok",
         "step": 7,
         "message_for_user": f"Filter query returned {q_res['count']} matching opportunities ({q_res['closing_soon_count']} closing soon). {usable_gate['message']}",
-        "ask_user": usable_gate["suggestion"] if not usable_gate["usable"] else None,
+        "ask_user": usable_gate["suggestion"] if not usable_gate["usable"] else "Which job(s) would you like me to prepare tailored materials for?",
         "options": {
-            "choices": ["open_ui", "edit_filters", "refresh"],
-            "recommended": "open_ui" if usable_gate["usable"] else "edit_filters"
+            "choices": ["prepare_application", "edit_filters", "refresh"],
+            "recommended": "prepare_application" if top_cards else "edit_filters",
         },
         "next_tool": next_tool,
         "data": {
@@ -1574,8 +1463,8 @@ def jh_query(filters: Optional[dict[str, Any]] = None, session_id: str = "defaul
             "removed_counts": q_res["removed_counts"],
             "closing_soon_count": q_res["closing_soon_count"],
             "usable_gate": usable_gate,
-            "ui_url": f"http://127.0.0.1:{worker_launcher.get_running_server_info()['port'] if worker_launcher.get_running_server_info() else 8080}/?session={session_id}",
-        }
+            "jobs": top_cards,
+        },
     }
 
 
@@ -1598,80 +1487,9 @@ def jh_refresh(source: str = "", force: bool = False) -> dict[str, Any]:
     }
 
 
-def _check_health(host: str, port: int, timeout: float = 0.5) -> bool:
-    import http.client
-    conn = None
-    try:
-        conn = http.client.HTTPConnection(host, port, timeout=timeout)
-        conn.request("GET", "/health")
-        resp = conn.getresponse()
-        return resp.status == 200
-    except Exception:
-        return False
-    finally:
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-
 @_coaching_envelope
-def jh_open_ui(port: int = 8765, host: str = "127.0.0.1") -> dict[str, Any]:
-    """Step 8: Start the web UI server if down, verify health endpoint, find next free port if occupied, start LinkedIn Radar worker, and open browser."""
-    from . import httpd
-    ws = home.get_home()
-
-    target_port = port
-    url = f"http://{host}:{target_port}"
-    server_ready = _check_health(host, target_port, timeout=0.5)
-
-    if not server_ready:
-        if _is_port_in_use(target_port, host):
-            target_port = _find_free_port(target_port + 1, host)
-            url = f"http://{host}:{target_port}"
-
-        try:
-            httpd.start_server(host=host, port=target_port, ws_dir=ws)
-        except Exception as e:
-            log.warning("HTTP daemon start failed: %s", e)
-
-        deadline = time.time() + 15.0
-        while time.time() < deadline:
-            if _check_health(host, target_port, timeout=1.0):
-                server_ready = True
-                break
-            time.sleep(0.3)
-
-    from . import radar
-    radar.start_radar_worker()
-
-    browser_opened = False
-    msg = f"Web UI is running at {url}. Please open {url} in your browser."
-
-    return {
-        "status": "ok",
-        "step": 8,
-        "message_for_user": msg,
-        "ask_user": None,
-        "options": {
-            "choices": ["jh_status", "jh_query"],
-            "recommended": "jh_status"
-        },
-        "next_tool": "jh_status",
-        "data": {
-            "url": url,
-            "port": target_port,
-            "server_ready": server_ready,
-            "browser_opened": browser_opened,
-            "radar_status": db.get_radar_state().get("status"),
-        }
-    }
-
-
-@_coaching_envelope
-def jh_status(session_id: str = "default", include_matches: bool = False) -> dict[str, Any]:
-    """Inspect full JobHunter state: active method, workspace path, session state, radar, refresh states, cleanup status, and top 5 matches."""
+def jh_status(session_id: str = "default", include_matches: bool = True) -> dict[str, Any]:
+    """Inspect full JobHunter state: workspace, Hybrid radar, search counts, outreach quota, and ranked verified matches."""
     home_dir = home.get_home()
     session_state = db.get_session_state()
     radar = db.get_radar_state()
@@ -1682,28 +1500,23 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
     active_method = config.get_method()
     sess = ticket_manager.get_or_create_session(session_id)
 
-    with db.session() as c:
-        total_jobs = c.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
-        active_jobs = c.execute("SELECT COUNT(*) FROM jobs WHERE freshness_state='active'").fetchone()[0]
-        dismissals_count = c.execute("SELECT COUNT(*) FROM dismissals").fetchone()[0]
-        signals_count = c.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
-        fresh_signals = c.execute("SELECT COUNT(*) FROM signals WHERE status='fresh'").fetchone()[0]
-        contacts_count = c.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
-        outreach_count = c.execute("SELECT COUNT(*) FROM outreach").fetchone()[0]
+    m_stats = db.count_store_metrics()
+    total_jobs = m_stats["total_jobs"]
+    active_jobs = m_stats["active_jobs"]
+    dismissals_count = m_stats["dismissals_count"]
+    signals_count = m_stats["signals_count"]
+    fresh_signals = m_stats["fresh_signals"]
+    contacts_count = m_stats["contacts_count"]
+    outreach_count = m_stats["outreach_count"]
 
     daily_cap = config.get_daily_cap()
     today_sent = db.get_outreach_today_count()
     remaining_cap = max(0, daily_cap - today_sent)
 
-    # Compute query-time matches for V3
     q_res = db.query_jobs(session_id=session_id)
     matches_count = q_res.get("count", 0)
-    top_5 = q_res.get("jobs", [])[:5]
+    top_matches = _verified_compact_cards(q_res.get("jobs", []), limit=10) if include_matches else []
     hidden_count = max(0, q_res.get("total_active_pool", matches_count) - matches_count)
-
-    port_info = worker_launcher.get_running_server_info()
-    port = port_info["port"] if port_info else 8080
-    ui_url = f"http://127.0.0.1:{port}/?session={session_id}"
 
     questions_waiting = len(sess.get("pending_questions", []))
     curr_state_str = session_state.get("current_state", "") if isinstance(session_state, dict) else str(session_state)
@@ -1712,52 +1525,16 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
     if curr_state_str in ("round_2_answered", "round_2_skipped"):
         questions_waiting = 0
 
-    has_pending = bool(sess.get("pending_questions")) or (questions_waiting > 0 and curr_state_str not in ("round_2_answered", "round_2_skipped"))
-    if has_pending or not include_matches:
-        top_matches = []
-    else:
-        top_matches = top_5
-
-    if active_method == "hybrid":
-        method_summary = (
-            f"- Method: Hybrid (Recommended — Outreach + ATS Apply)\n"
-            f"- Signals: {signals_count} stored ({fresh_signals} fresh)\n"
-            f"- Stored Jobs: {total_jobs} ({active_jobs} active) | Matches: {matches_count} ({hidden_count} hidden by filters)\n"
-            f"- Contacts Found: {contacts_count}\n"
-            f"- Outreach Today: {today_sent} / {daily_cap} sent ({remaining_cap} remaining)\n"
-            f"- Send Mode: {config.get_send_mode()} | Follow-up: {config.get_follow_up_days()}d\n"
-            f"- LinkedIn Radar: {radar.get('status')} (Interval: {radar.get('interval_seconds')}s) | Dismissals: {dismissals_count}"
-        )
-    elif active_method == "modern":
-        method_summary = (
-            f"- Method: Modern (Outreach First)\n"
-            f"- Signals: {signals_count} stored ({fresh_signals} fresh)\n"
-            f"- Stored Jobs: {total_jobs} ({active_jobs} active) | Matches: {matches_count} ({hidden_count} hidden by filters)\n"
-            f"- Contacts Found: {contacts_count}\n"
-            f"- Outreach Today: {today_sent} / {daily_cap} sent ({remaining_cap} remaining)\n"
-            f"- Send Mode: {config.get_send_mode()} | Follow-up: {config.get_follow_up_days()}d"
-        )
-    else:
-        method_summary = (
-            f"- Method: Classic (Job Boards & Apply)\n"
-            f"- Stored Jobs: {total_jobs} ({active_jobs} active)\n"
-            f"- Matches for Session: {matches_count} ({hidden_count} hidden by filters)\n"
-            f"- LinkedIn Radar: {radar.get('status')} (Interval: {radar.get('interval_seconds')}s)\n"
-            f"- Dismissals: {dismissals_count}\n"
-            f"- Cleanup Grace: {cleanup.get('grace_hours')}h"
-        )
-
-    from . import extension_installer
-    ext_dir = extension_installer.find_extension_dir()
-    ext_status = "loaded" if Path(ext_dir).is_dir() else "manual_load_ready"
-    ui_seen = (
-        bool(sess.get("ui_seen", False))
-        or (curr_state_str == "ui_seen")
-        or (db.get_setting(f"ui_seen_{session_id}", "") == "1")
+    method_summary = (
+        f"- Method: Hybrid (Signal Radar + Job Boards + Tailored Docs & Outreach)\n"
+        f"- Signals: {signals_count} stored ({fresh_signals} fresh)\n"
+        f"- Stored Jobs: {total_jobs} ({active_jobs} active) | Matches: {matches_count} ({hidden_count} hidden by filters)\n"
+        f"- Contacts Found: {contacts_count}\n"
+        f"- Outreach Today: {today_sent} / {daily_cap} sent ({remaining_cap} remaining)\n"
+        f"- Send Mode: {config.get_send_mode()} | Follow-up: {config.get_follow_up_days()}d\n"
+        f"- LinkedIn Radar: {radar.get('status')} (Interval: {radar.get('interval_seconds')}s) | Dismissals: {dismissals_count}"
     )
-    browser_opened = bool(sess.get("browser_opened", False))
 
-    # Force D8: until round 2 is answered or skipped, every reply carries ask_user with pending questions
     state_enum = ticket_manager.get_session_state_name(session_id)
     r2_pending = (state_enum == ticket_manager.SessionState.LAUNCHED) and not sess.get("round_2_done")
     if r2_pending:
@@ -1780,7 +1557,6 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
         f"- Workspace: {home_dir}\n"
         f"{method_summary}\n"
         f"- Active Profile: {profile.get('_profile_name')} ({profile.get('target_title') or 'Candidate'})\n"
-        f"- Web UI: {ui_url}\n"
         f"- Note: {pacing_note}"
     )
 
@@ -1791,19 +1567,16 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
         "message_for_user": msg,
         "ask_user": ask_user_val,
         "options": {
-            "choices": ["jh_start", "jh_set_method", "jh_open_ui"],
-            "recommended": "jh_start"
+            "choices": ["jh_search", "jh_query", "prepare_application"],
+            "recommended": "jh_query" if matches_count else "jh_search",
         },
-        "next_tool": "jh_search" if active_method == "classic" else "jh_start",
+        "next_tool": "jh_query" if matches_count else "jh_start",
         "data": {
             "method": active_method,
             "session_id": session_id,
             "matches": matches_count,
+            "top_matches": top_matches,
             "hidden_by_filters": hidden_count,
-            "ui_url": ui_url,
-            "browser_opened": browser_opened,
-            "ui_seen": ui_seen,
-            "extension_status": ext_status,
             "total_jobs": total_jobs,
             "active_jobs": active_jobs,
             "workspace_home": str(home_dir),
@@ -1821,7 +1594,7 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
             "today_sent": today_sent,
             "remaining_cap": remaining_cap,
             "pacing_note": pacing_note,
-        }
+        },
     }
 
 

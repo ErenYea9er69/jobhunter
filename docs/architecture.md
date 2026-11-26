@@ -1,4 +1,4 @@
-# Architecture
+# Architecture (v2.0.0 — Hybrid Claude Desktop MCP Server)
 
 ## Layers
 
@@ -6,60 +6,39 @@
 MCP client (Claude Desktop, Cursor, ...)
         |  stdio, JSON-RPC
 mcp_server.py            start-up, resume sync, FastMCP instance
-jh/team/                 the CEO, five specialists and the Reviewer (see docs/team.md)
-jh/mcp_tools.py          39 specialist tools and 7 read-only resources
+jh/team/                 CEO orchestrator, specialists and the Reviewer (see docs/team.md)
+jh/mcp_tools.py          specialist tools and read-only resources (via CEO delegation or --surface full)
+jh/v5_tools.py           Hybrid guided workflow (jh_begin, jh_confirm, jh_launch, jh_answer, jh_query, jh_build_resume, jh_find_contacts, jh_draft_email)
 jh/mcp_helpers.py        envelope, error handling, job cards, resolvers, tool registry
         |
-jh/pipeline.py           search orchestration, scoring, caching, LinkedIn radar
+jh/pipeline.py           multi-board search orchestration, scoring, caching, LinkedIn radar
+jh/signals.py            fresh hiring posts (<24h) and funding signals (<14d)
+jh/contacts.py           size-tiered decision-maker contact discovery + MX verification
+jh/email_drafter.py      concise anti-slop cold outreach drafting (never auto-sent)
 jh/preferences.py        validated personal preferences (overlay on the resume)
 jh/regions.py            countries, cities, which sources serve which place
-jh/source_registry.py    one catalog of sources, skip rules, per-country call plans
+jh/source_registry.py    catalog of sources, skip rules, per-country call plans
 jh/company_directory.py  starter list, watchlist, discovered boards, board health
-jh/sources/              source classes (__init__), ATS adapters, feeds and APIs, local.py (site reader, regional boards)
-jh/regional_boards.py, localize.py   local board catalog, local-language query variants
+jh/sources/              source classes (__init__), ATS adapters, feeds and APIs, local.py
 jh/scoring.py, skills.py, dedup.py, evidence.py, refit.py, ats.py, interview.py, screening.py, tracker.py
-jh/db.py                 SQLite: profiles, stored jobs, applications, watchlist, settings
+jh/store.py, jh/db.py    DB-free atomic JSON persistence (durable.json + cache.json) & in-memory workspace state
 jh/util.py, source_policy.py   HTTP client, parsing helpers, outbound network policy
 ```
 
-## One search, step by step
+## Hybrid workflow, step by step
 
-1. `pipeline.search` loads your preferences and overlays them on the resume profile. The stored resume is not changed.
-2. `regions.resolve_targets` turns target countries, the location argument, and the resume location into country codes.
-3. For each source, `source_registry.skip_reason` decides whether to run it. Skips are reported in the result.
-4. `source_registry.plan` expands a source into calls: Indeed once per target country, Adzuna once per country, Bayt once per Middle East or North Africa country.
-5. All calls run in a thread pool with a 35 second deadline. A failing source never blocks the rest. Results are cached per source and query. Three failures in a row pause a source (circuit breaker).
-6. `company_directory.harvest` reads ATS links in the raw results and remembers new company boards.
-7. Personal filters apply: excluded companies, maximum age, company focus.
-8. `dedup.merge_jobs` merges the same job from several sources. `scoring` scores each job against every live resume and keeps the best.
-9. The result carries per-source status and a `coverage` block, so an empty result explains itself.
-
-## The team layer
-
-`jh/team/` sits between the client and the tools. `register_team` runs last in `register_tools_and_resources`, takes the registry of specialist tools (each already wrapped in the envelope), and adds seven CEO tools. `TeamMCP.list_tools` filters what the client sees (surface `team` or `full`). It does not remove tools, so the CEO can still call them.
-
-- `router.py`: request to intents and entities. Rule-based.
-- `ceo.py`: plan, delegate, retry and widen, review, report. One handler per intent.
-- `directives.py`, `roles.py`: the written brief for each task, the roster, and the owner of every tool.
-- `qa.py`: the Reviewer. Pure functions, offline except `live_check`.
-- `missions.py`: the `missions` table in `engine.db`.
-
-## Company boards
-
-`CompanyBoards` is one source with its own thread pool and a 25 second budget. It draws from three pools: your watchlist (always fetched, all roles), a short starter list, and discovered boards. The pool is limited per search (default 60), least recently fetched first. Each board keeps a health record in the `discovered_boards` table.
+1. `jh_begin` loads and validates local resumes without guessing unconfirmed locations or roles, presenting at most the essential Step 3 target questions.
+2. `jh_confirm` captures user target place/role and issues a 2-hour session ticket (`jh_confirm` -> `jh_launch`).
+3. `jh_launch` starts headless multi-board search + Signal Radar + LinkedIn radar concurrently in Hybrid mode (`method="hybrid"`), never launching a separate web UI, HTTP daemon, or browser.
+4. `jh_answer` updates live view filters (`work_mode`, `job_type`, `min_salary`, `industries`, exclusions) without restarting search, and returns Reviewer-verified (`qa.review_job`), fit-and-recency ranked compact job cards directly in chat.
+5. Once the user selects specific jobs, `tailor_resume`, `cover_letter`, `jh_build_resume` (1-page PDF), `jh_find_contacts`, and `jh_draft_email` generate strictly resume-grounded application and outreach packages under human approval.
 
 ## Data stores
 
-SQLite (`engine.db`) is the only store for resumes, jobs, applications, the watchlist and board health. `preferences.json` holds preferences. Generated documents go to `output/`. Nothing else is persisted.
+All workspace state is persisted atomically in JSON (`durable.json` for resumes/profiles, view filters, applications, outreach ledger, watchlist, settings; `cache.json` for cached search jobs, signals, and pending discoveries) managed by `jh/store.py`. Generated PDFs, tailored resumes, cover letters, and reports are stored under the user's home output directory (`~/Desktop/jobmcp/outputs/` or `JOBMCP_HOME/outputs/`). Zero SQLite (`.db`) files or external databases are used or created.
 
 ## Extending
 
-Add a source: subclass `Source` (or `_Board` for an ATS) in `jh/sources/`, add it to `SEARCH_SOURCES` or `BOARDS`, add a `SourceInfo` in `source_registry.py` with its regions, and add a fixture test. The catalog test fails if a source is missing from the registry.
-
-Add a specialist tool: also add its name to exactly one `Role.tools` tuple in `jh/team/roles.py`. A test fails otherwise.
-
-Add a tool: write a function in `register_tools_and_resources` with the `@tool` decorator and a docstring with an `Args:` section. Return a dict or a `Result`. Raise `ToolError` for fixable problems.
-
-## Background workers
-
-`pipeline.py` still holds the auto-search worker and the LinkedIn radar from the web-app version. The MCP server does not start them. The background enricher does run after a search, limited to the 60 best-scored jobs per search.
+- Add a source: subclass `Source` (or `_Board` for an ATS) in `jh/sources/`, add it to `SEARCH_SOURCES` or `BOARDS`, add a `SourceInfo` in `source_registry.py` with its regions, and add a fixture test.
+- Add a specialist tool: add its name to exactly one `Role.tools` tuple in `jh/team/roles.py`.
+- Add a tool: write a function in `register_tools_and_resources` with `@tool` and an `Args:` docstring section, returning a dict or `Result` and raising `ToolError` for fixable problems.

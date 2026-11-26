@@ -35,7 +35,6 @@ from jh import (
     freshness,
     gmail_tracker,
     home,
-    httpd,
     interview,
     interview_questions,
     lifecycle,
@@ -95,7 +94,6 @@ def e2e_env(tmp_path, monkeypatch):
     home._HOME_CREATED_IN_SESSION = False
     home._FIRST_NOTICE_GIVEN = False
     preferences._cache.update(mtime=None, path=None, data=None)
-    db._SESSION_VIEW_FILTERS.clear()
 
     # Hard block internet access
     def _fail_net(*args, **kwargs):
@@ -304,7 +302,8 @@ def test_t4_targeting_questions(e2e_env):
     r_beg = lazy.jh_begin(resume_path=valid_path)
     assert r_beg.get("status") in ("ready", "needs_target", "needs_role")
     p_qs = r_beg.get("pending_questions") or r_beg.get("options", {}).get("questions", [])
-    assert len(p_qs) >= 2, f"Expected questions in batch, got {len(p_qs)}"
+    assert len(p_qs) >= 1, f"Expected questions in batch, got {len(p_qs)}"
+    assert any(q.get("id") == "target_place" for q in p_qs)
 
     # Status check before answering: no top matches allowed!
     sid = r_beg.get("session_id")
@@ -410,20 +409,19 @@ def test_t6_ticket_gate_and_launch(e2e_env):
 # =====================================================================
 # T7: Browser and extension
 # =====================================================================
-def test_t7_browser_and_extension(e2e_env):
-    """T7: Browser opened by launch loads ATS extension or reply provides exact fallback."""
+def test_t7_headless_hybrid_launch(e2e_env):
+    """T7: Headless Hybrid launch starts Signal Radar and background search cleanly without UI or browser."""
     client = ScriptedMCPClient(mode="direct")
     resume_path = str(FIXTURES_DIR / "resumes" / "valid_alex_backend.txt")
     r_beg = client.jh_begin(resume_path=resume_path)
     sid = r_beg["session_id"]
-    c_res = client.jh_confirm(session_id=sid, user_reply="Modern, Tunisia")
+    c_res = client.jh_confirm(session_id=sid, user_reply="Tunisia")
     tkt = c_res["ticket"]
 
-    with patch("webbrowser.open", return_value=True):
-        r_launch = client.jh_launch(session_id=sid, ticket=tkt)
-
-    # Must provide ui_url or extension instruction in reply
-    assert "ui_url" in r_launch or "url" in r_launch or "http" in str(r_launch)
+    r_launch = client.jh_launch(session_id=sid, ticket=tkt)
+    assert r_launch.get("status") == "ok"
+    assert r_launch.get("data", {}).get("method") == "hybrid"
+    assert "ui_url" not in r_launch
 
 
 # =====================================================================
@@ -831,9 +829,9 @@ def test_t20_privacy_safety_resilience_speed(e2e_env):
     """
     home_dir = e2e_env["home"]
 
-    # Port collision fallback
-    free_p1 = worker_launcher.find_free_port(start_port=8080)
-    assert free_p1 >= 8080
+    # Headless worker status check (no HTTP daemon port needed)
+    st = worker_launcher.get_search_job_status("t20_probe")
+    assert st["status"] == "not_started"
 
     # Payload isolation check
     payload = v5_tools.build_ai_task_payload(task="score_job", job={"title": "Dev"}, profile={"name": "Alex"})
@@ -992,20 +990,11 @@ def test_t23_optimization_with_numbers(e2e_env):
 # =====================================================================
 # T24: The UI map
 # =====================================================================
-def test_t24_the_ui_map(e2e_env):
-    """T24: Verifies the UI API endpoints and screen state contracts:
-    - Progress view
-    - Filter strip with answered and pending fields
-    - Match list with Safe, Match, Reach labels, gaps, no-salary flag, unverified & scam flags, hidden counter
-    - Header button for new signals / jobs, deletion banner with Review and Keep these
-    - Closing soon list
-    - Saved jobs with resume diff, cover letter, review step
-    - Modern signals tab with age, likes, score
-    - Contact cards with Found/Pattern/Guess badge
-    - Draft editor with word count, slop flags, PDF download
-    - Settings: method, launch_mode, daily cap, attachment, EEO, Gmail connect, delete my data
-    - Digest and weekly report
-    """
-    from jh import ui_contract
-    res = ui_contract.verify_ui_state_contracts()
-    assert res.get("valid") is True, f"UI state contract verification failed: {res.get('errors')}"
+def test_t24_hybrid_mcp_status_contract(e2e_env):
+    """T24: Verifies headless Hybrid MCP status contract and DB-free persistence."""
+    st = v5_tools.jh_status(session_id="t24_sess")
+    assert st["status"] == "ok"
+    assert st["data"]["method"] == "hybrid"
+    assert "top_matches" in st["data"]
+    assert "ui_url" not in st["data"]
+    assert "extension_status" not in st["data"]

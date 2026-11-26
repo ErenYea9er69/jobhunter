@@ -163,9 +163,9 @@ def test_outreach_ledger_cross_reference():
     assert sig.get("already_contacted") is True
 
 
-def test_radar_worker_in_modern_mode():
+def test_radar_worker_in_hybrid_mode():
     worker = RadarWorker(min_interval=600, max_interval=1200)
     res = worker.poll_once()
     assert res["success"] is True
-    assert res["method"] == "modern"
+    assert res["method"] == "hybrid"
     assert "interval_seconds" in res

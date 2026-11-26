@@ -104,7 +104,6 @@ def run_e2e_suite(report_title: str = "E2E EXECUTION REPORT") -> dict[str, dict]
             home._HOME_CREATED_IN_SESSION = False
             home._FIRST_NOTICE_GIVEN = False
             preferences._cache.update(mtime=None, path=None, data=None)
-            db._SESSION_VIEW_FILTERS.clear()
 
             try:
                 fn(env)

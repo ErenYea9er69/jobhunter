@@ -28,63 +28,17 @@ logger = logging.getLogger("jh.save_flow")
 
 def is_job_saved(job_id_or_key: str) -> bool:
     """Check if a job has been marked as saved or tracked in applications or jobs."""
-    if not job_id_or_key:
-        return False
-    with db.session() as c:
-        # Check applications
-        app = c.execute(
-            "SELECT id, status FROM applications WHERE (id=? OR job_id=?) AND status IN ('saved', 'applied', 'interview', 'offer', 'queued')",
-            (job_id_or_key, job_id_or_key),
-        ).fetchone()
-        if app:
-            return True
-        # Check jobs table keep_flag
-        job = c.execute(
-            "SELECT id, keep_flag FROM jobs WHERE (id=? OR url_hash=? OR job_key=?) AND keep_flag=1",
-            (job_id_or_key, job_id_or_key, job_id_or_key),
-        ).fetchone()
-        if job:
-            return True
-    return False
+    return db.is_job_saved_record(job_id_or_key)
 
 
 def get_job_dict(job_or_id: str | dict) -> dict:
     """Resolve a job dictionary from an ID, key, or existing dict."""
     if isinstance(job_or_id, dict):
         return dict(job_or_id)
-    job_id = str(job_or_id)
-    with db.session() as c:
-        row = c.execute(
-            "SELECT * FROM jobs WHERE id=? OR url_hash=? OR job_key=?",
-            (job_id, job_id, job_id),
-        ).fetchone()
-        if row:
-            return dict(row)
-        # Check search_jobs
-        s_row = c.execute("SELECT * FROM search_jobs WHERE id=?", (job_id,)).fetchone()
-        if s_row:
-            d = dict(s_row)
-            if d.get("raw_json"):
-                try:
-                    raw = json.loads(d["raw_json"])
-                    raw.update(d)
-                    return raw
-                except Exception:
-                    pass
-            return d
-        # Check applications
-        a_row = c.execute("SELECT * FROM applications WHERE id=? OR job_id=?", (job_id, job_id)).fetchone()
-        if a_row:
-            d = dict(a_row)
-            if d.get("job_data_json"):
-                try:
-                    jd = json.loads(d["job_data_json"])
-                    jd.update(d)
-                    return jd
-                except Exception:
-                    pass
-            return d
-    return {"id": job_id, "title": "Untitled Role", "company": "Unknown Company"}
+    found = db.get_job_record(str(job_or_id))
+    if found:
+        return found
+    return {"id": str(job_or_id), "title": "Untitled Role", "company": "Unknown Company"}
 
 
 def get_master_profile(profile_override: Optional[dict] = None) -> dict:
@@ -298,17 +252,15 @@ def generate_saved_job_documents(
     with open(cover_path, "w", encoding="utf-8") as f:
         f.write(clean_cover)
 
-    # Update applications record in SQLite
+    # Update applications record
     if not res_pass or not cov_pass:
         grounding_summary = "blocked"
         failing_claims = (res_findings if not res_pass else []) + (cov_findings if not cov_pass else [])
-        with db.session() as c:
-            c.execute(
-                """UPDATE applications
-                   SET grounding_result=?, updated_at=datetime('now')
-                   WHERE id=? OR job_id=?""",
-                ("blocked", app_id, job_id),
-            )
+        db.update_application_fields(
+            app_id or job_id,
+            grounding_result="blocked",
+            updated_at=db.now_iso(),
+        )
         return {
             "status": "blocked",
             "blocked": True,
@@ -322,22 +274,15 @@ def generate_saved_job_documents(
         }
 
     grounding_summary = "passed"
-    with db.session() as c:
-        c.execute(
-            """UPDATE applications
-               SET resume_path=?, cover_letter_path=?, grounding_result=?,
-                   tailored_resume_json=?, cover_letter=?, updated_at=datetime('now')
-               WHERE id=? OR job_id=?""",
-            (
-                resume_path,
-                cover_path,
-                grounding_summary,
-                json.dumps(tailored_resume_dict),
-                clean_cover,
-                app_id,
-                job_id,
-            ),
-        )
+    db.update_application_fields(
+        app_id or job_id,
+        resume_path=resume_path,
+        cover_letter_path=cover_path,
+        grounding_result=grounding_summary,
+        tailored_resume_json=json.dumps(tailored_resume_dict),
+        cover_letter=clean_cover,
+        updated_at=db.now_iso(),
+    )
 
     return {
         "status": "ok",
@@ -500,14 +445,9 @@ def handle_save_job(
             "job_id": job_id,
         }
 
-    # 4. Save Job in DB (keep_flag=1, clear delete_at, saved_by='ui')
-    with db.session() as c:
-        c.execute(
-            "UPDATE jobs SET keep_flag=1, delete_at=NULL, saved_by='ui' WHERE id=? OR url_hash=? OR job_key=?",
-            (job_id, job_id, job_id),
-        )
+    # 4. Mark job saved and upsert application record
+    db.mark_job_saved_record(job_id, saved_by="ui")
 
-    # Upsert application record
     app_data = {
         "job_id": job_id,
         "company": job.get("company", "Unknown Company"),
@@ -520,19 +460,24 @@ def handle_save_job(
         "saved_by": "ui",
     }
     app_id = tracker.upsert_application(app_data)
-    with db.session() as c:
-        c.execute("UPDATE applications SET fit_score=?, saved_by='ui' WHERE id=?", (fit_score, app_id))
+    db.update_application_fields(app_id, fit_score=fit_score, saved_by="ui")
 
-    # 5. Generate method-specific outputs (Hybrid -> Classic Docs + Modern Outreach; Modern -> Direct Outreach; Classic -> Resume + Cover Letter)
-    active_method = (method or "").lower().strip()
-    if active_method == "hybrid":
-        gen_res = generate_saved_job_documents(job, profile, app_id)
-        bundle = generate_modern_outreach_bundle(
-            company=job.get("company", "Unknown Company"),
-            role=job.get("title", "Software Engineer"),
-            job_dict=job,
-            profile=profile,
-        )
+    # 5. Hybrid generation: tailored resume + cover letter AND decision-maker contacts, brief, 1-page PDF, cold email draft
+    if background:
+        def _run_hybrid_bg():
+            try:
+                generate_saved_job_documents(job, profile, app_id)
+                generate_modern_outreach_bundle(
+                    company=job.get("company", "Unknown Company"),
+                    role=job.get("title", "Software Engineer"),
+                    job_dict=job,
+                    profile=profile,
+                )
+            except Exception as e:
+                logger.warning("Background hybrid generation failed: %s", e)
+
+        thread = threading.Thread(target=_run_hybrid_bg, daemon=True, name=f"generate-{app_id}")
+        thread.start()
         return {
             "status": "ok",
             "method": "hybrid",
@@ -540,81 +485,20 @@ def handle_save_job(
             "application_id": app_id,
             "fit_score": fit_score,
             "match_evaluation": match_eval,
-            "gap_report": gap_report,
-            "resume_path": gen_res["resume_path"],
-            "cover_letter_path": gen_res["cover_letter_path"],
-            "grounding": gen_res["grounding"],
-            "company": bundle["company"],
-            "role": bundle["role"],
-            "brief": bundle["brief"],
-            "learning_pack": bundle["learning_pack"],
-            "contacts": bundle["contacts"],
-            "contacts_notice": bundle.get("contacts_notice", ""),
-            "resume": bundle["resume"],
-            "email": bundle["email"],
-            "message": (
-                f"Saved in Hybrid mode (fit {fit_score}): tailored resume + cover letter for ATS apply "
-                f"AND decision-maker contacts, company brief, 1-page PDF, and cold email draft."
-            ),
-        }
-
-    if active_method == "modern":
-        bundle = generate_modern_outreach_bundle(
-            company=job.get("company", "Unknown Company"),
-            role=job.get("title", "Software Engineer"),
-            job_dict=job,
-            profile=profile,
-        )
-        pdf_path = (bundle.get("resume") or {}).get("resume_path", "")
-        with db.session() as c:
-            c.execute(
-                "UPDATE applications SET resume_path=?, grounding_result=?, updated_at=datetime('now') WHERE id=? OR job_id=?",
-                (pdf_path, "passed", app_id, job_id),
-            )
-        return {
-            "status": "ok",
-            "method": "modern",
-            "saved": True,
-            "application_id": app_id,
-            "fit_score": fit_score,
-            "match_evaluation": match_eval,
-            "gap_report": gap_report,
-            "resume_path": pdf_path,
-            "company": bundle["company"],
-            "role": bundle["role"],
-            "brief": bundle["brief"],
-            "learning_pack": bundle["learning_pack"],
-            "contacts": bundle["contacts"],
-            "contacts_notice": bundle.get("contacts_notice", ""),
-            "resume": bundle["resume"],
-            "email": bundle["email"],
-            "grounding": "passed",
-            "message": f"Saved in Modern outreach mode (fit {fit_score}): researched contacts, brief, 1-page PDF, and short email draft.",
-        }
-
-    if background:
-        thread = threading.Thread(
-            target=generate_saved_job_documents,
-            args=(job, profile, app_id),
-            daemon=True,
-            name=f"generate-{app_id}",
-        )
-        thread.start()
-        return {
-            "status": "ok",
-            "method": "classic",
-            "saved": True,
-            "application_id": app_id,
-            "fit_score": fit_score,
-            "match_evaluation": match_eval,
             "generating": True,
-            "message": f"Job saved. Tailoring resume & cover letter in background (Fit Score: {fit_score}).",
+            "message": f"Job saved. Generating Hybrid resume, cover letter, brief & outreach draft in background (Fit Score: {fit_score}).",
         }
 
     gen_res = generate_saved_job_documents(job, profile, app_id)
+    bundle = generate_modern_outreach_bundle(
+        company=job.get("company", "Unknown Company"),
+        role=job.get("title", "Software Engineer"),
+        job_dict=job,
+        profile=profile,
+    )
     return {
         "status": "ok",
-        "method": "classic",
+        "method": "hybrid",
         "saved": True,
         "application_id": app_id,
         "fit_score": fit_score,
@@ -623,7 +507,18 @@ def handle_save_job(
         "resume_path": gen_res["resume_path"],
         "cover_letter_path": gen_res["cover_letter_path"],
         "grounding": gen_res["grounding"],
-        "message": f"Saved and tailored documents generated with fit score {fit_score}.",
+        "company": bundle["company"],
+        "role": bundle["role"],
+        "brief": bundle["brief"],
+        "learning_pack": bundle["learning_pack"],
+        "contacts": bundle["contacts"],
+        "contacts_notice": bundle.get("contacts_notice", ""),
+        "resume": bundle["resume"],
+        "email": bundle["email"],
+        "message": (
+            f"Prepared in Hybrid mode (fit {fit_score}): tailored resume + cover letter "
+            f"AND decision-maker contacts, company brief, 1-page PDF, and cold email draft."
+        ),
     }
 
 

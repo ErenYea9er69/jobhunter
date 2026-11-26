@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.0
+
+### Pure Claude Desktop Hybrid MCP Server (No Web UI, No Extension, No SQLite Database)
+- **DB-free atomic JSON + in-memory store (`jh/store.py`, `jh/db.py`)**: Replaced `engine.db` SQLite persistence with atomic per-workspace `durable.json` and `cache.json` files managed by `WorkspaceStore` (zero `.db` files created on disk), preserving read/write session compatibility for protected LinkedIn regions.
+- **Hybrid-only workflow (`jh/config.py`, `jh/interview_questions.py`, `jh/save_flow.py`, `jh/v5_tools.py`)**: Consolidated all search and application workflows onto the Hybrid track (multi-board search + Signal Radar + LinkedIn radar, fit-and-recency ranking, tailored ATS deliverables plus verified decision-maker contacts and cold outreach drafts under user control).
+- **Native Claude Desktop UX (`mcp_server.py`, `jh/mcp_tools.py`, `jh/worker_launcher.py`, `jh/ticket_manager.py`)**: Removed the standalone Web UI (`webapp/`, `public/`), Chromium extension (`extension/`), local HTTP daemon (`httpd.py`, `server.py`), desktop installers, browser popups, artificial 5-second reply locks, UI-save tailoring locks, and `"do not list jobs in chat"` barriers. Search matches are verified through Reviewer QA and surfaced cleanly in chat so users select exact roles to tailor while retaining full final submission control.
+
 ## 1.2.3
 
 ### Hybrid Mode (Recommended — Modern Outreach + Classic ATS Apply)

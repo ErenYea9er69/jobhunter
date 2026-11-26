@@ -69,9 +69,9 @@ uvx jobhunter-mcp --workspace /path/to/my-resumes
 
 ---
 
-### 🛠️ Developer Setup & Local Copilot Suite (Optional)
+### 🛠️ Local Developer Setup (Optional)
 
-Clone only if you are developing JobHunter, customizing the codebase, or using the standalone local Web Dashboard and Chromium extension:
+Clone only if you are developing JobHunter or customizing adapters and prompts:
 
 ```bash
 git clone https://github.com/ErenYea9er69/jobhunter.git
@@ -79,206 +79,28 @@ cd jobhunter
 pip install -r requirements.txt
 ```
 
-#### Run on Windows:
-Double-click `run.bat` or execute in PowerShell / CMD:
-```cmd
-run.bat
-# or
-python run.py
-```
-
-#### Run on macOS & Linux:
+Verify the MCP server and register it into Claude Desktop in one command:
 ```bash
-chmod +x run.sh
-./run.sh
-# or
-python3 run.py
+python mcp_server.py --check
+python mcp_server.py --install-claude --workspace /path/to/resumes
 ```
 
-#### Launcher CLI Options:
-```bash
-python run.py [OPTIONS]
-  --port PORT          Port for HTTP daemon (default: 8765)
-  --host HOST          Host to bind to (default: 127.0.0.1)
-  --no-browser         Do not auto-launch Chromium with extension
-  --setup-only         Provision directories, DB, and MCP configs, then exit
-  --set-key KEY        Store API key for Standalone Direct API mode
-  --provider PROVIDER  AI Provider (gemini, openai, anthropic, deepseek, groq, mistral)
-  --model MODEL        Target model (e.g. gemini-3.8-flash, gpt-5-mini, claude-3-7-sonnet)
-  --clear-key          Delete stored API keys and return to MCP mode
-  --ai-status          Display active AI provider, mode, and masked key
-  --test-ai            Test connection to the active AI endpoint and measure latency
-```
-
-#### What happens automatically:
-1. **Candidate Drop Folder Provisioned**: Auto-creates `resumes/` with a `PUT_YOUR_RESUME_HERE.txt` guide. Drop your Word (**`.docx`**), PDF (**`.pdf`**), or Text (**`.txt`**, **`.md`**) resume right into this folder.
-2. **SQLite Database Initialized**: Automatically creates your private local database (`engine.db`) in `~/.jobhunter/` or your workspace.
-3. **AI Coding Agents Auto-Connected (MCP)**: Auto-detects and writes MCP configuration for **Cursor** (`.cursor/mcp.json`) and **Claude Desktop** so your AI assistant shares the exact same resume facts and tracking database.
-4. **Web Dashboard Served**: Starts the local HTTP daemon and serves the 6-tab autonomous dashboard on `http://127.0.0.1:8765`.
-5. **Browser Extension Loaded**: Detects your installed Chromium browser (Google Chrome, Microsoft Edge, Brave) and launches it with the ATS Autofill extension preloaded (`--load-extension`).
-6. **First-Run Web Drop Wizard**: If no resume exists yet, the web dashboard displays a drag-and-drop wizard allowing you to upload your Word, PDF, or Text resume directly from the browser with instant skill extraction.
+#### Hybrid Claude Desktop Workflow:
+1. **Load & Validate Resumes (`jh_begin`)**: Reads `.pdf`, `.docx`, or `.txt` resumes without guessing unconfirmed locations or roles.
+2. **Confirm Target Place & Filters (`jh_confirm` -> `jh_launch` -> `jh_answer`)**: Runs headless Hybrid discovery combining multi-board job search, fresh Signal Radar posts (<24h / recent funding), and LinkedIn radar.
+3. **Fit + Recency Ranked Matches in Chat (`jh_query`)**: Presents Reviewer-verified compact cards filtered by live criteria (`work_mode`, `job_type`, `min_salary`, `industries`, company exclusions).
+4. **Tailor & Prepare Per User Selection**: For chosen roles, generates grounded tailored resumes (`tailor_resume`, `jh_build_resume` 1-page PDF), `cover_letter`, `interview_prep`, MX-verified hiring contacts (`jh_find_contacts`), and anti-slop cold outreach drafts (`jh_draft_email`).
+5. **100% Human Control**: Never auto-submits applications or sends emails automatically. Every output is checked by `jh.team.qa` against master resume facts.
 
 ---
 
-### 🖥️ Modern Web Dashboard & Visual Workspace
+### 🔐 Optional LLM Provider Keys (Zero Key Required by Default)
 
-JobHunter includes a responsive, dark/light themed single-page web application running locally on `http://127.0.0.1:8765`. The interface uses a black, gray and white theme with small green, amber and red score colors. See `DESIGN.md` and `UI-CHANGES.md`:
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                          JOBHUNTER DASHBOARD                           │
-├───────────────┬───────────────────────────────┬────────────────────────┤
-│ TAB 1: RADAR  │ TAB 2: PIPELINE KANBAN        │ TAB 3: DOCUMENT STUDIO │
-│ Opportunity   │ 5-Stage Visual Funnel         │ 100% Truthful QA       │
-│ Discovery     │ Saved → Applied → Interview   │ Cover Letters & Pitch  │
-├───────────────┼───────────────────────────────┼────────────────────────┤
-│ TAB 4: PROFILE│ TAB 5: AI & CALIBRATION       │ TAB 6: AUTO-APPLY HUB  │
-│ Resume Drop   │ Dual Engine (MCP vs API)      │ ATS Extension Dispatch │
-│ & Variants    │ 2026 Frontier Models          │ 1-Click Browser Launch │
-└───────────────┴───────────────────────────────┴────────────────────────┘
-```
-
-#### Tab 1: Radar & Opportunity Discovery
-- **Multi-Source Aggregation**: Real-time unified search across 100+ platforms (Company Greenhouse/Ashby/Lever boards, Y Combinator, Hacker News, regional national sites, and remote boards).
-- **Match Scoring Engine (0-100%)**: Every posting is ranked strictly against the candidate's verified skills, experience level, and target preferences.
-- **Smart Filters**: Filter instantaneously by Work Mode (Remote, Hybrid, Onsite), Job Type (Full-time, Internship/PFE, Contract), and Score Floor.
-- **1-Click Queue Auto-Apply**: Queue promising opportunities directly into the Auto-Apply batch runner.
-
-#### Tab 2: Application Kanban Pipeline
-- **Visual Funnel Tracking**: 5 automated progression lanes: `Saved` → `Queued Auto-Apply` → `Applied` → `Interviewing` → `Offers`.
-- **Gmail Sync Integration**: 1-click sync scans your connected inbox for ATS confirmations, interview invitations, and status updates, automatically transitioning opportunities across lanes without manual entry.
-- **Application Analytics**: Tracks submission velocity, response rates, and active interview conversions.
-
-#### Tab 3: Truthful Document Studio & Copilot
-- **Multi-Format Document Generation**:
-  - **Cover Letters**: Direct-impact, metrics-driven pitches tailored to the job description.
-  - **YC-Style Founder Cold Emails**: High-converting, short pitches with an automated **Founder Corporate Email Finder** that synthesizes and verifies executive email formats.
-  - **Big Tech Recruiter & Internal Referrals**: Calibrated for levels and terminology at Google (L3-L6), Meta (E3-E6), Uber, Amazon, Apple, Microsoft, Netflix, and Stripe.
-  - **STAR Interview Guides**: Complete preparation matrices with Situation, Task, Action, and Result outlines grounded in your actual work history.
-- **Reviewer QA Badge**: Every generated paragraph is audited sentence-by-sentence against candidate resume facts before approval. Unsupported claims are rejected or flagged with zero hallucinations.
-- **Direct Export**: 1-click Copy, Print to PDF, or "Open in Gmail" prefilled draft.
-
-#### Tab 4: Candidate Profile & Resume Variants
-- **Master Profile Display**: Visual hero card showing extracted coordinates, verified skills chips, and reverse-chronological professional timeline.
-- **First-Run Drop Folder & Drag-and-Drop Web Wizard**: Upload Word (**`.docx`**), PDF (**`.pdf`**), or Text (**`.txt`**, **`.md`**) resumes directly in the browser or drop them into `resumes/`.
-- **Variant Management**: Switch between specialized resume variants (e.g. Backend vs AI Engineer) with one click; all ranking and generation immediately recalibrate.
-
-#### Tab 5: Search Calibration & AI Dual Engine
-- **Target Filtering**: Configure target countries (e.g., Tunisia, France, Germany, Worldwide Remote), preferred cities, work mode, and search depth.
-- **Dream & Excluded Companies**: Boost priority for dream employers; permanently blacklist companies and unwanted technologies.
-- **AI Engine Control Deck**: Live mode badge (`Direct API Active` vs `External MCP Host Mode`), provider selector, 2026 frontier model picker, masked key display, latency test, and 1-click key wipe.
-
-#### Tab 6: Auto-Apply & Desktop Hub
-- **Queue Dispatcher**: Automatically iterates through queued applications and launches the autofill sequence.
-- **Work Authorization & Visa Compliance**: Sets deterministic rules for legal authorization, sponsorship requirements, and notice period.
-- **1-Click Chromium Launcher**: Detects your installed Chrome, Edge, or Brave browser and boots it with the JobHunter extension active.
-
----
-
-### 🧩 Chrome ATS Autofill Extension
-
-Located in `extension/`, the JobHunter extension turns your browser into an automated job application copilot:
-
-- **Manifest V3 Architecture**: Fast, lightweight, and operates entirely against your local daemon (`http://127.0.0.1:8765`).
-- **Supported ATS Platforms**:
-  - Greenhouse (`boards.greenhouse.io`)
-  - Lever (`jobs.lever.co`)
-  - Ashby (`jobs.ashbyhq.com`)
-  - Workday (`*.myworkdayjobs.com`)
-  - SmartRecruiters, Recruitee, Workable, and custom employer career portals.
-- **Smart Form Autofill**: Instantly populates personal coordinates, resume attachments, LinkedIn, GitHub, portfolio URLs, and work authorization disclosures.
-- **Grounded Screening Question Solver**: Intercepts custom employer questions (e.g., *"Describe a time you solved an architectural bottleneck"*, *"What is your experience with Kubernetes?"*) and formulates accurate answers drawn solely from candidate facts in SQLite.
-- **Review panel**: A panel on the page lists every filled field with an Undo, lists fields that need you, and never submits unless you chose countdown mode.
-
----
-
----
-
-### 🔀 Dual Execution Modes: External MCP Host vs. Standalone Direct API
-
-JobHunter operates seamlessly in two distinct modes, and you can switch between them at any time:
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        MODE 1: EXTERNAL MCP HOST                       │
-│  Zero API keys required in JobHunter!                                  │
-│  Claude Desktop or Cursor runs its own frontier LLM model              │
-│  and talks to JobHunter via MCP stdio tools.                           │
-└────────────────────────────────────┬───────────────────────────────────┘
-                                     │ (Switch dynamically anytime)
-┌────────────────────────────────────▼───────────────────────────────────┐
-│                    MODE 2: STANDALONE DIRECT API                       │
-│  No external AI IDE needed! Clone and supply your own API key.        │
-│  Powers the Web Dashboard & Chrome Extension directly via SQLite.      │
-│  Supports Gemini 3.8 Flash, GPT-5 Mini, Claude 3.7 Sonnet, etc.        │
-└────────────────────────────────────────────────────────────────────────┘
-```
-
-#### Mode 1: External MCP Host Mode (Zero Keys Needed)
-- If you use **Claude Desktop**, **Cursor**, **Antigravity**, or **Claude Code**, you **do NOT need to supply any API keys**.
-- The AI IDE hosts the conversation and passes context to JobHunter's tools over stdio.
-- All documents, tailoring, and scoring run through JobHunter's strict offline Reviewer QA engine.
-
-#### Mode 2: Standalone Direct API Mode (Web Dashboard & Chrome Extension)
-- If you want to use the Web Dashboard and ATS Autofill extension independently without running Claude Desktop or Cursor, you can supply your API key directly via CLI or Web UI.
-- Your key is stored securely in your private local SQLite database (`engine.db`) and is **never** sent to external telemetry or exposed in logs.
-
-##### Configure via Command Line (Windows, macOS, Linux):
-```bash
-# 1. Activate Google Gemini (Default frontier: gemini-3.8-flash)
-python run.py --set-key YOUR_GEMINI_API_KEY --provider gemini --model gemini-3.8-flash
-
-# 2. Activate OpenAI (Default frontier: gpt-5-mini or o3-mini)
-python run.py --set-key YOUR_OPENAI_API_KEY --provider openai --model gpt-5-mini
-
-# 3. Activate Anthropic Claude (Default frontier: claude-3-7-sonnet)
-python run.py --set-key YOUR_ANTHROPIC_API_KEY --provider anthropic --model claude-3-7-sonnet
-
-# 4. Activate DeepSeek
-python run.py --set-key YOUR_DEEPSEEK_KEY --provider deepseek --model deepseek-chat
-
-# 5. Check active mode & masked key
-python run.py --ai-status
-
-# 6. Test connection latency and endpoint health
-python run.py --test-ai
-```
-
-##### Configure via Web Dashboard:
-1. Open `http://127.0.0.1:8765` in your browser.
-2. Navigate to the **Calibration & Filters** tab.
-3. In the **AI Engine & Dual Execution Mode** card:
-   - Select your provider (**Google Gemini**, **OpenAI**, **Anthropic**, **DeepSeek**, **Groq**, **Mistral**, or local **Ollama**).
-   - Pick a model or enter a custom identifier.
-   - Paste your key and click **Save & Activate**.
-   - Click **Test Connection** to verify round-trip ping and latency.
-
-#### Reverting to MCP Mode / Deleting Your Key:
-You can wipe your stored API key at any time to return JobHunter to External MCP / Deterministic mode:
-```bash
-# Via CLI:
-python run.py --clear-key
-
-# Or via Web Dashboard:
-Click the "Clear Key" button in Tab 5 (Calibration & Filters)
-```
-
-#### 2026 Frontier Models Supported:
-- **Google Gemini**: `gemini-3.8-flash` (recommended default), `gemini-3.1-pro`, `gemini-3.5-flash`
-- **OpenAI**: `gpt-5-mini` (recommended default), `o3-mini`, `gpt-5`
-- **Anthropic**: `claude-3-7-sonnet` (recommended default), `claude-3-5-haiku`
-- **DeepSeek**: `deepseek-chat`, `deepseek-reasoner`
-- **Groq**: `llama-3.3-70b-versatile`, `qwen-2.5-coder-32b`
-- **Mistral**: `mistral-large-latest`
-- **Ollama**: `llama3.3`, `deepseek-r1` (local, zero cloud keys)
-
----
+By default, **Claude Desktop** uses your connected Claude model to orchestrate JobHunter's deterministic scoring, ATS checks, PDF exporter, and evidence grounding with **zero external API keys**. If you optionally configure a provider key in your MCP client `env` block (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, or local `OLLAMA_ENDPOINT`), wording helpers automatically use it while Reviewer grounding blocks any unsupported claim.
 
 ---
 
 ### Alternative: Standalone MCP Server via uvx
-
-If you only want the stdio MCP server without the web dashboard:
 
 ```bash
 uvx --from git+https://github.com/ErenYea9er69/jobhunter jobhunter-mcp
@@ -303,20 +125,17 @@ Add the server to your `claude_desktop_config.json`:
   "mcpServers": {
     "jobhunter": {
       "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/ErenYea9er69/jobhunter",
-        "jobhunter-mcp"
-      ],
+      "args": ["jobhunter-mcp"],
       "env": {
-        "JH_DATA_DIR": ""
+        "JH_WORKSPACE": "/path/to/resumes-workspace"
       }
     }
   }
 }
 ```
 
-*(Leave `JH_DATA_DIR` empty to default to `~/.jobhunter`, or provide a custom directory path).*
+*(Data is stored cleanly in JSON under `~/Desktop/jobmcp` or `JOBMCP_HOME`, with zero `.db` database files).*
+
 
 ### Local Development
 
@@ -444,8 +263,7 @@ Triggers evaluate in strict priority order (`S > D > A > B > C > E`):
 | **E** | Career Direction | Asks about career direction, choosing a path, or "what am I good at". Focuses on demonstrated competencies. | Idiomatic praise ("good job!", "great job finding those listings"). | 6 | Once per session |
 
 ### Opt-Out & Controls
-- **Session Opt-Out:** Speaking phrases like *"just search"*, *"no advice"*, *"skip the coaching"*, or *"stop coaching"* turns coaching off for the session. *"No advice on this one"* suppresses coaching for that single query.
-- **Web UI Toggle:** Go to `Settings > Coaching` to toggle coaching on/off persistently or reset history.
+- **Chat Opt-Out:** Speaking phrases like *"just search"*, *"no advice"*, *"skip the coaching"*, or *"stop coaching"* turns coaching off for the session. *"No advice on this one"* suppresses coaching for that single query. Or configure `set_coaching_preference` via MCP tools.
 - **Dual Track Selection:** When Trigger B fires, users can choose *Target Track Only*, *Bridge Track*, or *Both (Dual Track)*. The optional `track` parameter (`"bridge" | "target" | "both"`) is passed to searches.
 
 ### Configuration
@@ -491,13 +309,11 @@ JobHunter runs as an official stdio MCP server via `mcp_server.py`:
 
 ## Your data
 
-Everything lives in your user home directory at `~/.jobhunter/` by default, or the folder configured via the `JH_DATA_DIR` environment variable.
+Everything lives locally under `~/Desktop/jobmcp/` (override via `JOBMCP_HOME`), or `JH_DATA_DIR` when explicitly set. Zero `.db` / SQLite files are created.
 
-- `engine.db` is the SQLite database: resumes, stored jobs, applications, watchlist, board health.
+- `data/` holds atomic JSON workspace persistence (`durable.json` for resumes, view filters, applications, watchlist, settings; `cache.json` for search cache and signals).
 - `preferences.json` holds your preferences, feeds and career pages.
-- `output/` holds adapted resumes, cover letters, interview prep and exports.
-
-Applications live in SQLite. Any old `applications.json` is imported once and renamed.
+- `outputs/` holds adapted resumes, 1-page PDFs, cover letters, interview prep and reports.
 
 ## Protected code
 

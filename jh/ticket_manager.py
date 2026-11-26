@@ -123,7 +123,7 @@ def check_tool_state_gate(session_id: str, tool_name: str, ticket: str = "") -> 
     return True, None
 
 
-def generate_ticket(session_id: str, resume_id: str, roles: list[str], method: str = "modern", location: str = "") -> str:
+def generate_ticket(session_id: str, resume_id: str, roles: list[str], method: str = "hybrid", location: str = "") -> str:
     """Issue a cryptographically secure 2-hour ticket bound to session, resume, roles, method, and location."""
     ticket = f"jh_tkt_{secrets.token_hex(16)}"
     now = time.time()
@@ -151,7 +151,7 @@ def generate_ticket(session_id: str, resume_id: str, roles: list[str], method: s
     return ticket
 
 
-def issue_ticket(session_id: str, resume_id: str = "", roles: list[str] | None = None, method: str = "modern", location: str = "", **kwargs) -> str:
+def issue_ticket(session_id: str, resume_id: str = "", roles: list[str] | None = None, method: str = "hybrid", location: str = "", **kwargs) -> str:
     """Issue ticket alias."""
     return generate_ticket(session_id=session_id, resume_id=resume_id, roles=roles or [], method=method, location=location)
 
@@ -216,7 +216,7 @@ def record_questions_presented(session_id: str, questions_text: str = "") -> Non
 
 
 def validate_user_reply(session_id: str, user_reply: str) -> tuple[bool, Optional[str]]:
-    """Enforce D2 gate: reject empty, < 2 chars, question repeats, and answers arriving < 5s."""
+    """Reject empty, trivial (< 2 chars), or verbatim question repeats."""
     sess = get_or_create_session(session_id)
     if user_reply is None or not isinstance(user_reply, str):
         return False, "user_reply is empty. Preferences and filters may be written only with the user's words."
@@ -240,13 +240,6 @@ def validate_user_reply(session_id: str, user_reply: str) -> tuple[bool, Optiona
     ]
     if any(sig in clean.lower() for sig in q_signatures):
         return False, "user_reply merely repeats the questions."
-
-    presented_at = sess.get("questions_presented_at")
-    if presented_at is not None:
-        elapsed = time.time() - presented_at
-        bypass = os.environ.get("JOBHUNTER_BYPASS_DELAY") == "1"
-        if elapsed < 5.0 and not bypass:
-            return False, f"user_reply arrived too fast ({elapsed:.2f}s < 5.0s minimum interval). Must wait for actual user input."
 
     return True, None
 

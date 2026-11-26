@@ -66,23 +66,7 @@ def _src():
 # ------------------------------------------------------------------ storage
 
 def _upsert_health(board: str, slug: str, name: str, found_via: str, ok: Optional[bool], count: int = 0) -> None:
-    now = time.time()
-    with db.session() as c:
-        row = c.execute("SELECT fail_count FROM discovered_boards WHERE board_type=? AND slug=?", (board, slug)).fetchone()
-        if row is None:
-            c.execute("INSERT INTO discovered_boards (board_type,slug,company_name,first_seen,found_via) VALUES (?,?,?,?,?)",
-                      (board, slug, name, now_iso(), found_via))
-            fails = 0
-        else:
-            fails = row["fail_count"]
-        if ok is None:
-            return
-        if ok:
-            c.execute("UPDATE discovered_boards SET last_fetched=?, last_ok=?, job_count=?, fail_count=0 WHERE board_type=? AND slug=?",
-                      (now, now, count, board, slug))
-        else:
-            c.execute("UPDATE discovered_boards SET last_fetched=?, fail_count=? WHERE board_type=? AND slug=?",
-                      (now, fails + 1, board, slug))
+    db.upsert_discovered_board(board, slug, name, found_via, ok, count=count)
 
 
 def harvest(jobs: list[dict]) -> int:
@@ -102,27 +86,23 @@ def harvest(jobs: list[dict]) -> int:
         return 0
     new = 0
     try:
-        with db.session() as c:
-            total = c.execute("SELECT COUNT(*) AS n FROM discovered_boards").fetchone()["n"]
-            for (board, slug), (company, via) in found.items():
-                if total + new >= config.DISCOVERED_BOARDS_MAX:
-                    break
-                cur = c.execute("INSERT OR IGNORE INTO discovered_boards (board_type,slug,company_name,first_seen,found_via) VALUES (?,?,?,?,?)",
-                                (board, slug, company, now_iso(), f"found in {via}"[:60]))
-                new += cur.rowcount or 0
+        total = len(db.list_discovered_boards())
+        for (board, slug), (company, via) in found.items():
+            if total + new >= config.DISCOVERED_BOARDS_MAX:
+                break
+            if db.upsert_discovered_board(board, slug, company, f"found in {via}"[:60], ok=None):
+                new += 1
     except Exception:
         return 0
     return new
 
 
 def _watchlist() -> list[dict]:
-    with db.session() as c:
-        return [dict(r) for r in c.execute("SELECT * FROM watchlist")]
+    return db.list_watchlist_raw()
 
 
 def _health() -> dict[tuple[str, str], dict]:
-    with db.session() as c:
-        return {(r["board_type"], r["slug"]): dict(r) for r in c.execute("SELECT * FROM discovered_boards")}
+    return {(r["board_type"], r["slug"]): r for r in db.list_discovered_boards()}
 
 
 def select_boards(limit: int) -> list[dict]:
@@ -307,25 +287,19 @@ def add_company(name: str = "", url: str = "", board_type: str = "", slug: str =
         raise ValueError(f"board_type must be one of: {', '.join(sorted(boards))}")
     slug = slug.strip()
     name = (name or slug).strip()
-    with db.session() as c:
-        row = c.execute("SELECT id FROM watchlist WHERE lower(board_type)=? AND slug=?", (board_type, slug)).fetchone()
-        if row:
-            return {"id": row["id"], "board_type": board_type, "slug": slug, "company": name, "already_watched": True,
-                    "auto_detected": detected, "alternatives": alternatives}
-        wl_id = f"wl-{uuid.uuid4().hex[:10]}"
-        c.execute("INSERT INTO watchlist (id,company_name,slug,board_type,target_role,added_at) VALUES (?,?,?,?,?,?)",
-                  (wl_id, name, slug, board_type, target_role or "", now_iso()))
+    wl_id = f"wl-{uuid.uuid4().hex[:10]}"
+    already, final_id = db.add_watchlist_entry(wl_id, name, slug, board_type, target_role=target_role or "")
+    if already:
+        return {"id": final_id, "board_type": board_type, "slug": slug, "company": name, "already_watched": True,
+                "auto_detected": detected, "alternatives": alternatives}
     _cache.pop((board_type, slug), None)
-    return {"id": wl_id, "board_type": board_type, "slug": slug, "company": name, "already_watched": False,
+    return {"id": final_id, "board_type": board_type, "slug": slug, "company": name, "already_watched": False,
             "auto_detected": detected, "alternatives": alternatives}
 
 
 def remove_company(ident: str) -> bool:
     """Remove a watchlist entry by id, slug or company name."""
-    ident = (ident or "").strip()
-    with db.session() as c:
-        cur = c.execute("DELETE FROM watchlist WHERE id=? OR lower(slug)=lower(?) OR lower(company_name)=lower(?)", (ident, ident, ident))
-        return bool(cur.rowcount)
+    return db.remove_watchlist_entry(ident)
 
 
 def list_companies() -> dict:

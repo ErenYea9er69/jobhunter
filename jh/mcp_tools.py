@@ -517,13 +517,6 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             location: Optional location for pasted text.
             resume_name: Resume variant. Empty means the active resume.
         """
-        if job_id and not db.is_job_saved_by_ui(job_id):
-            return {
-                "status": "not_saved",
-                "success": False,
-                "message_for_user": f"Job '{job_id}' is not saved. Save the job in the web UI before scoring or generating application materials.",
-                "data": {"status": "not_saved", "job_id": job_id, "hint": "Save the job in the web UI at the provided link."}
-            }
         return score_job(job_id=job_id, job_title=job_title, company=company, description=description,
                          salary=salary, location=location, resume_name=resume_name)
 
@@ -604,13 +597,6 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             resume_name: Resume variant. Empty means the active resume.
             save: Write the result to .jobhunter/output/tailored.
         """
-        if job_id and not db.is_job_saved_by_ui(job_id):
-            return {
-                "status": "not_saved",
-                "success": False,
-                "message_for_user": f"Job '{job_id}' is not saved. Tailoring can only be generated for jobs saved in the web UI.",
-                "data": {"status": "not_saved", "job_id": job_id, "hint": "Save the job in the web UI before tailoring."}
-            }
         arch = ARCHETYPE_ALIASES.get(archetype.strip().lower())
         if not arch:
             raise ToolError(f"Unknown archetype '{archetype}'.", hint=f"Use one of: {', '.join(sorted(set(ARCHETYPE_ALIASES.values())))}")
@@ -650,13 +636,6 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             resume_name: Resume variant. Empty means the active resume.
             save: Write the result to .jobhunter/output/tailored.
         """
-        if job_id and not db.is_job_saved_by_ui(job_id):
-            return {
-                "status": "not_saved",
-                "success": False,
-                "message_for_user": f"Job '{job_id}' is not saved. Rewriting can only be generated for jobs saved in the web UI.",
-                "data": {"status": "not_saved", "job_id": job_id, "hint": "Save the job in the web UI before rewriting."}
-            }
         return tailor_resume(job_id=job_id, job_title=job_title, company=company, description=description,
                              archetype=archetype, resume_name=resume_name, save=save)
 
@@ -675,13 +654,6 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             resume_name: Resume variant. Empty means the active resume.
             format: txt, docx or pdf.
         """
-        if job_id and not db.is_job_saved_by_ui(job_id):
-            return {
-                "status": "not_saved",
-                "success": False,
-                "message_for_user": f"Job '{job_id}' is not saved. Cover letters can only be generated for jobs saved in the web UI.",
-                "data": {"status": "not_saved", "job_id": job_id, "hint": "Save the job in the web UI before generating a cover letter."}
-            }
         fmt = format.strip().lower()
         if fmt not in ("txt", "docx", "pdf"):
             raise ToolError("format must be txt, docx or pdf.")
@@ -855,13 +827,6 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             message_type: all, linkedin, email or follow_up.
             resume_name: Resume variant. Empty means the active resume.
         """
-        if job_id and not db.is_job_saved_by_ui(job_id):
-            return {
-                "status": "not_saved",
-                "success": False,
-                "message_for_user": f"Job '{job_id}' is not saved. Outreach messages can only be generated for jobs saved in the web UI.",
-                "data": {"status": "not_saved", "job_id": job_id, "hint": "Save the job in the web UI before generating outreach."}
-            }
         job, profile = job_and_profile(job_id, job_title, company, description, resume_name)
         return refit.generate_recruiter_outreach(job, profile, message_type=message_type)
 
@@ -1239,13 +1204,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         overdue = [{"id": a["id"], "company": a["company"], "title": a["title"], "follow_up": a["follow_up_date"]} for a in apps if a["overdue"]]
         interviews = [{"id": a["id"], "company": a["company"], "title": a["title"], "round": a.get("interview_round", ""), "date": a.get("interview_date", "")}
                       for a in apps if a["status"] == "interview"]
-        with db.session() as c:
-            rows = c.execute("""SELECT s.job_key FROM seen_jobs s JOIN search_jobs j ON j.job_key = s.job_key
-                                WHERE s.digested = 0 AND j.is_active = 1 ORDER BY j.opportunity_score DESC, j.score DESC LIMIT ?""", (limit,)).fetchall()
-            keys = [r["job_key"] for r in rows]
-            backlog = c.execute("SELECT COUNT(*) AS n FROM seen_jobs WHERE digested = 0").fetchone()["n"]
-            if mark_seen and keys:
-                c.executemany("UPDATE seen_jobs SET digested = 1 WHERE job_key = ?", [(k,) for k in keys])
+        keys, backlog = db.get_undigested_seen_keys(limit=limit, mark_seen=mark_seen)
         new_jobs = [j for j in (db.get_job(k) for k in keys) if j]
         actions = [f"Follow up with {o['company']} about {o['title']} (due {o['follow_up']})." for o in overdue]
         actions += [f"Prepare for the {i['company']} interview: call interview_prep." for i in interviews]

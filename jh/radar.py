@@ -93,18 +93,7 @@ def get_latest_event() -> Optional[dict[str, Any]]:
 
 def ack_radar_jobs(job_ids: Optional[list[str]] = None) -> int:
     """Mark new jobs as acknowledged (is_new=0, seen_by_user=1)."""
-    with db.session() as c:
-        if job_ids:
-            placeholders = ",".join("?" * len(job_ids))
-            c.execute(f"""
-                UPDATE jobs SET is_new=0, seen_by_user=1
-                WHERE id IN ({placeholders}) OR job_key IN ({placeholders})
-            """, list(job_ids) + list(job_ids))
-            affected = c.execute(f"SELECT changes()").fetchone()[0]
-        else:
-            c.execute("UPDATE jobs SET is_new=0, seen_by_user=1 WHERE is_new=1")
-            affected = c.execute("SELECT changes()").fetchone()[0]
-    return affected
+    return db.mark_jobs_seen_by_user(job_ids)
 
 
 class RadarWorker:

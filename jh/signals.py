@@ -463,10 +463,8 @@ def poll_modern_signals(target_role: str = "", target_stage: str = "any", target
                 item["score"] = score_signal(item, profile, target_role=role, target_stage=target_stage, target_region=target_region)
 
                 # Cross-check outreach ledger
-                with db.session() as c:
-                    contacted = c.execute("SELECT id FROM outreach WHERE lower(company)=lower(?)", (item.get("company", ""),)).fetchone()
-                    if contacted:
-                        item["already_contacted"] = True
+                if db.has_outreach_for_company(item.get("company", "")):
+                    item["already_contacted"] = True
 
                 ingested = db.ingest_signal(item)
                 if ingested and ingested.get("is_new") and not ingested.get("duplicate"):

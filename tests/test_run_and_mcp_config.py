@@ -69,18 +69,12 @@ class TestMCPConfigurator(unittest.TestCase):
         self.assertIn("jobhunter", data["mcpServers"])
         self.assertEqual(data["mcpServers"]["jobhunter"]["env"]["JH_WORKSPACE"], str(self.ws))
 
-    def test_run_parse_args(self):
-        import run
-        args = run.parse_args(["--set-key", "AIzaTest123", "--provider", "gemini", "--model", "gemini-3.8-flash"])
-        self.assertEqual(args.set_key, "AIzaTest123")
-        self.assertEqual(args.provider, "gemini")
-        self.assertEqual(args.model, "gemini-3.8-flash")
-
-        args_clear = run.parse_args(["--clear-key"])
-        self.assertTrue(args_clear.clear_key)
-
-        args_status = run.parse_args(["--ai-status"])
-        self.assertTrue(args_status.ai_status)
+    def test_mcp_server_install_claude_flag(self):
+        import mcp_server
+        from unittest.mock import patch
+        with patch("jh.mcp_configurator.register_with_claude_desktop", return_value={"success": True, "path": "ok"}) as m:
+            mcp_server.main(["--workspace", str(self.ws), "--install-claude"])
+            m.assert_called_once()
 
 
 

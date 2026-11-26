@@ -1,4 +1,4 @@
-"""JobHunter v1: resume-first job search, honest tailoring, and application tracking."""
-__version__ = "1.2.3"
+"""JobHunter: Hybrid Claude Desktop MCP server for job search, honest tailoring, outreach, and tracking."""
+__version__ = "2.0.0"
 
-from . import benchmark, ui_contract
+from . import benchmark

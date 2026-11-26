@@ -399,14 +399,12 @@ def test_opt_out_and_override():
 # =====================================================================
 
 def test_db_migration_and_wipe(isolated_coach_db):
-    """Verify coach tables exist, migration succeeds, and data wipe functions work."""
-    with db.session() as c:
-        row = c.execute("PRAGMA user_version").fetchone()
-        assert row[0] >= 6
-
-        tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        assert "coach_state" in tables
-        assert "coach_events" in tables
+    """Verify coach collections exist in JSON store and data wipe functions work without SQLite."""
+    from jh import store
+    assert not isolated_coach_db.exists()
+    ws = store.get_store()
+    assert "coach_state" in ws.tables
+    assert "coach_events" in ws.tables
 
     sid = "test-wipe"
     db.set_coach_state(session_id=sid, coaching_enabled=True, opt_out=False)

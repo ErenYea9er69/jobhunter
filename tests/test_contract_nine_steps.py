@@ -103,7 +103,6 @@ def isolated_contract_env(tmp_path, monkeypatch):
     ticket_manager._SESSIONS.clear()
     ticket_manager._TICKETS.clear()
     worker_launcher._ACTIVE_SEARCH_JOBS.clear()
-    db._SESSION_VIEW_FILTERS.clear()
     home._HOME_CREATED_IN_SESSION = False
     home._FIRST_NOTICE_GIVEN = False
     preferences._cache.update(mtime=None, path=None, data=None)
@@ -225,74 +224,48 @@ def test_contract_step3_confirmation_and_ticket_gate():
     # Forged ticket rejected in ASKED state
     assert v5_tools.jh_launch(session_id=sid, ticket="forged-ticket")["status"] == "needs_input"
 
-    # Confirm default Modern + explicit place issues ticket
-    conf = v5_tools.jh_confirm(session_id=sid, user_reply="Modern, Tunisia")
+    # Confirm Hybrid + explicit place issues ticket
+    conf = v5_tools.jh_confirm(session_id=sid, user_reply="Tunisia")
     assert conf["status"] == "ready"
     assert conf.get("ticket")
-    assert conf["data"]["method"] == "modern"
+    assert conf["data"]["method"] == "hybrid"
     assert ticket_manager.get_session_state_name(sid) == ticket_manager.SessionState.ANSWERED
 
-    # Explicit Classic mode also works
-    sid_c = "s3_classic"
+    sid_c = "s3_france"
     v5_tools.jh_begin(resume_text=SAMPLE_RESUME_TEXT, session_id=sid_c)
-    conf_c = v5_tools.jh_confirm(session_id=sid_c, user_reply="Classic, France")
+    conf_c = v5_tools.jh_confirm(session_id=sid_c, user_reply="France")
     assert conf_c["status"] == "ready"
-    assert conf_c["data"]["method"] == "classic"
+    assert conf_c["data"]["method"] == "hybrid"
     assert conf_c.get("ticket")
 
 
-# ---------------------------------------------------------------------------
-# Step 4: Launch detached server + radar/search + browser extension
-# ---------------------------------------------------------------------------
-
-def test_contract_step4_launch_modern_and_classic_detached(monkeypatch):
-    monkeypatch.setattr(worker_launcher, "start_detached_server", lambda *a, **kw: {"status": "started", "port": 8765, "pid": 4321})
-    monkeypatch.setattr(worker_launcher, "open_browser", lambda *a, **kw: True)
+def test_contract_step4_headless_hybrid_launch(monkeypatch):
     radar_calls = []
     search_calls = []
     monkeypatch.setattr(radar, "start_radar_worker", lambda *a, **kw: radar_calls.append(True))
     monkeypatch.setattr(worker_launcher, "start_background_search", lambda **kw: search_calls.append(kw) or {"search_job_id": "bg_1", "status": "started"})
 
-    # Modern launch -> Signal Radar + multi-board search + #/signals
-    sid_m = "s4_modern"
+    sid_m = "s4_hybrid"
     v5_tools.jh_begin(resume_text=SAMPLE_RESUME_TEXT, session_id=sid_m)
-    tkt_m = v5_tools.jh_confirm(session_id=sid_m, user_reply="Modern, Remote")["ticket"]
+    tkt_m = v5_tools.jh_confirm(session_id=sid_m, user_reply="Remote")["ticket"]
     res_m = v5_tools.jh_launch(session_id=sid_m, ticket=tkt_m)
     assert res_m["status"] == "ok"
-    assert "#/signals" in res_m["ui_url"]
-    assert res_m["browser_opened"] is True
+    assert res_m["data"]["method"] == "hybrid"
     assert len(radar_calls) == 1
     assert len(search_calls) == 1
     assert res_m.get("next_tool") == "jh_answer"
 
-    # Classic launch -> multi-board search + #/jobs
-    sid_c = "s4_classic"
-    v5_tools.jh_begin(resume_text=SAMPLE_RESUME_TEXT, session_id=sid_c)
-    tkt_c = v5_tools.jh_confirm(session_id=sid_c, user_reply="Classic, France")["ticket"]
-    res_c = v5_tools.jh_launch(session_id=sid_c, ticket=tkt_c)
-    assert res_c["status"] == "ok"
-    assert "#/jobs" in res_c["ui_url"]
-    assert res_c["browser_opened"] is True
-    assert len(search_calls) == 2
 
-
-# ---------------------------------------------------------------------------
-# Step 5: Live preferences & SQL filtering without restarting search or printing job lists
-# ---------------------------------------------------------------------------
-
-def test_contract_step5_live_preferences_sql_filters_and_no_chat_job_list(monkeypatch):
-    launch_count = {"server": 0, "search": 0}
-    monkeypatch.setattr(worker_launcher, "start_detached_server", lambda *a, **kw: launch_count.__setitem__("server", launch_count["server"] + 1) or {"status": "started", "port": 8766})
+def test_contract_step5_live_preferences_and_direct_chat_matches(monkeypatch):
+    launch_count = {"search": 0}
     monkeypatch.setattr(worker_launcher, "start_background_search", lambda **kw: launch_count.__setitem__("search", launch_count["search"] + 1) or {"search_job_id": "bg_5", "status": "started"})
-    monkeypatch.setattr(worker_launcher, "open_browser", lambda *a, **kw: True)
 
     sid = "s5_live"
     v5_tools.jh_begin(resume_text=SAMPLE_RESUME_TEXT, session_id=sid)
-    tkt = v5_tools.jh_confirm(session_id=sid, user_reply="Classic, Tunisia")["ticket"]
+    tkt = v5_tools.jh_confirm(session_id=sid, user_reply="Tunisia")["ticket"]
     v5_tools.jh_launch(session_id=sid, ticket=tkt)
-    assert launch_count == {"server": 1, "search": 1}
+    assert launch_count == {"search": 1}
 
-    # Seed jobs with distinct work modes / companies
     db.store_jobs([
         {
             "id": "job_remote_5",
@@ -316,26 +289,21 @@ def test_contract_step5_live_preferences_sql_filters_and_no_chat_job_list(monkey
         },
     ], query="backend engineer")
 
-    # Chat status must never print job titles, companies, or URLs
     st_before = v5_tools.jh_status(session_id=sid, include_matches=True)
-    st_dump = json.dumps(st_before)
-    assert "SecretRemoteRole" not in st_dump and "RemoteAlphaCo" not in st_dump
     assert isinstance(st_before["data"].get("matches"), int)
-    assert "top_matches" not in st_before and "top_5_matches" not in st_before["data"]
+    assert len(st_before["data"]["top_matches"]) >= 1
 
-    # Answer Round 2 preferences live without restarting server/search
+    # Answer Round 2 preferences live without restarting search
     ans = v5_tools.jh_answer(session_id=sid, user_reply="remote, full-time, no visa needed, any pay")
     assert ans["status"] == "ok"
-    assert launch_count == {"server": 1, "search": 1}
+    assert launch_count == {"search": 1}
 
     q1 = db.query_jobs(session_id=sid)
     assert all("remote" in (j.get("work_mode") or "").lower() or "remote" in (j.get("location") or "").lower() for j in q1["jobs"])
-    assert "SecretRemoteRole" not in json.dumps(ans)
 
-    # Update answer live -> SQL view updates immediately with zero restart
     ans2 = v5_tools.jh_answer(session_id=sid, user_reply="onsite only", answers={"work_mode": "onsite"})
     assert ans2["status"] == "ok"
-    assert launch_count == {"server": 1, "search": 1}
+    assert launch_count == {"search": 1}
     q2 = db.query_jobs(session_id=sid)
     ids2 = [j["id"] for j in q2["jobs"]]
     assert "job_onsite_5" in ids2 and "job_remote_5" not in ids2
@@ -399,9 +367,11 @@ def test_contract_step7_save_lock_liveness_and_fit_gaps(tmp_path, monkeypatch):
         blocks = res[0] if isinstance(res, tuple) else res
         return json.loads(blocks[0].text)
 
-    # Unsaved job locked
-    assert call_tool("tailor_resume", job_id="job_step7_unsaved")["data"]["status"] == "not_saved"
-    assert call_tool("cover_letter", job_id="job_step7_unsaved")["data"]["status"] == "not_saved"
+    # Direct MCP tailoring works without needing a UI save gate
+    t_res = call_tool("tailor_resume", job_id="job_step7_unsaved")
+    assert t_res["success"] is True
+    c_res = call_tool("cover_letter", job_id="job_step7_unsaved")
+    assert c_res["success"] is True
 
     # Closed posting warns before generating docs
     monkeypatch.setattr(
@@ -567,8 +537,12 @@ def test_contract_step9_classic_save_prep_gmail_and_extension_stop_before_submit
     )
     assert "interview" in cls.get("status", "").lower() or "interview" in str(cls).lower()
 
-    # Extension stops before submit (no auto-submit countdown or click)
-    content_js = Path("extension/content.js").read_text(encoding="utf-8")
-    assert "fields filled," in content_js
-    assert "startCountdown" not in content_js
-    assert "autoSubmit" not in content_js
+    # Headless Claude Desktop workflow stops before final submission/sending (user approves every action)
+    assert save_res.get("auto_sent") is not True
+    draft = email_drafter.draft_cold_email(
+        signal={"id": "sig_step9", "company": job["company"], "role_guess": job["title"], "summary": job["description"]},
+        profile=prof,
+        contact={"id": "ct_9", "name": "Hiring Lead", "email": "hiring@stripe-example.com", "title": "Engineering Manager"},
+    )
+    assert "subject" in draft and "body" in draft
+    assert draft.get("auto_sent") is not True

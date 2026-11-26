@@ -227,51 +227,8 @@ def test_generate_unsaved_job_rejected():
     assert save_flow.is_job_saved("job_saved_test_001") is True
 
 
-def _call_http(method: str, path: str, body: dict = None) -> tuple[int, dict]:
-    import io
-    from pathlib import Path
-    from jh.httpd import JobHunterRequestHandler
-
-    class FakeServer:
-        def __init__(self):
-            self.ws_dir = Path.cwd()
-
-    raw_body = json.dumps(body).encode("utf-8") if body else b""
-    rfile = io.BytesIO(raw_body)
-    wfile = io.BytesIO()
-
-    handler = JobHunterRequestHandler.__new__(JobHunterRequestHandler)
-    handler.rfile = rfile
-    handler.wfile = wfile
-    handler.server = FakeServer()
-    handler.path = path
-    handler.command = method
-    handler.headers = {
-        "Content-Length": str(len(raw_body)),
-        "Content-Type": "application/json",
-    }
-    handler.close_connection = True
-
-    status_code = [200]
-    def mock_send_response(code, message=None):
-        status_code[0] = code
-    handler.send_response = mock_send_response
-    handler.send_header = lambda k, v: None
-    handler.end_headers = lambda: None
-
-    if method == "POST":
-        handler.do_POST()
-    elif method == "GET":
-        handler.do_GET()
-
-    wfile.seek(0)
-    output = wfile.read()
-    parsed_json = json.loads(output.decode("utf-8")) if output else {}
-    return status_code[0], parsed_json
-
-
-def test_http_save_and_generate_api():
-    """Verify HTTP endpoints for save, dismiss, and generate."""
+def test_hybrid_save_and_dismiss_flow():
+    """Verify save_flow save, grounding audit, and dismiss flow directly without HTTP server."""
     job = {
         "id": "http_job_001",
         "title": "Senior Python Backend Engineer",
@@ -281,25 +238,11 @@ def test_http_save_and_generate_api():
     }
     db.ingest_job(job)
 
-    # 1. POST /api/generate for unsaved job -> 400 error (Decision D)
-    code, res = _call_http("POST", "/api/generate", {"job_id": job["id"]})
-    assert code == 400
-    assert res["status"] == "error"
-    assert "saved jobs" in res["error"]["message"].lower()
-
-    # 2. POST /api/jobs/save
-    code, save_res = _call_http("POST", "/api/jobs/save", {"job_id": job["id"], "force": True})
-    assert code == 200
+    save_res = save_flow.handle_save_job(job["id"], force=True, background=False)
     assert save_res["status"] == "ok"
-    assert save_res["data"]["saved"] is True
+    assert save_res["method"] == "hybrid"
+    assert save_res["saved"] is True
 
-    # 3. POST /api/generate for now-saved job -> succeeds
-    code, gen_res = _call_http("POST", "/api/generate", {"job_id": job["id"]})
-    assert code == 200
-    assert gen_res["status"] == "ok"
-
-    # 4. POST /api/jobs/dismiss
-    code, dis_res = _call_http("POST", "/api/jobs/dismiss", {"job_id": job["id"], "reason": "Location mismatch"})
-    assert code == 200
+    dis_res = save_flow.handle_dismiss_job(job["id"], reason="Location mismatch")
     assert dis_res["status"] == "ok"
-    assert dis_res["data"]["dismissed"] is True
+    assert dis_res["dismissed"] is True

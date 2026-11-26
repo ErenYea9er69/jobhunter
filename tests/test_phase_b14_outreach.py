@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from jh import config, db, outreach_ledger
-from jh.httpd import JobHunterRequestHandler
 
 
 @pytest.fixture(autouse=True)
@@ -183,65 +182,18 @@ def test_weekly_report_metrics_and_suggestion_at28():
     assert "CAN-SPAM" in report["notice"]
 
 
-def test_outreach_http_endpoints():
-    """Test all REST outreach endpoints: GET /today, GET /queue, POST /mark_sent, POST /reply, GET /report."""
-    class FakeServer:
-        def __init__(self):
-            self.ws_dir = Path.cwd()
+def test_outreach_queue_mark_sent_reply_and_report():
+    """Verify outreach queue -> mark_outreach_sent -> record_reply -> generate_weekly_report."""
+    out = db.log_outreach(contact_id="c_test_direct", company="Test Corp", status="draft")
+    assert any(x["id"] == out["id"] for x in db.get_outreach_queue())
 
-    def call_api(method: str, path: str, body: dict = None):
-        raw_body = json.dumps(body).encode("utf-8") if body else b""
-        rfile = io.BytesIO(raw_body)
-        wfile = io.BytesIO()
+    sent = outreach_ledger.mark_outreach_sent(out["id"])
+    assert sent["status"] == "sent"
 
-        handler = JobHunterRequestHandler.__new__(JobHunterRequestHandler)
-        handler.rfile = rfile
-        handler.wfile = wfile
-        handler.server = FakeServer()
-        handler.path = path
-        handler.command = method
-        handler.headers = {
-            "Content-Length": str(len(raw_body)),
-            "Content-Type": "application/json",
-        }
-        handler.close_connection = True
-        status_code = [200]
-        handler.send_response = lambda code, msg=None: status_code.__setitem__(0, code)
-        handler.send_header = lambda k, v: None
-        handler.end_headers = lambda: None
+    rep = outreach_ledger.record_reply(out["id"], sentiment="positive")
+    assert rep["status"] == "replied"
+    assert "call_prep_pack" in rep
 
-        if method == "GET":
-            handler.do_GET()
-        elif method == "POST":
-            handler.do_POST()
-
-        wfile.seek(0)
-        output = wfile.read()
-        return status_code[0], json.loads(output.decode("utf-8")) if output else {}
-
-    # 1. GET /api/outreach/today
-    code, res_today = call_api("GET", "/api/outreach/today")
-    assert code == 200
-    assert "cap" in res_today["data"]
-
-    # 2. GET /api/outreach/queue
-    code, res_queue = call_api("GET", "/api/outreach/queue")
-    assert code == 200
-    assert "queue" in res_queue["data"]
-
-    # 3. POST /api/outreach/mark_sent
-    out = db.log_outreach(contact_id="c_test_http", company="Test Corp", status="draft")
-    code, res_sent = call_api("POST", "/api/outreach/mark_sent", {"outreach_id": out["id"]})
-    assert code == 200
-    assert res_sent["data"]["status"] == "sent"
-
-    # 4. POST /api/outreach/reply
-    code, res_rep = call_api("POST", "/api/outreach/reply", {"outreach_id": out["id"], "sentiment": "positive"})
-    assert code == 200
-    assert res_rep["data"]["status"] == "replied"
-    assert "call_prep_pack" in res_rep["data"]
-
-    # 5. GET /api/outreach/report
-    code, res_rep = call_api("GET", "/api/outreach/report")
-    assert code == 200
-    assert "suggested_change" in res_rep["data"]
+    weekly = outreach_ledger.generate_weekly_report()
+    assert weekly["success"] is True
+    assert "suggested_change" in weekly

@@ -59,9 +59,7 @@ def by_company(name: str) -> Recall:
         for a in tracker.list_applications():
             if needle in (a.get("company") or "").lower() and a.get("job_id"):
                 pool.setdefault(a["job_id"], {"job_id": a["job_id"], "title": a.get("title"), "company": a.get("company")})
-        with db.session() as c:
-            rows = c.execute("SELECT job_key, title, company FROM search_jobs WHERE lower(company) LIKE ? ORDER BY score DESC LIMIT 6", (f"%{needle}%",)).fetchall()
-        for r in rows:
+        for r in db.find_search_jobs_by_company(needle, limit=6):
             pool.setdefault(r["job_key"], {"job_id": r["job_key"], "title": r["title"], "company": r["company"]})
     if len(pool) == 1:
         j = next(iter(pool.values()))

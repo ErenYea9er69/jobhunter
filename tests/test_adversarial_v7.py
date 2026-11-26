@@ -63,15 +63,13 @@ def test_adv_1_search_before_questions_refused():
     assert search_res["ask_user"] is not None
 
 
-def test_adv_2_reply_under_2_seconds_refused():
+def test_adv_2_trivial_reply_refused():
     sid = "adv_sess_2"
     begin_res = jh_begin(resume_text=SAMPLE_RESUME, session_id=sid)
     assert begin_res["status"] in ("needs_target", "needs_role")
 
-    # Reply arrives 0.5s after questions (< 5.0s minimum threshold)
-    confirm_res = jh_confirm(session_id=sid, user_reply="Modern method, Tunisia, Cloud Engineer")
+    confirm_res = jh_confirm(session_id=sid, user_reply="x")
     assert confirm_res["status"] == "needs_input"
-    assert "too fast" in confirm_res["data"]["error"]
     assert ticket_manager.get_session_state_name(sid) == ticket_manager.SessionState.ASKED
 
 
@@ -119,37 +117,31 @@ def test_adv_4_launch_ticket_forgery_refused():
     assert "expired" in res_exp["data"]["error"]
 
 
-def test_adv_5_tailor_and_outreach_on_unsaved_job_refused(tmp_path):
+def test_adv_5_tailor_and_outreach_work_directly_after_search(tmp_path):
     import mcp_server
 
-    # Create job in database with saved_by = '' (not saved via UI)
     with db.session() as c:
         c.execute("""
             INSERT INTO jobs (id, job_key, title, company, location, freshness_state, job_json, created_at, updated_at, saved_by)
-            VALUES ('job_adv_unsaved', 'k_adv_u', 'Cloud Architect', 'MegaCorp', 'Tunis', 'active', '{}', '2026-11-24', '2026-11-24', '')
+            VALUES ('job_adv_direct', 'k_adv_u', 'Cloud Architect', 'MegaCorp', 'Tunis', 'active', '{"title":"Cloud Architect","company":"MegaCorp","description":"Docker AWS Kubernetes"}', '2026-11-24', '2026-11-24', '')
         """)
 
     srv = mcp_server.create_server(str(tmp_path))
+    db.save_profile({"name": "Rayen Ben Aissa", "target_title": "Cloud Architect", "skills": ["Docker", "AWS", "Python"]}, profile_id="master")
 
     def call_tool(name, **kwargs):
         res = asyncio.run(srv.call_tool(name, kwargs))
         blocks = res[0] if isinstance(res, tuple) else res
         return json.loads(blocks[0].text)
 
-    # Attempt tailor_resume on unsaved job
-    t_res = call_tool("tailor_resume", job_id="job_adv_unsaved")
-    assert t_res["data"]["status"] == "not_saved"
-    assert t_res["data"]["success"] is False
+    t_res = call_tool("tailor_resume", job_id="job_adv_direct")
+    assert t_res["success"] is True
 
-    # Attempt cover_letter on unsaved job
-    c_res = call_tool("cover_letter", job_id="job_adv_unsaved")
-    assert c_res["data"]["status"] == "not_saved"
-    assert c_res["data"]["success"] is False
+    c_res = call_tool("cover_letter", job_id="job_adv_direct")
+    assert c_res["success"] is True
 
-    # Attempt outreach_message on unsaved job
-    o_res = call_tool("outreach_message", job_id="job_adv_unsaved")
-    assert o_res["data"]["status"] == "not_saved"
-    assert o_res["data"]["success"] is False
+    o_res = call_tool("outreach_message", job_id="job_adv_direct")
+    assert o_res["success"] is True
 
 
 def test_adv_6_old_tool_names_refused_in_uninitialized_state(tmp_path):

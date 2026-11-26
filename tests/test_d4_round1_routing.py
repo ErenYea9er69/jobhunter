@@ -24,15 +24,15 @@ def test_d4_round1_stop_prompt_first_line():
     assert first_line == "STOP. Ask the user the questions below and wait for the answer. Do not call another tool."
 
 
-def test_d4_round1_has_method_place_and_conditional_role():
-    # Case 1: high confidence role (ask_role = False)
+def test_d4_round1_has_place_and_conditional_role():
+    # Case 1: high confidence role (ask_role = False) -> place only, hybrid-only
     q_high = interview_questions.build_step_3_target_questions(
         inferred_roles=[{"role": "Cloud Engineer", "confidence": 0.85}],
         region_guess={"value": "Tunisia", "confidence": 0.9},
         ask_role=False,
     )
     q_ids = [item["id"] for item in q_high["questions"]]
-    assert "method" in q_ids
+    assert "method" not in q_ids
     assert "target_place" in q_ids
     assert "target_role" not in q_ids
 
@@ -43,7 +43,7 @@ def test_d4_round1_has_method_place_and_conditional_role():
         ask_role=True,
     )
     q_ids_low = [item["id"] for item in q_low["questions"]]
-    assert "method" in q_ids_low
+    assert "method" not in q_ids_low
     assert "target_place" in q_ids_low
     assert "target_role" in q_ids_low
 

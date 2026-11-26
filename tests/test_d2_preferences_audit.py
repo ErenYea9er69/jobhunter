@@ -46,13 +46,12 @@ def test_d2_reject_question_echo():
     assert "repeats the question" in str(res["message_for_user"]).lower() or "repeats" in str(res.get("data", {}))
 
 
-def test_d2_reject_too_fast_reply():
+def test_d2_fast_reply_accepted_without_artificial_delay():
     sid = "test_d2_fast"
-    ticket_manager.record_questions_presented(sid, "Question 1: Method? Question 2: Place?")
-    # Reply immediately (< 5s)
-    res = jh_confirm(session_id=sid, user_reply="Modern, Tunisia")
-    assert res["status"] == "needs_input"
-    assert "too fast" in str(res["message_for_user"]).lower() or "too fast" in str(res.get("data", {}))
+    ticket_manager.record_questions_presented(sid, "Question 1: Place?")
+    res = jh_confirm(session_id=sid, user_reply="Tunisia")
+    assert res["status"] == "ready"
+    assert res["ticket"].startswith("jh_tkt_")
 
 
 def test_d2_valid_reply_stored_in_audit_log():

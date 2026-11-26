@@ -120,7 +120,6 @@ def isolated_upgrade_env(tmp_path, monkeypatch):
     ticket_manager._SESSIONS.clear()
     ticket_manager._TICKETS.clear()
     worker_launcher._ACTIVE_SEARCH_JOBS.clear()
-    db._SESSION_VIEW_FILTERS.clear()
     home._HOME_CREATED_IN_SESSION = False
     home._FIRST_NOTICE_GIVEN = False
     preferences._cache.update(mtime=None, path=None, data=None)
@@ -139,9 +138,7 @@ def _mock_launch_runtime(monkeypatch):
         counts["search"] += 1
         return {"search_job_id": f"bg_{counts['search']}", "status": "started"}
 
-    monkeypatch.setattr(worker_launcher, "start_detached_server", fake_server)
     monkeypatch.setattr(worker_launcher, "start_background_search", fake_search)
-    monkeypatch.setattr(worker_launcher, "open_browser", lambda *a, **kw: True)
     monkeypatch.setattr(radar, "start_radar_worker", lambda *a, **kw: None)
     return counts
 
@@ -390,9 +387,9 @@ def test_lesson_a_jh_answer_step5_preferences_update_live_without_restarting_sea
     sid = "s_la_step5"
 
     v5_tools.jh_begin(resume_text=LYON_RESUME_TEXT, session_id=sid)
-    tkt = v5_tools.jh_confirm(session_id=sid, user_reply="Classic, Europe")["ticket"]
+    tkt = v5_tools.jh_confirm(session_id=sid, user_reply="Hybrid, Europe")["ticket"]
     v5_tools.jh_launch(session_id=sid, ticket=tkt)
-    assert counts == {"server": 1, "search": 1}
+    assert counts["search"] == 1
 
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     db.store_jobs(
@@ -461,7 +458,7 @@ def test_lesson_a_jh_answer_step5_preferences_update_live_without_restarting_sea
         user_reply="fintech, startup, B2B, bilingual French",
     )
     assert ans1["status"] == "ok"
-    assert counts == {"server": 1, "search": 1}
+    assert counts["search"] == 1
 
     vf1 = db.get_view_filters(sid)
     ind_val = str(vf1.get("confirmed_industries") or vf1.get("industry") or vf1.get("industries") or "").lower()
@@ -489,7 +486,7 @@ def test_lesson_a_jh_answer_step5_preferences_update_live_without_restarting_sea
         },
     )
     assert ans2["status"] == "ok"
-    assert counts == {"server": 1, "search": 1}
+    assert counts["search"] == 1
     vf2 = db.get_view_filters(sid)
     assert "scale-up" in str(vf2.get("company_stages") or vf2.get("company_stage") or vf2.get("company_sizes") or "").lower()
     q2 = db.query_jobs(session_id=sid)
@@ -507,7 +504,7 @@ def test_lesson_a_jh_answer_step5_preferences_update_live_without_restarting_sea
         },
     )
     assert ans3["status"] == "ok"
-    assert counts == {"server": 1, "search": 1}
+    assert counts["search"] == 1
     vf3 = db.get_view_filters(sid)
     assert "public" in str(vf3.get("company_stages") or vf3.get("company_stage") or vf3.get("company_sizes") or "").lower()
     q3 = db.query_jobs(session_id=sid)
@@ -935,11 +932,8 @@ def test_lesson_e_jh_status_preserves_fields_and_adds_calm_factual_pacing_note(m
         "method",
         "session_id",
         "matches",
+        "top_matches",
         "hidden_by_filters",
-        "ui_url",
-        "browser_opened",
-        "ui_seen",
-        "extension_status",
         "total_jobs",
         "active_jobs",
         "workspace_home",
@@ -958,12 +952,11 @@ def test_lesson_e_jh_status_preserves_fields_and_adds_calm_factual_pacing_note(m
         "remaining_cap",
     )
     for k in expected_keys:
-        assert k in data, f"Missing existing jh_status data key: {k}"
+        assert k in data, f"Missing jh_status data key: {k}"
 
     assert data["today_sent"] == 20
     assert data["remaining_cap"] == 0
     assert isinstance(data["matches"], int)
-    assert str(data["ui_url"]).startswith("http://127.0.0.1:")
 
     pacing_note = st.get("pacing_note") if "pacing_note" in st else data.get("pacing_note")
     assert isinstance(pacing_note, str) and len(pacing_note.strip()) > 0
@@ -1011,8 +1004,6 @@ def test_modern_launch_kicks_signal_poll_and_db_get_signals_filters_place_and_la
 
     polled_calls = []
     board_calls = []
-    monkeypatch.setattr(worker_launcher, "start_detached_server", lambda *a, **kw: {"status": "started", "port": 8089})
-    monkeypatch.setattr(worker_launcher, "open_browser", lambda *a, **kw: False)
     monkeypatch.setattr(worker_launcher, "start_background_search", lambda **kw: board_calls.append(kw) or {"search_job_id": "bg_mod_1", "status": "started"})
     monkeypatch.setattr(_radar, "start_radar_worker", lambda: True)
     monkeypatch.setattr(_signals, "poll_modern_signals", lambda target_role="", target_region="", **kw: polled_calls.append((target_role, target_region)) or {"discovered": 0, "new_ingested": 0})

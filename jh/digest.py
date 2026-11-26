@@ -21,12 +21,10 @@ def build_digest(profile=None, mark_sent=False, min_score=None):
     res = pipeline.search(profile=profile)
     qualifying = [j for j in res["jobs"] if j["score"] >= min_score]
     fresh = [j for j in qualifying if j.get("is_new")]
-    with db.session() as c:
-        undigested = {r["job_key"] for r in c.execute("SELECT job_key FROM seen_jobs WHERE digested=0")}
-        picks = [j for j in qualifying if j["job_key"] in undigested]
-        if mark_sent:
-            for j in picks:
-                c.execute("UPDATE seen_jobs SET digested=1 WHERE job_key=?", (j["job_key"],))
+    undigested = db.get_undigested_key_set()
+    picks = [j for j in qualifying if j["job_key"] in undigested]
+    if mark_sent and picks:
+        db.mark_seen_digested([j["job_key"] for j in picks])
     return {
         "recipient_name": profile.get("name") or "there", "date": datetime.date.today().strftime("%A, %B %d, %Y"),
         "min_score": min_score, "total_matches_found": len(qualifying), "new_since_last_digest": len(picks),

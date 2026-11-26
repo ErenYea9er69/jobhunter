@@ -36,19 +36,17 @@ from jh.observability import record_startup  # noqa: E402
 from jh.resume_registry import ResumeRegistry  # noqa: E402
 from jh.team.surface import TeamMCP, resolve as resolve_surface  # noqa: E402
 
-__version__ = "1.2.3"
+__version__ = "2.0.0"
 
-INSTRUCTIONS = """JobHunter is a job search engine and personal copilot.
+INSTRUCTIONS = """JobHunter is a Hybrid job search copilot for Claude Desktop combining multi-board discovery, fresh hiring signals, tailored application materials, and decision-maker outreach.
 
-For any job request, call jh_begin first. If it asks for a resume or a job name, ask the user and wait. If it returns ready, tell the user in one line what you read from the resume, then launch at once: use a subagent only if your client offers one, otherwise call jh_launch yourself. Do not wait for the search. Keep talking with the user and ask round 2. Do not print jobs until round 2 is answered or skipped. After round 2, tell the user the UI shows the matches.
-
-Rules:
-1. Always start with jh_begin. Never call jh_search, jh_launch, or any search tool without a valid ticket.
-2. The server runs detached in the background. The chat stays free. Never poll in a tight loop. Call jh_status at most once after launch.
-3. Narrow filters apply live at query time via jh_answer without restarting the search.
-4. The chat shows no job list; the UI shows the matching jobs.
-5. Generation of a job-specific resume or cover letter happens only after the user clicks Save on a job in the UI. Never offer it before.
-6. Coaching: default to zero unsolicited advice. Check coach guidelines in prompts/coach/coach_guidelines.md and call coach tools (get_coaching_context, get_coaching_content) when triggers apply."""
+Workflow:
+1. Start with jh_begin (or ceo_run setup) to load the candidate resume without guessing location or unconfirmed facts.
+2. Confirm target place, target role, and key filters with the user via jh_confirm, jh_set_filters, or jh_answer.
+3. Run Hybrid discovery (jh_launch, jh_search, search_jobs, or ceo_run hunt) to combine job boards and fresh hiring signals, then rank and present verified matches sorted by fit and recency in chat.
+4. Ask which jobs the user wants to pursue, then run tailor_resume, cover_letter, prepare_application, jh_build_resume, jh_find_contacts, or jh_draft_email on selected matches.
+5. Keep the user in control: never submit applications or send outreach automatically, and surface only verified, resume-grounded claims and files.
+6. Coaching: default to zero unsolicited advice unless triggers apply (get_coaching_context, get_coaching_content)."""
 
 
 def init_workspace_and_engine(ws_path: str = "") -> tuple[OutputStore, str]:
@@ -91,12 +89,43 @@ def init_workspace_and_engine(ws_path: str = "") -> tuple[OutputStore, str]:
                        source_count=len(source_registry.catalog()))
         return store, str(ws)
 
-    # Isolated production mode: never write to user's project
+    # Isolated production mode: keep any explicit test DB_PATH override intact
     home_dir = home.get_home()
+    expected_data = (home_dir / "data").resolve()
     config.WORKSPACE_DIR = str(ws)
-    config.DATA_DIR = str(home_dir / "data")
-    config.DB_PATH = str(home_dir / "data" / "engine.db")
-    store = OutputStore(home_dir / "outputs")
+    cur_db = Path(config.DB_PATH).resolve() if config.DB_PATH else None
+    default_initial_dbs = {
+        (Path(config.DEFAULT_DATA_DIR) / "engine.db").resolve(),
+        (Path(config.DEFAULT_DATA_DIR) / "state").resolve(),
+    }
+    if cur_db is None or (cur_db in default_initial_dbs and expected_data != Path(config.DEFAULT_DATA_DIR).resolve()):
+        config.DATA_DIR = str(expected_data)
+        config.DB_PATH = str(expected_data / "state")
+    elif cur_db not in default_initial_dbs:
+        config.DATA_DIR = str(cur_db.parent)
+    else:
+        config.DATA_DIR = str(expected_data)
+
+    store_root = (home_dir / "outputs") if (Path(config.DB_PATH).parent.resolve() == expected_data) else (Path(config.DB_PATH).parent / "outputs")
+    store = OutputStore(store_root)
+
+    db.init_db()
+    if (ws / "resumes").is_dir():
+        try:
+            registry = ResumeRegistry(ws)
+            registry.scan_and_sync()
+            for var in registry.list_variants():
+                prof = var.get("profile")
+                if prof:
+                    db.save_profile(prof, profile_id=var.get("id") or f"var_{var.get('name', '').lower().replace(' ', '-')}")
+            profiles = db.list_resume_profiles()
+            wanted = registry.get_active_variant()
+            match = next((p for p in profiles if wanted and wanted.lower() in (p["name"].lower(), p["id"].lower())), None) or (profiles[0] if profiles else None)
+            if match:
+                db.set_active_resume_profile(match["id"])
+                registry.set_active_variant(match["name"])
+        except Exception as exc:
+            log.debug("Resume scan in %s skipped: %s", ws, exc)
     return store, str(ws)
 
 
@@ -115,10 +144,17 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--surface", default="", choices=["", "team", "full"],
                     help="team (default): the client sees only the CEO tools. full: every tool. Also JH_SURFACE.")
     ap.add_argument("--check", action="store_true", help="start up, list tools, and exit")
+    ap.add_argument("--install-claude", action="store_true", help="register JobHunter in Claude Desktop config")
     ap.add_argument("--version", action="store_true")
     args = ap.parse_args(argv)
     if args.version:
         print(__version__)
+        return
+    if args.install_claude:
+        from jh import mcp_configurator
+        ws = str(Path(args.workspace).resolve()) if args.workspace else str(workspace.detect_workspace())
+        res = mcp_configurator.register_with_claude_desktop(ws)
+        print(res.get("path") or res, file=sys.stderr)
         return
     server = create_server(args.workspace, surface=resolve_surface(args.surface))
     if args.check:

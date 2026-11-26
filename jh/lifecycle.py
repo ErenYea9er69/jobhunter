@@ -102,55 +102,20 @@ def mark_expired(job_id: str, reason: str = "Expired") -> None:
 
 
 def is_deleted(job_id: str) -> bool:
-    """True if job no longer exists in jobs table."""
-    with db.session() as c:
-        row = c.execute("SELECT id FROM jobs WHERE id=? OR job_key=?", (job_id, job_id)).fetchone()
-        return row is None
+    """True if job no longer exists in jobs store."""
+    return not db.job_exists(job_id)
 
 
 def _mark_job_closed(job_id: str, reason: str) -> None:
     """Set job state to expired and initialize delete_at with cleanup_grace_hours."""
     grace_hours = int(db.get_setting("cleanup_grace_hours", "24"))
-    iso_now = db.now_iso()
     delete_dt = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=grace_hours)).isoformat()
-
-    with db.session() as c:
-        row = c.execute("SELECT keep_flag, delete_at FROM jobs WHERE id=? OR job_key=?", (job_id, job_id)).fetchone()
-        if row:
-            app_row = c.execute("SELECT id FROM applications WHERE job_id=? OR job_id=?", (job_id, job_id)).fetchone()
-            if row["keep_flag"] or app_row:
-                c.execute("""
-                    UPDATE jobs SET
-                        freshness_state='expired',
-                        closed_checked_at=?,
-                        keep_flag=1,
-                        delete_at=NULL
-                    WHERE id=? OR job_key=?
-                """, (iso_now, job_id, job_id))
-            else:
-                target_delete = row["delete_at"] or delete_dt
-                c.execute("""
-                    UPDATE jobs SET
-                        freshness_state='expired',
-                        closed_checked_at=?,
-                        delete_at=?
-                    WHERE id=? OR job_key=?
-                """, (iso_now, target_delete, job_id, job_id))
+    db.mark_job_closed_record(job_id, delete_dt)
 
 
 def keep_jobs(job_ids: list[str]) -> int:
     """Protect specified jobs from deletion (sets keep_flag=1, delete_at=NULL)."""
-    if not job_ids:
-        return 0
-    with db.session() as c:
-        placeholders = ",".join("?" * len(job_ids))
-        c.execute(f"""
-            UPDATE jobs SET
-                keep_flag=1,
-                delete_at=NULL
-            WHERE id IN ({placeholders}) OR job_key IN ({placeholders})
-        """, list(job_ids) + list(job_ids))
-        return c.execute("SELECT changes()").fetchone()[0]
+    return db.keep_jobs_by_ids(job_ids)
 
 
 def mark_job_saved(job_id: str) -> None:
@@ -247,56 +212,9 @@ def run_cleanup() -> dict[str, Any]:
     3. Never delete jobs saved or tracked in applications.
     4. Write tombstones for deleted jobs and log deletion count to deletions_log.
     """
-    now_dt = datetime.datetime.now(datetime.timezone.utc)
-    iso_now = now_dt.isoformat()
+    iso_now = db.now_iso()
     grace_hours = int(db.get_setting("cleanup_grace_hours", "24"))
-    delete_horizon = (now_dt + datetime.timedelta(hours=grace_hours)).isoformat()
-
-    deleted_count = 0
-
-    with db.session() as c:
-        # 1. Mark jobs older than 60 days as expired with a delete_at warning timestamp
-        cutoff_60d = (now_dt - datetime.timedelta(days=60)).isoformat()
-        c.execute("""
-            UPDATE jobs SET
-                freshness_state='expired',
-                delete_at=?
-            WHERE (created_at < ? OR first_seen_at < ?)
-              AND freshness_state != 'expired'
-              AND keep_flag=0
-        """, (delete_horizon, cutoff_60d, cutoff_60d))
-
-        # 2. Initialize delete_at on expired jobs that don't have it yet
-        c.execute("""
-            UPDATE jobs SET
-                delete_at=?
-            WHERE freshness_state='expired' AND delete_at IS NULL AND keep_flag=0
-        """, (delete_horizon,))
-
-        # 3. Find jobs ready for permanent deletion
-        # Must have passed delete_at, keep_flag == 0, and not be present in applications
-        expired_candidates = c.execute("""
-            SELECT id, job_key, url_hash, fingerprint FROM jobs
-            WHERE freshness_state='expired'
-              AND delete_at IS NOT NULL
-              AND delete_at <= ?
-              AND keep_flag=0
-              AND id NOT IN (SELECT job_id FROM applications WHERE job_id IS NOT NULL AND job_id != '')
-              AND job_key NOT IN (SELECT job_id FROM applications WHERE job_id IS NOT NULL AND job_id != '')
-        """, (iso_now,)).fetchall()
-
-        # 3. Process deletions and write tombstones
-        for row in expired_candidates:
-            url_hash = row["url_hash"] or ""
-            fp = row["fingerprint"] or ""
-            job_id = row["id"]
-
-            if url_hash or fp:
-                db.add_tombstone(url_hash, fp, conn=c)
-
-            c.execute("DELETE FROM jobs WHERE id=?", (job_id,))
-            c.execute("DELETE FROM job_sources WHERE job_id=?", (job_id,))
-            deleted_count += 1
+    deleted_count = db.cleanup_expired_records(grace_hours)
 
     if deleted_count > 0:
         db.log_deletion(deleted_count)

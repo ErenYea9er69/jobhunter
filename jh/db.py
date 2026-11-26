@@ -1,16 +1,23 @@
-"""SQLite access with WAL, versioned migrations, job classification, and background search staging."""
+"""Persistence & query layer backed by thread-safe in-memory tables and atomic JSON files.
+
+Replaces SQLite (engine.db) with zero database files on disk while preserving
+exact function signatures for protected modules and callers.
+"""
+from __future__ import annotations
+
 import contextlib
+import copy
 import datetime
 import json
 import os
 import re
-import sqlite3
 import threading
-from typing import Any, Optional
+import time
 import uuid
+from typing import Any, Optional
 
-from . import config
-from .util import now_iso, parse_salary, annualize, clean_text, clean_job_type, parse_date, stable_id
+from . import config, store
+from .util import annualize, clean_job_type, clean_text, now_iso, parse_date, parse_salary, stable_id
 
 _init_lock = threading.Lock()
 SCHEMA_VERSION = 6
@@ -44,7 +51,7 @@ FAMOUS_COMPANY_TOKENS = {
 }
 
 
-def is_famous_company(name):
+def is_famous_company(name: Any) -> bool:
     if not name:
         return False
     clean = re.sub(r"\b(inc|llc|corp|ltd|co|corporation|technologies|systems|labs|group)\b\.?", "", str(name).lower())
@@ -52,7 +59,7 @@ def is_famous_company(name):
     return any(t in FAMOUS_COMPANY_TOKENS for t in tokens)
 
 
-def clean_job_dict(j):
+def clean_job_dict(j: Any) -> Any:
     """Sanitize all user-facing text fields in job dict."""
     if not isinstance(j, dict):
         return j
@@ -64,7 +71,7 @@ def clean_job_dict(j):
     return j
 
 
-def classify_job(j):
+def classify_job(j: dict[str, Any]) -> dict[str, Any]:
     """Extract category, job_type, seniority, country, salary, and flags from job dict."""
     title = clean_text(j.get("title") or "")
     t_lower = title.lower()
@@ -154,7 +161,6 @@ def classify_job(j):
     elif any(k in loc_lower for k in ["canada", "toronto", "vancouver", "montreal", "ontario"]):
         country = "Canada"
     else:
-        # Check US states or cities
         loc_tokens = [tok.strip() for tok in re.split(r"[,/ -]+", loc_lower) if tok.strip()]
         if any(tok in US_STATES_SET for tok in loc_tokens) or any(c in loc_lower for c in ["san francisco", "new york", "seattle", "austin", "chicago", "boston", "los angeles"]):
             country = "United States"
@@ -188,10 +194,7 @@ def classify_job(j):
         skills_text = str(j.get("skills_text"))
     else:
         skills_list = j.get("skills") or j.get("matched_skills") or []
-        if isinstance(skills_list, list):
-            skills_text = ", ".join(str(s) for s in skills_list)
-        else:
-            skills_text = str(skills_list)
+        skills_text = ", ".join(str(s) for s in skills_list) if isinstance(skills_list, list) else str(skills_list)
 
     return {
         "category": cat,
@@ -205,727 +208,53 @@ def classify_job(j):
         "skills_text": skills_text,
         "is_famous": is_fam,
         "is_startup": is_start,
-        "h1b": h1b
+        "h1b": h1b,
     }
 
 
-def connect():
-    if config.DB_PATH:
-        os.makedirs(os.path.dirname(os.path.abspath(config.DB_PATH)), exist_ok=True)
-    conn = sqlite3.connect(config.DB_PATH, timeout=30.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout=30000")
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-    except sqlite3.OperationalError:
-        pass
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+def _ws() -> store.WorkspaceStore:
+    return store.get_store(ensure_dirs=True)
+
+
+def connect() -> store.MemSession:
+    return store.MemSession(_ws())
 
 
 @contextlib.contextmanager
 def session():
-    conn = connect()
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+    with store.open_session(ensure_dirs=True) as s:
+        yield s
 
 
-def _columns(conn, table):
-    return {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+def _columns(conn: Any, table: str) -> set[str]:
+    return set(store.TABLE_DEFAULTS.get(table, {}).keys())
 
 
-def init_db():
-    import os
-    _SESSION_VIEW_FILTERS.clear()
-    os.makedirs(config.DATA_DIR, exist_ok=True)
-    with _init_lock, session() as c:
-        c.execute("CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL)")
-        c.execute("""CREATE TABLE IF NOT EXISTS resume_profiles (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            target_title TEXT DEFAULT '',
-            target_roles_json TEXT DEFAULT '[]',
-            tags_json TEXT DEFAULT '[]',
-            data_json TEXT NOT NULL,
-            is_active INTEGER DEFAULT 0,
-            is_master INTEGER DEFAULT 0,
-            is_live INTEGER DEFAULT 1,
-            source_job_id TEXT DEFAULT '',
-            source_job_title TEXT DEFAULT '',
-            source_company TEXT DEFAULT '',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL)""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_resume_profiles_active ON resume_profiles(is_active)")
-        c.execute("""CREATE TABLE IF NOT EXISTS applications (
-            id TEXT PRIMARY KEY, job_id TEXT, company TEXT NOT NULL, title TEXT NOT NULL, location TEXT,
-            salary TEXT, status TEXT NOT NULL, notes TEXT, follow_up_date TEXT, sources_json TEXT,
-            job_data_json TEXT, tailored_resume_json TEXT, cover_letter TEXT,
-            created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""")
-        c.execute("""CREATE TABLE IF NOT EXISTS watchlist (
-            id TEXT PRIMARY KEY, company_name TEXT NOT NULL, slug TEXT NOT NULL, board_type TEXT NOT NULL,
-            target_role TEXT, added_at TEXT NOT NULL, last_checked TEXT, active_matches_count INTEGER DEFAULT 0)""")
-        c.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-        # Company boards found by reading job links from other sources (snowball discovery).
-        c.execute("""CREATE TABLE IF NOT EXISTS discovered_boards (
-            board_type TEXT NOT NULL, slug TEXT NOT NULL, company_name TEXT DEFAULT '',
-            first_seen TEXT NOT NULL, last_fetched REAL DEFAULT 0, last_ok REAL DEFAULT 0,
-            job_count INTEGER DEFAULT 0, fail_count INTEGER DEFAULT 0, found_via TEXT DEFAULT '',
-            PRIMARY KEY (board_type, slug))""")
-        c.execute("""CREATE TABLE IF NOT EXISTS status_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, app_id TEXT NOT NULL, status TEXT NOT NULL, changed_at TEXT NOT NULL)""")
-        c.execute("""CREATE TABLE IF NOT EXISTS seen_jobs (
-            job_key TEXT PRIMARY KEY, title TEXT, company TEXT, url TEXT, source_names TEXT,
-            first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, best_score INTEGER DEFAULT 0, digested INTEGER DEFAULT 0)""")
-        c.execute("""CREATE TABLE IF NOT EXISTS source_cache (
-            cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL, fetched_at REAL NOT NULL)""")
-        c.execute("""CREATE TABLE IF NOT EXISTS source_health (
-            source TEXT PRIMARY KEY, ok_count INTEGER DEFAULT 0, fail_count INTEGER DEFAULT 0,
-            last_error TEXT, last_ok TEXT, last_ms INTEGER DEFAULT 0)""")
-        c.execute("""CREATE TABLE IF NOT EXISTS search_jobs (
-            job_key TEXT PRIMARY KEY, query TEXT NOT NULL, title TEXT NOT NULL, company TEXT NOT NULL,
-            location TEXT, work_mode TEXT, score INTEGER DEFAULT 0, opportunity_score INTEGER DEFAULT 0,
-            is_famous INTEGER DEFAULT 0, source_kind TEXT, source_names TEXT, posted_at TEXT,
-            job_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-            best_profile_id TEXT DEFAULT '', best_profile_name TEXT DEFAULT '')""")
-        c.execute("""CREATE TABLE IF NOT EXISTS search_meta (
-            id INTEGER PRIMARY KEY, query TEXT, location TEXT, total_count INTEGER DEFAULT 0,
-            sources_json TEXT, updated_at TEXT NOT NULL)""")
-
-        # Table for background auto-search discoveries (pending new jobs waiting for user refresh)
-        c.execute("""CREATE TABLE IF NOT EXISTS pending_search_jobs (
-            job_key TEXT PRIMARY KEY, query TEXT NOT NULL, title TEXT NOT NULL, company TEXT NOT NULL,
-            location TEXT, work_mode TEXT, category TEXT, job_type TEXT, seniority TEXT, country TEXT,
-            min_salary REAL DEFAULT 0, max_salary REAL DEFAULT 0, score INTEGER DEFAULT 0,
-            opportunity_score INTEGER DEFAULT 0, is_famous INTEGER DEFAULT 0, is_startup INTEGER DEFAULT 0,
-            industry TEXT, h1b INTEGER DEFAULT 0, source_kind TEXT, source_names TEXT, posted_at TEXT,
-            job_json TEXT NOT NULL, discovered_at TEXT NOT NULL,
-            best_profile_id TEXT DEFAULT '', best_profile_name TEXT DEFAULT '')""")
-
-        # Migration: ensure is_live column exists on resume_profiles
-        rp_cols = _columns(c, "resume_profiles")
-        if "is_live" not in rp_cols:
-            c.execute("ALTER TABLE resume_profiles ADD COLUMN is_live INTEGER DEFAULT 1")
-
-        # Add structured category and profile tracking columns to search_jobs if missing
-        s_cols = _columns(c, "search_jobs")
-        for col, col_type in [
-            ("category", "TEXT DEFAULT ''"),
-            ("job_type", "TEXT DEFAULT ''"),
-            ("seniority", "TEXT DEFAULT ''"),
-            ("country", "TEXT DEFAULT ''"),
-            ("min_salary", "REAL DEFAULT 0"),
-            ("max_salary", "REAL DEFAULT 0"),
-            ("industry", "TEXT DEFAULT ''"),
-            ("skills_text", "TEXT DEFAULT ''"),
-            ("is_startup", "INTEGER DEFAULT 0"),
-            ("h1b", "INTEGER DEFAULT 0"),
-            ("is_active", "INTEGER DEFAULT 1"),
-            ("best_profile_id", "TEXT DEFAULT ''"),
-            ("best_profile_name", "TEXT DEFAULT ''"),
-        ]:
-            if col not in s_cols:
-                c.execute(f"ALTER TABLE search_jobs ADD COLUMN {col} {col_type}")
-
-        # Add missing columns to pending_search_jobs if missing
-        p_cols = _columns(c, "pending_search_jobs")
-        if "skills_text" not in p_cols:
-            c.execute("ALTER TABLE pending_search_jobs ADD COLUMN skills_text TEXT DEFAULT ''")
-        if "best_profile_id" not in p_cols:
-            c.execute("ALTER TABLE pending_search_jobs ADD COLUMN best_profile_id TEXT DEFAULT ''")
-        if "best_profile_name" not in p_cols:
-            c.execute("ALTER TABLE pending_search_jobs ADD COLUMN best_profile_name TEXT DEFAULT ''")
-
-        c.execute("CREATE INDEX IF NOT EXISTS idx_hist_app ON status_history(app_id)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_apps_status ON applications(status)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_query ON search_jobs(query)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_opp ON search_jobs(opportunity_score)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_cat ON search_jobs(category)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_wm ON search_jobs(work_mode)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_sen ON search_jobs(seniority)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_jt ON search_jobs(job_type)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_country ON search_jobs(country)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_search_jobs_best_prof ON search_jobs(best_profile_id)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_resume_profiles_live ON resume_profiles(is_live)")
-
-        # ------------------------------------------------------------- Phase B2: Upgrade v5 schema
-        # 1. Profile migration
-        prof_cols = _columns(c, "profile")
-        for col, col_type in [
-            ("roles", "TEXT DEFAULT ''"),
-            ("years", "REAL DEFAULT 0"),
-            ("skills", "TEXT DEFAULT ''"),
-            ("resume_path", "TEXT DEFAULT ''"),
-            ("portfolio_url", "TEXT DEFAULT ''"),
-            ("proof_points", "TEXT DEFAULT '[]'"),
-        ]:
-            if col not in prof_cols:
-                c.execute(f"ALTER TABLE profile ADD COLUMN {col} {col_type}")
-
-        # Backfill profile row 1 columns if data JSON exists
-        prof_row = c.execute("SELECT id, data, roles FROM profile WHERE id=1").fetchone()
-        if prof_row and prof_row["data"]:
-            try:
-                p_data = json.loads(prof_row["data"])
-                p_roles = json.dumps(p_data.get("target_roles") or [])
-                p_skills = json.dumps(p_data.get("skills") or [])
-                p_years = float(p_data.get("years_of_experience") or 0)
-                p_path = str(p_data.get("resume_path") or "")
-                p_port = str(p_data.get("portfolio_url") or "")
-                p_pts = json.dumps(p_data.get("proof_points") or [])
-                c.execute("UPDATE profile SET roles=?, years=?, skills=?, resume_path=?, portfolio_url=?, proof_points=? WHERE id=1", (p_roles, p_years, p_skills, p_path, p_port, p_pts))
-            except Exception:
-                pass
-
-        # 2. Applications migration
-        app_cols = _columns(c, "applications")
-        for col, col_type in [
-            ("resume_path", "TEXT DEFAULT ''"),
-            ("cover_letter_path", "TEXT DEFAULT ''"),
-            ("fit_score", "INTEGER DEFAULT 0"),
-            ("grounding_result", "TEXT DEFAULT ''"),
-            ("saved_by", "TEXT DEFAULT ''"),
-        ]:
-            if col not in app_cols:
-                c.execute(f"ALTER TABLE applications ADD COLUMN {col} {col_type}")
-
-        # 3. session_state
-        c.execute("""CREATE TABLE IF NOT EXISTS session_state (
-            id INTEGER PRIMARY KEY,
-            current_state TEXT DEFAULT '',
-            last_tool TEXT DEFAULT '',
-            updated_at TEXT NOT NULL
-        )""")
-
-        # 4. view_filters
-        c.execute("""CREATE TABLE IF NOT EXISTS view_filters (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT DEFAULT 'default',
-            job_style TEXT DEFAULT '',
-            roles TEXT DEFAULT '',
-            work_mode TEXT DEFAULT '',
-            locations TEXT DEFAULT '',
-            relocation INTEGER DEFAULT 0,
-            visa_need INTEGER DEFAULT 0,
-            visa_countries TEXT DEFAULT '',
-            min_salary REAL DEFAULT 0,
-            currency TEXT DEFAULT 'USD',
-            period TEXT DEFAULT 'year',
-            contract_types TEXT DEFAULT '',
-            seniority TEXT DEFAULT '',
-            company_sizes TEXT DEFAULT '',
-            industries TEXT DEFAULT '',
-            excluded_companies TEXT DEFAULT '',
-            excluded_keywords TEXT DEFAULT '',
-            posting_age INTEGER DEFAULT 30,
-            show_unknown_salary INTEGER DEFAULT 1,
-            extra_filters TEXT DEFAULT '{}',
-            updated_at TEXT NOT NULL
-        )""")
-        try:
-            c.execute("ALTER TABLE view_filters ADD COLUMN extra_filters TEXT DEFAULT '{}'")
-        except Exception:
-            pass
-
-        # 5. jobs (unified lifecycle table)
-        c.execute("""CREATE TABLE IF NOT EXISTS jobs (
-            id TEXT PRIMARY KEY,
-            job_key TEXT UNIQUE,
-            title TEXT NOT NULL,
-            company TEXT NOT NULL,
-            location TEXT DEFAULT '',
-            work_mode TEXT DEFAULT '',
-            source TEXT DEFAULT '',
-            url TEXT DEFAULT '',
-            url_hash TEXT DEFAULT '',
-            fingerprint TEXT DEFAULT '',
-            description TEXT DEFAULT '',
-            score INTEGER DEFAULT 0,
-            fit_score INTEGER DEFAULT 0,
-            opportunity_score INTEGER DEFAULT 0,
-            found_at TEXT DEFAULT '',
-            first_seen_at TEXT DEFAULT '',
-            last_seen_at TEXT DEFAULT '',
-            is_new INTEGER DEFAULT 1,
-            seen_by_user INTEGER DEFAULT 0,
-            repost_count INTEGER DEFAULT 0,
-            possible_duplicate INTEGER DEFAULT 0,
-            freshness_state TEXT DEFAULT 'active',
-            delete_at TEXT DEFAULT NULL,
-            keep_flag INTEGER DEFAULT 0,
-            closed_checked_at TEXT DEFAULT NULL,
-            job_json TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )""")
-        jobs_cols = _columns(c, "jobs")
-        for col, col_type in [
-            ("source", "TEXT DEFAULT ''"),
-            ("url_hash", "TEXT DEFAULT ''"),
-            ("fingerprint", "TEXT DEFAULT ''"),
-            ("found_at", "TEXT DEFAULT ''"),
-            ("first_seen_at", "TEXT DEFAULT ''"),
-            ("last_seen_at", "TEXT DEFAULT ''"),
-            ("is_new", "INTEGER DEFAULT 1"),
-            ("seen_by_user", "INTEGER DEFAULT 0"),
-            ("repost_count", "INTEGER DEFAULT 0"),
-            ("possible_duplicate", "INTEGER DEFAULT 0"),
-            ("freshness_state", "TEXT DEFAULT 'active'"),
-            ("delete_at", "TEXT DEFAULT NULL"),
-            ("keep_flag", "INTEGER DEFAULT 0"),
-            ("closed_checked_at", "TEXT DEFAULT NULL"),
-            ("category", "TEXT DEFAULT ''"),
-            ("job_type", "TEXT DEFAULT ''"),
-            ("seniority", "TEXT DEFAULT ''"),
-            ("country", "TEXT DEFAULT ''"),
-            ("min_salary", "REAL DEFAULT 0"),
-            ("max_salary", "REAL DEFAULT 0"),
-            ("company_size", "TEXT DEFAULT ''"),
-            ("industry", "TEXT DEFAULT ''"),
-            ("visa_sponsor", "INTEGER DEFAULT 0"),
-            ("skills_text", "TEXT DEFAULT ''"),
-            ("saved_by", "TEXT DEFAULT ''"),
-        ]:
-            if col not in jobs_cols:
-                c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {col_type}")
-
-        # 6. job_sources
-        c.execute("""CREATE TABLE IF NOT EXISTS job_sources (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            job_id TEXT NOT NULL,
-            source TEXT NOT NULL,
-            url TEXT NOT NULL,
-            url_hash TEXT NOT NULL,
-            first_seen_at TEXT NOT NULL,
-            last_seen_at TEXT NOT NULL
-        )""")
-        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_job_sources_url_hash ON job_sources(url_hash)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_job_sources_job_id ON job_sources(job_id)")
-
-        # 7. tombstones
-        c.execute("""CREATE TABLE IF NOT EXISTS tombstones (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url_hash TEXT NOT NULL,
-            fingerprint TEXT NOT NULL,
-            deleted_at TEXT NOT NULL
-        )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_tombstones_hash ON tombstones(url_hash)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_tombstones_fp ON tombstones(fingerprint)")
-
-        # 8. deletions_log
-        c.execute("""CREATE TABLE IF NOT EXISTS deletions_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            count INTEGER NOT NULL,
-            deleted_at TEXT NOT NULL,
-            acknowledged INTEGER DEFAULT 0
-        )""")
-
-        # 9. radar_state
-        c.execute("""CREATE TABLE IF NOT EXISTS radar_state (
-            id INTEGER PRIMARY KEY,
-            last_poll_at TEXT DEFAULT NULL,
-            next_poll_at TEXT DEFAULT NULL,
-            interval_seconds INTEGER DEFAULT 600,
-            failure_count INTEGER DEFAULT 0,
-            status TEXT DEFAULT 'idle',
-            last_error TEXT DEFAULT ''
-        )""")
-        c.execute("INSERT OR IGNORE INTO radar_state (id, status) VALUES (1, 'idle')")
-
-        # 10. refresh_state
-        c.execute("""CREATE TABLE IF NOT EXISTS refresh_state (
-            source TEXT PRIMARY KEY,
-            last_run_at TEXT DEFAULT NULL,
-            ttl_seconds INTEGER DEFAULT 43200,
-            last_new_ratio REAL DEFAULT 0.0,
-            last_total INTEGER DEFAULT 0,
-            last_new INTEGER DEFAULT 0
-        )""")
-
-        # 11. dismissals
-        c.execute("""CREATE TABLE IF NOT EXISTS dismissals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            job_id TEXT NOT NULL,
-            reason TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_dismissals_job_id ON dismissals(job_id)")
-
-        # ------------------------------------------------------------- Phase B2 / Modern Track Tables
-        # 12. signals
-        c.execute("""CREATE TABLE IF NOT EXISTS signals (
-            id TEXT PRIMARY KEY,
-            type TEXT NOT NULL,
-            source TEXT NOT NULL,
-            url TEXT DEFAULT '',
-            url_hash TEXT NOT NULL,
-            author_name TEXT DEFAULT '',
-            author_url TEXT DEFAULT '',
-            company TEXT NOT NULL,
-            company_domain TEXT DEFAULT '',
-            text TEXT DEFAULT '',
-            posted_at TEXT DEFAULT '',
-            likes INTEGER DEFAULT 0,
-            comments INTEGER DEFAULT 0,
-            found_at TEXT NOT NULL,
-            is_new INTEGER DEFAULT 1,
-            status TEXT DEFAULT 'fresh',
-            score INTEGER DEFAULT 0,
-            role_guess TEXT DEFAULT '',
-            stage TEXT DEFAULT 'any',
-            region TEXT DEFAULT 'any',
-            funding_amount TEXT DEFAULT '',
-            funding_round TEXT DEFAULT '',
-            signal_json TEXT DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_url_hash ON signals(url_hash)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_status ON signals(status)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_company ON signals(company)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_is_new ON signals(is_new)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_type ON signals(type)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_signals_score ON signals(score)")
-
-        # 13. company_briefs
-        c.execute("""CREATE TABLE IF NOT EXISTS company_briefs (
-            id TEXT PRIMARY KEY,
-            signal_id TEXT DEFAULT '',
-            company TEXT NOT NULL,
-            company_domain TEXT DEFAULT '',
-            stage TEXT DEFAULT '',
-            funding_summary TEXT DEFAULT '',
-            brief_json TEXT NOT NULL DEFAULT '{}',
-            learning_pack_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_company_briefs_company ON company_briefs(company)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_company_briefs_signal ON company_briefs(signal_id)")
-
-        # 14. contacts
-        c.execute("""CREATE TABLE IF NOT EXISTS contacts (
-            id TEXT PRIMARY KEY,
-            signal_id TEXT DEFAULT '',
-            company TEXT NOT NULL,
-            name TEXT NOT NULL,
-            role TEXT NOT NULL,
-            email TEXT DEFAULT '',
-            confidence TEXT DEFAULT 'Guess',
-            provider TEXT DEFAULT '',
-            source_url TEXT DEFAULT '',
-            found_at TEXT NOT NULL,
-            status TEXT DEFAULT 'new',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_contacts_signal ON contacts(signal_id)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_contacts_company ON contacts(company)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_contacts_status ON contacts(status)")
-
-        # 15. outreach
-        c.execute("""CREATE TABLE IF NOT EXISTS outreach (
-            id TEXT PRIMARY KEY,
-            contact_id TEXT NOT NULL,
-            signal_id TEXT DEFAULT '',
-            company TEXT NOT NULL,
-            recipient_name TEXT DEFAULT '',
-            recipient_email TEXT DEFAULT '',
-            recipient_title TEXT DEFAULT '',
-            subject TEXT DEFAULT '',
-            body TEXT DEFAULT '',
-            status TEXT DEFAULT 'draft',
-            drafted_at TEXT NOT NULL,
-            sent_at TEXT DEFAULT NULL,
-            follow_up_due TEXT DEFAULT NULL,
-            follow_up_sent_at TEXT DEFAULT NULL,
-            replied_at TEXT DEFAULT NULL,
-            reply_received_at TEXT DEFAULT NULL,
-            reply_sentiment TEXT DEFAULT '',
-            notes TEXT DEFAULT '',
-            resume_path TEXT DEFAULT '',
-            attached INTEGER DEFAULT 1,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_outreach_contact ON outreach(contact_id)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_outreach_signal ON outreach(signal_id)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_outreach_status ON outreach(status)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_outreach_follow_up ON outreach(follow_up_due)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_outreach_sent_at ON outreach(sent_at)")
-
-        # Migration columns for contacts and outreach
-        contacts_cols = _columns(c, "contacts")
-        for col, col_type in [
-            ("company_domain", "TEXT DEFAULT ''"),
-            ("title", "TEXT DEFAULT ''"),
-            ("role_category", "TEXT DEFAULT ''"),
-            ("email_confidence", "TEXT DEFAULT 'Guess'"),
-            ("linkedin_url", "TEXT DEFAULT ''"),
-            ("x_handle", "TEXT DEFAULT ''"),
-            ("phone", "TEXT DEFAULT ''"),
-            ("source", "TEXT DEFAULT ''"),
-            ("last_contacted_at", "TEXT DEFAULT ''"),
-            ("notes", "TEXT DEFAULT ''"),
-        ]:
-            if col not in contacts_cols:
-                c.execute(f"ALTER TABLE contacts ADD COLUMN {col} {col_type}")
-
-        outreach_cols = _columns(c, "outreach")
-        for col, col_type in [
-            ("recipient_name", "TEXT DEFAULT ''"),
-            ("recipient_email", "TEXT DEFAULT ''"),
-            ("recipient_title", "TEXT DEFAULT ''"),
-            ("subject", "TEXT DEFAULT ''"),
-            ("body", "TEXT DEFAULT ''"),
-            ("follow_up_sent_at", "TEXT DEFAULT NULL"),
-            ("reply_received_at", "TEXT DEFAULT NULL"),
-            ("reply_sentiment", "TEXT DEFAULT ''"),
-        ]:
-            if col not in outreach_cols:
-                c.execute(f"ALTER TABLE outreach ADD COLUMN {col} {col_type}")
-
-        # Indexes on jobs
-        c.execute("CREATE INDEX IF NOT EXISTS idx_jobs_fingerprint ON jobs(fingerprint)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_jobs_url_hash ON jobs(url_hash)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_jobs_freshness ON jobs(freshness_state)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_jobs_delete_at ON jobs(delete_at)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_jobs_is_new ON jobs(is_new)")
-
-        # Default settings
-        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('cleanup_grace_hours', '24')")
-        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('method', 'modern')")
-        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('daily_cap', '20')")
-        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('follow_up_days', '4')")
-        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('first_touch_attachment', '1')")
-        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('send_mode', 'one_at_a_time')")
-        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('resume_max_kb', '200')")
-
-        # 16. Coach Layer
-        c.execute("""CREATE TABLE IF NOT EXISTS coach_state (
-            session_id TEXT PRIMARY KEY,
-            coaching_enabled INTEGER DEFAULT 1,
-            opt_out INTEGER DEFAULT 0,
-            updated_at TEXT NOT NULL
-        )""")
-        c.execute("""CREATE TABLE IF NOT EXISTS coach_events (
-            session_id TEXT NOT NULL,
-            trigger_id TEXT NOT NULL,
-            ts TEXT NOT NULL,
-            PRIMARY KEY (session_id, trigger_id)
-        )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_coach_events_session ON coach_events(session_id)")
-        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('coaching_enabled', '1')")
-
-        # 17. Confirmed Facts (R1 & R2 Quality Layer)
-        c.execute("""CREATE TABLE IF NOT EXISTS confirmed_facts (
-            id TEXT PRIMARY KEY,
-            session_id TEXT NOT NULL,
-            fact TEXT NOT NULL,
-            category TEXT DEFAULT 'general',
-            label TEXT DEFAULT 'user_confirmed',
-            created_at TEXT NOT NULL
-        )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_confirmed_facts_session ON confirmed_facts(session_id)")
-
-        # 18. Base Resumes by Role Family (R6 Quality Layer)
-        c.execute("""CREATE TABLE IF NOT EXISTS base_resumes (
-            id TEXT PRIMARY KEY,
-            session_id TEXT NOT NULL,
-            role_family TEXT NOT NULL,
-            resume_data TEXT NOT NULL,
-            approved INTEGER DEFAULT 0,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_base_resumes_session ON base_resumes(session_id)")
-
-        # 19. Audit Log (D2 Quality Gate)
-        c.execute("""CREATE TABLE IF NOT EXISTS audit_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            user_reply TEXT NOT NULL,
-            action TEXT NOT NULL,
-            details TEXT DEFAULT '',
-            created_at TEXT NOT NULL
-        )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_session ON audit_log(session_id)")
-
-        # 20. Guesses vs Answers Storage Split (D3 Quality Gate)
-        c.execute("""CREATE TABLE IF NOT EXISTS guesses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            resume_id TEXT DEFAULT '',
-            category TEXT NOT NULL,
-            value TEXT NOT NULL,
-            confidence REAL DEFAULT 0.0,
-            metadata TEXT DEFAULT '{}',
-            created_at TEXT NOT NULL
-        )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_guesses_session ON guesses(session_id)")
-
-        c.execute("""CREATE TABLE IF NOT EXISTS answers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            category TEXT NOT NULL,
-            value TEXT NOT NULL,
-            user_reply TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_answers_session ON answers(session_id)")
-
-        c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-
-        # Backfill history for v1 rows
-        c.execute("""INSERT INTO status_history (app_id, status, changed_at)
-                     SELECT id, status, created_at FROM applications
-                     WHERE id NOT IN (SELECT app_id FROM status_history)""")
-
-        # Backfill any search_jobs rows that don't have categories yet
-        unclassified = c.execute("SELECT job_key, job_json FROM search_jobs WHERE category IS NULL OR category = ''").fetchall()
-        for r in unclassified:
-            try:
-                j_obj = json.loads(r["job_json"])
-                meta = classify_job(j_obj)
-                c.execute("""
-                    UPDATE search_jobs
-                    SET category=?, job_type=?, seniority=?, country=?, min_salary=?, max_salary=?,
-                        industry=?, skills_text=?, is_startup=?, h1b=?, work_mode=?
-                    WHERE job_key=?
-                """, (
-                    meta["category"], meta["job_type"], meta["seniority"], meta["country"],
-                    meta["min_salary"], meta["max_salary"], meta["industry"], meta["skills_text"],
-                    meta["is_startup"], meta["h1b"], meta["work_mode"], r["job_key"]
-                ))
-            except Exception:
-                pass
-
-        # Clean any HTML entities from stored legacy jobs
-        _cleanup_html_entities(c)
-
-        # Backfill resume_profiles from existing legacy profile if empty
-        has_rp = c.execute("SELECT count(*) as cnt FROM resume_profiles").fetchone()["cnt"]
-        if has_rp == 0:
-            legacy_p = c.execute("SELECT data, updated_at FROM profile WHERE id=1").fetchone()
-            if legacy_p:
-                try:
-                    p_data = json.loads(legacy_p["data"])
-                    target_title = p_data.get("target_title", "Master Profile")
-                    roles = p_data.get("target_roles", [])
-                    skills = p_data.get("skills", [])
-                    tags = skills[:6] if skills else ["Core"]
-                    c.execute("""
-                        INSERT INTO resume_profiles
-                        (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, is_live, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-                    """, (
-                        "master", "Master Resume", target_title, json.dumps(roles),
-                        json.dumps(tags), legacy_p["data"], 1, 1,
-                        legacy_p["updated_at"] or now_iso(), legacy_p["updated_at"] or now_iso()
-                    ))
-                except Exception:
-                    pass
+def init_db() -> None:
+    with _init_lock:
+        ws = store.get_store(ensure_dirs=True)
+        with ws.lock:
+            changed = False
+            for tbl in ("jobs", "search_jobs", "applications", "signals"):
+                for r in ws.tables.get(tbl, []):
+                    for k in ("title", "company", "location", "work_mode", "salary", "notes", "text"):
+                        v = r.get(k)
+                        if isinstance(v, str) and "&" in v:
+                            r[k] = clean_text(v)
+                            changed = True
+            if changed:
+                ws.flush_durable()
+                ws.flush_cache()
 
 
-def _cleanup_html_entities(c):
-    """Clean all HTML entities from existing stored database records."""
-    # 1. Clean search_jobs
-    rows = c.execute("SELECT job_key, title, company, location, job_json FROM search_jobs WHERE title LIKE '%&%' OR company LIKE '%&%' OR location LIKE '%&%' OR job_json LIKE '%&%'").fetchall()
-    for r in rows:
-        title = clean_text(r["title"])
-        comp = clean_text(r["company"])
-        loc = clean_text(r["location"])
-        try:
-            j = json.loads(r["job_json"])
-            clean_job_dict(j)
-            j_json = json.dumps(j)
-        except Exception:
-            j_json = r["job_json"]
-        c.execute("""
-            UPDATE search_jobs
-            SET title=?, company=?, location=?, job_json=?
-            WHERE job_key=?
-        """, (title, comp, loc, j_json, r["job_key"]))
-
-    # 2. Clean pending_search_jobs
-    p_rows = c.execute("SELECT job_key, title, company, location, job_json FROM pending_search_jobs WHERE title LIKE '%&%' OR company LIKE '%&%' OR location LIKE '%&%' OR job_json LIKE '%&%'").fetchall()
-    for r in p_rows:
-        title = clean_text(r["title"])
-        comp = clean_text(r["company"])
-        loc = clean_text(r["location"])
-        try:
-            j = json.loads(r["job_json"])
-            clean_job_dict(j)
-            j_json = json.dumps(j)
-        except Exception:
-            j_json = r["job_json"]
-        c.execute("""
-            UPDATE pending_search_jobs
-            SET title=?, company=?, location=?, job_json=?
-            WHERE job_key=?
-        """, (title, comp, loc, j_json, r["job_key"]))
-
-    # 3. Clean seen_jobs
-    seen_rows = c.execute("SELECT job_key, title, company FROM seen_jobs WHERE title LIKE '%&%' OR company LIKE '%&%'").fetchall()
-    for r in seen_rows:
-        title = clean_text(r["title"])
-        comp = clean_text(r["company"])
-        c.execute("UPDATE seen_jobs SET title=?, company=? WHERE job_key=?", (title, comp, r["job_key"]))
-
-    # 4. Clean applications
-    app_rows = c.execute("SELECT id, title, company, location, job_data_json FROM applications WHERE title LIKE '%&%' OR company LIKE '%&%' OR location LIKE '%&%' OR job_data_json LIKE '%&%'").fetchall()
-    for r in app_rows:
-        title = clean_text(r["title"])
-        comp = clean_text(r["company"])
-        loc = clean_text(r["location"])
-        try:
-            jd = json.loads(r["job_data_json"]) if r["job_data_json"] else {}
-            clean_job_dict(jd)
-            jd_json = json.dumps(jd)
-        except Exception:
-            jd_json = r["job_data_json"]
-        c.execute("UPDATE applications SET title=?, company=?, location=?, job_data_json=? WHERE id=?", (title, comp, loc, jd_json, r["id"]))
-
-    # 5. Clean watchlist
-    w_rows = c.execute("SELECT id, company_name, target_role FROM watchlist WHERE company_name LIKE '%&%' OR target_role LIKE '%&%'").fetchall()
-    for r in w_rows:
-        comp = clean_text(r["company_name"])
-        role = clean_text(r["target_role"])
-        c.execute("UPDATE watchlist SET company_name=?, target_role=? WHERE id=?", (comp, role, r["id"]))
-
-    # 6. Clear cached payloads containing html entities
-    c.execute("DELETE FROM source_cache WHERE payload LIKE '%#x%' OR payload LIKE '%&#%'")
+def _cleanup_html_entities(c: Any = None) -> None:
+    init_db()
 
 
-def get_profile(profile_id=None):
-    with session() as c:
-        row = None
-        if profile_id:
-            row = c.execute("SELECT id, name, data_json, is_active, is_master, is_live FROM resume_profiles WHERE id=?", (profile_id,)).fetchone()
-        if not row:
-            row = c.execute("SELECT id, name, data_json, is_active, is_master, is_live FROM resume_profiles WHERE is_active=1 LIMIT 1").fetchone()
-        if not row:
-            row = c.execute("SELECT id, name, data_json, is_active, is_master, is_live FROM resume_profiles WHERE is_master=1 LIMIT 1").fetchone()
-        if not row:
-            row = c.execute("SELECT id, name, data_json, is_active, is_master, is_live FROM resume_profiles ORDER BY updated_at DESC LIMIT 1").fetchone()
+# ------------------------------------------------------------------ Profile & Resume Profiles
 
-        if not row:
-            legacy = c.execute("SELECT data FROM profile WHERE id=1").fetchone()
-            if not legacy:
-                raw_data = json.dumps(EMPTY_PROFILE)
-            else:
-                raw_data = legacy["data"]
-        else:
-            raw_data = row["data_json"]
-
-    data = json.loads(raw_data)
+def _hydrate_profile(raw_data: str | dict, row: dict | None) -> dict[str, Any]:
+    data = json.loads(raw_data) if isinstance(raw_data, str) else dict(raw_data or {})
     for k, v in EMPTY_PROFILE.items():
         data.setdefault(k, json.loads(json.dumps(v)) if k != "_is_empty" else False)
     if not data.get("target_roles") and (data.get("target_title") or data.get("skills")):
@@ -936,7 +265,7 @@ def get_profile(profile_id=None):
         data["_profile_name"] = row["name"]
         data["_is_master"] = bool(row["is_master"])
         data["_is_active"] = bool(row["is_active"])
-        data["_is_live"] = bool(row["is_live"]) if "is_live" in row.keys() else True
+        data["_is_live"] = bool(row.get("is_live", 1))
     else:
         data["_profile_id"] = "master"
         data["_profile_name"] = "Master Resume"
@@ -946,44 +275,44 @@ def get_profile(profile_id=None):
     return data
 
 
+def get_profile(profile_id: str | None = None) -> dict[str, Any]:
+    ws = _ws()
+    with ws.lock:
+        rps = ws.tables["resume_profiles"]
+        row = None
+        if profile_id:
+            row = next((r for r in rps if r.get("id") == profile_id), None)
+        if not row:
+            row = next((r for r in rps if r.get("is_active")), None)
+        if not row:
+            row = next((r for r in rps if r.get("is_master")), None)
+        if not row and rps:
+            row = sorted(rps, key=lambda r: r.get("updated_at") or "", reverse=True)[0]
+        if row:
+            raw_data = row.get("data_json") or json.dumps(EMPTY_PROFILE)
+        else:
+            leg = next((r for r in ws.tables["profile"] if r.get("id") == 1), None)
+            raw_data = leg["data"] if (leg and leg.get("data")) else json.dumps(EMPTY_PROFILE)
+    return _hydrate_profile(raw_data, row)
 
 
-def get_live_profiles():
-    """Retrieve full profile objects for all resumes currently in the active live matching pool."""
-    with session() as c:
-        rows = c.execute("""
-            SELECT id, name, data_json, is_active, is_master, is_live
-            FROM resume_profiles
-            WHERE is_live=1
-            ORDER BY is_master DESC, updated_at DESC
-        """).fetchall()
-
+def get_live_profiles() -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        rows = [dict(r) for r in ws.tables["resume_profiles"] if r.get("is_live", 1)]
+        rows.sort(key=lambda r: (1 if r.get("is_master") else 0, r.get("updated_at") or ""), reverse=True)
     if not rows:
         return [get_profile()]
-
     profiles = []
     for r in rows:
         try:
-            d = json.loads(r["data_json"])
-            for k, v in EMPTY_PROFILE.items():
-                d.setdefault(k, json.loads(json.dumps(v)) if k != "_is_empty" else False)
-            if not d.get("target_roles") and (d.get("target_title") or d.get("skills")):
-                from .scoring import derive_target_roles
-                d["target_roles"] = derive_target_roles(d)
-            d["_profile_id"] = r["id"]
-            d["_profile_name"] = r["name"]
-            d["_is_master"] = bool(r["is_master"])
-            d["_is_active"] = bool(r["is_active"])
-            d["_is_live"] = bool(r["is_live"]) if "is_live" in r.keys() else True
-            profiles.append(d)
+            profiles.append(_hydrate_profile(r.get("data_json") or "{}", r))
         except Exception:
             pass
     return profiles or [get_profile()]
 
 
-
-
-def save_profile(data, profile_id=None, session_id=None):
+def save_profile(data: dict[str, Any], profile_id: str | None = None, session_id: str | None = None) -> dict[str, Any]:
     data = dict(data)
     data.pop("_is_empty", None)
     data.pop("_updated_at", None)
@@ -998,21 +327,35 @@ def save_profile(data, profile_id=None, session_id=None):
     skills = data.get("skills", [])
     tags = data.get("tags") or (skills[:6] if skills else ["Core"])
     iso_now = now_iso()
+    data_json = json.dumps(data)
 
-    with session() as c:
-        exists = c.execute("SELECT id FROM resume_profiles WHERE id=?", (pid,)).fetchone()
-        if exists:
-            c.execute("""
-                UPDATE resume_profiles
-                SET name=?, target_title=?, target_roles_json=?, tags_json=?, data_json=?, updated_at=?
-                WHERE id=?
-            """, (pname, target_title, json.dumps(target_roles), json.dumps(tags), json.dumps(data), iso_now, pid))
+    ws = _ws()
+    with ws.lock:
+        rps = ws.tables["resume_profiles"]
+        existing = next((r for r in rps if r.get("id") == pid), None)
+        if existing:
+            existing.update({
+                "name": pname,
+                "target_title": target_title,
+                "target_roles_json": json.dumps(target_roles),
+                "tags_json": json.dumps(tags),
+                "data_json": data_json,
+                "updated_at": iso_now,
+            })
         else:
-            c.execute("""
-                INSERT INTO resume_profiles
-                (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, is_live, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (pid, pname, target_title, json.dumps(target_roles), json.dumps(tags), json.dumps(data), is_active, is_master, is_live, iso_now, iso_now))
+            rps.append(ws._normalize_row("resume_profiles", {
+                "id": pid,
+                "name": pname,
+                "target_title": target_title,
+                "target_roles_json": json.dumps(target_roles),
+                "tags_json": json.dumps(tags),
+                "data_json": data_json,
+                "is_active": is_active,
+                "is_master": is_master,
+                "is_live": is_live,
+                "created_at": iso_now,
+                "updated_at": iso_now,
+            }))
 
         if is_active or is_master or pid == "master":
             roles_val = json.dumps(target_roles) if isinstance(target_roles, list) else str(target_roles or "")
@@ -1021,27 +364,35 @@ def save_profile(data, profile_id=None, session_id=None):
             resume_path_val = str(data.get("resume_path") or "")
             portfolio_url_val = str(data.get("portfolio_url") or "")
             proof_points_val = json.dumps(data.get("proof_points") or []) if isinstance(data.get("proof_points"), (list, dict)) else str(data.get("proof_points") or "[]")
-            c.execute("""
-                INSERT OR REPLACE INTO profile (id, data, updated_at, roles, years, skills, resume_path, portfolio_url, proof_points)
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (json.dumps(data), iso_now, roles_val, years_val, skills_val, resume_path_val, portfolio_url_val, proof_points_val))
+            ws.tables["profile"] = [ws._normalize_row("profile", {
+                "id": 1,
+                "data": data_json,
+                "updated_at": iso_now,
+                "roles": roles_val,
+                "years": years_val,
+                "skills": skills_val,
+                "resume_path": resume_path_val,
+                "portfolio_url": portfolio_url_val,
+                "proof_points": proof_points_val,
+            })]
+        ws.flush_durable()
     return get_profile(pid)
 
 
-def list_resume_profiles():
-    with session() as c:
-        rows = c.execute("""
-            SELECT id, name, target_title, target_roles_json, tags_json,
-                   is_active, is_master, is_live, source_job_id, source_job_title, source_company,
-                   created_at, updated_at, data_json
-            FROM resume_profiles
-            ORDER BY is_master DESC, updated_at DESC
-        """).fetchall()
+def list_resume_profiles() -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        rows = sorted(
+            ws.tables["resume_profiles"],
+            key=lambda r: (1 if r.get("is_master") else 0, r.get("updated_at") or ""),
+            reverse=True,
+        )
+        rows = [dict(r) for r in rows]
 
     res = []
     for r in rows:
         try:
-            d = json.loads(r["data_json"])
+            d = json.loads(r.get("data_json") or "{}")
             skills = d.get("skills", [])
             experience = d.get("experience", [])
             email = d.get("email", "")
@@ -1057,28 +408,25 @@ def list_resume_profiles():
             raw_fn = d.get("filename") or d.get("_source_file", "")
             filename = os.path.basename(raw_fn) if raw_fn else ""
         except Exception:
-            skills = []
-            experience = []
+            skills, experience = [], []
             email = phone = location = linkedin = github = website = filename = ""
-            years = 0
-            exp_count = 0
+            years = exp_count = min_salary = 0
             work_mode = "Any"
-            min_salary = 0
 
         res.append({
             "id": r["id"],
             "name": r["name"],
-            "target_title": r["target_title"] or "General Candidate",
-            "target_roles": json.loads(r["target_roles_json"] or "[]"),
-            "tags": json.loads(r["tags_json"] or "[]"),
-            "is_active": bool(r["is_active"]),
-            "is_master": bool(r["is_master"]),
-            "is_live": bool(r["is_live"]) if "is_live" in r.keys() else True,
-            "source_job_id": r["source_job_id"],
-            "source_job_title": r["source_job_title"],
-            "source_company": r["source_company"],
-            "created_at": r["created_at"],
-            "updated_at": r["updated_at"],
+            "target_title": r.get("target_title") or "General Candidate",
+            "target_roles": json.loads(r.get("target_roles_json") or "[]"),
+            "tags": json.loads(r.get("tags_json") or "[]"),
+            "is_active": bool(r.get("is_active")),
+            "is_master": bool(r.get("is_master")),
+            "is_live": bool(r.get("is_live", 1)),
+            "source_job_id": r.get("source_job_id", ""),
+            "source_job_title": r.get("source_job_title", ""),
+            "source_company": r.get("source_company", ""),
+            "created_at": r.get("created_at", ""),
+            "updated_at": r.get("updated_at", ""),
             "skills_count": len(skills),
             "top_skills": skills[:6],
             "skills": skills,
@@ -1094,24 +442,27 @@ def list_resume_profiles():
             "experience_years": years,
             "experience_count": exp_count,
             "work_mode": work_mode,
-            "min_salary": min_salary
+            "min_salary": min_salary,
         })
     return res
 
 
-def set_active_resume_profile(profile_id):
-    with session() as c:
-        row = c.execute("SELECT id, data_json FROM resume_profiles WHERE id=?", (profile_id,)).fetchone()
-        if not row:
+def set_active_resume_profile(profile_id: str) -> dict[str, Any]:
+    ws = _ws()
+    with ws.lock:
+        target = next((r for r in ws.tables["resume_profiles"] if r.get("id") == profile_id), None)
+        if not target:
             raise ValueError(f"Resume profile '{profile_id}' not found.")
-        c.execute("UPDATE resume_profiles SET is_active = CASE WHEN id=? THEN 1 ELSE 0 END", (profile_id,))
-        c.execute("INSERT OR REPLACE INTO profile (id, data, updated_at) VALUES (1, ?, ?)", (row["data_json"], now_iso()))
+        for r in ws.tables["resume_profiles"]:
+            r["is_active"] = 1 if r.get("id") == profile_id else 0
+        ws.tables["profile"] = [ws._normalize_row("profile", {"id": 1, "data": target.get("data_json") or "{}", "updated_at": now_iso()})]
+        ws.flush_durable()
     active_profile = get_profile(profile_id)
     trigger_rescore_jobs(active_profile)
     return active_profile
 
 
-def duplicate_resume_profile(profile_id, new_name=None, target_title=None, tags=None):
+def duplicate_resume_profile(profile_id: str, new_name: str | None = None, target_title: str | None = None, tags: list[str] | None = None) -> dict[str, Any]:
     base = get_profile(profile_id)
     if not base or base.get("_is_empty"):
         raise ValueError("Cannot duplicate an empty profile.")
@@ -1119,11 +470,8 @@ def duplicate_resume_profile(profile_id, new_name=None, target_title=None, tags=
     new_id = f"variant_{uuid.uuid4().hex[:8]}"
     name = new_name or f"{base.get('target_title') or base.get('_profile_name') or 'Resume'} (Variant)"
     data = dict(base)
-    data.pop("_profile_id", None)
-    data.pop("_is_master", None)
-    data.pop("_is_active", None)
-    data.pop("_is_live", None)
-    data.pop("_profile_name", None)
+    for k in ("_profile_id", "_is_master", "_is_active", "_is_live", "_profile_name"):
+        data.pop(k, None)
 
     if target_title:
         data["target_title"] = target_title
@@ -1134,45 +482,53 @@ def duplicate_resume_profile(profile_id, new_name=None, target_title=None, tags=
     skills = data.get("skills", [])
     variant_tags = tags if tags is not None else (skills[:5] if skills else ["Variant"])
 
-    with session() as c:
-        c.execute("""
-            INSERT INTO resume_profiles
-            (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, is_live, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?)
-        """, (
-            new_id, name, data.get("target_title", ""),
-            json.dumps(data.get("target_roles", [])), json.dumps(variant_tags),
-            json.dumps(data), iso_now, iso_now
-        ))
+    ws = _ws()
+    with ws.lock:
+        ws.tables["resume_profiles"].append(ws._normalize_row("resume_profiles", {
+            "id": new_id,
+            "name": name,
+            "target_title": data.get("target_title", ""),
+            "target_roles_json": json.dumps(data.get("target_roles", [])),
+            "tags_json": json.dumps(variant_tags),
+            "data_json": json.dumps(data),
+            "is_active": 0,
+            "is_master": 0,
+            "is_live": 1,
+            "created_at": iso_now,
+            "updated_at": iso_now,
+        }))
+        ws.flush_durable()
 
     trigger_rescore_jobs()
     return get_profile(new_id)
 
 
-def delete_resume_profile(profile_id):
-    with session() as c:
-        row = c.execute("SELECT is_master, is_active FROM resume_profiles WHERE id=?", (profile_id,)).fetchone()
+def delete_resume_profile(profile_id: str) -> bool:
+    ws = _ws()
+    with ws.lock:
+        rps = ws.tables["resume_profiles"]
+        row = next((r for r in rps if r.get("id") == profile_id), None)
         if not row:
             return False
-        if row["is_master"]:
+        if row.get("is_master"):
             raise ValueError("The Master Resume cannot be deleted. You can edit it or create variants from it.")
-
-        was_active = bool(row["is_active"])
-        c.execute("DELETE FROM resume_profiles WHERE id=?", (profile_id,))
-        # Ensure at least one profile remains live
-        live_cnt = c.execute("SELECT count(*) as cnt FROM resume_profiles WHERE is_live=1").fetchone()["cnt"]
-        if live_cnt == 0:
-            c.execute("UPDATE resume_profiles SET is_live=1 WHERE is_master=1")
+        was_active = bool(row.get("is_active"))
+        ws.tables["resume_profiles"] = [r for r in rps if r.get("id") != profile_id]
+        if not any(r.get("is_live") for r in ws.tables["resume_profiles"]):
+            for r in ws.tables["resume_profiles"]:
+                if r.get("is_master"):
+                    r["is_live"] = 1
         if was_active:
-            c.execute("UPDATE resume_profiles SET is_active=1 WHERE is_master=1")
-            master_row = c.execute("SELECT data_json FROM resume_profiles WHERE is_master=1").fetchone()
-            if master_row:
-                c.execute("INSERT OR REPLACE INTO profile (id, data, updated_at) VALUES (1, ?, ?)", (master_row["data_json"], now_iso()))
+            for r in ws.tables["resume_profiles"]:
+                if r.get("is_master"):
+                    r["is_active"] = 1
+                    ws.tables["profile"] = [ws._normalize_row("profile", {"id": 1, "data": r.get("data_json") or "{}", "updated_at": now_iso()})]
+        ws.flush_durable()
     trigger_rescore_jobs()
     return True
 
 
-def save_tailored_variant_from_workspace(job, tailored_resume, variant_name=None, tags=None):
+def save_tailored_variant_from_workspace(job: dict[str, Any], tailored_resume: dict[str, Any], variant_name: str | None = None, tags: list[str] | None = None) -> dict[str, Any]:
     active = get_profile()
     new_id = f"tailored_{uuid.uuid4().hex[:8]}"
 
@@ -1181,12 +537,9 @@ def save_tailored_variant_from_workspace(job, tailored_resume, variant_name=None
     name = variant_name or f"Tailored: {comp} - {role}"
 
     new_data = dict(active)
-    if tailored_resume.get("summary"):
-        new_data["summary"] = tailored_resume["summary"]
-    if tailored_resume.get("skills"):
-        new_data["skills"] = tailored_resume["skills"]
-    if tailored_resume.get("experience"):
-        new_data["experience"] = tailored_resume["experience"]
+    for k in ("summary", "skills", "experience"):
+        if tailored_resume.get(k):
+            new_data[k] = tailored_resume[k]
     new_data["target_title"] = role
     from .scoring import derive_target_roles
     new_data["target_roles"] = derive_target_roles(new_data)
@@ -1194,29 +547,38 @@ def save_tailored_variant_from_workspace(job, tailored_resume, variant_name=None
     iso_now = now_iso()
     extracted_tags = tags or (job.get("matched_skills", []) or new_data.get("skills", []))[:6]
 
-    with session() as c:
-        c.execute("""
-            INSERT INTO resume_profiles
-            (id, name, target_title, target_roles_json, tags_json, data_json, is_active, is_master, is_live,
-             source_job_id, source_job_title, source_company, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?, ?)
-        """, (
-            new_id, name, role, json.dumps(new_data.get("target_roles", [])),
-            json.dumps(extracted_tags), json.dumps(new_data),
-            job.get("id") or "", role, comp, iso_now, iso_now
-        ))
+    ws = _ws()
+    with ws.lock:
+        ws.tables["resume_profiles"].append(ws._normalize_row("resume_profiles", {
+            "id": new_id,
+            "name": name,
+            "target_title": role,
+            "target_roles_json": json.dumps(new_data.get("target_roles", [])),
+            "tags_json": json.dumps(extracted_tags),
+            "data_json": json.dumps(new_data),
+            "is_active": 0,
+            "is_master": 0,
+            "is_live": 1,
+            "source_job_id": job.get("id") or "",
+            "source_job_title": role,
+            "source_company": comp,
+            "created_at": iso_now,
+            "updated_at": iso_now,
+        }))
+        ws.flush_durable()
 
     trigger_rescore_jobs()
     return get_profile(new_id)
 
+
+# ------------------------------------------------------------------ Rescoring
 
 _rescore_lock = threading.Lock()
 _rescore_worker_running = False
 _rescore_requested = False
 
 
-def trigger_rescore_jobs(profile=None):
-    """Trigger background job rescoring across all live profiles in a thread-safe, debounced queue."""
+def trigger_rescore_jobs(profile: Any = None) -> None:
     global _rescore_requested, _rescore_worker_running
     with _rescore_lock:
         _rescore_requested = True
@@ -1226,7 +588,7 @@ def trigger_rescore_jobs(profile=None):
     threading.Thread(target=_rescore_worker_loop, daemon=True, name="JobRescoreWorker").start()
 
 
-def _rescore_worker_loop():
+def _rescore_worker_loop() -> None:
     global _rescore_requested, _rescore_worker_running
     while True:
         with _rescore_lock:
@@ -1236,28 +598,32 @@ def _rescore_worker_loop():
             _rescore_requested = False
         try:
             rescore_and_classify_stored_jobs()
-        except Exception as e:
-            import logging
-            logging.getLogger("jobhunter").error("Error in rescore worker: %s", e)
+        except Exception:
+            pass
 
 
-def _flush_rescore_updates(batch):
+def _flush_rescore_updates(batch: list[tuple[Any, ...]]) -> None:
     if not batch:
         return
-    with session() as c:
-        c.executemany("""
-            UPDATE search_jobs
-            SET score=?, opportunity_score=?, category=?, job_type=?, seniority=?,
-                country=?, work_mode=?, best_profile_id=?, best_profile_name=?, job_json=?
-            WHERE job_key=?
-        """, batch)
+    ws = _ws()
+    with ws.lock:
+        by_key = {r.get("job_key"): r for r in ws.tables["search_jobs"]}
+        for item in batch:
+            score, opp, cat, jt, sen, cny, wm, pid, pname, jjson, jkey = item
+            row = by_key.get(jkey)
+            if row:
+                row.update({
+                    "score": score, "opportunity_score": opp, "category": cat,
+                    "job_type": jt, "seniority": sen, "country": cny, "work_mode": wm,
+                    "best_profile_id": pid, "best_profile_name": pname, "job_json": jjson,
+                })
+        ws.flush_cache()
 
 
-def rescore_and_classify_stored_jobs(profile=None):
-    """Re-score and re-classify all stored jobs against live resume profiles in responsive batches."""
+def rescore_and_classify_stored_jobs(profile: Any = None) -> int:
     from .scoring import score_job_best
     from .pipeline import _rank_opportunity
-    import time
+
     if profile is None:
         profiles = get_live_profiles()
     elif isinstance(profile, list):
@@ -1267,150 +633,167 @@ def rescore_and_classify_stored_jobs(profile=None):
     if not profiles or (len(profiles) == 1 and profiles[0].get("_is_empty")):
         return 0
 
-    with session() as c:
-        rows = c.execute("SELECT job_key, job_json, category, seniority, job_type, country, work_mode FROM search_jobs").fetchall()
+    ws = _ws()
+    with ws.lock:
+        rows = [dict(r) for r in ws.tables["search_jobs"]]
 
     updates = []
-    total_updated = 0
     for r in rows:
         try:
             j = json.loads(r["job_json"])
-            cat = r["category"] or j.get("category")
-            sen = r["seniority"] or j.get("seniority")
-            jt = r["job_type"] or j.get("job_type")
-            cny = r["country"] or j.get("country")
-            wm = r["work_mode"] or j.get("work_mode")
+            cat = r.get("category") or j.get("category")
+            sen = r.get("seniority") or j.get("seniority")
+            jt = r.get("job_type") or j.get("job_type")
+            cny = r.get("country") or j.get("country")
+            wm = r.get("work_mode") or j.get("work_mode")
             if not (cat and sen and jt and cny and wm):
                 c_meta = classify_job(j)
                 cat, sen, jt, cny, wm = c_meta["category"], c_meta["seniority"], c_meta["job_type"], c_meta["country"], c_meta["work_mode"]
 
             scored = score_job_best(j, profiles)
             j.update(scored)
-            j["category"] = cat
-            j["seniority"] = sen
-            j["job_type"] = jt
-            j["country"] = cny
-            j["work_mode"] = wm
+            j["category"], j["seniority"], j["job_type"], j["country"], j["work_mode"] = cat, sen, jt, cny, wm
             _rank_opportunity(j)
             updates.append((
                 j.get("score", 0), j.get("opportunity_score", 0),
                 cat, jt, sen, cny, wm,
                 j.get("best_profile_id", ""), j.get("best_profile_name", ""),
-                json.dumps(j),
-                r["job_key"]
+                json.dumps(j), r["job_key"],
             ))
         except Exception:
             pass
 
-        # Flush in small 80-row transactions to keep SQLite completely unlocked and yield GIL
-        if len(updates) >= 80:
-            _flush_rescore_updates(updates)
-            total_updated += len(updates)
-            updates = []
-            time.sleep(0.002)
-
     if updates:
         _flush_rescore_updates(updates)
-        total_updated += len(updates)
-
-    return total_updated
+    return len(updates)
 
 
-def get_setting(key, default=""):
-    with session() as c:
-        row = c.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-    return row["value"] if row else default
+# ------------------------------------------------------------------ Settings
+
+def get_setting(key: str, default: str = "") -> str:
+    ws = _ws()
+    with ws.lock:
+        for r in ws.tables["settings"]:
+            if r.get("key") == key:
+                return str(r.get("value", default))
+    return default
 
 
-def set_setting(key, value):
-    with session() as c:
-        c.execute("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", (key, str(value)))
+def set_setting(key: str, value: Any) -> None:
+    ws = _ws()
+    with ws.lock:
+        for r in ws.tables["settings"]:
+            if r.get("key") == key:
+                r["value"] = str(value)
+                ws.flush_durable()
+                return
+        ws.tables["settings"].append({"key": key, "value": str(value)})
+        ws.flush_durable()
+
 
 save_setting = set_setting
 
 
-def get_job(job_id):
-    """Return one stored job by its job_key (the id shown in search results), or None.
+def delete_settings(keys: list[str] | tuple[str, ...]) -> int:
+    key_set = set(keys)
+    ws = _ws()
+    with ws.lock:
+        before = len(ws.tables["settings"])
+        ws.tables["settings"] = [r for r in ws.tables["settings"] if r.get("key") not in key_set]
+        removed = before - len(ws.tables["settings"])
+        if removed:
+            ws.flush_durable()
+        return removed
 
-    Looks in the active search table first, then in jobs staged by the background radar.
-    """
+
+# ------------------------------------------------------------------ Search Jobs & Staging
+
+def get_job(job_id: str) -> Optional[dict[str, Any]]:
     key = (job_id or "").strip()
     if not key:
         return None
-    try:
-        with session() as c:
-            for table in ("search_jobs", "pending_search_jobs"):
-                try:
-                    row = c.execute(f"SELECT job_json FROM {table} WHERE job_key=?", (key,)).fetchone()
-                    if row:
-                        try:
-                            return json.loads(row["job_json"])
-                        except Exception:
-                            return None
-                except sqlite3.OperationalError:
-                    continue
-    except Exception:
-        return None
+    ws = _ws()
+    with ws.lock:
+        for tbl in ("search_jobs", "pending_search_jobs", "jobs"):
+            for r in ws.tables[tbl]:
+                if r.get("job_key") == key or r.get("id") == key:
+                    try:
+                        return json.loads(r.get("job_json") or "{}")
+                    except Exception:
+                        return None
     return None
 
 
-def replace_search_jobs(jobs, query="", location="", sources=None, clear_existing=True, conn=None):
-    """Store search jobs with extracted categories into DB.
-    If clear_existing is True, deletes old search jobs first (explicit query replacement).
-    Otherwise, upserts jobs into the existing database cache so prior discoveries are preserved.
-    """
+def _upsert_search_job_locked(ws: store.WorkspaceStore, j: dict[str, Any], query: str, now: str) -> None:
+    key = j.get("job_key") or j.get("id")
+    if not key:
+        return
+    clean_job_dict(j)
+    c_meta = classify_job(j)
+    j["category"] = c_meta["category"]
+    j["seniority"] = c_meta["seniority"]
+    j["job_type"] = c_meta["job_type"]
+    j["country"] = c_meta["country"]
+    j["work_mode"] = c_meta["work_mode"]
+    row = ws._normalize_row("search_jobs", {
+        "job_key": key,
+        "query": query or j.get("query", ""),
+        "title": clean_text(j.get("title", "")),
+        "company": clean_text(j.get("company", "")),
+        "location": clean_text(j.get("location", "")),
+        "work_mode": c_meta["work_mode"],
+        "score": j.get("score", 0),
+        "opportunity_score": j.get("opportunity_score", 0),
+        "is_famous": c_meta["is_famous"],
+        "source_kind": j.get("source_kind", ""),
+        "source_names": ",".join(j.get("source_names", [])),
+        "posted_at": j.get("posted_at", ""),
+        "job_json": json.dumps(j),
+        "created_at": now,
+        "updated_at": now,
+        "category": c_meta["category"],
+        "job_type": c_meta["job_type"],
+        "seniority": c_meta["seniority"],
+        "country": c_meta["country"],
+        "min_salary": c_meta["min_salary"],
+        "max_salary": c_meta["max_salary"],
+        "industry": c_meta["industry"],
+        "skills_text": c_meta["skills_text"],
+        "is_startup": c_meta["is_startup"],
+        "h1b": c_meta["h1b"],
+        "is_active": 1,
+        "best_profile_id": j.get("best_profile_id", ""),
+        "best_profile_name": j.get("best_profile_name", ""),
+    })
+    tbl = ws.tables["search_jobs"]
+    for idx, existing in enumerate(tbl):
+        if existing.get("job_key") == key:
+            tbl[idx] = row
+            return
+    tbl.append(row)
+
+
+def replace_search_jobs(jobs: list[dict[str, Any]], query: str = "", location: str = "", sources: Any = None, clear_existing: bool = True, conn: Any = None) -> None:
     now = now_iso()
-
-    def _execute(c):
+    ws = _ws()
+    with ws.lock:
         if clear_existing:
-            c.execute("DELETE FROM search_jobs")
+            ws.tables["search_jobs"] = []
         for j in jobs:
-            key = j.get("job_key") or j.get("id")
-            if not key:
-                continue
-            clean_job_dict(j)
-            c_meta = classify_job(j)
-            j["category"] = c_meta["category"]
-            j["seniority"] = c_meta["seniority"]
-            j["job_type"] = c_meta["job_type"]
-            j["country"] = c_meta["country"]
-            j["work_mode"] = c_meta["work_mode"]
-
-            c.execute("""
-                INSERT OR REPLACE INTO search_jobs
-                (job_key, query, title, company, location, work_mode, score, opportunity_score,
-                 is_famous, source_kind, source_names, posted_at, job_json, created_at, updated_at,
-                 category, job_type, seniority, country, min_salary, max_salary, industry,
-                 skills_text, is_startup, h1b, is_active, best_profile_id, best_profile_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-            """, (
-                key, query or j.get("query", ""), clean_text(j.get("title", "")), clean_text(j.get("company", "")),
-                clean_text(j.get("location", "")), c_meta["work_mode"], j.get("score", 0),
-                j.get("opportunity_score", 0), c_meta["is_famous"],
-                j.get("source_kind", ""), ",".join(j.get("source_names", [])),
-                j.get("posted_at", ""), json.dumps(j), now, now,
-                c_meta["category"], c_meta["job_type"], c_meta["seniority"], c_meta["country"],
-                c_meta["min_salary"], c_meta["max_salary"], c_meta["industry"],
-                c_meta["skills_text"], c_meta["is_startup"], c_meta["h1b"],
-                j.get("best_profile_id", ""), j.get("best_profile_name", "")
-            ))
-        total_now = c.execute("SELECT count(*) FROM search_jobs WHERE is_active=1").fetchone()[0]
-        c.execute("""INSERT OR REPLACE INTO search_meta
-                     (id, query, location, total_count, sources_json, updated_at)
-                     VALUES (1, ?, ?, ?, ?, ?)""",
-                  (query, location, total_now, json.dumps(sources or []), now))
-
-    if conn is not None:
-        _execute(conn)
-    else:
-        with session() as c:
-            _execute(c)
+            _upsert_search_job_locked(ws, j, query, now)
+        total_now = sum(1 for r in ws.tables["search_jobs"] if r.get("is_active", 1) == 1)
+        ws.tables["search_meta"] = [ws._normalize_row("search_meta", {
+            "id": 1,
+            "query": query,
+            "location": location,
+            "total_count": total_now,
+            "sources_json": json.dumps(sources or []),
+            "updated_at": now,
+        })]
+        ws.flush_cache()
 
 
-
-
-def update_search_job(job):
-    """Update a single job in search_jobs cache if it exists."""
+def update_search_job(job: dict[str, Any]) -> bool:
     from . import dedup
     key = job.get("job_key") or dedup.job_key(job) or job.get("id")
     if not key:
@@ -1418,322 +801,341 @@ def update_search_job(job):
     clean_job_dict(job)
     now = now_iso()
     c_meta = classify_job(job)
-    with session() as c:
-        row = c.execute("SELECT job_key FROM search_jobs WHERE job_key=?", (key,)).fetchone()
-        if row:
-            c.execute("""
-                UPDATE search_jobs
-                SET title=?, company=?, location=?, work_mode=?, score=?, opportunity_score=?,
-                    job_json=?, updated_at=?, category=?, job_type=?, seniority=?, country=?,
-                    best_profile_id=?, best_profile_name=?
-                WHERE job_key=?
-            """, (
-                clean_text(job.get("title", "")), clean_text(job.get("company", "")), clean_text(job.get("location", "")),
-                c_meta["work_mode"], job.get("score", 0), job.get("opportunity_score", 0),
-                json.dumps(job), now, c_meta["category"], c_meta["job_type"], c_meta["seniority"], c_meta["country"],
-                job.get("best_profile_id", ""), job.get("best_profile_name", ""),
-                key
-            ))
-            return True
+    ws = _ws()
+    with ws.lock:
+        for r in ws.tables["search_jobs"]:
+            if r.get("job_key") == key:
+                r.update({
+                    "title": clean_text(job.get("title", "")),
+                    "company": clean_text(job.get("company", "")),
+                    "location": clean_text(job.get("location", "")),
+                    "work_mode": c_meta["work_mode"],
+                    "score": job.get("score", 0),
+                    "opportunity_score": job.get("opportunity_score", 0),
+                    "job_json": json.dumps(job),
+                    "updated_at": now,
+                    "category": c_meta["category"],
+                    "job_type": c_meta["job_type"],
+                    "seniority": c_meta["seniority"],
+                    "country": c_meta["country"],
+                    "best_profile_id": job.get("best_profile_id", ""),
+                    "best_profile_name": job.get("best_profile_name", ""),
+                })
+                ws.flush_cache()
+                return True
     return False
 
 
-def query_stored_jobs(filters=None, include_all=False):
-    """Fast SQLite-level filtering across all stored jobs based on user criteria.
-    Never launches a new external scraping search session.
-    """
-    filters = filters or {}
-    clauses = ["is_active = 1"]
-    params = []
+def _unpack_search_row(r: dict[str, Any], compact: bool = False) -> dict[str, Any]:
+    j = json.loads(r.get("job_json") or "{}")
+    if compact:
+        j["description"] = ""
+        j["qualifications"] = []
+        j["responsibilities"] = []
+    for col in ("job_type", "work_mode", "category", "seniority", "country", "best_profile_id", "best_profile_name"):
+        if r.get(col):
+            j[col] = r[col]
+    return j
 
-    # 1. Job Function / Category
+
+def _matches_stored_filters(r: dict[str, Any], filters: dict[str, Any], inc_remote: bool) -> bool:
+    title = r.get("title") or ""
+    t_low = title.lower()
+    cat_val = r.get("category") or ""
+    skills_low = (r.get("skills_text") or "").lower()
+    wm_low = (r.get("work_mode") or "").lower()
+    loc_low = (r.get("location") or "").lower()
+    cny_low = (r.get("country") or "").lower()
+    sen_val = r.get("seniority") or ""
+    jt_low = (r.get("job_type") or "").lower()
+    ind_val = r.get("industry") or ""
+
     cat = (filters.get("category") or filters.get("role") or "").strip()
     if cat and cat.lower() not in ("all", "any"):
-        c_low = cat.lower()
-        if "full stack" in c_low or "fullstack" in c_low:
-            clauses.append("(category LIKE '%Full Stack%' OR title LIKE '%Full Stack%' OR title LIKE '%Fullstack%' OR title LIKE '%Full-Stack%' OR skills_text LIKE '%fullstack%' OR skills_text LIKE '%full stack%')")
-        elif "backend" in c_low or "back end" in c_low:
-            clauses.append("(category LIKE '%Backend%' OR title LIKE '%Backend%' OR title LIKE '%Back end%' OR title LIKE '%Back-End%')")
-        elif "frontend" in c_low or "front end" in c_low:
-            clauses.append("(category LIKE '%Frontend%' OR title LIKE '%Frontend%' OR title LIKE '%Front end%' OR title LIKE '%Front-End%')")
-        elif any(k in c_low for k in ["devops", "sre", "cloud", "infrastructure"]):
-            clauses.append("(category LIKE '%DevOps%' OR title LIKE '%DevOps%' OR title LIKE '%SRE%' OR title LIKE '%Site Reliability%' OR title LIKE '%Platform%' OR title LIKE '%Infrastructure%')")
-        elif any(k in c_low for k in ["machine learning", "ml", "ai"]):
-            clauses.append("(category LIKE '%Machine Learning%' OR title LIKE '%Machine Learning%' OR title LIKE '%ML%' OR title LIKE '%AI %' OR title LIKE '%AI-%' OR title LIKE '%Data Scientist%')")
-        elif "data" in c_low and ("engineer" in c_low or "analytics" in c_low):
-            clauses.append("(category LIKE '%Data%' OR title LIKE '%Data Engineer%' OR title LIKE '%Analytics Engineer%')")
-        elif any(k in c_low for k in ["mobile", "ios", "android"]):
-            clauses.append("(category LIKE '%Mobile%' OR title LIKE '%Mobile%' OR title LIKE '%iOS%' OR title LIKE '%Android%')")
-        elif any(k in c_low for k in ["security", "cyber"]):
-            clauses.append("(category LIKE '%Security%' OR title LIKE '%Security%' OR title LIKE '%Cyber%')")
-        elif any(k in c_low for k in ["qa", "quality", "test"]):
-            clauses.append("(category LIKE '%QA%' OR title LIKE '%QA%' OR title LIKE '%Test%' OR title LIKE '%Quality%')")
-        elif "product" in c_low:
-            clauses.append("(category LIKE '%Product%' OR title LIKE '%Product%')")
-        elif any(k in c_low for k in ["design", "ux", "ui"]):
-            clauses.append("(category LIKE '%Design%' OR title LIKE '%Design%' OR title LIKE '%UX%' OR title LIKE '%UI%')")
-        elif "software" in c_low or "engineer" in c_low or "developer" in c_low:
-            clauses.append("(category LIKE '%Engineer%' OR category LIKE '%Developer%' OR title LIKE '%Engineer%' OR title LIKE '%Developer%')")
-        else:
-            clauses.append("(category LIKE ? OR title LIKE ?)")
-            params.extend([f"%{cat}%", f"%{cat}%"])
+        cl = cat.lower()
+        if "full stack" in cl or "fullstack" in cl:
+            if not ("full stack" in cat_val.lower() or any(k in t_low for k in ("full stack", "fullstack", "full-stack")) or "fullstack" in skills_low or "full stack" in skills_low):
+                return False
+        elif "backend" in cl or "back end" in cl:
+            if not ("backend" in cat_val.lower() or any(k in t_low for k in ("backend", "back end", "back-end"))):
+                return False
+        elif "frontend" in cl or "front end" in cl:
+            if not ("frontend" in cat_val.lower() or any(k in t_low for k in ("frontend", "front end", "front-end"))):
+                return False
+        elif any(k in cl for k in ("devops", "sre", "cloud", "infrastructure")):
+            if not ("devops" in cat_val.lower() or any(k in t_low for k in ("devops", "sre", "site reliability", "platform", "infrastructure"))):
+                return False
+        elif any(k in cl for k in ("machine learning", "ml", "ai")):
+            if not ("machine learning" in cat_val.lower() or any(k in t_low for k in ("machine learning", "ml", "ai ", "ai-", "data scientist"))):
+                return False
+        elif "data" in cl and ("engineer" in cl or "analytics" in cl):
+            if not ("data" in cat_val.lower() or "data engineer" in t_low or "analytics engineer" in t_low):
+                return False
+        elif any(k in cl for k in ("mobile", "ios", "android")):
+            if not ("mobile" in cat_val.lower() or any(k in t_low for k in ("mobile", "ios", "android"))):
+                return False
+        elif any(k in cl for k in ("security", "cyber")):
+            if not ("security" in cat_val.lower() or "security" in t_low or "cyber" in t_low):
+                return False
+        elif any(k in cl for k in ("qa", "quality", "test")):
+            if not ("qa" in cat_val.lower() or any(k in t_low for k in ("qa", "test", "quality"))):
+                return False
+        elif "product" in cl:
+            if "product" not in cat_val.lower() and "product" not in t_low:
+                return False
+        elif any(k in cl for k in ("design", "ux", "ui")):
+            if not ("design" in cat_val.lower() or any(k in t_low for k in ("design", "ux", "ui"))):
+                return False
+        elif any(k in cl for k in ("software", "engineer", "developer")):
+            if not (any(k in cat_val.lower() for k in ("engineer", "developer")) or any(k in t_low for k in ("engineer", "developer"))):
+                return False
+        elif cl not in cat_val.lower() and cl not in t_low:
+            return False
 
-    # 2. Work Mode
     wm_raw = (filters.get("work_mode") or "").strip()
     if wm_raw and wm_raw.lower() not in ("any", "all"):
         modes = [m.strip().lower() for m in wm_raw.split(",") if m.strip()]
         if modes and len(modes) < 3:
-            wm_clauses = []
+            ok = False
             for m_low in modes:
-                if "remote" in m_low:
-                    wm_clauses.append("(LOWER(work_mode) LIKE '%remote%' OR LOWER(location) LIKE '%remote%' OR LOWER(country) = 'worldwide')")
-                elif "hybrid" in m_low:
-                    wm_clauses.append("(LOWER(work_mode) LIKE '%hybrid%' OR LOWER(location) LIKE '%hybrid%')")
-                elif any(k in m_low for k in ["onsite", "on-site", "office"]):
-                    wm_clauses.append("(LOWER(work_mode) LIKE '%onsite%' OR LOWER(work_mode) LIKE '%on-site%' OR (LOWER(work_mode) NOT LIKE '%remote%' AND LOWER(work_mode) NOT LIKE '%hybrid%'))")
-                else:
-                    wm_clauses.append("LOWER(work_mode) = ?")
-                    params.append(m_low)
-            if wm_clauses:
-                clauses.append(f"({' OR '.join(wm_clauses)})")
+                if "remote" in m_low and ("remote" in wm_low or "remote" in loc_low or cny_low == "worldwide"):
+                    ok = True
+                elif "hybrid" in m_low and ("hybrid" in wm_low or "hybrid" in loc_low):
+                    ok = True
+                elif any(k in m_low for k in ("onsite", "on-site", "office")) and ("onsite" in wm_low or "on-site" in wm_low or ("remote" not in wm_low and "hybrid" not in wm_low)):
+                    ok = True
+                elif wm_low == m_low:
+                    ok = True
+            if not ok:
+                return False
 
-    # 3. Seniority
     sen = (filters.get("seniority") or "").strip()
     if sen and sen.lower() not in ("all", "any"):
-        s_low = sen.lower()
-        if s_low in ("junior", "entry", "intern", "entry_junior"):
-            clauses.append("(seniority IN ('junior', 'intern') OR LOWER(title) LIKE '%junior%' OR LOWER(title) LIKE '%entry%' OR LOWER(title) LIKE '%intern%' OR LOWER(title) LIKE '%new grad%' OR LOWER(title) LIKE '%associate%')")
-        elif s_low == "mid":
-            clauses.append("(seniority = 'mid' OR (seniority NOT IN ('intern', 'junior', 'director') AND LOWER(title) NOT LIKE '%director%' AND LOWER(title) NOT LIKE '%vp%'))")
-        elif s_low == "senior":
-            clauses.append("(seniority IN ('senior', 'lead_staff') OR LOWER(title) LIKE '%senior%' OR LOWER(title) LIKE '%sr%' OR LOWER(title) LIKE '%lead%' OR LOWER(title) LIKE '%staff%')")
-        elif s_low in ("lead_staff", "lead", "staff", "director"):
-            clauses.append("(seniority IN ('lead_staff', 'director') OR LOWER(title) LIKE '%lead%' OR LOWER(title) LIKE '%staff%' OR LOWER(title) LIKE '%principal%' OR LOWER(title) LIKE '%director%' OR LOWER(title) LIKE '%head of%')")
-        else:
-            clauses.append("seniority = ?")
-            params.append(s_low)
+        sl = sen.lower()
+        if sl in ("junior", "entry", "intern", "entry_junior"):
+            if not (sen_val in ("junior", "intern") or any(k in t_low for k in ("junior", "entry", "intern", "new grad", "associate"))):
+                return False
+        elif sl == "mid":
+            if not (sen_val == "mid" or (sen_val not in ("intern", "junior", "director") and "director" not in t_low and "vp" not in t_low)):
+                return False
+        elif sl == "senior":
+            if not (sen_val in ("senior", "lead_staff") or any(k in t_low for k in ("senior", "sr", "lead", "staff"))):
+                return False
+        elif sl in ("lead_staff", "lead", "staff", "director"):
+            if not (sen_val in ("lead_staff", "director") or any(k in t_low for k in ("lead", "staff", "principal", "director", "head of"))):
+                return False
+        elif sen_val != sl:
+            return False
 
-    # 4. Job Type (Supports single or multi-value comma-separated, e.g. 'Part-time,Internship')
     jt_raw = (filters.get("job_type") or "").strip()
     if jt_raw and jt_raw.lower() not in ("all", "any"):
         types = [t.strip().lower() for t in jt_raw.split(",") if t.strip()]
         if types and len(types) < 4:
-            jt_clauses = []
+            ok = False
             for t in types:
-                if t == "internship":
-                    jt_clauses.append("(LOWER(job_type) LIKE '%intern%' OR LOWER(title) LIKE '%intern%' OR LOWER(title) LIKE '%co-op%' OR LOWER(title) LIKE '%apprentice%')")
-                elif t in ("part-time", "part time"):
-                    jt_clauses.append("(LOWER(job_type) LIKE '%part%' OR LOWER(title) LIKE '%part-time%' OR LOWER(title) LIKE '%part time%')")
-                elif t == "contract":
-                    jt_clauses.append("(LOWER(job_type) LIKE '%contract%' OR LOWER(title) LIKE '%contract%' OR LOWER(title) LIKE '%freelance%')")
-                elif t in ("full-time", "full time"):
-                    jt_clauses.append("(LOWER(job_type) LIKE '%full%' OR (job_type = '' AND LOWER(title) NOT LIKE '%intern%' AND LOWER(title) NOT LIKE '%contract%' AND LOWER(title) NOT LIKE '%part%'))")
-                else:
-                    jt_clauses.append("LOWER(job_type) LIKE ?")
-                    params.append(f"%{t}%")
-            if jt_clauses:
-                clauses.append(f"({' OR '.join(jt_clauses)})")
+                if t == "internship" and ("intern" in jt_low or any(k in t_low for k in ("intern", "co-op", "apprentice"))):
+                    ok = True
+                elif t in ("part-time", "part time") and ("part" in jt_low or "part-time" in t_low or "part time" in t_low):
+                    ok = True
+                elif t == "contract" and ("contract" in jt_low or "contract" in t_low or "freelance" in t_low):
+                    ok = True
+                elif t in ("full-time", "full time") and ("full" in jt_low or (not jt_low and not any(k in t_low for k in ("intern", "contract", "part")))):
+                    ok = True
+                elif t in jt_low:
+                    ok = True
+            if not ok:
+                return False
 
-    # 5. Country / Location
     country = (filters.get("country") or "").strip()
     if country and country.lower() not in ("all", "any"):
-        c_low = country.lower()
-        inc_remote = str(get_setting("include_worldwide_remote", "true")).lower() in ("true", "1", "yes")
-        if c_low in ("united states", "usa", "us"):
-            clauses.append("(LOWER(country) = 'united states' OR LOWER(country) = 'worldwide' OR LOWER(work_mode) LIKE '%remote%')")
-        elif c_low == "worldwide":
-            clauses.append("(LOWER(country) = 'worldwide' OR LOWER(work_mode) LIKE '%remote%')")
+        cl = country.lower()
+        if cl in ("united states", "usa", "us"):
+            if not (cny_low in ("united states", "worldwide") or "remote" in wm_low):
+                return False
+        elif cl == "worldwide":
+            if not (cny_low == "worldwide" or "remote" in wm_low):
+                return False
         elif inc_remote:
-            clauses.append("(LOWER(country) = ? OR LOWER(location) LIKE ? OR (LOWER(work_mode) LIKE '%remote%' AND LOWER(country) = 'worldwide'))")
-            params.extend([c_low, f"%{c_low}%"])
-        else:
-            clauses.append("(LOWER(country) = ? OR LOWER(location) LIKE ?)")
-            params.extend([c_low, f"%{c_low}%"])
+            if not (cny_low == cl or cl in loc_low or ("remote" in wm_low and cny_low == "worldwide")):
+                return False
+        elif not (cny_low == cl or cl in loc_low):
+            return False
 
     loc_q = (filters.get("location") or "").strip()
     if loc_q and loc_q.lower() not in ("all", "any", "anywhere in the us"):
-        clauses.append("(LOWER(location) LIKE ? OR work_mode = 'Remote')")
-        params.append(f"%{loc_q.lower()}%")
+        if not (loc_q.lower() in loc_low or (r.get("work_mode") == "Remote")):
+            return False
 
-    # 6. Minimum Salary
     try:
         min_sal = float(filters.get("min_salary") or 0)
         if min_sal > 0:
-            clauses.append("(max_salary >= ? OR (min_salary >= ? AND min_salary > 0))")
-            params.extend([min_sal, min_sal])
+            rmax, rmin = float(r.get("max_salary") or 0), float(r.get("min_salary") or 0)
+            if not (rmax >= min_sal or (rmin >= min_sal and rmin > 0)):
+                return False
     except (ValueError, TypeError):
         pass
 
-    # 7. Minimum Score
     try:
         min_score = int(filters.get("min_score") or 0)
-        if min_score > 0:
-            clauses.append("score >= ?")
-            params.append(min_score)
+        if min_score > 0 and int(r.get("score") or 0) < min_score:
+            return False
     except (ValueError, TypeError):
         pass
 
-    # 8. Company Mode (Famous vs Startups)
     fam_mode = (filters.get("famous_mode") or "all").lower()
-    if fam_mode == "hide":
-        clauses.append("is_famous = 0")
-    elif fam_mode == "only":
-        clauses.append("is_famous = 1")
-    elif fam_mode == "startups":
-        clauses.append("is_startup = 1")
+    if fam_mode == "hide" and r.get("is_famous"):
+        return False
+    elif fam_mode == "only" and not r.get("is_famous"):
+        return False
+    elif fam_mode == "startups" and not r.get("is_startup"):
+        return False
 
-    # 9. Industry
     ind = (filters.get("industry") or "").strip()
     if ind and ind.lower() not in ("all", "any"):
-        if ind.lower() in ("tech", "software"):
-            clauses.append("industry LIKE '%Tech%'")
-        elif ind.lower() in ("finance", "fintech"):
-            clauses.append("industry LIKE '%Finance%'")
-        elif ind.lower() in ("health", "healthcare", "bio"):
-            clauses.append("industry LIKE '%Health%'")
-        elif ind.lower() in ("consulting", "services"):
-            clauses.append("industry LIKE '%Consulting%'")
+        il = ind.lower()
+        if il in ("tech", "software") and "tech" not in ind_val.lower():
+            return False
+        elif il in ("finance", "fintech") and "finance" not in ind_val.lower():
+            return False
+        elif il in ("health", "healthcare", "bio") and "health" not in ind_val.lower():
+            return False
+        elif il in ("consulting", "services") and "consulting" not in ind_val.lower():
+            return False
 
-    # 10. Date Freshness (days)
     try:
         days = int(filters.get("days") or filters.get("freshness_days") or 0)
         if days > 0:
             cutoff = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).isoformat()
-            clauses.append("(posted_at >= ? OR posted_at IS NULL OR posted_at = '')")
-            params.append(cutoff)
+            pa = r.get("posted_at")
+            if pa and pa < cutoff:
+                return False
     except (ValueError, TypeError):
         pass
 
-    # 11. Keyword
-    kw = (filters.get("q") or filters.get("keyword") or "").strip()
+    kw = (filters.get("q") or filters.get("keyword") or "").strip().lower()
     if kw:
-        clauses.append("(title LIKE ? OR company LIKE ? OR skills_text LIKE ? OR location LIKE ?)")
-        pat = f"%{kw}%"
-        params.extend([pat, pat, pat, pat])
+        comp_low = (r.get("company") or "").lower()
+        if not any(kw in hay for hay in (t_low, comp_low, skills_low, loc_low)):
+            return False
 
-    # 12. H1B
-    if str(filters.get("h1b") or "").lower() in ("1", "true"):
-        clauses.append("h1b = 1")
+    if str(filters.get("h1b") or "").lower() in ("1", "true") and not r.get("h1b"):
+        return False
 
-    # 13. Winning Resume Variant
     pid_filter = (filters.get("best_profile_id") or filters.get("profile_id") or "").strip()
-    if pid_filter and pid_filter.lower() not in ("all", "any"):
-        clauses.append("best_profile_id = ?")
-        params.append(pid_filter)
+    if pid_filter and pid_filter.lower() not in ("all", "any") and r.get("best_profile_id") != pid_filter:
+        return False
 
-    # Sorting
+    return True
+
+
+def query_stored_jobs(filters: dict[str, Any] | None = None, include_all: bool = False) -> dict[str, Any]:
+    filters = filters or {}
+    inc_remote = str(get_setting("include_worldwide_remote", "true")).lower() in ("true", "1", "yes")
     sort = (filters.get("sort") or "ranked").lower()
-    if sort == "score_desc":
-        order_clause = "ORDER BY score DESC, opportunity_score DESC"
-    elif sort == "salary_desc":
-        order_clause = "ORDER BY max_salary DESC, score DESC"
-    elif sort == "date_desc":
-        order_clause = "ORDER BY posted_at DESC, opportunity_score DESC"
-    elif sort == "company_asc":
-        order_clause = "ORDER BY company ASC"
-    else:
-        order_clause = "ORDER BY opportunity_score DESC, score DESC"
 
-    where_sql = " AND ".join(clauses) if clauses else "1=1"
+    def _sort_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if sort == "score_desc":
+            return sorted(rows, key=lambda r: (r.get("score") or 0, r.get("opportunity_score") or 0), reverse=True)
+        if sort == "salary_desc":
+            return sorted(rows, key=lambda r: (r.get("max_salary") or 0, r.get("score") or 0), reverse=True)
+        if sort == "date_desc":
+            return sorted(rows, key=lambda r: (r.get("posted_at") or "", r.get("opportunity_score") or 0), reverse=True)
+        if sort == "company_asc":
+            return sorted(rows, key=lambda r: (r.get("company") or "").lower())
+        return sorted(rows, key=lambda r: (r.get("opportunity_score") or 0, r.get("score") or 0), reverse=True)
 
-    with session() as c:
-        total_all = c.execute("SELECT count(*) FROM search_jobs WHERE is_active=1").fetchone()[0]
-        rows = c.execute(f"SELECT job_type, work_mode, category, seniority, country, best_profile_id, best_profile_name, job_json FROM search_jobs WHERE {where_sql} {order_clause}", params).fetchall()
+    ws = _ws()
+    with ws.lock:
+        active = [dict(r) for r in ws.tables["search_jobs"] if r.get("is_active", 1) == 1]
 
-        # Compute dynamic facet counts
-        cat_rows = c.execute("SELECT category, count(*) as cnt FROM search_jobs WHERE is_active=1 GROUP BY category ORDER BY cnt DESC").fetchall()
-        wm_rows = c.execute("SELECT work_mode, count(*) as cnt FROM search_jobs WHERE is_active=1 GROUP BY work_mode").fetchall()
-        sen_rows = c.execute("SELECT seniority, count(*) as cnt FROM search_jobs WHERE is_active=1 GROUP BY seniority").fetchall()
-        jt_rows = c.execute("SELECT job_type, count(*) as cnt FROM search_jobs WHERE is_active=1 AND job_type != '' GROUP BY job_type ORDER BY cnt DESC").fetchall()
-        prof_rows = c.execute("SELECT best_profile_id, best_profile_name, count(*) as cnt FROM search_jobs WHERE is_active=1 AND best_profile_id != '' GROUP BY best_profile_id ORDER BY cnt DESC").fetchall()
+    matched = _sort_rows([r for r in active if _matches_stored_filters(r, filters, inc_remote)])
+    jobs = [_unpack_search_row(r) for r in matched]
+    all_jobs = [_unpack_search_row(r, compact=True) for r in _sort_rows(active)] if (include_all and len(matched) < len(active)) else []
 
-        if include_all and len(clauses) > 1:
-            all_rows = c.execute(f"SELECT job_type, work_mode, category, seniority, country, best_profile_id, best_profile_name, job_json FROM search_jobs WHERE is_active=1 {order_clause}").fetchall()
-        else:
-            all_rows = None
-
-    def _unpack_row(r, compact=False):
-        j = json.loads(r["job_json"])
-        if compact:
-            j["description"] = ""
-            j["qualifications"] = []
-            j["responsibilities"] = []
-        if r["job_type"]:
-            j["job_type"] = r["job_type"]
-        if r["work_mode"]:
-            j["work_mode"] = r["work_mode"]
-        if r["category"]:
-            j["category"] = r["category"]
-        if r["seniority"]:
-            j["seniority"] = r["seniority"]
-        if r["country"]:
-            j["country"] = r["country"]
-        if r["best_profile_id"]:
-            j["best_profile_id"] = r["best_profile_id"]
-        if r["best_profile_name"]:
-            j["best_profile_name"] = r["best_profile_name"]
-        return j
-
-    jobs = [_unpack_row(r) for r in rows]
-    all_jobs = [_unpack_row(r, compact=True) for r in all_rows] if all_rows is not None else []
-    meta = get_search_meta() or {}
+    cat_cnt: dict[str, int] = {}
+    wm_cnt: dict[str, int] = {}
+    sen_cnt: dict[str, int] = {}
+    jt_cnt: dict[str, int] = {}
+    prof_cnt: dict[str, dict[str, Any]] = {}
+    for r in active:
+        if r.get("category"):
+            cat_cnt[r["category"]] = cat_cnt.get(r["category"], 0) + 1
+        if r.get("work_mode"):
+            wm_cnt[r["work_mode"]] = wm_cnt.get(r["work_mode"], 0) + 1
+        if r.get("seniority"):
+            sen_cnt[r["seniority"]] = sen_cnt.get(r["seniority"], 0) + 1
+        if r.get("job_type"):
+            jt_cnt[r["job_type"]] = jt_cnt.get(r["job_type"], 0) + 1
+        pid = r.get("best_profile_id")
+        if pid:
+            cur = prof_cnt.setdefault(pid, {"name": r.get("best_profile_name", ""), "count": 0})
+            cur["count"] += 1
 
     return {
         "jobs": jobs,
         "all_jobs": all_jobs,
         "count": len(jobs),
-        "total_all": total_all,
-        "meta": meta,
+        "total_all": len(active),
+        "meta": get_search_meta() or {},
         "facets": {
-            "categories": {r["category"]: r["cnt"] for r in cat_rows if r["category"]},
-            "work_modes": {r["work_mode"]: r["cnt"] for r in wm_rows if r["work_mode"]},
-            "seniorities": {r["seniority"]: r["cnt"] for r in sen_rows if r["seniority"]},
-            "job_types": {r["job_type"]: r["cnt"] for r in jt_rows if r["job_type"]},
-            "profiles": {r["best_profile_id"]: {"name": r["best_profile_name"], "count": r["cnt"]} for r in prof_rows}
-        }
+            "categories": dict(sorted(cat_cnt.items(), key=lambda x: -x[1])),
+            "work_modes": wm_cnt,
+            "seniorities": sen_cnt,
+            "job_types": dict(sorted(jt_cnt.items(), key=lambda x: -x[1])),
+            "profiles": prof_cnt,
+        },
     }
 
 
-def get_saved_search_jobs():
-    """Retrieve all saved search jobs."""
+def get_saved_search_jobs() -> list[dict[str, Any]]:
     return query_stored_jobs()["jobs"]
 
 
-def get_search_meta():
-    """Retrieve metadata of the last search stored in DB."""
-    with session() as c:
-        row = c.execute("SELECT * FROM search_meta WHERE id=1").fetchone()
-    if not row:
-        return None
-    return {
-        "query": row["query"],
-        "location": row["location"],
-        "total_count": row["total_count"],
-        "sources": json.loads(row["sources_json"] or "[]"),
-        "updated_at": row["updated_at"]
-    }
+def get_search_meta() -> Optional[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        rows = ws.tables["search_meta"]
+        if not rows:
+            return None
+        r = rows[0]
+        return {
+            "query": r.get("query", ""),
+            "location": r.get("location", ""),
+            "total_count": r.get("total_count", 0),
+            "sources": json.loads(r.get("sources_json") or "[]"),
+            "updated_at": r.get("updated_at", ""),
+        }
 
 
-def get_pending_jobs_count():
-    """Count newly discovered jobs found in background auto-search waiting for user refresh."""
-    with session() as c:
-        row = c.execute("SELECT count(*) FROM pending_search_jobs").fetchone()
-    return row[0] if row else 0
+def get_pending_jobs_count() -> int:
+    ws = _ws()
+    with ws.lock:
+        return len(ws.tables["pending_search_jobs"])
 
 
-def get_pending_jobs():
-    """Get all staged pending jobs."""
-    with session() as c:
-        rows = c.execute("SELECT job_json FROM pending_search_jobs ORDER BY opportunity_score DESC, score DESC").fetchall()
-    return [json.loads(r["job_json"]) for r in rows]
+def get_pending_jobs() -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        rows = sorted(
+            ws.tables["pending_search_jobs"],
+            key=lambda r: (r.get("opportunity_score") or 0, r.get("score") or 0),
+            reverse=True,
+        )
+        return [json.loads(r.get("job_json") or "{}") for r in rows]
 
 
-def store_pending_jobs(jobs, query=""):
-    """Store newly discovered jobs from background search into pending_search_jobs staging table."""
+def store_pending_jobs(jobs: list[dict[str, Any]], query: str = "") -> int:
     from . import dedup
     now = now_iso()
     added_count = 0
-    with session() as c:
+    ws = _ws()
+    with ws.lock:
+        s_rows = ws.tables["search_jobs"]
+        p_rows = ws.tables["pending_search_jobs"]
+        s_keys = {r.get("job_key") for r in s_rows}
+        s_ct = {(r.get("company", "").lower().strip(), r.get("title", "").lower().strip()) for r in s_rows}
+        p_keys = {r.get("job_key") for r in p_rows}
+
         for j in jobs:
             clean_job_dict(j)
             canon_key = dedup.job_key(j) if hasattr(dedup, "job_key") else ""
@@ -1741,21 +1143,12 @@ def store_pending_jobs(jobs, query=""):
             if not key:
                 continue
             j["job_key"] = key
-
-            # Ignore if already in active search_jobs (by exact key, canonical key, or normalized company/title)
-            if c.execute("SELECT 1 FROM search_jobs WHERE job_key=? OR job_key=?", (key, canon_key or key)).fetchone():
+            if key in s_keys or (canon_key and canon_key in s_keys):
                 continue
             if j.get("company") and j.get("title"):
-                norm_co = dedup.normalize_company(j.get("company"))
-                norm_ti = dedup._title_key(j.get("title"))
-                if norm_co and norm_ti:
-                    # Check exact company/title in search_jobs
-                    if c.execute("SELECT 1 FROM search_jobs WHERE LOWER(company)=? AND LOWER(title)=?",
-                                 (j.get("company", "").lower().strip(), j.get("title", "").lower().strip())).fetchone():
-                        continue
-
-            # Ignore if already staged in pending_search_jobs
-            if c.execute("SELECT 1 FROM pending_search_jobs WHERE job_key=? OR job_key=?", (key, canon_key or key)).fetchone():
+                if (j["company"].lower().strip(), j["title"].lower().strip()) in s_ct:
+                    continue
+            if key in p_keys or (canon_key and canon_key in p_keys):
                 continue
 
             c_meta = classify_job(j)
@@ -1764,101 +1157,94 @@ def store_pending_jobs(jobs, query=""):
             j["job_type"] = c_meta["job_type"]
             j["country"] = c_meta["country"]
             j["work_mode"] = c_meta["work_mode"]
-            c.execute("""
-                INSERT OR REPLACE INTO pending_search_jobs
-                (job_key, query, title, company, location, work_mode, category, job_type, seniority, country,
-                 min_salary, max_salary, score, opportunity_score, is_famous, is_startup, industry, h1b,
-                 source_kind, source_names, posted_at, job_json, discovered_at, skills_text,
-                 best_profile_id, best_profile_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                key, query, clean_text(j.get("title", "")), clean_text(j.get("company", "")), clean_text(j.get("location", "")),
-                c_meta["work_mode"], c_meta["category"], c_meta["job_type"], c_meta["seniority"], c_meta["country"],
-                c_meta["min_salary"], c_meta["max_salary"], j.get("score", 0), j.get("opportunity_score", 0),
-                c_meta["is_famous"], c_meta["is_startup"], c_meta["industry"], c_meta["h1b"],
-                j.get("source_kind", ""), ",".join(j.get("source_names", [])),
-                j.get("posted_at", ""), json.dumps(j), now, c_meta.get("skills_text", ""),
-                j.get("best_profile_id", ""), j.get("best_profile_name", "")
-            ))
+            p_rows.append(ws._normalize_row("pending_search_jobs", {
+                "job_key": key,
+                "query": query,
+                "title": clean_text(j.get("title", "")),
+                "company": clean_text(j.get("company", "")),
+                "location": clean_text(j.get("location", "")),
+                "work_mode": c_meta["work_mode"],
+                "category": c_meta["category"],
+                "job_type": c_meta["job_type"],
+                "seniority": c_meta["seniority"],
+                "country": c_meta["country"],
+                "min_salary": c_meta["min_salary"],
+                "max_salary": c_meta["max_salary"],
+                "score": j.get("score", 0),
+                "opportunity_score": j.get("opportunity_score", 0),
+                "is_famous": c_meta["is_famous"],
+                "is_startup": c_meta["is_startup"],
+                "industry": c_meta["industry"],
+                "h1b": c_meta["h1b"],
+                "source_kind": j.get("source_kind", ""),
+                "source_names": ",".join(j.get("source_names", [])),
+                "posted_at": j.get("posted_at", ""),
+                "job_json": json.dumps(j),
+                "discovered_at": now,
+                "skills_text": c_meta.get("skills_text", ""),
+                "best_profile_id": j.get("best_profile_id", ""),
+                "best_profile_name": j.get("best_profile_name", ""),
+            }))
+            p_keys.add(key)
             added_count += 1
+        if added_count:
+            ws.flush_cache()
     return added_count
 
 
+# ------------------------------------------------------------------ Auto Search, Session, View Filters
 
-
-def get_auto_search_settings():
-    """Retrieve background auto-search configuration."""
-    with session() as c:
-        row_enabled = c.execute("SELECT value FROM settings WHERE key='bg_search_enabled'").fetchone()
-        row_interval = c.execute("SELECT value FROM settings WHERE key='bg_search_interval_hours'").fetchone()
-        row_last = c.execute("SELECT value FROM settings WHERE key='bg_search_last_run'").fetchone()
-        row_status = c.execute("SELECT value FROM settings WHERE key='bg_search_status'").fetchone()
-
-    enabled = (row_enabled["value"] if row_enabled else "1") == "1"
+def get_auto_search_settings() -> dict[str, Any]:
+    enabled = get_setting("bg_search_enabled", "1") == "1"
     try:
-        interval_hours = float(row_interval["value"] if row_interval else "5.0")
+        interval_hours = float(get_setting("bg_search_interval_hours", "5.0"))
     except ValueError:
         interval_hours = 5.0
-    last_run = row_last["value"] if row_last else None
-    status = row_status["value"] if row_status else "idle"
-    pending_count = get_pending_jobs_count()
-
-    # Calculate next scheduled run
+    last_run = get_setting("bg_search_last_run", "") or None
+    status = get_setting("bg_search_status", "idle")
     next_run = None
     if enabled and interval_hours > 0:
         if last_run:
             try:
                 last_dt = datetime.datetime.fromisoformat(last_run.replace("Z", "+00:00"))
-                next_dt = last_dt + datetime.timedelta(hours=interval_hours)
-                next_run = next_dt.isoformat()
+                next_run = (last_dt + datetime.timedelta(hours=interval_hours)).isoformat()
             except Exception:
                 pass
         else:
             next_run = "Immediate"
-
     return {
         "enabled": enabled,
         "interval_hours": interval_hours,
         "last_run": last_run,
         "next_run": next_run,
         "status": status,
-        "pending_count": pending_count
+        "pending_count": get_pending_jobs_count(),
     }
 
 
-def set_auto_search_settings(enabled=True, interval_hours=5.0):
-    """Save background auto-search configuration."""
-    with session() as c:
-        c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('bg_search_enabled', ?)", ("1" if enabled else "0",))
-        c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('bg_search_interval_hours', ?)", (str(interval_hours),))
+def set_auto_search_settings(enabled: bool = True, interval_hours: float = 5.0) -> dict[str, Any]:
+    set_setting("bg_search_enabled", "1" if enabled else "0")
+    set_setting("bg_search_interval_hours", str(interval_hours))
     return get_auto_search_settings()
 
 
-# =====================================================================
-# Phase B2 Database Helpers
-# =====================================================================
-
-def get_session_state():
-    """Retrieve current conversation/session state."""
-    with session() as c:
-        row = c.execute("SELECT current_state, last_tool, updated_at FROM session_state WHERE id=1").fetchone()
-        if row:
-            return dict(row)
+def get_session_state() -> dict[str, Any]:
+    ws = _ws()
+    with ws.lock:
+        rows = ws.tables["session_state"]
+        if rows:
+            return dict(rows[0])
         return {"current_state": "idle", "last_tool": "", "updated_at": now_iso()}
 
 
-def set_session_state(current_state, last_tool="", session_id="default"):
-    """Update current conversation/session state."""
+def set_session_state(current_state: str, last_tool: str = "", session_id: str = "default") -> dict[str, Any]:
     iso = now_iso()
-    with session() as c:
-        c.execute("""
-            INSERT INTO session_state (id, current_state, last_tool, updated_at)
-            VALUES (1, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                current_state=excluded.current_state,
-                last_tool=CASE WHEN excluded.last_tool != '' THEN excluded.last_tool ELSE session_state.last_tool END,
-                updated_at=excluded.updated_at
-        """, (current_state, last_tool, iso))
+    ws = _ws()
+    with ws.lock:
+        curr = ws.tables["session_state"][0] if ws.tables["session_state"] else {"id": 1, "last_tool": ""}
+        new_last = last_tool if last_tool else curr.get("last_tool", "")
+        ws.tables["session_state"] = [{"id": 1, "current_state": current_state, "last_tool": new_last, "updated_at": iso}]
+        ws.flush_durable()
     return get_session_state()
 
 
@@ -1887,8 +1273,6 @@ DEFAULT_VIEW_FILTERS = {
     "show_unknown_salary": True,
 }
 
-
-_SESSION_VIEW_FILTERS: dict[str, dict[str, Any]] = {}
 _EXTRA_LIST_KEYS = ("confirmed_industries", "company_stages", "markets_served", "languages")
 
 
@@ -1906,290 +1290,256 @@ def _normalize_str_list(val: Any) -> list[str]:
     return []
 
 
-def get_view_filters(session_id="default"):
-    """Retrieve current view filters for a session."""
-    with session() as c:
-        row = c.execute("SELECT * FROM view_filters WHERE session_id=? ORDER BY id DESC LIMIT 1", (session_id,)).fetchone()
-        if not row:
-            res = dict(DEFAULT_VIEW_FILTERS)
-            res["session_id"] = session_id
-            res.update(_SESSION_VIEW_FILTERS.get(session_id, {}))
-            for k in _EXTRA_LIST_KEYS:
-                res[k] = _normalize_str_list(res.get(k))
-            return res
-        d = dict(row)
-        extra_raw = d.pop("extra_filters", None)
-        if isinstance(extra_raw, str) and extra_raw.strip():
-            try:
-                extra_obj = json.loads(extra_raw)
-                if isinstance(extra_obj, dict):
-                    for k, v in extra_obj.items():
-                        d.setdefault(k, v)
-            except Exception:
-                pass
-        for list_col in ("roles", "locations", "visa_countries", "contract_types", "seniority", "company_sizes", "industries", "excluded_companies", "excluded_keywords", *_EXTRA_LIST_KEYS):
-            d[list_col] = _normalize_str_list(d.get(list_col))
-        d["relocation"] = bool(d.get("relocation"))
-        d["visa_need"] = bool(d.get("visa_need"))
-        d["show_unknown_salary"] = bool(d.get("show_unknown_salary"))
-        d.update(_SESSION_VIEW_FILTERS.get(session_id, {}))
+def _deserialize_view_filter_row(row: dict[str, Any]) -> dict[str, Any]:
+    out = dict(row)
+    extra_raw = out.pop("extra_filters", None)
+    if isinstance(extra_raw, str) and extra_raw.strip():
+        try:
+            extra_obj = json.loads(extra_raw)
+            if isinstance(extra_obj, dict):
+                for k, v in extra_obj.items():
+                    out.setdefault(k, v)
+        except Exception:
+            pass
+    for list_col in ("roles", "locations", "visa_countries", "contract_types", "seniority", "company_sizes", "industries", "excluded_companies", "excluded_keywords", *_EXTRA_LIST_KEYS):
+        out[list_col] = _normalize_str_list(out.get(list_col))
+    out["relocation"] = bool(out.get("relocation"))
+    out["visa_need"] = bool(out.get("visa_need"))
+    out["show_unknown_salary"] = bool(out.get("show_unknown_salary", True))
+    return out
+
+
+def get_view_filters(session_id: str = "default") -> dict[str, Any]:
+    ws = _ws()
+    with ws.lock:
+        rows = [r for r in ws.tables["view_filters"] if r.get("session_id") == session_id]
+        row = dict(rows[-1]) if rows else None
+
+    if not row:
+        res = dict(DEFAULT_VIEW_FILTERS)
+        res["session_id"] = session_id
         for k in _EXTRA_LIST_KEYS:
-            d[k] = _normalize_str_list(d.get(k))
-        return d
+            res[k] = _normalize_str_list(res.get(k))
+        return res
+
+    return _deserialize_view_filter_row(row)
 
 
-def save_view_filters(filters, session_id="default"):
-    """Save or update view filters for a session."""
-    merged = _SESSION_VIEW_FILTERS.setdefault(session_id, {})
-    merged.update(filters)
-    d = dict(DEFAULT_VIEW_FILTERS)
-    d.update(merged)
+def save_view_filters(filters: dict[str, Any], session_id: str = "default") -> dict[str, Any]:
+    d = get_view_filters(session_id)
+    d.update(filters)
     d["session_id"] = session_id
     iso_now = now_iso()
 
-    def _ser(v):
+    def _ser(v: Any) -> str:
         if isinstance(v, (list, tuple, set)):
             return json.dumps(list(v))
         return str(v or "")
 
-    extra_payload = json.dumps({k: _normalize_str_list(d.get(k)) for k in _EXTRA_LIST_KEYS})
-
-    with session() as c:
-        existing = c.execute("SELECT id FROM view_filters WHERE session_id=?", (session_id,)).fetchone()
+    extra_dict: dict[str, Any] = {k: _normalize_str_list(d.get(k)) for k in _EXTRA_LIST_KEYS}
+    known_keys = set(DEFAULT_VIEW_FILTERS.keys()) | set(_EXTRA_LIST_KEYS) | {"id", "session_id", "updated_at", "extra_filters"}
+    for k, v in d.items():
+        if k not in known_keys and v is not None:
+            extra_dict[k] = v
+    extra_payload = json.dumps(extra_dict)
+    rec_vals = {
+        "session_id": session_id,
+        "job_style": d.get("job_style", ""),
+        "roles": _ser(d.get("roles", [])),
+        "work_mode": d.get("work_mode", "any"),
+        "locations": _ser(d.get("locations", [])),
+        "relocation": 1 if d.get("relocation") else 0,
+        "visa_need": 1 if d.get("visa_need") else 0,
+        "visa_countries": _ser(d.get("visa_countries", [])),
+        "min_salary": float(d.get("min_salary") or 0),
+        "currency": d.get("currency", "USD"),
+        "period": d.get("period", "year"),
+        "contract_types": _ser(d.get("contract_types", [])),
+        "seniority": _ser(d.get("seniority", [])),
+        "company_sizes": _ser(d.get("company_sizes", [])),
+        "industries": _ser(d.get("industries", [])),
+        "excluded_companies": _ser(d.get("excluded_companies", [])),
+        "excluded_keywords": _ser(d.get("excluded_keywords", [])),
+        "posting_age": int(d.get("posting_age") or 30),
+        "show_unknown_salary": 1 if d.get("show_unknown_salary", True) else 0,
+        "extra_filters": extra_payload,
+        "updated_at": iso_now,
+    }
+    ws = _ws()
+    with ws.lock:
+        tbl = ws.tables["view_filters"]
+        existing = next((r for r in tbl if r.get("session_id") == session_id), None)
         if existing:
-            c.execute("""
-                UPDATE view_filters SET
-                    job_style=?, roles=?, work_mode=?, locations=?, relocation=?,
-                    visa_need=?, visa_countries=?, min_salary=?, currency=?, period=?,
-                    contract_types=?, seniority=?, company_sizes=?, industries=?,
-                    excluded_companies=?, excluded_keywords=?, posting_age=?,
-                    show_unknown_salary=?, extra_filters=?, updated_at=?
-                WHERE id=?
-            """, (
-                d.get("job_style", ""),
-                _ser(d.get("roles", [])),
-                d.get("work_mode", "any"),
-                _ser(d.get("locations", [])),
-                1 if d.get("relocation") else 0,
-                1 if d.get("visa_need") else 0,
-                _ser(d.get("visa_countries", [])),
-                float(d.get("min_salary") or 0),
-                d.get("currency", "USD"),
-                d.get("period", "year"),
-                _ser(d.get("contract_types", [])),
-                _ser(d.get("seniority", [])),
-                _ser(d.get("company_sizes", [])),
-                _ser(d.get("industries", [])),
-                _ser(d.get("excluded_companies", [])),
-                _ser(d.get("excluded_keywords", [])),
-                int(d.get("posting_age") or 30),
-                1 if d.get("show_unknown_salary", True) else 0,
-                extra_payload,
-                iso_now,
-                existing["id"],
-            ))
+            existing.update(rec_vals)
         else:
-            c.execute("""
-                INSERT INTO view_filters (
-                    session_id, job_style, roles, work_mode, locations, relocation,
-                    visa_need, visa_countries, min_salary, currency, period,
-                    contract_types, seniority, company_sizes, industries,
-                    excluded_companies, excluded_keywords, posting_age,
-                    show_unknown_salary, extra_filters, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                session_id,
-                d.get("job_style", ""),
-                _ser(d.get("roles", [])),
-                d.get("work_mode", "any"),
-                _ser(d.get("locations", [])),
-                1 if d.get("relocation") else 0,
-                1 if d.get("visa_need") else 0,
-                _ser(d.get("visa_countries", [])),
-                float(d.get("min_salary") or 0),
-                d.get("currency", "USD"),
-                d.get("period", "year"),
-                _ser(d.get("contract_types", [])),
-                _ser(d.get("seniority", [])),
-                _ser(d.get("company_sizes", [])),
-                _ser(d.get("industries", [])),
-                _ser(d.get("excluded_companies", [])),
-                _ser(d.get("excluded_keywords", [])),
-                int(d.get("posting_age") or 30),
-                1 if d.get("show_unknown_salary", True) else 0,
-                extra_payload,
-                iso_now,
-            ))
+            rec_vals["id"] = ws.next_id("view_filters")
+            tbl.append(ws._normalize_row("view_filters", rec_vals))
+        ws.flush_durable()
     return get_view_filters(session_id)
 
 
-def get_radar_state():
-    """Retrieve LinkedIn Radar state singleton."""
-    with session() as c:
-        row = c.execute("SELECT * FROM radar_state WHERE id=1").fetchone()
-        if row:
-            return dict(row)
-        return {
-            "id": 1,
-            "last_poll_at": None,
-            "next_poll_at": None,
-            "interval_seconds": 600,
-            "failure_count": 0,
-            "status": "idle",
-            "last_error": ""
-        }
+# ------------------------------------------------------------------ Radar & Refresh
+
+def get_radar_state() -> dict[str, Any]:
+    ws = _ws()
+    with ws.lock:
+        rows = ws.tables["radar_state"]
+        if rows:
+            return dict(rows[0])
+        return {"id": 1, "last_poll_at": None, "next_poll_at": None, "interval_seconds": 600, "failure_count": 0, "status": "idle", "last_error": ""}
 
 
-def update_radar_state(**kwargs):
-    """Update fields in radar_state."""
+def update_radar_state(**kwargs: Any) -> dict[str, Any]:
     valid_cols = {"last_poll_at", "next_poll_at", "interval_seconds", "failure_count", "status", "last_error"}
     updates = {k: v for k, v in kwargs.items() if k in valid_cols}
     if not updates:
         return get_radar_state()
-    set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
-    vals = list(updates.values())
-    with session() as c:
-        c.execute(f"UPDATE radar_state SET {set_clause} WHERE id=1", vals)
+    ws = _ws()
+    with ws.lock:
+        if not ws.tables["radar_state"]:
+            ws._seed_defaults()
+        ws.tables["radar_state"][0].update(updates)
+        ws.flush_durable()
     return get_radar_state()
 
 
-def get_refresh_states():
-    """Retrieve refresh state for all non-Radar sources."""
-    init_db()
-    with session() as c:
-        rows = c.execute("SELECT * FROM refresh_state ORDER BY source ASC").fetchall()
-        return [dict(r) for r in rows]
+def get_refresh_states() -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        return sorted([dict(r) for r in ws.tables["refresh_state"]], key=lambda r: r.get("source") or "")
 
 
-def get_refresh_state(source):
-    """Retrieve refresh state for a specific source."""
-    init_db()
-    with session() as c:
-        row = c.execute("SELECT * FROM refresh_state WHERE source=?", (source,)).fetchone()
+def get_refresh_state(source: str) -> dict[str, Any]:
+    ws = _ws()
+    with ws.lock:
+        row = next((r for r in ws.tables["refresh_state"] if r.get("source") == source), None)
         if row:
             return dict(row)
-        return {
-            "source": source,
-            "last_run_at": None,
-            "ttl_seconds": 43200,
-            "last_new_ratio": 0.0,
-            "last_total": 0,
-            "last_new": 0
-        }
+    return {"source": source, "last_run_at": None, "ttl_seconds": 43200, "last_new_ratio": 0.0, "last_total": 0, "last_new": 0}
 
 
-def update_refresh_state(source, **kwargs):
-    """Update or insert refresh state for a source."""
+def update_refresh_state(source: str, **kwargs: Any) -> dict[str, Any]:
     curr = get_refresh_state(source)
     curr.update(kwargs)
-    with session() as c:
-        c.execute("""
-            INSERT INTO refresh_state (source, last_run_at, ttl_seconds, last_new_ratio, last_total, last_new)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(source) DO UPDATE SET
-                last_run_at=excluded.last_run_at,
-                ttl_seconds=excluded.ttl_seconds,
-                last_new_ratio=excluded.last_new_ratio,
-                last_total=excluded.last_total,
-                last_new=excluded.last_new
-        """, (
-            source,
-            curr.get("last_run_at"),
-            int(curr.get("ttl_seconds") or 43200),
-            float(curr.get("last_new_ratio") or 0.0),
-            int(curr.get("last_total") or 0),
-            int(curr.get("last_new") or 0),
-        ))
+    rec = {
+        "source": source,
+        "last_run_at": curr.get("last_run_at"),
+        "ttl_seconds": int(curr.get("ttl_seconds") or 43200),
+        "last_new_ratio": float(curr.get("last_new_ratio") or 0.0),
+        "last_total": int(curr.get("last_total") or 0),
+        "last_new": int(curr.get("last_new") or 0),
+    }
+    ws = _ws()
+    with ws.lock:
+        tbl = ws.tables["refresh_state"]
+        existing = next((r for r in tbl if r.get("source") == source), None)
+        if existing:
+            existing.update(rec)
+        else:
+            tbl.append(rec)
+        ws.flush_durable()
     return get_refresh_state(source)
 
 
-def add_dismissal(job_id, reason):
-    """Record a user dismissal for a job."""
-    iso_now = now_iso()
-    with session() as c:
-        c.execute("INSERT INTO dismissals (job_id, reason, created_at) VALUES (?, ?, ?)", (str(job_id), str(reason), iso_now))
-        c.execute("UPDATE jobs SET seen_by_user=1 WHERE id=? OR job_key=?", (str(job_id), str(job_id)))
+# ------------------------------------------------------------------ Dismissals, Tombstones, Deletions
+
+def add_dismissal(job_id: str, reason: str) -> None:
+    ws = _ws()
+    with ws.lock:
+        ws.tables["dismissals"].append({
+            "id": ws.next_id("dismissals"),
+            "job_id": str(job_id),
+            "reason": str(reason),
+            "created_at": now_iso(),
+        })
+        for r in ws.tables["jobs"]:
+            if r.get("id") == str(job_id) or r.get("job_key") == str(job_id):
+                r["seen_by_user"] = 1
+        ws.flush_durable()
+        ws.flush_cache()
 
 
-def get_dismissals(job_id=None):
-    """Get dismissals list."""
-    with session() as c:
+def get_dismissals(job_id: str | None = None) -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        rows = ws.tables["dismissals"]
         if job_id:
-            rows = c.execute("SELECT * FROM dismissals WHERE job_id=? ORDER BY id DESC", (str(job_id),)).fetchall()
-        else:
-            rows = c.execute("SELECT * FROM dismissals ORDER BY id DESC").fetchall()
-        return [dict(r) for r in rows]
+            rows = [r for r in rows if r.get("job_id") == str(job_id)]
+        return [dict(r) for r in sorted(rows, key=lambda x: x.get("id") or 0, reverse=True)]
 
 
-def count_dismissals():
-    """Count total dismissals."""
-    with session() as c:
-        row = c.execute("SELECT COUNT(*) as c FROM dismissals").fetchone()
-        return row["c"] if row else 0
+def count_dismissals() -> int:
+    ws = _ws()
+    with ws.lock:
+        return len(ws.tables["dismissals"])
 
 
-def add_tombstone(url_hash, fingerprint, conn=None):
-    """Add a tombstone record for a permanently deleted job."""
-    iso_now = now_iso()
-    if conn is not None:
-        conn.execute("INSERT INTO tombstones (url_hash, fingerprint, deleted_at) VALUES (?, ?, ?)", (url_hash or "", fingerprint or "", iso_now))
-    else:
-        with session() as c:
-            c.execute("INSERT INTO tombstones (url_hash, fingerprint, deleted_at) VALUES (?, ?, ?)", (url_hash or "", fingerprint or "", iso_now))
+def add_tombstone(url_hash: str, fingerprint: str, conn: Any = None) -> None:
+    ws = _ws()
+    with ws.lock:
+        ws.tables["tombstones"].append({
+            "id": ws.next_id("tombstones"),
+            "url_hash": url_hash or "",
+            "fingerprint": fingerprint or "",
+            "deleted_at": now_iso(),
+        })
+        if conn is None:
+            ws.flush_durable()
 
 
-def is_tombstoned(url_hash="", fingerprint=""):
-    """Check if a job has been deleted and tombstoned."""
+def is_tombstoned(url_hash: str = "", fingerprint: str = "") -> bool:
     if not url_hash and not fingerprint:
         return False
-    with session() as c:
-        if url_hash and fingerprint:
-            row = c.execute("SELECT 1 FROM tombstones WHERE url_hash=? OR fingerprint=? LIMIT 1", (url_hash, fingerprint)).fetchone()
-        elif url_hash:
-            row = c.execute("SELECT 1 FROM tombstones WHERE url_hash=? LIMIT 1", (url_hash,)).fetchone()
-        else:
-            row = c.execute("SELECT 1 FROM tombstones WHERE fingerprint=? LIMIT 1", (fingerprint,)).fetchone()
-        return bool(row)
+    ws = _ws()
+    with ws.lock:
+        for r in ws.tables["tombstones"]:
+            if url_hash and r.get("url_hash") == url_hash:
+                return True
+            if fingerprint and r.get("fingerprint") == fingerprint:
+                return True
+    return False
 
 
-def log_deletion(count):
-    """Log a batch cleanup deletion count."""
+def log_deletion(count: int) -> None:
     if count <= 0:
-        return None
-    iso_now = now_iso()
-    with session() as c:
-        c.execute("INSERT INTO deletions_log (count, deleted_at, acknowledged) VALUES (?, ?, 0)", (int(count), iso_now))
+        return
+    ws = _ws()
+    with ws.lock:
+        ws.tables["deletions_log"].append({
+            "id": ws.next_id("deletions_log"),
+            "count": int(count),
+            "deleted_at": now_iso(),
+            "acknowledged": 0,
+        })
+        ws.flush_durable()
 
 
-def get_last_deletion():
-    """Get most recent deletions log entry."""
-    with session() as c:
-        row = c.execute("SELECT * FROM deletions_log ORDER BY id DESC LIMIT 1").fetchone()
-        return dict(row) if row else None
+def get_last_deletion() -> Optional[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        rows = ws.tables["deletions_log"]
+        return dict(rows[-1]) if rows else None
 
 
-def ack_deletions():
-    """Acknowledge all pending deletion notifications."""
-    with session() as c:
-        c.execute("UPDATE deletions_log SET acknowledged=1 WHERE acknowledged=0")
+def ack_deletions() -> None:
+    ws = _ws()
+    with ws.lock:
+        for r in ws.tables["deletions_log"]:
+            if not r.get("acknowledged"):
+                r["acknowledged"] = 1
+        ws.flush_durable()
 
 
-def get_cleanup_status():
-    """Get current cleanup, warning, and deletion stats."""
+def get_cleanup_status() -> dict[str, Any]:
     grace_hours = int(get_setting("cleanup_grace_hours", "24"))
-    with session() as c:
-        unack = c.execute("SELECT SUM(count) as total FROM deletions_log WHERE acknowledged=0").fetchone()
-        unack_count = unack["total"] if unack and unack["total"] else 0
-
-        warn_count = c.execute("""
-            SELECT COUNT(*) as c FROM jobs 
-            WHERE freshness_state='expired' AND keep_flag=0 AND delete_at IS NOT NULL
-        """).fetchone()
-        warning_count = warn_count["c"] if warn_count else 0
-
-        tombstone_count = c.execute("SELECT COUNT(*) as c FROM tombstones").fetchone()
-        t_count = tombstone_count["c"] if tombstone_count else 0
-
+    ws = _ws()
+    with ws.lock:
+        unack_count = sum(int(r.get("count") or 0) for r in ws.tables["deletions_log"] if not r.get("acknowledged"))
+        warning_count = sum(
+            1 for r in ws.tables["jobs"]
+            if r.get("freshness_state") == "expired" and not r.get("keep_flag") and r.get("delete_at") is not None
+        )
+        t_count = len(ws.tables["tombstones"])
     return {
         "grace_hours": grace_hours,
         "warning_count": warning_count,
@@ -2198,15 +1548,12 @@ def get_cleanup_status():
     }
 
 
-def ingest_job(j, conn=None):
-    """
-    Ingest a single job with lifecycle management (dedup, merge, repost, tombstones, freshness).
-    Returns dict: {"status": "inserted"|"merged"|"repost"|"tombstoned", "job_id": str, "is_new": bool}
-    """
+# ------------------------------------------------------------------ Jobs Ingestion & Lifecycle
+
+def _ingest_job_locked(ws: store.WorkspaceStore, j: dict[str, Any]) -> Optional[dict[str, Any]]:
+    from . import dedup
     if not isinstance(j, dict):
         return None
-    from . import dedup
-
     clean_job_dict(j)
     title = clean_text(j.get("title") or "")
     company = clean_text(j.get("company") or "")
@@ -2218,13 +1565,12 @@ def ingest_job(j, conn=None):
     url = clean_text(j.get("url") or j.get("link") or "")
     source_name = j.get("source") or (j.get("source_names", [""])[0] if j.get("source_names") else "Search")
 
-    # Calculate hashes
     url_hash = j.get("url_hash") or dedup.build_url_hash(url, linkedin_id=j.get("linkedin_id", ""))
     fingerprint = j.get("fingerprint") or dedup.build_fingerprint(company, title, location, work_mode)
 
-    # Tombstone check: permanent deleted jobs never return as new
-    if is_tombstoned(url_hash=url_hash, fingerprint=fingerprint):
-        return {"status": "tombstoned", "job_id": None, "is_new": False}
+    for tb in ws.tables["tombstones"]:
+        if (url_hash and tb.get("url_hash") == url_hash) or (fingerprint and tb.get("fingerprint") == fingerprint):
+            return {"status": "tombstoned", "job_id": None, "is_new": False}
 
     iso_now = now_iso()
     c_meta = classify_job(j)
@@ -2245,169 +1591,161 @@ def ingest_job(j, conn=None):
     opp_score = int(j.get("opportunity_score") or score)
     fit_score = int(j.get("fit_score") or score)
 
-    # Freshness state
     posted_at = j.get("posted_at") or ""
     age_days = 0.0
     if posted_at:
         d = parse_date(posted_at)
         if d:
             age_days = max(0.0, (datetime.datetime.now(datetime.timezone.utc) - d).total_seconds() / 86400.0)
+    freshness_state = "expired" if age_days > 60 else ("stale" if age_days >= 30 else "active")
 
-    if age_days > 60:
-        freshness_state = "expired"
-    elif age_days >= 30:
-        freshness_state = "stale"
-    else:
-        freshness_state = "active"
+    jobs_tbl = ws.tables["jobs"]
+    srcs_tbl = ws.tables["job_sources"]
 
-    def _execute(c):
-        existing_job = None
-        # 1. Exact match by url_hash in job_sources
+    existing_job = None
+    if url_hash:
+        src_row = next((s for s in srcs_tbl if s.get("url_hash") == url_hash), None)
+        if src_row:
+            existing_job = next((r for r in jobs_tbl if r.get("id") == src_row.get("job_id")), None)
+    if not existing_job and fingerprint:
+        existing_job = next((r for r in jobs_tbl if r.get("fingerprint") == fingerprint), None)
+
+    if existing_job:
+        job_id = existing_job["id"]
+        existing_job["repost_count"] = int(existing_job.get("repost_count") or 0) + 1
+        existing_job["last_seen_at"] = iso_now
+        existing_job["is_new"] = 0
+        existing_job["updated_at"] = iso_now
         if url_hash:
-            src_row = c.execute("SELECT job_id FROM job_sources WHERE url_hash=?", (url_hash,)).fetchone()
+            src_row = next((s for s in srcs_tbl if s.get("url_hash") == url_hash), None)
             if src_row:
-                existing_job = c.execute("SELECT * FROM jobs WHERE id=?", (src_row["job_id"],)).fetchone()
+                src_row["last_seen_at"] = iso_now
+            else:
+                srcs_tbl.append(ws._normalize_row("job_sources", {
+                    "id": ws.next_id("job_sources"),
+                    "job_id": job_id, "source": source_name, "url": url,
+                    "url_hash": url_hash, "first_seen_at": iso_now, "last_seen_at": iso_now,
+                }))
+        return {"status": "merged", "job_id": job_id, "is_new": False}
 
-        # 2. Exact match by fingerprint in jobs
-        if not existing_job and fingerprint:
-            existing_job = c.execute("SELECT * FROM jobs WHERE fingerprint=?", (fingerprint,)).fetchone()
-
-        if existing_job:
-            job_id = existing_job["id"]
-            new_repost_count = (existing_job["repost_count"] or 0) + 1
-            if url_hash:
-                c.execute("""
-                    INSERT INTO job_sources (job_id, source, url, url_hash, first_seen_at, last_seen_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(url_hash) DO UPDATE SET
-                        last_seen_at=excluded.last_seen_at
-                """, (job_id, source_name, url, url_hash, iso_now, iso_now))
-
-            c.execute("""
-                UPDATE jobs SET
-                    last_seen_at=?, repost_count=?, is_new=0, updated_at=?
-                WHERE id=?
-            """, (iso_now, new_repost_count, iso_now, job_id))
-
-            return {"status": "merged", "job_id": job_id, "is_new": False}
-
-        # 3. Close match (80-90% title similarity at same company)
-        possible_dup = 0
-        same_co_jobs = c.execute("SELECT id, title, company FROM jobs WHERE LOWER(company) LIKE ?", (f"%{company.lower()[:8]}%",)).fetchall()
-        for cand in same_co_jobs:
-            sim = dedup.title_similarity(cand["title"], title)
+    possible_dup = 0
+    co_prefix = company.lower()[:8]
+    for cand in jobs_tbl:
+        if co_prefix in (cand.get("company") or "").lower():
+            sim = dedup.title_similarity(cand.get("title") or "", title)
             if 0.80 <= sim < 1.0:
                 possible_dup = 1
                 break
 
-        # 4. Insert new job
-        new_id = str(j.get("id") or uuid.uuid4())
-        if c.execute("SELECT 1 FROM jobs WHERE id=?", (new_id,)).fetchone():
-            new_id = str(uuid.uuid4())
-        job_key = j.get("job_key") or new_id or (dedup.job_key(j) if hasattr(dedup, "job_key") else new_id[:16])
-        if c.execute("SELECT 1 FROM jobs WHERE job_key=?", (job_key,)).fetchone():
-            job_key = f"{job_key}_{new_id[:8]}"
-            while c.execute("SELECT 1 FROM jobs WHERE job_key=?", (job_key,)).fetchone():
-                job_key = f"{job_key}_{str(uuid.uuid4())[:6]}"
-        j_created = j.get("created_at") or j.get("date_posted") or iso_now
-        j_first_seen = j.get("first_seen_at") or j_created
-        j_last_seen = j.get("last_seen_at") or iso_now
-        c.execute("""
-            INSERT INTO jobs (
-                id, job_key, title, company, location, work_mode, source, url, url_hash,
-                fingerprint, description, score, fit_score, opportunity_score, found_at,
-                first_seen_at, last_seen_at, is_new, seen_by_user, repost_count,
-                possible_duplicate, freshness_state, delete_at, keep_flag, closed_checked_at,
-                job_json, created_at, updated_at, category, job_type, seniority, country,
-                min_salary, max_salary, company_size, industry, visa_sponsor, skills_text
-            ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?,
-                ?, ?, 1, 0, 0,
-                ?, ?, NULL, 0, NULL,
-                ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?
-            )
-        """, (
-            new_id, job_key, title, company, location, work_mode, source_name, url, url_hash,
-            fingerprint, clean_text(j.get("description") or ""), score, fit_score, opp_score, iso_now,
-            j_first_seen, j_last_seen,
-            possible_dup, freshness_state,
-            json.dumps(j), j_created, iso_now, category, job_type, seniority, country,
-            min_sal, max_sal, company_size, industry, visa_sponsor, skills_text
-        ))
+    existing_ids = {r.get("id") for r in jobs_tbl}
+    existing_keys = {r.get("job_key") for r in jobs_tbl}
+    new_id = str(j.get("id") or uuid.uuid4())
+    if new_id in existing_ids:
+        new_id = str(uuid.uuid4())
+    job_key = j.get("job_key") or new_id or (dedup.job_key(j) if hasattr(dedup, "job_key") else new_id[:16])
+    if job_key in existing_keys:
+        job_key = f"{job_key}_{new_id[:8]}"
+        while job_key in existing_keys:
+            job_key = f"{job_key}_{uuid.uuid4().hex[:6]}"
 
-        if url_hash:
-            c.execute("""
-                INSERT OR IGNORE INTO job_sources (job_id, source, url, url_hash, first_seen_at, last_seen_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (new_id, source_name, url, url_hash, iso_now, iso_now))
+    j_created = j.get("created_at") or j.get("date_posted") or iso_now
+    j_first_seen = j.get("first_seen_at") or j_created
+    j_last_seen = j.get("last_seen_at") or iso_now
 
-        return {"status": "inserted", "job_id": new_id, "is_new": True}
-
-    if conn is not None:
-        return _execute(conn)
-    with session() as c:
-        return _execute(c)
+    jobs_tbl.append(ws._normalize_row("jobs", {
+        "id": new_id, "job_key": job_key, "title": title, "company": company,
+        "location": location, "work_mode": work_mode, "source": source_name,
+        "url": url, "url_hash": url_hash, "fingerprint": fingerprint,
+        "description": clean_text(j.get("description") or ""),
+        "score": score, "fit_score": fit_score, "opportunity_score": opp_score,
+        "found_at": iso_now, "first_seen_at": j_first_seen, "last_seen_at": j_last_seen,
+        "is_new": 1, "seen_by_user": 0, "repost_count": 0,
+        "possible_duplicate": possible_dup, "freshness_state": freshness_state,
+        "delete_at": None, "keep_flag": 0, "closed_checked_at": None,
+        "job_json": json.dumps(j), "created_at": j_created, "updated_at": iso_now,
+        "category": category, "job_type": job_type, "seniority": seniority,
+        "country": country, "min_salary": min_sal, "max_salary": max_sal,
+        "company_size": company_size, "industry": industry,
+        "visa_sponsor": visa_sponsor, "skills_text": skills_text,
+    }))
+    if url_hash and not any(s.get("url_hash") == url_hash for s in srcs_tbl):
+        srcs_tbl.append(ws._normalize_row("job_sources", {
+            "id": ws.next_id("job_sources"),
+            "job_id": new_id, "source": source_name, "url": url,
+            "url_hash": url_hash, "first_seen_at": iso_now, "last_seen_at": iso_now,
+        }))
+    return {"status": "inserted", "job_id": new_id, "is_new": True}
 
 
-def store_jobs(jobs, query="", location=""):
-    """Store raw jobs into jobs table and search_jobs cache with lifecycle deduplication."""
-    inserted = 0
-    merged = 0
-    tombstoned = 0
-    with session() as c:
+def ingest_job(j: dict[str, Any], conn: Any = None) -> Optional[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        res = _ingest_job_locked(ws, j)
+        if conn is None and res is not None:
+            ws.flush_cache()
+        return res
+
+
+def store_jobs(jobs: list[dict[str, Any]], query: str = "", location: str = "") -> dict[str, int]:
+    inserted = merged = tombstoned = 0
+    now = now_iso()
+    ws = _ws()
+    with ws.lock:
         for j in jobs:
-            res = ingest_job(j, conn=c)
+            res = _ingest_job_locked(ws, j)
             if not res:
                 continue
-            if res["status"] == "inserted":
+            st = res["status"]
+            if st == "inserted":
                 inserted += 1
-            elif res["status"] == "merged":
+            elif st == "merged":
                 merged += 1
-            elif res["status"] == "tombstoned":
+            elif st == "tombstoned":
                 tombstoned += 1
-        replace_search_jobs(jobs, query=query, location=location, clear_existing=False, conn=c)
+        for j in jobs:
+            _upsert_search_job_locked(ws, j, query, now)
+        total_now = sum(1 for r in ws.tables["search_jobs"] if r.get("is_active", 1) == 1)
+        ws.tables["search_meta"] = [ws._normalize_row("search_meta", {
+            "id": 1, "query": query, "location": location,
+            "total_count": total_now, "sources_json": "[]", "updated_at": now,
+        })]
+        ws.flush_cache()
     return {"inserted": inserted, "merged": merged, "tombstoned": tombstoned, "total": len(jobs)}
 
 
-def save_job(job: dict) -> str:
-    """Convenience alias to store a single job in DB."""
-    init_db()
-    store_jobs([job])
-    return str(job.get("id") or "")
+def save_job(job: dict[str, Any]) -> str:
+    res = ingest_job(job)
+    return res["job_id"] if res and res.get("job_id") else ""
 
 
-def get_user_preferences() -> dict:
-    from . import preferences
-    return preferences.load()
+def get_user_preferences() -> dict[str, Any]:
+    return get_view_filters("default")
 
 
-def update_application_status(job_id: str, status: str) -> None:
-    """Update application status or create application record if missing."""
-    with session() as c:
-        row = c.execute("SELECT id FROM applications WHERE id=? OR job_id=?", (job_id, job_id)).fetchone()
+def update_application_status(job_id: str, status: str) -> bool:
+    ws = _ws()
+    with ws.lock:
         now = now_iso()
-        if row:
-            c.execute("UPDATE applications SET status=?, updated_at=? WHERE id=?", (status, now, row["id"]))
-        else:
-            job_row = c.execute("SELECT company, title FROM jobs WHERE id=? OR job_key=?", (job_id, job_id)).fetchone()
-            comp = (job_row["company"] if job_row and job_row["company"] else "") or "Saved Company"
-            title = (job_row["title"] if job_row and job_row["title"] else "") or "Saved Role"
-            c.execute(
-                "INSERT INTO applications(id, job_id, company, title, status, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
-                (f"app_{job_id}", job_id, comp, title, status, now, now),
-            )
-        if status in ("saved", "applied"):
-            c.execute("UPDATE jobs SET keep_flag=1, delete_at=NULL WHERE id=? OR job_key=?", (job_id, job_id))
+        updated = False
+        for a in ws.tables["applications"]:
+            if a.get("id") == job_id or a.get("job_id") == job_id:
+                a["status"] = status
+                a["updated_at"] = now
+                updated = True
+                if status == "applied":
+                    jid = a.get("job_id") or job_id
+                    for j in ws.tables["jobs"]:
+                        if j.get("id") == jid or j.get("job_key") == jid:
+                            j["keep_flag"] = 1
+                            j["delete_at"] = None
+        if updated:
+            ws.flush_durable()
+            ws.flush_cache()
+        return updated
 
 
-def query_jobs(view_filters=None, session_id="default", profile=None):
-    """
-    Applies hard filters in SQL and soft preferences in ranking score.
-    Never deletes rows. Excludes expired jobs and returns them in closing_soon.
-    Returns count removed by each filter and evaluates the [10, 300] usable gate.
-    """
+def query_jobs(view_filters: dict[str, Any] | None = None, session_id: str = "default", profile: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Filter active jobs in Python, rank with soft preferences + freshness, and evaluate usable range."""
     filters = get_view_filters(session_id)
     if view_filters and isinstance(view_filters, dict):
         filters.update(view_filters)
@@ -2418,67 +1756,52 @@ def query_jobs(view_filters=None, session_id="default", profile=None):
         except Exception:
             profile = {}
 
-    # 1. Candidate jobs from DB
-    with session() as c:
-        rows = c.execute("SELECT * FROM jobs ORDER BY opportunity_score DESC, score DESC").fetchall()
-        if not rows:
-            s_rows = c.execute("SELECT * FROM search_jobs").fetchall()
-            for sr in s_rows:
+    ws = _ws()
+    with ws.lock:
+        if not ws.tables["jobs"] and ws.tables["search_jobs"]:
+            for sr in list(ws.tables["search_jobs"]):
                 try:
-                    jd = json.loads(sr["job_json"])
-                    ingest_job(jd, conn=c)
+                    _ingest_job_locked(ws, json.loads(sr.get("job_json") or "{}"))
                 except Exception:
                     pass
-            rows = c.execute("SELECT * FROM jobs ORDER BY opportunity_score DESC, score DESC").fetchall()
-
-        src_rows = c.execute("SELECT job_id, source FROM job_sources WHERE source IS NOT NULL").fetchall()
-        sources_map = {}
-        for sr in src_rows:
-            jid = sr["job_id"]
-            sname = sr["source"]
-            if jid not in sources_map:
-                sources_map[jid] = []
-            if sname and sname not in sources_map[jid]:
-                sources_map[jid].append(sname)
+            ws.flush_cache()
+        rows = sorted(
+            [dict(r) for r in ws.tables["jobs"]],
+            key=lambda r: (r.get("opportunity_score") or 0, r.get("score") or 0),
+            reverse=True,
+        )
+        sources_map: dict[str, list[str]] = {}
+        for sr in ws.tables["job_sources"]:
+            jid, sname = sr.get("job_id"), sr.get("source")
+            if jid and sname:
+                lst = sources_map.setdefault(jid, [])
+                if sname not in lst:
+                    lst.append(sname)
 
     candidate_jobs = []
     closing_soon = []
-
     for r in rows:
-        j_dict = json.loads(r["job_json"])
+        j_dict = json.loads(r.get("job_json") or "{}")
         j_dict["id"] = r["id"]
-        j_sources = sources_map.get(r["id"]) or ([r["source"]] if ("source" in r.keys() and r["source"]) else [])
+        j_sources = sources_map.get(r["id"]) or ([r["source"]] if r.get("source") else [])
         if not j_sources and j_dict.get("source"):
             j_sources = [j_dict["source"]]
         j_dict["sources"] = j_sources
-        j_dict["job_key"] = r["job_key"]
-        j_dict["title"] = r["title"]
-        j_dict["company"] = r["company"]
-        j_dict["location"] = r["location"]
-        j_dict["work_mode"] = r["work_mode"]
-        j_dict["freshness_state"] = r["freshness_state"]
-        j_dict["delete_at"] = r["delete_at"]
-        j_dict["keep_flag"] = bool(r["keep_flag"])
-        j_dict["is_new"] = bool(r["is_new"])
-        j_dict["repost_count"] = r["repost_count"]
-        j_dict["possible_duplicate"] = bool(r["possible_duplicate"])
-        j_dict["min_salary"] = r["min_salary"]
-        j_dict["max_salary"] = r["max_salary"]
-        j_dict["category"] = r["category"]
-        j_dict["seniority"] = r["seniority"]
-        j_dict["job_type"] = r["job_type"]
-        j_dict["industry"] = r["industry"]
-        j_dict["company_size"] = r["company_size"]
-        j_dict["score"] = r["score"]
-        j_dict["opportunity_score"] = r["opportunity_score"]
+        for col in (
+            "job_key", "title", "company", "location", "work_mode", "freshness_state",
+            "delete_at", "repost_count", "min_salary", "max_salary", "category",
+            "seniority", "job_type", "industry", "company_size", "score", "opportunity_score",
+        ):
+            j_dict[col] = r.get(col)
+        j_dict["keep_flag"] = bool(r.get("keep_flag"))
+        j_dict["is_new"] = bool(r.get("is_new"))
+        j_dict["possible_duplicate"] = bool(r.get("possible_duplicate"))
 
-        is_expired = (r["freshness_state"] == "expired" or (r["delete_at"] is not None and not r["keep_flag"]))
-        if is_expired:
+        if r.get("freshness_state") == "expired" or (r.get("delete_at") is not None and not r.get("keep_flag")):
             closing_soon.append(j_dict)
         else:
             candidate_jobs.append(j_dict)
 
-    # 2. Hard filters
     roles_filter = [r.lower().strip() for r in (filters.get("roles") or []) if r and r.strip()]
     wm_filter = (filters.get("work_mode") or "any").lower().strip()
     locs_filter = [l.lower().strip() for l in (filters.get("locations") or []) if l and l.strip()]
@@ -2547,11 +1870,7 @@ def query_jobs(view_filters=None, session_id="default", profile=None):
             "scale up": ("scale-up", "scaleup", "scale up", "series b", "series c", "growth"),
             "public": ("public", "publicly traded", "nasdaq", "nyse", "enterprise", "fortune 500"),
         }
-        for st in company_stages:
-            terms = aliases.get(st, (st,))
-            if any(t in stage_raw or re.search(rf"\b{re.escape(t)}\b", hay) for t in terms):
-                return True
-        return False
+        return any(any(t in stage_raw or re.search(rf"\b{re.escape(t)}\b", hay) for t in aliases.get(st, (st,))) for st in company_stages)
 
     def _check_market_served(j):
         if not markets_served:
@@ -2565,11 +1884,7 @@ def query_jobs(view_filters=None, session_id="default", profile=None):
             "developer tools": ("developer tools", "devtools", "sdk", "api platform", "for developers"),
             "devtools": ("developer tools", "devtools", "sdk", "api platform", "for developers"),
         }
-        for mk in markets_served:
-            terms = aliases.get(mk, (mk,))
-            if any(re.search(rf"\b{re.escape(t)}\b", hay) for t in terms):
-                return True
-        return False
+        return any(any(re.search(rf"\b{re.escape(t)}\b", hay) for t in aliases.get(mk, (mk,))) for mk in markets_served)
 
     def _check_languages(j):
         if not languages_filter:
@@ -2599,19 +1914,14 @@ def query_jobs(view_filters=None, session_id="default", profile=None):
     def _check_salary(j):
         if min_sal <= 0:
             return True
-        has_sal = (j.get("max_salary", 0) > 0 or j.get("min_salary", 0) > 0)
-        if has_sal:
-            sal_val = j.get("max_salary") or j.get("min_salary") or 0
-            return sal_val >= min_sal
+        if j.get("max_salary", 0) > 0 or j.get("min_salary", 0) > 0:
+            return (j.get("max_salary") or j.get("min_salary") or 0) >= min_sal
         return show_unknown_salary
 
     def _check_contract_type(j):
         if not contract_types:
             return True
-        j_jt = (j.get("job_type") or "").lower()
-        j_ti = (j.get("title") or "").lower()
-        j_desc = (j.get("description") or "")[:400].lower()
-        hay = f"{j_jt} {j_ti} {j_desc}"
+        hay = f"{(j.get('job_type') or '').lower()} {(j.get('title') or '').lower()} {(j.get('description') or '')[:400].lower()}"
         is_intern = bool(re.search(r"\b(intern|internship|stage|stagiaire|alternance|pfe|co-?op|student|praktik)\b", hay))
         wants_intern = any("intern" in ct or "pfe" in ct or "stage" in ct for ct in contract_types)
         wants_fulltime = any("full" in ct for ct in contract_types)
@@ -2619,10 +1929,7 @@ def query_jobs(view_filters=None, session_id="default", profile=None):
             return is_intern
         if wants_fulltime and not wants_intern:
             return not is_intern
-        for ct in contract_types:
-            if ct in hay:
-                return True
-        return False
+        return any(ct in hay for ct in contract_types)
 
     def _check_excluded_companies(j):
         if not excluded_cos:
@@ -2637,18 +1944,13 @@ def query_jobs(view_filters=None, session_id="default", profile=None):
         return not any(kw in hay for kw in excluded_kws)
 
     def _check_posting_age(j):
-        if posting_age <= 0:
+        if posting_age <= 0 or not j.get("posted_at"):
             return True
-        posted = j.get("posted_at")
-        if not posted:
-            return True
-        d = parse_date(posted)
+        d = parse_date(j.get("posted_at"))
         if not d:
             return True
-        age = max(0.0, (datetime.datetime.now(datetime.timezone.utc) - d).total_seconds() / 86400.0)
-        return age <= posting_age
+        return max(0.0, (datetime.datetime.now(datetime.timezone.utc) - d).total_seconds() / 86400.0) <= posting_age
 
-    # 3. Removed counts
     removed_counts = {
         "roles": sum(1 for j in candidate_jobs if not _check_role(j)) if roles_filter else 0,
         "work_mode": sum(1 for j in candidate_jobs if not _check_work_mode(j)) if (wm_filter and wm_filter not in ("any", "all")) else 0,
@@ -2665,70 +1967,32 @@ def query_jobs(view_filters=None, session_id="default", profile=None):
         "languages": sum(1 for j in candidate_jobs if not _check_languages(j)) if languages_filter else 0,
     }
 
-    # 4. Filter
+    checks = (_check_role, _check_work_mode, _check_location, _check_visa, _check_salary,
+              _check_contract_type, _check_excluded_companies, _check_excluded_keywords,
+              _check_posting_age, _check_confirmed_industry, _check_company_stage,
+              _check_market_served, _check_languages)
     matching_jobs = []
     for j in candidate_jobs:
-        if not _check_role(j):
-            continue
-        if not _check_work_mode(j):
-            continue
-        if not _check_location(j):
-            continue
-        if not _check_visa(j):
-            continue
-        if not _check_salary(j):
-            continue
-        if not _check_contract_type(j):
-            continue
-        if not _check_excluded_companies(j):
-            continue
-        if not _check_excluded_keywords(j):
-            continue
-        if not _check_posting_age(j):
-            continue
-        if not _check_confirmed_industry(j):
-            continue
-        if not _check_company_stage(j):
-            continue
-        if not _check_market_served(j):
-            continue
-        if not _check_languages(j):
-            continue
+        if all(fn(j) for fn in checks):
+            if not (j.get("max_salary", 0) > 0 or j.get("min_salary", 0) > 0):
+                j["unknown_salary"] = True
+            matching_jobs.append(j)
 
-        has_sal = (j.get("max_salary", 0) > 0 or j.get("min_salary", 0) > 0)
-        if not has_sal:
-            j["unknown_salary"] = True
-
-        matching_jobs.append(j)
-
-    # 5. Soft preferences ranking
     sen_prefs = [s.lower().strip() for s in (filters.get("seniority") or []) if s and s.strip()]
     size_prefs = [s.lower().strip() for s in (filters.get("company_sizes") or []) if s and s.strip()]
     ind_prefs = [i.lower().strip() for i in (filters.get("industries") or []) if i and i.strip()]
 
     for j in matching_jobs:
-        base_score = float(j.get("opportunity_score") or j.get("score") or 0)
-        rank_score = base_score
-
-        if sen_prefs:
-            j_sen = (j.get("seniority") or "").lower()
-            j_ti = (j.get("title") or "").lower()
-            if any(sp in j_sen or sp in j_ti for sp in sen_prefs):
-                rank_score += 15.0
-
-        if size_prefs:
-            j_sz = (j.get("company_size") or "").lower()
-            if any(sp in j_sz for sp in size_prefs):
-                rank_score += 10.0
-
-        if ind_prefs:
-            j_ind = (j.get("industry") or "").lower()
-            if any(ip in j_ind for ip in ind_prefs):
-                rank_score += 10.0
-
+        rank_score = float(j.get("opportunity_score") or j.get("score") or 0)
+        if sen_prefs and any(sp in (j.get("seniority") or "").lower() or sp in (j.get("title") or "").lower() for sp in sen_prefs):
+            rank_score += 15.0
+        if size_prefs and any(sp in (j.get("company_size") or "").lower() for sp in size_prefs):
+            rank_score += 10.0
+        if ind_prefs and any(ip in (j.get("industry") or "").lower() for ip in ind_prefs):
+            rank_score += 10.0
         j["rank_score"] = round(rank_score, 1)
 
-    from . import freshness
+    from . import freshness, scoring, lifecycle
     for j in matching_jobs:
         fresh_meta = freshness.format_freshness_badge(j)
         j["posted_hours_ago"] = fresh_meta["posted_hours_ago"]
@@ -2736,50 +2000,22 @@ def query_jobs(view_filters=None, session_id="default", profile=None):
         j["freshness_badge"] = fresh_meta["badge"]
         j["freshness_label"] = fresh_meta["label"]
 
-    # Inside my filtered matches, sort fresh first (R9)
-    matching_jobs.sort(
-        key=lambda j: (1 if j.get("is_fresh_48h") else 0, j.get("rank_score", 0), j.get("score", 0)),
-        reverse=True,
-    )
+    matching_jobs.sort(key=lambda j: (1 if j.get("is_fresh_48h") else 0, j.get("rank_score", 0), j.get("score", 0)), reverse=True)
 
-    from . import scoring, lifecycle
     level_shift = int(filters.get("level_shift", 0))
     for j in matching_jobs:
         lbl, gaps = scoring.classify_job_fit(j, profile=profile, level_shift=level_shift)
         j["label"] = lbl
         j["top_gaps"] = gaps
-        flags = lifecycle.evaluate_job_flags(j)
-        j.update(flags)
+        j.update(lifecycle.evaluate_job_flags(j))
 
-    # 6. Usable Gate: [10, 300]
     total_count = len(matching_jobs)
     if 10 <= total_count <= 300:
-        usable_gate = {
-            "usable": True,
-            "status": "ok",
-            "count": total_count,
-            "message": f"{total_count} matches found, within the optimal 10-300 range.",
-            "suggestion": None,
-            "actions": ["open_ui", "browse_jobs"]
-        }
+        usable_gate = {"usable": True, "status": "ok", "count": total_count, "message": f"{total_count} matches found, within the optimal 10-300 range.", "suggestion": None, "actions": ["browse_jobs", "prepare_application"]}
     elif total_count < 10:
-        usable_gate = {
-            "usable": False,
-            "status": "too_few",
-            "count": total_count,
-            "message": f"Only {total_count} matches found (below minimum threshold of 10).",
-            "suggestion": "Offer to loosen one filter (such as role, work mode, or salary), or run a wider search or refresh.",
-            "actions": ["loosen_filter", "wider_search", "run_refresh"]
-        }
+        usable_gate = {"usable": False, "status": "too_few", "count": total_count, "message": f"Only {total_count} matches found (below minimum threshold of 10).", "suggestion": "Offer to loosen one filter (such as role, work mode, or salary), or run a wider search or refresh.", "actions": ["loosen_filter", "wider_search", "run_refresh"]}
     else:
-        usable_gate = {
-            "usable": False,
-            "status": "too_many",
-            "count": total_count,
-            "message": f"{total_count} matches found (exceeds recommended threshold of 300).",
-            "suggestion": "Offer to tighten filters by minimum salary, seniority, or specific locations.",
-            "actions": ["tighten_salary", "tighten_seniority", "tighten_location"]
-        }
+        usable_gate = {"usable": False, "status": "too_many", "count": total_count, "message": f"{total_count} matches found (exceeds recommended threshold of 300).", "suggestion": "Offer to tighten filters by minimum salary, seniority, or specific locations.", "actions": ["tighten_salary", "tighten_seniority", "tighten_location"]}
 
     hidden_count = max(0, len(candidate_jobs) - total_count)
     return {
@@ -2797,94 +2033,69 @@ def query_jobs(view_filters=None, session_id="default", profile=None):
     }
 
 
-# ------------------------------------------------------------- Modern Track Database Helpers
+# ------------------------------------------------------------------ Signals, Company Briefs, Contacts, Outreach
 
-def ingest_signal(sig: dict) -> dict:
-    """Ingest a signal (hiring post or funding news) with deduplication and scoring."""
+def ingest_signal(sig: dict[str, Any]) -> dict[str, Any]:
     now = now_iso()
     s = dict(sig)
     sig_id = s.get("id") or f"sig_{uuid.uuid4().hex[:12]}"
     sig_type = s.get("type") or "hiring_post"
-    source = s.get("source") or "radar"
     url = s.get("url") or ""
     url_hash = s.get("url_hash") or (url if url else sig_id)
-    author_name = s.get("author_name") or ""
-    author_url = s.get("author_url") or ""
     company = s.get("company") or "Unknown Company"
-    company_domain = s.get("company_domain") or ""
-    text = s.get("text") or ""
-    posted_at = s.get("posted_at") or now
+    status = s.get("status") or "fresh"
     likes = int(s.get("likes") or 0)
     comments = int(s.get("comments") or 0)
-    found_at = s.get("found_at") or now
-    is_new = int(s.get("is_new", 1))
-    status = s.get("status") or "fresh"
-    score = int(s.get("score") or 0)
-    role_guess = s.get("role_guess") or ""
-    stage = s.get("stage") or "any"
-    region = s.get("region") or "any"
-    funding_amount = s.get("funding_amount") or ""
-    funding_round = s.get("funding_round") or ""
-    signal_json = json.dumps(s.get("signal_json") or s)
 
-    with session() as c:
-        # Check duplicate by url_hash
-        existing = c.execute("SELECT id, status, is_new, likes, comments FROM signals WHERE url_hash=?", (url_hash,)).fetchone()
+    ws = _ws()
+    with ws.lock:
+        sigs = ws.tables["signals"]
+        existing = next((r for r in sigs if r.get("url_hash") == url_hash), None)
         if existing:
-            # Update likes/comments and status if needed, but preserve saved/dismissed
-            curr_status = existing["status"]
+            curr_status = existing.get("status", "fresh")
             new_status = curr_status if curr_status in ("saved", "dismissed") else status
-            c.execute("""
-                UPDATE signals
-                SET likes=?, comments=?, status=?, updated_at=?
-                WHERE url_hash=?
-            """, (likes, comments, new_status, now, url_hash))
+            existing.update({"likes": likes, "comments": comments, "status": new_status, "updated_at": now})
             s["id"] = existing["id"]
             s["status"] = new_status
-            s["is_new"] = existing["is_new"]
+            s["is_new"] = existing.get("is_new", 1)
+            ws.flush_cache()
             return s
 
-        # Funding dedupe by company within 14 days
         if sig_type == "funding":
-            prev_funding = c.execute("""
-                SELECT id FROM signals
-                WHERE type='funding' AND lower(company)=lower(?) AND datetime(found_at) >= datetime(?, '-14 days')
-            """, (company, now)).fetchone()
-            if prev_funding:
-                return {"id": prev_funding["id"], "duplicate": True, "status": "duplicate"}
+            cutoff_14d = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=14)).isoformat()
+            prev = next((r for r in sigs if r.get("type") == "funding" and (r.get("company") or "").lower() == company.lower() and (r.get("found_at") or "") >= cutoff_14d), None)
+            if prev:
+                return {"id": prev["id"], "duplicate": True, "status": "duplicate"}
 
-        c.execute("""
-            INSERT INTO signals (
-                id, type, source, url, url_hash, author_name, author_url,
-                company, company_domain, text, posted_at, likes, comments,
-                found_at, is_new, status, score, role_guess, stage, region,
-                funding_amount, funding_round, signal_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            sig_id, sig_type, source, url, url_hash, author_name, author_url,
-            company, company_domain, text, posted_at, likes, comments,
-            found_at, is_new, status, score, role_guess, stage, region,
-            funding_amount, funding_round, signal_json, now, now
-        ))
-        s["id"] = sig_id
-        return s
+        rec = ws._normalize_row("signals", {
+            "id": sig_id, "type": sig_type, "source": s.get("source") or "radar",
+            "url": url, "url_hash": url_hash, "author_name": s.get("author_name") or "",
+            "author_url": s.get("author_url") or "", "company": company,
+            "company_domain": s.get("company_domain") or "", "text": s.get("text") or "",
+            "posted_at": s.get("posted_at") or now, "likes": likes, "comments": comments,
+            "found_at": s.get("found_at") or now, "is_new": int(s.get("is_new", 1)),
+            "status": status, "score": int(s.get("score") or 0),
+            "role_guess": s.get("role_guess") or "", "stage": s.get("stage") or "any",
+            "region": s.get("region") or "any", "funding_amount": s.get("funding_amount") or "",
+            "funding_round": s.get("funding_round") or "",
+            "signal_json": json.dumps(s.get("signal_json") or s),
+            "created_at": now, "updated_at": now,
+        })
+        sigs.append(rec)
+        ws.flush_cache()
+    s["id"] = sig_id
+    return s
 
 
-def get_signals(limit: int = 100, status: str | None = None, view_filters: dict | None = None, sig_type: str | None = None) -> list[dict]:
-    """Retrieve signals with optional status, type, and view filter matching."""
-    with session() as c:
-        query = "SELECT * FROM signals WHERE 1=1"
-        params: list[Any] = []
-        if status:
-            query += " AND status = ?"
-            params.append(status)
-        if sig_type:
-            query += " AND type = ?"
-            params.append(sig_type)
-        query += " ORDER BY posted_at DESC, score DESC LIMIT ?"
-        params.append(limit)
-        rows = c.execute(query, params).fetchall()
-
+def get_signals(limit: int = 100, status: str | None = None, view_filters: dict | None = None, sig_type: str | None = None) -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        rows = [
+            dict(r) for r in ws.tables["signals"]
+            if (not status or r.get("status") == status) and (not sig_type or r.get("type") == sig_type)
+        ]
+    rows.sort(key=lambda r: (r.get("posted_at") or "", r.get("score") or 0), reverse=True)
+    rows = rows[:limit]
     results = []
     for r in rows:
         d = dict(r)
@@ -2897,13 +2108,8 @@ def get_signals(limit: int = 100, status: str | None = None, view_filters: dict 
 
     if view_filters:
         raw_role = view_filters.get("job_style") or view_filters.get("role") or view_filters.get("roles") or ""
-        if isinstance(raw_role, (list, tuple, set)):
-            target_role = " ".join(str(x) for x in raw_role if str(x).strip()).lower()
-        else:
-            target_role = str(raw_role).lower().strip()
-
-        raw_locs = view_filters.get("locations") or view_filters.get("region") or []
-        locs_list = _normalize_str_list(raw_locs)
+        target_role = (" ".join(str(x) for x in raw_role if str(x).strip()) if isinstance(raw_role, (list, tuple, set)) else str(raw_role)).lower().strip()
+        locs_list = _normalize_str_list(view_filters.get("locations") or view_filters.get("region") or [])
         wm_filter = str(view_filters.get("work_mode") or "").lower().strip()
         conf_inds = [i.lower() for i in _normalize_str_list(view_filters.get("confirmed_industries")) if i.lower() not in ("any", "all")]
         conf_stages = [st.lower() for st in _normalize_str_list(view_filters.get("company_stages")) if st.lower() not in ("any", "all")]
@@ -2920,30 +2126,27 @@ def get_signals(limit: int = 100, status: str | None = None, view_filters: dict 
             if locs_list:
                 sig_region = str(s.get("region") or "").strip()
                 if sig_region and sig_region.lower() not in ("any", ""):
-                    pseudo_job = {
-                        "location": sig_region,
-                        "work_mode": "remote" if "remote" in sig_text or "remote" in sig_region.lower() else "",
-                    }
-                    if not regions.job_matches_confirmed_places(pseudo_job, locs_list, wm_filter):
+                    pseudo = {"location": sig_region, "work_mode": "remote" if "remote" in sig_text or "remote" in sig_region.lower() else ""}
+                    if not regions.job_matches_confirmed_places(pseudo, locs_list, wm_filter):
                         continue
             if conf_inds and not any(re.search(rf"\b{re.escape(ind)}\b", sig_text) for ind in conf_inds):
                 continue
             if conf_stages and s.get("stage", "any").lower() not in ("any", "") and not any(st in str(s.get("stage", "")).lower() or st in sig_text for st in conf_stages):
                 continue
-            if conf_langs and not any(re.search(rf"\b{re.escape(lg)}\b", sig_text) or lg in ("english",) and not re.search(r"\b(?:french|german|spanish|arabic)\s+only\b", sig_text) for lg in conf_langs):
+            if conf_langs and not any(re.search(rf"\b{re.escape(lg)}\b", sig_text) or (lg == "english" and not re.search(r"\b(?:french|german|spanish|arabic)\s+only\b", sig_text)) for lg in conf_langs):
                 continue
             filtered.append(s)
         return filtered
-
     return results
 
 
-def get_signal(signal_id: str) -> dict | None:
-    with session() as c:
-        row = c.execute("SELECT * FROM signals WHERE id=? OR url_hash=?", (signal_id, signal_id)).fetchone()
-        if not row:
+def get_signal(signal_id: str) -> Optional[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        r = next((x for x in ws.tables["signals"] if x.get("id") == signal_id or x.get("url_hash") == signal_id), None)
+        if not r:
             return None
-        d = dict(row)
+        d = dict(r)
         if d.get("signal_json"):
             try:
                 d["data"] = json.loads(d["signal_json"])
@@ -2953,141 +2156,128 @@ def get_signal(signal_id: str) -> dict | None:
 
 
 def update_signal_status(signal_id: str, status: str) -> bool:
-    with session() as c:
-        c.execute("UPDATE signals SET status=?, updated_at=? WHERE id=?", (status, now_iso(), signal_id))
-        return c.execute("SELECT changes()").fetchone()[0] > 0
+    ws = _ws()
+    with ws.lock:
+        for r in ws.tables["signals"]:
+            if r.get("id") == signal_id:
+                r["status"] = status
+                r["updated_at"] = now_iso()
+                ws.flush_cache()
+                return True
+    return False
 
 
 def ack_signals(signal_ids: list[str] | None = None) -> int:
-    """Clear is_new flag on signals shown to the user."""
-    with session() as c:
-        if signal_ids:
-            ph = ",".join("?" * len(signal_ids))
-            c.execute(f"UPDATE signals SET is_new=0 WHERE id IN ({ph})", list(signal_ids))
-        else:
-            c.execute("UPDATE signals SET is_new=0 WHERE is_new=1")
-        return c.execute("SELECT changes()").fetchone()[0]
+    ws = _ws()
+    id_set = set(signal_ids) if signal_ids else None
+    changed = 0
+    with ws.lock:
+        for r in ws.tables["signals"]:
+            if id_set is not None:
+                if r.get("id") in id_set:
+                    r["is_new"] = 0
+                    changed += 1
+            elif r.get("is_new") == 1:
+                r["is_new"] = 0
+                changed += 1
+        if changed:
+            ws.flush_cache()
+    return changed
 
 
 def get_new_signals_count(view_filters: dict | None = None) -> int:
-    """Count new signals, optionally matching active view filters."""
-    signals = get_signals(limit=250, status="fresh", view_filters=view_filters)
-    return sum(1 for s in signals if s.get("is_new"))
+    sigs = get_signals(limit=250, status="fresh", view_filters=view_filters)
+    return sum(1 for s in sigs if s.get("is_new"))
 
 
-def save_company_brief(company: str, brief_data: dict, learning_pack_data: dict, signal_id: str = "", domain: str = "", stage: str = "", funding_summary: str = "") -> dict:
+def save_company_brief(company: str, brief_data: dict, learning_pack_data: dict, signal_id: str = "", domain: str = "", stage: str = "", funding_summary: str = "") -> dict[str, Any]:
     now = now_iso()
     brief_id = f"brief_{uuid.uuid4().hex[:12]}"
     brief_json = json.dumps(brief_data)
     lp_json = json.dumps(learning_pack_data)
-    with session() as c:
-        # Check existing by company or signal_id
+    ws = _ws()
+    with ws.lock:
+        tbl = ws.tables["company_briefs"]
         existing = None
         if signal_id:
-            existing = c.execute("SELECT id FROM company_briefs WHERE signal_id=?", (signal_id,)).fetchone()
+            existing = next((r for r in tbl if r.get("signal_id") == signal_id), None)
         if not existing and company:
-            existing = c.execute("SELECT id FROM company_briefs WHERE lower(company)=lower(?)", (company,)).fetchone()
-
+            existing = next((r for r in tbl if (r.get("company") or "").lower() == company.lower()), None)
         if existing:
             brief_id = existing["id"]
-            c.execute("""
-                UPDATE company_briefs
-                SET stage=?, funding_summary=?, brief_json=?, learning_pack_json=?, updated_at=?
-                WHERE id=?
-            """, (stage, funding_summary, brief_json, lp_json, now, brief_id))
+            existing.update({"stage": stage, "funding_summary": funding_summary, "brief_json": brief_json, "learning_pack_json": lp_json, "updated_at": now})
         else:
-            c.execute("""
-                INSERT INTO company_briefs (id, signal_id, company, company_domain, stage, funding_summary, brief_json, learning_pack_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (brief_id, signal_id, company, domain, stage, funding_summary, brief_json, lp_json, now, now))
-
-    return {
-        "id": brief_id,
-        "signal_id": signal_id,
-        "company": company,
-        "brief": brief_data,
-        "learning_pack": learning_pack_data,
-        "updated_at": now,
-    }
+            tbl.append(ws._normalize_row("company_briefs", {
+                "id": brief_id, "signal_id": signal_id, "company": company,
+                "company_domain": domain, "stage": stage, "funding_summary": funding_summary,
+                "brief_json": brief_json, "learning_pack_json": lp_json, "created_at": now, "updated_at": now,
+            }))
+        ws.flush_durable()
+    return {"id": brief_id, "signal_id": signal_id, "company": company, "brief": brief_data, "learning_pack": learning_pack_data, "updated_at": now}
 
 
-def get_company_brief(company_or_signal_id: str) -> dict | None:
-    with session() as c:
-        row = c.execute("""
-            SELECT * FROM company_briefs
-            WHERE id=? OR signal_id=? OR lower(company)=lower(?)
-            ORDER BY updated_at DESC LIMIT 1
-        """, (company_or_signal_id, company_or_signal_id, company_or_signal_id)).fetchone()
-        if not row:
+def get_company_brief(company_or_signal_id: str) -> Optional[dict[str, Any]]:
+    needle = (company_or_signal_id or "").lower()
+    ws = _ws()
+    with ws.lock:
+        matches = [
+            r for r in ws.tables["company_briefs"]
+            if r.get("id") == company_or_signal_id or r.get("signal_id") == company_or_signal_id or (r.get("company") or "").lower() == needle
+        ]
+        if not matches:
             return None
-        d = dict(row)
-        try:
-            d["brief"] = json.loads(d["brief_json"])
-        except Exception:
-            d["brief"] = {}
-        try:
-            d["learning_pack"] = json.loads(d["learning_pack_json"])
-        except Exception:
-            d["learning_pack"] = {}
-        return d
+        matches.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
+        d = dict(matches[0])
+    try:
+        d["brief"] = json.loads(d.get("brief_json") or "{}")
+    except Exception:
+        d["brief"] = {}
+    try:
+        d["learning_pack"] = json.loads(d.get("learning_pack_json") or "{}")
+    except Exception:
+        d["learning_pack"] = {}
+    return d
 
 
-def save_contact(contact: dict) -> dict:
+def save_contact(contact: dict[str, Any]) -> dict[str, Any]:
     now = now_iso()
     c_dict = dict(contact)
     cid = c_dict.get("id") or f"ct_{uuid.uuid4().hex[:12]}"
-    signal_id = c_dict.get("signal_id") or ""
     company = c_dict.get("company") or ""
-    company_domain = c_dict.get("company_domain") or ""
     name = c_dict.get("name") or "Contact"
     title = c_dict.get("title") or c_dict.get("role") or ""
-    role_category = c_dict.get("role_category") or ""
     email = c_dict.get("email") or ""
     confidence = c_dict.get("email_confidence") or c_dict.get("confidence") or "Guess"
     provider = c_dict.get("provider") or c_dict.get("source") or ""
-    source = c_dict.get("source") or provider
-    source_url = c_dict.get("source_url") or ""
-    linkedin_url = c_dict.get("linkedin_url") or ""
-    x_handle = c_dict.get("x_handle") or ""
-    phone = c_dict.get("phone") or ""
-    notes = c_dict.get("notes") or ""
-    last_contacted_at = c_dict.get("last_contacted_at") or ""
-    found_at = c_dict.get("found_at") or now
-    status = c_dict.get("status") or "new"
 
-    with session() as c:
+    ws = _ws()
+    with ws.lock:
+        tbl = ws.tables["contacts"]
         existing = None
         if email:
-            existing = c.execute("SELECT id FROM contacts WHERE lower(email)=lower(?)", (email,)).fetchone()
+            existing = next((r for r in tbl if (r.get("email") or "").lower() == email.lower()), None)
         if not existing and name and company:
-            existing = c.execute("SELECT id FROM contacts WHERE lower(name)=lower(?) AND lower(company)=lower(?)", (name, company)).fetchone()
+            existing = next((r for r in tbl if (r.get("name") or "").lower() == name.lower() and (r.get("company") or "").lower() == company.lower()), None)
 
+        updates = {
+            "role": title, "title": title, "role_category": c_dict.get("role_category") or "",
+            "company_domain": c_dict.get("company_domain") or "", "confidence": confidence,
+            "email_confidence": confidence, "provider": provider, "source": c_dict.get("source") or provider,
+            "source_url": c_dict.get("source_url") or "", "linkedin_url": c_dict.get("linkedin_url") or "",
+            "x_handle": c_dict.get("x_handle") or "", "phone": c_dict.get("phone") or "",
+            "notes": c_dict.get("notes") or "", "last_contacted_at": c_dict.get("last_contacted_at") or "",
+            "status": c_dict.get("status") or "new", "updated_at": now,
+        }
         if existing:
             cid = existing["id"]
-            c.execute("""
-                UPDATE contacts
-                SET role=?, title=?, role_category=?, company_domain=?, confidence=?, email_confidence=?,
-                    provider=?, source=?, source_url=?, linkedin_url=?, x_handle=?, phone=?,
-                    notes=?, last_contacted_at=?, status=?, updated_at=?
-                WHERE id=?
-            """, (title, title, role_category, company_domain, confidence, confidence,
-                  provider, source, source_url, linkedin_url, x_handle, phone,
-                  notes, last_contacted_at, status, now, cid))
+            existing.update(updates)
         else:
-            c.execute("""
-                INSERT INTO contacts (
-                    id, signal_id, company, company_domain, name, role, title, role_category,
-                    email, confidence, email_confidence, provider, source, source_url,
-                    linkedin_url, x_handle, phone, notes, last_contacted_at, found_at, status,
-                    created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                cid, signal_id, company, company_domain, name, title, title, role_category,
-                email, confidence, confidence, provider, source, source_url,
-                linkedin_url, x_handle, phone, notes, last_contacted_at, found_at, status,
-                now, now
-            ))
+            updates.update({
+                "id": cid, "signal_id": c_dict.get("signal_id") or "", "company": company,
+                "name": name, "email": email, "found_at": c_dict.get("found_at") or now, "created_at": now,
+            })
+            tbl.append(ws._normalize_row("contacts", updates))
+        ws.flush_durable()
 
     c_dict["id"] = cid
     c_dict["title"] = title
@@ -3097,36 +2287,51 @@ def save_contact(contact: dict) -> dict:
     return c_dict
 
 
-def get_contacts(signal_id: str = "", company: str = "") -> list[dict]:
-    with session() as c:
+def get_contacts(signal_id: str = "", company: str = "") -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        rows = ws.tables["contacts"]
         if signal_id and company:
-            rows = c.execute("SELECT * FROM contacts WHERE signal_id=? OR lower(company)=lower(?) ORDER BY created_at DESC", (signal_id, company)).fetchall()
+            res = [r for r in rows if r.get("signal_id") == signal_id or (r.get("company") or "").lower() == company.lower()]
         elif signal_id:
-            rows = c.execute("SELECT * FROM contacts WHERE signal_id=? ORDER BY created_at DESC", (signal_id,)).fetchall()
+            res = [r for r in rows if r.get("signal_id") == signal_id]
         elif company:
-            rows = c.execute("SELECT * FROM contacts WHERE lower(company)=lower(?) ORDER BY created_at DESC", (company,)).fetchall()
+            res = [r for r in rows if (r.get("company") or "").lower() == company.lower()]
         else:
-            rows = c.execute("SELECT * FROM contacts ORDER BY created_at DESC LIMIT 100").fetchall()
-    return [dict(r) for r in rows]
+            res = list(rows)
+        res = sorted([dict(r) for r in res], key=lambda r: r.get("created_at") or "", reverse=True)
+        return res if (signal_id or company) else res[:100]
 
 
-def get_contact(contact_id: str) -> dict | None:
-    with session() as c:
-        row = c.execute("SELECT * FROM contacts WHERE id=?", (contact_id,)).fetchone()
-        return dict(row) if row else None
+def get_contact(contact_id: str) -> Optional[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        r = next((x for x in ws.tables["contacts"] if x.get("id") == contact_id), None)
+        return dict(r) if r else None
 
 
 def delete_contact(contact_id: str) -> bool:
-    with session() as c:
-        c.execute("DELETE FROM outreach WHERE contact_id=?", (contact_id,))
-        c.execute("DELETE FROM contacts WHERE id=?", (contact_id,))
-        return c.execute("SELECT changes()").fetchone()[0] > 0
+    ws = _ws()
+    with ws.lock:
+        ws.tables["outreach"] = [r for r in ws.tables["outreach"] if r.get("contact_id") != contact_id]
+        before = len(ws.tables["contacts"])
+        ws.tables["contacts"] = [r for r in ws.tables["contacts"] if r.get("id") != contact_id]
+        removed = len(ws.tables["contacts"]) < before
+        if removed:
+            ws.flush_durable()
+        return removed
 
 
 def update_contact_status(contact_id: str, status: str) -> bool:
-    with session() as c:
-        c.execute("UPDATE contacts SET status=?, updated_at=? WHERE id=?", (status, now_iso(), contact_id))
-        return c.execute("SELECT changes()").fetchone()[0] > 0
+    ws = _ws()
+    with ws.lock:
+        for r in ws.tables["contacts"]:
+            if r.get("id") == contact_id:
+                r["status"] = status
+                r["updated_at"] = now_iso()
+                ws.flush_durable()
+                return True
+    return False
 
 
 def log_outreach(
@@ -3146,231 +2351,218 @@ def log_outreach(
     follow_up_sent_at: str | None = None,
     reply_received_at: str | None = None,
     reply_sentiment: str = "",
-) -> dict:
+    sent_at: str = "",
+    outreach_id: str | None = None,
+) -> dict[str, Any]:
     now = now_iso()
-    oid = f"out_{uuid.uuid4().hex[:12]}"
-    with session() as c:
-        c.execute("""
-            INSERT INTO outreach (
-                id, contact_id, signal_id, company, recipient_name, recipient_email, recipient_title,
-                subject, body, status, drafted_at, follow_up_due, follow_up_sent_at,
-                reply_received_at, reply_sentiment, notes, resume_path, attached, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            oid, contact_id, signal_id, company, recipient_name, recipient_email, recipient_title,
-            subject, body, status, now, follow_up_due, follow_up_sent_at,
-            reply_received_at, reply_sentiment, notes, resume_path, attached, now, now
-        ))
+    oid = outreach_id or f"out_{uuid.uuid4().hex[:12]}"
+    rec = {
+        "id": oid, "contact_id": contact_id, "signal_id": signal_id, "company": company,
+        "recipient_name": recipient_name, "recipient_email": recipient_email, "recipient_title": recipient_title,
+        "subject": subject, "body": body, "status": status, "drafted_at": now,
+        "sent_at": sent_at or (now if status == "sent" else ""),
+        "follow_up_due": follow_up_due, "follow_up_sent_at": follow_up_sent_at,
+        "reply_received_at": reply_received_at, "reply_sentiment": reply_sentiment,
+        "notes": notes, "resume_path": resume_path, "attached": attached,
+        "created_at": now, "updated_at": now,
+    }
+    ws = _ws()
+    with ws.lock:
+        ws.tables["outreach"].append(ws._normalize_row("outreach", rec))
+        ws.flush_durable()
     return {
-        "id": oid,
-        "contact_id": contact_id,
-        "signal_id": signal_id,
-        "company": company,
-        "recipient_name": recipient_name,
-        "recipient_email": recipient_email,
-        "recipient_title": recipient_title,
-        "subject": subject,
-        "body": body,
-        "status": status,
-        "drafted_at": now,
-        "follow_up_due": follow_up_due,
-        "notes": notes,
-        "resume_path": resume_path,
-        "attached": attached,
+        "id": oid, "contact_id": contact_id, "signal_id": signal_id, "company": company,
+        "recipient_name": recipient_name, "recipient_email": recipient_email, "recipient_title": recipient_title,
+        "subject": subject, "body": body, "status": status, "drafted_at": now,
+        "follow_up_due": follow_up_due, "notes": notes, "resume_path": resume_path, "attached": attached,
     }
 
 
-def get_outreach_for_contact(contact_id: str) -> list[dict]:
-    with session() as c:
-        rows = c.execute("SELECT * FROM outreach WHERE contact_id=? ORDER BY created_at DESC", (contact_id,)).fetchall()
-        return [dict(r) for r in rows]
+def get_outreach_for_contact(contact_id: str) -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        rows = [dict(r) for r in ws.tables["outreach"] if r.get("contact_id") == contact_id]
+    rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    return rows
 
 
-def get_outreach_today() -> list[dict]:
-    with session() as c:
-        today_prefix = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-        rows = c.execute("SELECT * FROM outreach WHERE sent_at LIKE ? ORDER BY sent_at DESC", (f"{today_prefix}%",)).fetchall()
-        return [dict(r) for r in rows]
+def get_outreach_today() -> list[dict[str, Any]]:
+    today_prefix = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    ws = _ws()
+    with ws.lock:
+        rows = [dict(r) for r in ws.tables["outreach"] if (r.get("sent_at") or "").startswith(today_prefix)]
+    rows.sort(key=lambda r: r.get("sent_at") or "", reverse=True)
+    return rows
 
 
 def get_outreach_today_count() -> int:
     return len(get_outreach_today())
 
 
-def get_outreach_queue() -> list[dict]:
-    with session() as c:
-        rows = c.execute("SELECT * FROM outreach WHERE status IN ('draft', 'queued') ORDER BY created_at ASC").fetchall()
-        return [dict(r) for r in rows]
+def get_outreach_queue() -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        rows = [dict(r) for r in ws.tables["outreach"] if r.get("status") in ("draft", "queued")]
+    rows.sort(key=lambda r: r.get("created_at") or "")
+    return rows
 
 
-def mark_outreach_sent(outreach_id_or_contact_id: str) -> dict | None:
+def mark_outreach_sent(outreach_id_or_contact_id: str) -> Optional[dict[str, Any]]:
     now = now_iso()
     follow_up_days = int(get_setting("follow_up_days", "4"))
     follow_up_due = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=follow_up_days)).isoformat()
-    with session() as c:
-        row = c.execute("SELECT * FROM outreach WHERE id=? OR contact_id=? ORDER BY created_at DESC LIMIT 1", (outreach_id_or_contact_id, outreach_id_or_contact_id)).fetchone()
-        if not row:
+    ws = _ws()
+    with ws.lock:
+        matches = [r for r in ws.tables["outreach"] if r.get("id") == outreach_id_or_contact_id or r.get("contact_id") == outreach_id_or_contact_id]
+        if not matches:
             return None
-        oid = row["id"]
-        cid = row["contact_id"]
-        c.execute("""
-            UPDATE outreach
-            SET status='sent', sent_at=?, follow_up_due=?, updated_at=?
-            WHERE id=?
-        """, (now, follow_up_due, now, oid))
-        c.execute("UPDATE contacts SET status='sent', updated_at=? WHERE id=?", (now, cid))
-        updated = c.execute("SELECT * FROM outreach WHERE id=?", (oid,)).fetchone()
-        return dict(updated) if updated else None
+        matches.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+        row = matches[0]
+        row.update({"status": "sent", "sent_at": now, "follow_up_due": follow_up_due, "updated_at": now})
+        for ct in ws.tables["contacts"]:
+            if ct.get("id") == row.get("contact_id"):
+                ct["status"] = "sent"
+                ct["updated_at"] = now
+        ws.flush_durable()
+        return dict(row)
 
 
-def mark_outreach_replied(outreach_id_or_contact_id: str) -> dict | None:
+def mark_outreach_replied(outreach_id_or_contact_id: str) -> Optional[dict[str, Any]]:
     now = now_iso()
-    with session() as c:
-        row = c.execute("SELECT * FROM outreach WHERE id=? OR contact_id=? ORDER BY created_at DESC LIMIT 1", (outreach_id_or_contact_id, outreach_id_or_contact_id)).fetchone()
-        if not row:
+    ws = _ws()
+    with ws.lock:
+        matches = [r for r in ws.tables["outreach"] if r.get("id") == outreach_id_or_contact_id or r.get("contact_id") == outreach_id_or_contact_id]
+        if not matches:
             return None
-        oid = row["id"]
-        cid = row["contact_id"]
-        c.execute("""
-            UPDATE outreach
-            SET status='replied', replied_at=?, updated_at=?
-            WHERE id=?
-        """, (now, now, oid))
-        c.execute("UPDATE contacts SET status='replied', updated_at=? WHERE id=?", (now, cid))
-        updated = c.execute("SELECT * FROM outreach WHERE id=?", (oid,)).fetchone()
-        return dict(updated) if updated else None
+        matches.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+        row = matches[0]
+        row.update({"status": "replied", "replied_at": now, "updated_at": now})
+        for ct in ws.tables["contacts"]:
+            if ct.get("id") == row.get("contact_id"):
+                ct["status"] = "replied"
+                ct["updated_at"] = now
+        ws.flush_durable()
+        return dict(row)
 
 
-def get_outreach_report() -> dict:
-    with session() as c:
-        total_drafted = c.execute("SELECT count(*) as cnt FROM outreach").fetchone()["cnt"]
-        total_sent = c.execute("SELECT count(*) as cnt FROM outreach WHERE status IN ('sent', 'replied', 'followup_sent', 'closed')").fetchone()["cnt"]
-        total_replied = c.execute("SELECT count(*) as cnt FROM outreach WHERE status='replied'").fetchone()["cnt"]
-        total_calls = total_replied
-        reply_rate = (total_replied / total_sent) if total_sent > 0 else 0.0
+def get_outreach_report() -> dict[str, Any]:
+    ws = _ws()
+    with ws.lock:
+        all_rows = [dict(r) for r in ws.tables["outreach"]]
+    total_drafted = len(all_rows)
+    total_sent = sum(1 for r in all_rows if r.get("status") in ("sent", "replied", "followup_sent", "closed"))
+    total_replied = sum(1 for r in all_rows if r.get("status") == "replied")
+    reply_rate = (total_replied / total_sent) if total_sent > 0 else 0.0
 
-        with_attach = c.execute("SELECT count(*) as sent, sum(CASE WHEN status='replied' THEN 1 ELSE 0 END) as replies FROM outreach WHERE attached=1 AND status != 'draft'").fetchone()
-        without_attach = c.execute("SELECT count(*) as sent, sum(CASE WHEN status='replied' THEN 1 ELSE 0 END) as replies FROM outreach WHERE attached=0 AND status != 'draft'").fetchone()
+    w_rows = [r for r in all_rows if r.get("attached") == 1 and r.get("status") != "draft"]
+    wo_rows = [r for r in all_rows if r.get("attached") == 0 and r.get("status") != "draft"]
+    w_sent, w_rep = len(w_rows), sum(1 for r in w_rows if r.get("status") == "replied")
+    wo_sent, wo_rep = len(wo_rows), sum(1 for r in wo_rows if r.get("status") == "replied")
+    rate_with = (w_rep / w_sent) if w_sent > 0 else 0.0
+    rate_without = (wo_rep / wo_sent) if wo_sent > 0 else 0.0
 
-        w_sent = with_attach["sent"] or 0
-        w_rep = with_attach["replies"] or 0
-        wo_sent = without_attach["sent"] or 0
-        wo_rep = without_attach["replies"] or 0
+    suggestion = "Keep sending targeted 3-4 line notes with relevant proof points."
+    if wo_sent >= 5 and rate_without > rate_with:
+        suggestion = "Sending initial emails without attachments is yielding higher reply rates. Consider keeping first_touch_attachment off."
+    elif total_sent >= 10 and reply_rate < 0.10:
+        suggestion = "Reply rate is below 10%. Consider refining the target role or quoting a tighter observation from recent company news."
 
-        rate_with = (w_rep / w_sent) if w_sent > 0 else 0.0
-        rate_without = (wo_rep / wo_sent) if wo_sent > 0 else 0.0
-
-        suggestion = "Keep sending targeted 3-4 line notes with relevant proof points."
-        if wo_sent >= 5 and rate_without > rate_with:
-            suggestion = "Sending initial emails without attachments is yielding higher reply rates. Consider keeping first_touch_attachment off."
-        elif total_sent >= 10 and reply_rate < 0.10:
-            suggestion = "Reply rate is below 10%. Consider refining the target role or quoting a tighter observation from recent company news."
-
-        return {
-            "total_drafted": total_drafted,
-            "total_sent": total_sent,
-            "total_replied": total_replied,
-            "total_calls": total_calls,
-            "reply_rate": round(reply_rate, 3),
-            "by_attachment": {
-                "attached": {"sent": w_sent, "replies": w_rep, "rate": round(rate_with, 3)},
-                "unattached": {"sent": wo_sent, "replies": wo_rep, "rate": round(rate_without, 3)},
-            },
-            "suggested_change": suggestion,
-            "generated_at": now_iso(),
-        }
+    return {
+        "total_drafted": total_drafted,
+        "total_sent": total_sent,
+        "total_replied": total_replied,
+        "total_calls": total_replied,
+        "reply_rate": round(reply_rate, 3),
+        "by_attachment": {
+            "attached": {"sent": w_sent, "replies": w_rep, "rate": round(rate_with, 3)},
+            "unattached": {"sent": wo_sent, "replies": wo_rep, "rate": round(rate_without, 3)},
+        },
+        "suggested_change": suggestion,
+        "generated_at": now_iso(),
+    }
 
 
-# ------------------------------------------------------------ Coach Layer State & Persistence
-def get_coach_state(session_id: str = "default") -> dict:
+# ------------------------------------------------------------------ Coach Layer
+
+def get_coach_state(session_id: str = "default") -> dict[str, Any]:
     sid = session_id or "default"
     global_pref = get_coaching_preference()
-    with session() as c:
-        row = c.execute("SELECT session_id, coaching_enabled, opt_out, updated_at FROM coach_state WHERE session_id=?", (sid,)).fetchone()
+    ws = _ws()
+    with ws.lock:
+        row = next((r for r in ws.tables["coach_state"] if r.get("session_id") == sid), None)
         if not row:
             now = now_iso()
-            c.execute("INSERT OR IGNORE INTO coach_state (session_id, coaching_enabled, opt_out, updated_at) VALUES (?, ?, 0, ?)",
-                      (sid, 1 if global_pref else 0, now))
-            return {
-                "session_id": sid,
-                "coaching_enabled": bool(global_pref),
-                "opt_out": False,
-                "updated_at": now,
-            }
+            row = {"session_id": sid, "coaching_enabled": 1 if global_pref else 0, "opt_out": 0, "updated_at": now}
+            ws.tables["coach_state"].append(row)
+            ws.flush_durable()
+            return {"session_id": sid, "coaching_enabled": bool(global_pref), "opt_out": False, "updated_at": now}
         return {
             "session_id": row["session_id"],
-            "coaching_enabled": bool(row["coaching_enabled"]) and global_pref,
-            "opt_out": bool(row["opt_out"]),
-            "updated_at": row["updated_at"],
+            "coaching_enabled": bool(row.get("coaching_enabled")) and global_pref,
+            "opt_out": bool(row.get("opt_out")),
+            "updated_at": row.get("updated_at", ""),
         }
 
 
-def set_coach_state(session_id: str = "default", coaching_enabled: bool | None = None, opt_out: bool | None = None) -> dict:
+def set_coach_state(session_id: str = "default", coaching_enabled: bool | None = None, opt_out: bool | None = None) -> dict[str, Any]:
     sid = session_id or "default"
     curr = get_coach_state(sid)
     new_enabled = curr["coaching_enabled"] if coaching_enabled is None else bool(coaching_enabled)
     new_opt_out = curr["opt_out"] if opt_out is None else bool(opt_out)
     now = now_iso()
-    with session() as c:
-        c.execute("""
-            INSERT INTO coach_state (session_id, coaching_enabled, opt_out, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(session_id) DO UPDATE SET
-                coaching_enabled=excluded.coaching_enabled,
-                opt_out=excluded.opt_out,
-                updated_at=excluded.updated_at
-        """, (sid, 1 if new_enabled else 0, 1 if new_opt_out else 0, now))
-    return {
-        "session_id": sid,
-        "coaching_enabled": new_enabled,
-        "opt_out": new_opt_out,
-        "updated_at": now,
-    }
+    ws = _ws()
+    with ws.lock:
+        row = next((r for r in ws.tables["coach_state"] if r.get("session_id") == sid), None)
+        vals = {"session_id": sid, "coaching_enabled": 1 if new_enabled else 0, "opt_out": 1 if new_opt_out else 0, "updated_at": now}
+        if row:
+            row.update(vals)
+        else:
+            ws.tables["coach_state"].append(vals)
+        ws.flush_durable()
+    return {"session_id": sid, "coaching_enabled": new_enabled, "opt_out": new_opt_out, "updated_at": now}
 
 
 def record_coach_event(session_id: str = "default", trigger_id: str = "") -> bool:
-    """Record that coaching advice for trigger_id was delivered. Returns True if newly recorded, False if already delivered."""
     if not trigger_id:
         return False
     sid = session_id or "default"
     tid = trigger_id.strip().upper()
-    now = now_iso()
-    with session() as c:
-        try:
-            c.execute("INSERT INTO coach_events (session_id, trigger_id, ts) VALUES (?, ?, ?)", (sid, tid, now))
-            return True
-        except sqlite3.IntegrityError:
+    ws = _ws()
+    with ws.lock:
+        if any(r.get("session_id") == sid and r.get("trigger_id") == tid for r in ws.tables["coach_events"]):
             return False
+        ws.tables["coach_events"].append({"session_id": sid, "trigger_id": tid, "ts": now_iso()})
+        ws.flush_durable()
+        return True
 
 
-def get_coach_events(session_id: str = "default") -> list:
-    """Return all trigger IDs that have fired for this session."""
+def get_coach_events(session_id: str = "default") -> list[str]:
     sid = session_id or "default"
-    with session() as c:
-        rows = c.execute("SELECT trigger_id FROM coach_events WHERE session_id=? ORDER BY ts ASC", (sid,)).fetchall()
+    ws = _ws()
+    with ws.lock:
+        rows = sorted([r for r in ws.tables["coach_events"] if r.get("session_id") == sid], key=lambda r: r.get("ts") or "")
         return [r["trigger_id"] for r in rows]
 
 
 def has_coach_event(session_id: str = "default", trigger_id: str = "") -> bool:
-    """Check if advice for trigger_id has already been delivered in this session."""
     if not trigger_id:
         return False
     sid = session_id or "default"
     tid = trigger_id.strip().upper()
-    with session() as c:
-        row = c.execute("SELECT 1 FROM coach_events WHERE session_id=? AND trigger_id=?", (sid, tid)).fetchone()
-        return bool(row)
+    ws = _ws()
+    with ws.lock:
+        return any(r.get("session_id") == sid and r.get("trigger_id") == tid for r in ws.tables["coach_events"])
 
 
 def reset_coach_events(session_id: str = "default") -> None:
     sid = session_id or "default"
-    with session() as c:
-        c.execute("DELETE FROM coach_events WHERE session_id=?", (sid,))
+    ws = _ws()
+    with ws.lock:
+        ws.tables["coach_events"] = [r for r in ws.tables["coach_events"] if r.get("session_id") != sid]
+        ws.flush_durable()
 
 
 def get_coaching_preference() -> bool:
-    """Persistent preference: is coaching enabled globally? (defaults to True unless set to '0' or JH_COACHING=off)."""
     env = os.environ.get("JH_COACHING", "").strip().lower()
     if env == "off":
         return False
@@ -3378,327 +2570,824 @@ def get_coaching_preference() -> bool:
     return str(val).strip().lower() not in ("0", "false", "off", "no")
 
 
-def set_coaching_preference(enabled: bool, scope: str = "session", session_id: str = "default") -> dict:
-    """Update coaching preference with 'session' or 'persistent' scope."""
+def set_coaching_preference(enabled: bool, scope: str = "session", session_id: str = "default") -> dict[str, Any]:
     sid = session_id or "default"
     sc = (scope or "session").strip().lower()
     if sc == "persistent":
         set_setting("coaching_enabled", "1" if enabled else "0")
-        set_coach_state(session_id=sid, coaching_enabled=enabled, opt_out=not enabled)
-    else:
-        set_coach_state(session_id=sid, coaching_enabled=enabled, opt_out=not enabled)
-    return {
-        "enabled": enabled,
-        "coaching_enabled": enabled,
-        "scope": sc,
-        "session_id": sid,
-        "opt_out": not enabled,
-    }
+    set_coach_state(session_id=sid, coaching_enabled=enabled, opt_out=not enabled)
+    return {"enabled": enabled, "coaching_enabled": enabled, "scope": sc, "session_id": sid, "opt_out": not enabled}
 
 
-def wipe_coaching_data(session_id: str | None = None) -> dict:
-    """Wipe coach state and events for a session or globally."""
-    with session() as c:
+def wipe_coaching_data(session_id: str | None = None) -> dict[str, int]:
+    ws = _ws()
+    with ws.lock:
+        b1, b2 = len(ws.tables["coach_events"]), len(ws.tables["coach_state"])
         if session_id:
-            c1 = c.execute("DELETE FROM coach_events WHERE session_id=?", (session_id,)).rowcount
-            c2 = c.execute("DELETE FROM coach_state WHERE session_id=?", (session_id,)).rowcount
+            ws.tables["coach_events"] = [r for r in ws.tables["coach_events"] if r.get("session_id") != session_id]
+            ws.tables["coach_state"] = [r for r in ws.tables["coach_state"] if r.get("session_id") != session_id]
         else:
-            c1 = c.execute("DELETE FROM coach_events").rowcount
-            c2 = c.execute("DELETE FROM coach_state").rowcount
-    return {"coach_events_cleared": c1, "coach_state_cleared": c2}
+            ws.tables["coach_events"] = []
+            ws.tables["coach_state"] = []
+        ws.flush_durable()
+        return {"coach_events_cleared": b1 - len(ws.tables["coach_events"]), "coach_state_cleared": b2 - len(ws.tables["coach_state"])}
 
 
-def wipe_all_data() -> dict:
-    """Full data wipe: clears user jobs, search history, applications, contacts, and coaching data."""
+def wipe_all_data() -> dict[str, int]:
+    ws = _ws()
     counts = {}
-    with session() as c:
-        for tbl in ("coach_events", "coach_state", "search_jobs", "pending_search_jobs",
-                    "applications", "status_history", "watchlist", "seen_jobs",
-                    "outreach", "contacts", "signals", "company_briefs", "dismissals",
-                    "confirmed_facts", "base_resumes"):
-            try:
-                rc = c.execute(f"DELETE FROM {tbl}").rowcount
-                counts[tbl] = rc
-            except Exception:
-                pass
+    targets = (
+        "coach_events", "coach_state", "search_jobs", "pending_search_jobs",
+        "applications", "status_history", "watchlist", "seen_jobs",
+        "outreach", "contacts", "signals", "company_briefs", "dismissals",
+        "confirmed_facts", "base_resumes",
+    )
+    with ws.lock:
+        for tbl in targets:
+            counts[tbl] = len(ws.tables.get(tbl, []))
+            ws.tables[tbl] = []
+        ws.flush_durable()
+        ws.flush_cache()
     return counts
 
 
-# ------------------------------------------------------------ Confirmed Facts (R1 & R2)
+# ------------------------------------------------------------------ Confirmed Facts, Base Resumes, Audit, Guesses, Answers
 
-def add_confirmed_fact(
-    fact: str,
-    category: str = "general",
-    label: str = "user_confirmed",
-    session_id: str = "default",
-) -> str:
-    """Store a chat-confirmed fact with timestamp and label user_confirmed."""
+def add_confirmed_fact(fact: str, category: str = "general", label: str = "user_confirmed", session_id: str = "default") -> str:
     fact_clean = (fact or "").strip()
     if not fact_clean:
         return ""
     fact_id = f"fact_{stable_id(fact_clean + session_id)[:12]}"
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    with session() as c:
-        c.execute(
-            """INSERT OR REPLACE INTO confirmed_facts (id, session_id, fact, category, label, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (fact_id, session_id, fact_clean, category, label, now),
-        )
+    now = now_iso()
+    ws = _ws()
+    with ws.lock:
+        tbl = ws.tables["confirmed_facts"]
+        existing = next((r for r in tbl if r.get("id") == fact_id), None)
+        rec = {"id": fact_id, "session_id": session_id, "fact": fact_clean, "category": category, "label": label, "created_at": now}
+        if existing:
+            existing.update(rec)
+        else:
+            tbl.append(rec)
+        ws.flush_durable()
     return fact_id
 
 
-def get_confirmed_facts(session_id: Optional[str] = None) -> list[dict]:
-    """Retrieve user-confirmed facts for a session (or active session + default when omitted)."""
-    with session() as c:
+def get_confirmed_facts(session_id: Optional[str] = None) -> list[dict[str, Any]]:
+    active_sid = get_setting("active_session_id", "default") or "default"
+    ws = _ws()
+    with ws.lock:
         if session_id is None:
-            row = c.execute("SELECT value FROM settings WHERE key='active_session_id'").fetchone()
-            active_sid = row["value"] if row and row["value"] else "default"
-            if active_sid != "default":
-                rows = c.execute(
-                    "SELECT id, session_id, fact, category, label, created_at FROM confirmed_facts WHERE session_id IN (?, 'default') ORDER BY created_at ASC",
-                    (active_sid,),
-                ).fetchall()
-            else:
-                rows = c.execute(
-                    "SELECT id, session_id, fact, category, label, created_at FROM confirmed_facts WHERE session_id='default' ORDER BY created_at ASC",
-                ).fetchall()
+            sids = {active_sid, "default"}
+            rows = [dict(r) for r in ws.tables["confirmed_facts"] if r.get("session_id") in sids]
         else:
-            rows = c.execute(
-                "SELECT id, session_id, fact, category, label, created_at FROM confirmed_facts WHERE session_id=? ORDER BY created_at ASC",
-                (session_id,),
-            ).fetchall()
-        return [dict(r) for r in rows]
+            rows = [dict(r) for r in ws.tables["confirmed_facts"] if r.get("session_id") == session_id]
+    rows.sort(key=lambda r: r.get("created_at") or "")
+    return rows
 
-
-# ------------------------------------------------------------ Base Resumes (R6)
 
 def save_base_resume(role_family: str, resume_data: dict, approved: bool = False, session_id: str = "default") -> str:
-    """Store or update a role family base resume."""
     base_id = f"base_{stable_id(role_family.lower() + session_id)[:12]}"
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    now = now_iso()
     raw = json.dumps(resume_data)
-    with session() as c:
-        c.execute(
-            """INSERT OR REPLACE INTO base_resumes (id, session_id, role_family, resume_data, approved, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (base_id, session_id, role_family, raw, 1 if approved else 0, now, now),
-        )
+    ws = _ws()
+    with ws.lock:
+        tbl = ws.tables["base_resumes"]
+        existing = next((r for r in tbl if r.get("id") == base_id), None)
+        rec = {
+            "id": base_id, "session_id": session_id, "role_family": role_family,
+            "resume_data": raw, "approved": 1 if approved else 0, "created_at": now, "updated_at": now,
+        }
+        if existing:
+            existing.update(rec)
+        else:
+            tbl.append(rec)
+        ws.flush_durable()
     return base_id
 
 
-def get_base_resumes(session_id: str = "default") -> list[dict]:
-    """Retrieve all base resumes for a session."""
-    with session() as c:
-        rows = c.execute(
-            "SELECT id, session_id, role_family, resume_data, approved, created_at, updated_at FROM base_resumes WHERE session_id=? ORDER BY created_at ASC",
-            (session_id,),
-        ).fetchall()
-        res = []
-        for r in rows:
-            d = dict(r)
+def get_base_resumes(session_id: str = "default") -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        rows = sorted([dict(r) for r in ws.tables["base_resumes"] if r.get("session_id") == session_id], key=lambda r: r.get("created_at") or "")
+    for d in rows:
+        if isinstance(d.get("resume_data"), str):
             try:
                 d["resume_data"] = json.loads(d["resume_data"])
             except Exception:
                 pass
-            res.append(d)
-        return res
+    return rows
 
 
-def get_base_resume(role_family: str, session_id: str = "default") -> Optional[dict]:
-    """Retrieve a specific base resume by role family."""
-    with session() as c:
-        row = c.execute(
-            "SELECT id, session_id, role_family, resume_data, approved, created_at, updated_at FROM base_resumes WHERE session_id=? AND LOWER(role_family)=LOWER(?)",
-            (session_id, role_family.strip()),
-        ).fetchone()
-        if row:
-            d = dict(row)
-            try:
-                d["resume_data"] = json.loads(d["resume_data"])
-            except Exception:
-                pass
-            return d
-    return None
+def get_base_resume(role_family: str, session_id: str = "default") -> Optional[dict[str, Any]]:
+    needle = role_family.strip().lower()
+    ws = _ws()
+    with ws.lock:
+        row = next((dict(r) for r in ws.tables["base_resumes"] if r.get("session_id") == session_id and (r.get("role_family") or "").lower() == needle), None)
+    if row and isinstance(row.get("resume_data"), str):
+        try:
+            row["resume_data"] = json.loads(row["resume_data"])
+        except Exception:
+            pass
+    return row
 
 
 def approve_base_resume(base_resume_id: str, session_id: str = "default") -> bool:
-    """Mark a base resume as approved."""
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    with session() as c:
-        res = c.execute(
-            "UPDATE base_resumes SET approved=1, updated_at=? WHERE (id=? OR role_family=?) AND session_id=?",
-            (now, base_resume_id, base_resume_id, session_id),
-        )
-        return res.rowcount > 0
+    now = now_iso()
+    ws = _ws()
+    with ws.lock:
+        for r in ws.tables["base_resumes"]:
+            if r.get("session_id") == session_id and (r.get("id") == base_resume_id or r.get("role_family") == base_resume_id):
+                r["approved"] = 1
+                r["updated_at"] = now
+                ws.flush_durable()
+                return True
+    return False
 
 
 def get_ready_to_apply_count(session_id: str = "default") -> int:
-    """Return count of jobs with fully passed quality layer documents ready to apply."""
-    with session() as c:
-        row = c.execute(
-            """SELECT COUNT(*) as count FROM applications
-               WHERE (grounding_result='passed' OR grounding_result='repaired')
-                 AND resume_path IS NOT NULL AND resume_path != ''""",
-        ).fetchone()
-        return int(row["count"]) if row else 0
+    ws = _ws()
+    with ws.lock:
+        return sum(
+            1 for r in ws.tables["applications"]
+            if r.get("grounding_result") in ("passed", "repaired") and (r.get("resume_path") or "") != ""
+        )
 
 
 def log_audit_event(session_id: str, user_reply: str, action: str, details: str = "") -> None:
-    """Store raw user words, timestamp, and action into audit log."""
-    with session() as c:
-        c.execute(
-            "INSERT INTO audit_log (session_id, user_reply, action, details, created_at) VALUES (?, ?, ?, ?, ?)",
-            (session_id, str(user_reply), str(action), str(details), now_iso()),
-        )
+    ws = _ws()
+    with ws.lock:
+        ws.tables["audit_log"].append({
+            "id": ws.next_id("audit_log"),
+            "session_id": session_id, "user_reply": str(user_reply),
+            "action": str(action), "details": str(details), "created_at": now_iso(),
+        })
+        ws.flush_durable()
 
 
 def get_audit_events(session_id: str = "") -> list[dict[str, Any]]:
-    """Retrieve audit log events."""
-    with session() as c:
+    ws = _ws()
+    with ws.lock:
+        rows = ws.tables["audit_log"]
         if session_id:
-            rows = c.execute("SELECT * FROM audit_log WHERE session_id=? ORDER BY id ASC", (session_id,)).fetchall()
-        else:
-            rows = c.execute("SELECT * FROM audit_log ORDER BY id ASC").fetchall()
-        return [dict(r) for r in rows]
+            rows = [r for r in rows if r.get("session_id") == session_id]
+        return [dict(r) for r in sorted(rows, key=lambda r: r.get("id") or 0)]
 
 
 def store_guess(session_id: str, category: str, value: str, confidence: float = 0.0, metadata: Optional[dict] = None, resume_id: str = "") -> None:
-    """Store an inference guess without filtering search or view."""
-    with session() as c:
-        c.execute(
-            "INSERT INTO guesses (session_id, resume_id, category, value, confidence, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (session_id, resume_id, category, str(value), float(confidence), json.dumps(metadata or {}), now_iso())
-        )
+    ws = _ws()
+    with ws.lock:
+        ws.tables["guesses"].append({
+            "id": ws.next_id("guesses"),
+            "session_id": session_id, "resume_id": resume_id, "category": category,
+            "value": str(value), "confidence": float(confidence),
+            "metadata": json.dumps(metadata or {}), "created_at": now_iso(),
+        })
+        ws.flush_durable()
 
 
 def get_guesses(session_id: str, category: Optional[str] = None) -> list[dict[str, Any]]:
-    """Retrieve stored guesses for a session."""
-    with session() as c:
-        if category:
-            rows = c.execute("SELECT * FROM guesses WHERE session_id=? AND category=? ORDER BY id ASC", (session_id, category)).fetchall()
-        else:
-            rows = c.execute("SELECT * FROM guesses WHERE session_id=? ORDER BY id ASC", (session_id,)).fetchall()
-        return [dict(r) for r in rows]
+    ws = _ws()
+    with ws.lock:
+        rows = [r for r in ws.tables["guesses"] if r.get("session_id") == session_id and (not category or r.get("category") == category)]
+        return [dict(r) for r in sorted(rows, key=lambda r: r.get("id") or 0)]
 
 
 def store_answer(session_id: str, category: str, value: str, user_reply: str) -> None:
-    """Store confirmed user answer from explicit user reply."""
-    with session() as c:
-        c.execute(
-            "INSERT INTO answers (session_id, category, value, user_reply, created_at) VALUES (?, ?, ?, ?, ?)",
-            (session_id, category, str(value), str(user_reply), now_iso())
-        )
+    ws = _ws()
+    with ws.lock:
+        ws.tables["answers"].append({
+            "id": ws.next_id("answers"),
+            "session_id": session_id, "category": category,
+            "value": str(value), "user_reply": str(user_reply), "created_at": now_iso(),
+        })
+        ws.flush_durable()
 
 
 def get_answers(session_id: str, category: Optional[str] = None) -> list[dict[str, Any]]:
-    """Retrieve confirmed user answers for a session."""
-    with session() as c:
-        if category:
-            rows = c.execute("SELECT * FROM answers WHERE session_id=? AND category=? ORDER BY id ASC", (session_id, category)).fetchall()
-        else:
-            rows = c.execute("SELECT * FROM answers WHERE session_id=? ORDER BY id ASC", (session_id,)).fetchall()
-        return [dict(r) for r in rows]
+    ws = _ws()
+    with ws.lock:
+        rows = [r for r in ws.tables["answers"] if r.get("session_id") == session_id and (not category or r.get("category") == category)]
+        return [dict(r) for r in sorted(rows, key=lambda r: r.get("id") or 0)]
 
 
 def get_confirmed_answer(session_id: str, category: str) -> Optional[str]:
-    """Retrieve the latest confirmed value for a category from user answers."""
-    with session() as c:
-        row = c.execute("SELECT value FROM answers WHERE session_id=? AND category=? ORDER BY id DESC LIMIT 1", (session_id, category)).fetchone()
-        return str(row["value"]) if row else None
+    rows = get_answers(session_id, category)
+    return str(rows[-1]["value"]) if rows else None
 
 
 def is_job_saved_by_ui(job_id_or_key: str) -> bool:
-    """Check if a job has saved_by == 'ui' in jobs or applications table."""
     if not job_id_or_key:
         return False
-    with session() as c:
-        row = c.execute(
-            "SELECT saved_by FROM jobs WHERE id=? OR url_hash=? OR job_key=?",
-            (job_id_or_key, job_id_or_key, job_id_or_key)
-        ).fetchone()
-        if row and (row["saved_by"] == "ui" or row[0] == "ui"):
-            return True
-        app_row = c.execute(
-            "SELECT saved_by FROM applications WHERE id=? OR job_id=?",
-            (job_id_or_key, job_id_or_key)
-        ).fetchone()
-        if app_row and (app_row["saved_by"] == "ui" or app_row[0] == "ui"):
-            return True
+    ws = _ws()
+    with ws.lock:
+        for r in ws.tables["jobs"]:
+            if r.get("id") == job_id_or_key or r.get("url_hash") == job_id_or_key or r.get("job_key") == job_id_or_key:
+                if r.get("saved_by") == "ui":
+                    return True
+        for r in ws.tables["applications"]:
+            if r.get("id") == job_id_or_key or r.get("job_id") == job_id_or_key:
+                if r.get("saved_by") == "ui":
+                    return True
     return False
 
 
 def mark_job_saved_by_ui(job_id_or_key: str) -> None:
-    """Mark a job as saved by UI in jobs and applications tables."""
     if not job_id_or_key:
         return
-    with session() as c:
-        c.execute(
-            "UPDATE jobs SET saved_by='ui', keep_flag=1 WHERE id=? OR url_hash=? OR job_key=?",
-            (job_id_or_key, job_id_or_key, job_id_or_key)
-        )
-        c.execute(
-            "UPDATE applications SET saved_by='ui' WHERE id=? OR job_id=?",
-            (job_id_or_key, job_id_or_key)
-        )
+    ws = _ws()
+    with ws.lock:
+        for r in ws.tables["jobs"]:
+            if r.get("id") == job_id_or_key or r.get("url_hash") == job_id_or_key or r.get("job_key") == job_id_or_key:
+                r["saved_by"] = "ui"
+                r["keep_flag"] = 1
+        for r in ws.tables["applications"]:
+            if r.get("id") == job_id_or_key or r.get("job_id") == job_id_or_key:
+                r["saved_by"] = "ui"
+        ws.flush_cache()
+        ws.flush_durable()
 
 
 def reset_stale_search_cache(session_id: str = "default") -> dict[str, int]:
-    """Clear unsaved search cache, old unsaved signals, and stale filters across candidate switches.
-
-    Preserves saved jobs, applications, outreach ledger, and saved signals.
-    """
     init_db()
-    _SESSION_VIEW_FILTERS.pop(session_id, None)
     counts = {"jobs_cleared": 0, "signals_cleared": 0, "pending_cleared": 0}
-    with session() as c:
-        c.execute(
-            """DELETE FROM jobs
-               WHERE COALESCE(saved_by, '') != 'ui'
-                 AND COALESCE(keep_flag, 0) = 0
-                 AND id NOT IN (SELECT COALESCE(job_id, '') FROM applications WHERE job_id IS NOT NULL)"""
-        )
-        counts["jobs_cleared"] = c.execute("SELECT changes()").fetchone()[0]
+    ws = _ws()
+    with ws.lock:
+        app_job_ids = {a.get("job_id") for a in ws.tables["applications"] if a.get("job_id")}
+        kept_jobs = []
+        for j in ws.tables["jobs"]:
+            if j.get("saved_by") == "ui" or j.get("keep_flag") or j.get("id") in app_job_ids or j.get("job_key") in app_job_ids:
+                kept_jobs.append(j)
+        counts["jobs_cleared"] = len(ws.tables["jobs"]) - len(kept_jobs)
+        ws.tables["jobs"] = kept_jobs
 
-        try:
-            c.execute(
-                """DELETE FROM search_jobs
-                   WHERE job_key NOT IN (SELECT id FROM jobs)
-                     AND job_key NOT IN (SELECT COALESCE(job_key, '') FROM jobs)"""
-            )
-        except Exception:
-            pass
+        kept_ids = {j.get("id") for j in kept_jobs} | {j.get("job_key") for j in kept_jobs}
+        ws.tables["search_jobs"] = [s for s in ws.tables["search_jobs"] if s.get("job_key") in kept_ids]
+        ws.tables["job_sources"] = [s for s in ws.tables["job_sources"] if s.get("job_id") in kept_ids]
 
-        try:
-            c.execute("DELETE FROM job_sources WHERE job_id NOT IN (SELECT id FROM jobs)")
-        except Exception:
-            pass
+        out_sig_ids = {o.get("signal_id") for o in ws.tables["outreach"] if o.get("signal_id")}
+        kept_sigs = [s for s in ws.tables["signals"] if s.get("status") == "saved" or s.get("id") in out_sig_ids]
+        counts["signals_cleared"] = len(ws.tables["signals"]) - len(kept_sigs)
+        ws.tables["signals"] = kept_sigs
 
-        c.execute(
-            """DELETE FROM signals
-               WHERE COALESCE(status, '') != 'saved'
-                 AND id NOT IN (SELECT COALESCE(signal_id, '') FROM outreach WHERE signal_id IS NOT NULL)"""
-        )
-        counts["signals_cleared"] = c.execute("SELECT changes()").fetchone()[0]
-
-        try:
-            c.execute("DELETE FROM pending_search_jobs")
-            counts["pending_cleared"] = c.execute("SELECT changes()").fetchone()[0]
-        except Exception:
-            pass
-
-        c.execute("DELETE FROM view_filters WHERE session_id=?", (session_id,))
-        c.execute("DELETE FROM settings WHERE key IN ('li_radar_last_run', 'li_radar_last_query', 'li_radar_last_action', 'li_radar_new_last')")
-        try:
-            c.execute("UPDATE radar_state SET last_poll_at=NULL WHERE id=1")
-        except Exception:
-            pass
+        counts["pending_cleared"] = len(ws.tables["pending_search_jobs"])
+        ws.tables["pending_search_jobs"] = []
+        ws.tables["view_filters"] = [v for v in ws.tables["view_filters"] if v.get("session_id") != session_id]
+        ws.tables["settings"] = [s for s in ws.tables["settings"] if s.get("key") not in ("li_radar_last_run", "li_radar_last_query", "li_radar_last_action", "li_radar_new_last")]
+        if ws.tables["radar_state"]:
+            ws.tables["radar_state"][0]["last_poll_at"] = None
+        ws.flush_durable()
+        ws.flush_cache()
     return counts
 
 
+# ------------------------------------------------------------------ Typed Store Helpers (no raw SQL in callers)
+
+def get_job_record(job_id: str) -> Optional[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        for r in ws.tables["jobs"]:
+            if job_id in (r.get("id"), r.get("url_hash"), r.get("job_key")):
+                return dict(r)
+        for r in ws.tables["search_jobs"]:
+            if r.get("job_key") == job_id:
+                d = dict(r)
+                try:
+                    raw = json.loads(d.get("job_json") or "{}")
+                    raw.update(d)
+                    return raw
+                except Exception:
+                    return d
+        for a in ws.tables["applications"]:
+            if a.get("id") == job_id or a.get("job_id") == job_id:
+                d = dict(a)
+                try:
+                    jd = json.loads(d.get("job_data_json") or "{}")
+                    jd.update(d)
+                    return jd
+                except Exception:
+                    return d
+    return None
 
 
+def is_job_saved_record(job_id_or_key: str) -> bool:
+    if not job_id_or_key:
+        return False
+    ws = _ws()
+    with ws.lock:
+        for a in ws.tables["applications"]:
+            if (a.get("id") == job_id_or_key or a.get("job_id") == job_id_or_key) and a.get("status") in ("saved", "applied", "interview", "offer", "queued"):
+                return True
+        for j in ws.tables["jobs"]:
+            if job_id_or_key in (j.get("id"), j.get("url_hash"), j.get("job_key")) and j.get("keep_flag"):
+                return True
+    return False
 
 
+def mark_job_saved_record(job_id_or_key: str, saved_by: str = "ui") -> None:
+    ws = _ws()
+    with ws.lock:
+        for j in ws.tables["jobs"]:
+            if job_id_or_key in (j.get("id"), j.get("url_hash"), j.get("job_key")):
+                j["keep_flag"] = 1
+                j["delete_at"] = None
+                j["saved_by"] = saved_by
+        ws.flush_cache()
 
 
+def keep_jobs_by_ids(job_ids: list[str]) -> int:
+    if not job_ids:
+        return 0
+    id_set = set(job_ids)
+    changed = 0
+    ws = _ws()
+    with ws.lock:
+        for j in ws.tables["jobs"]:
+            if j.get("id") in id_set or j.get("job_key") in id_set:
+                j["keep_flag"] = 1
+                j["delete_at"] = None
+                changed += 1
+        if changed:
+            ws.flush_cache()
+    return changed
 
+
+def job_exists(job_id: str) -> bool:
+    ws = _ws()
+    with ws.lock:
+        return any(j.get("id") == job_id or j.get("job_key") == job_id for j in ws.tables["jobs"])
+
+
+def mark_job_closed_record(job_id: str, delete_dt: str) -> None:
+    iso_now = now_iso()
+    ws = _ws()
+    with ws.lock:
+        has_app = any(a.get("job_id") == job_id for a in ws.tables["applications"])
+        for j in ws.tables["jobs"]:
+            if j.get("id") == job_id or j.get("job_key") == job_id:
+                if j.get("keep_flag") or has_app:
+                    j.update({"freshness_state": "expired", "closed_checked_at": iso_now, "keep_flag": 1, "delete_at": None})
+                else:
+                    j.update({"freshness_state": "expired", "closed_checked_at": iso_now, "delete_at": j.get("delete_at") or delete_dt})
+        ws.flush_cache()
+
+
+def cleanup_expired_records(grace_hours: int) -> int:
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    iso_now = now_dt.isoformat()
+    delete_horizon = (now_dt + datetime.timedelta(hours=grace_hours)).isoformat()
+    cutoff_60d = (now_dt - datetime.timedelta(days=60)).isoformat()
+    deleted_count = 0
+
+    ws = _ws()
+    with ws.lock:
+        app_job_ids = {a.get("job_id") for a in ws.tables["applications"] if a.get("job_id")}
+        kept = []
+        removed_ids = set()
+        for j in ws.tables["jobs"]:
+            c_at = j.get("created_at") or ""
+            fs_at = j.get("first_seen_at") or ""
+            if not j.get("keep_flag"):
+                if j.get("freshness_state") != "expired" and ((c_at and c_at < cutoff_60d) or (fs_at and fs_at < cutoff_60d)):
+                    j["freshness_state"] = "expired"
+                    j["delete_at"] = delete_horizon
+                if j.get("freshness_state") == "expired" and j.get("delete_at") is None:
+                    j["delete_at"] = delete_horizon
+            should_del = (
+                j.get("freshness_state") == "expired"
+                and j.get("delete_at") is not None
+                and j["delete_at"] <= iso_now
+                and not j.get("keep_flag")
+                and j.get("id") not in app_job_ids
+                and j.get("job_key") not in app_job_ids
+            )
+            if should_del:
+                if j.get("url_hash") or j.get("fingerprint"):
+                    ws.tables["tombstones"].append({
+                        "id": ws.next_id("tombstones"),
+                        "url_hash": j.get("url_hash") or "",
+                        "fingerprint": j.get("fingerprint") or "",
+                        "deleted_at": iso_now,
+                    })
+                removed_ids.add(j.get("id"))
+                deleted_count += 1
+            else:
+                kept.append(j)
+        ws.tables["jobs"] = kept
+        if removed_ids:
+            ws.tables["job_sources"] = [s for s in ws.tables["job_sources"] if s.get("job_id") not in removed_ids]
+            ws.flush_durable()
+        ws.flush_cache()
+    return deleted_count
+
+
+def mark_jobs_seen_by_user(job_ids: Optional[list[str]] = None) -> int:
+    ws = _ws()
+    id_set = set(job_ids) if job_ids else None
+    changed = 0
+    with ws.lock:
+        for j in ws.tables["jobs"]:
+            if id_set is not None:
+                if j.get("id") in id_set or j.get("job_key") in id_set:
+                    j["is_new"] = 0
+                    j["seen_by_user"] = 1
+                    changed += 1
+            elif j.get("is_new") == 1:
+                j["is_new"] = 0
+                j["seen_by_user"] = 1
+                changed += 1
+        if changed:
+            ws.flush_cache()
+    return changed
+
+
+def list_applications_raw() -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        return sorted([dict(r) for r in ws.tables["applications"]], key=lambda r: r.get("updated_at") or "", reverse=True)
+
+
+def get_application_raw(app_id: str) -> Optional[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        r = next((x for x in ws.tables["applications"] if x.get("id") == app_id), None)
+        return dict(r) if r else None
+
+
+def get_status_history(app_id: str) -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        rows = [dict(h) for h in ws.tables["status_history"] if h.get("app_id") == app_id]
+        rows.sort(key=lambda h: h.get("id") or 0)
+        return [{"status": h["status"], "changed_at": h["changed_at"]} for h in rows]
+
+
+def upsert_application_raw(record: dict[str, Any], add_history: bool = False) -> None:
+    ws = _ws()
+    with ws.lock:
+        tbl = ws.tables["applications"]
+        existing = next((r for r in tbl if r.get("id") == record["id"]), None)
+        if existing:
+            existing.update(record)
+        else:
+            tbl.append(ws._normalize_row("applications", record))
+        if add_history:
+            ws.tables["status_history"].append({
+                "id": ws.next_id("status_history"),
+                "app_id": record["id"],
+                "status": record["status"],
+                "changed_at": record["updated_at"],
+            })
+        ws.flush_durable()
+
+
+def update_application_fields(app_or_job_id: str, **fields: Any) -> bool:
+    ws = _ws()
+    changed = False
+    with ws.lock:
+        for r in ws.tables["applications"]:
+            if r.get("id") == app_or_job_id or r.get("job_id") == app_or_job_id:
+                r.update(fields)
+                r.setdefault("updated_at", now_iso())
+                changed = True
+        if changed:
+            ws.flush_durable()
+    return changed
+
+
+def delete_application_raw(app_id: str) -> None:
+    ws = _ws()
+    with ws.lock:
+        ws.tables["applications"] = [r for r in ws.tables["applications"] if r.get("id") != app_id]
+        ws.tables["status_history"] = [h for h in ws.tables["status_history"] if h.get("app_id") != app_id]
+        ws.flush_durable()
+
+
+def list_watchlist_raw() -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        return sorted([dict(r) for r in ws.tables["watchlist"]], key=lambda r: r.get("company_name") or "")
+
+
+def update_watchlist_checked(wl_id: str, checked_at: str, matches: int) -> None:
+    ws = _ws()
+    with ws.lock:
+        for w in ws.tables["watchlist"]:
+            if w.get("id") == wl_id:
+                w["last_checked"] = checked_at
+                w["active_matches_count"] = matches
+        ws.flush_durable()
+
+
+def delete_watchlist_raw(wl_id: str) -> None:
+    ws = _ws()
+    with ws.lock:
+        ws.tables["watchlist"] = [w for w in ws.tables["watchlist"] if w.get("id") != wl_id]
+        ws.flush_durable()
+
+
+def add_watchlist_entry(wl_id: str, name: str, slug: str, board_type: str, target_role: str = "") -> tuple[bool, str]:
+    ws = _ws()
+    with ws.lock:
+        for w in ws.tables["watchlist"]:
+            if (w.get("board_type") or "").lower() == board_type and w.get("slug") == slug:
+                return True, w["id"]
+        ws.tables["watchlist"].append(ws._normalize_row("watchlist", {
+            "id": wl_id, "company_name": name, "slug": slug,
+            "board_type": board_type, "target_role": target_role or "", "added_at": now_iso(),
+        }))
+        ws.flush_durable()
+    return False, wl_id
+
+
+def remove_watchlist_entry(ident: str) -> bool:
+    needle = (ident or "").strip().lower()
+    ws = _ws()
+    with ws.lock:
+        before = len(ws.tables["watchlist"])
+        ws.tables["watchlist"] = [
+            w for w in ws.tables["watchlist"]
+            if w.get("id") != ident and (w.get("slug") or "").lower() != needle and (w.get("company_name") or "").lower() != needle
+        ]
+        removed = len(ws.tables["watchlist"]) < before
+        if removed:
+            ws.flush_durable()
+        return removed
+
+
+def list_discovered_boards() -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        return [dict(r) for r in ws.tables["discovered_boards"]]
+
+
+def upsert_discovered_board(board: str, slug: str, name: str, found_via: str, ok: Optional[bool], count: int = 0) -> bool:
+    now_ts = time.time()
+    ws = _ws()
+    with ws.lock:
+        tbl = ws.tables["discovered_boards"]
+        row = next((r for r in tbl if r.get("board_type") == board and r.get("slug") == slug), None)
+        is_new = row is None
+        if row is None:
+            row = ws._normalize_row("discovered_boards", {
+                "board_type": board, "slug": slug, "company_name": name,
+                "first_seen": now_iso(), "found_via": found_via,
+            })
+            tbl.append(row)
+        if ok is True:
+            row.update({"last_fetched": now_ts, "last_ok": now_ts, "job_count": count, "fail_count": 0})
+        elif ok is False:
+            row.update({"last_fetched": now_ts, "fail_count": int(row.get("fail_count") or 0) + 1})
+        ws.flush_durable()
+        return is_new
+
+
+def get_source_cache(cache_key: str) -> Optional[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        r = next((x for x in ws.tables["source_cache"] if x.get("cache_key") == cache_key), None)
+        return dict(r) if r else None
+
+
+def set_source_cache(cache_key: str, payload: str, fetched_at: float) -> None:
+    ws = _ws()
+    with ws.lock:
+        tbl = ws.tables["source_cache"]
+        row = next((x for x in tbl if x.get("cache_key") == cache_key), None)
+        if row:
+            row.update({"payload": payload, "fetched_at": fetched_at})
+        else:
+            tbl.append({"cache_key": cache_key, "payload": payload, "fetched_at": fetched_at})
+        ws.flush_cache()
+
+
+def query_outreach_history(contact_id: str, email: str = "", cutoff_iso: str = "") -> list[dict[str, Any]]:
+    clean_email = (email or "").strip().lower()
+    ws = _ws()
+    with ws.lock:
+        rows = []
+        for r in ws.tables["outreach"]:
+            if cutoff_iso and (r.get("created_at") or "") < cutoff_iso:
+                continue
+            if r.get("contact_id") == contact_id or (clean_email and (r.get("recipient_email") or "").lower() == clean_email):
+                rows.append(dict(r))
+    rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    return rows
+
+
+def update_outreach_record(identifier: str, updater: Any) -> Optional[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        matches = [r for r in ws.tables["outreach"] if r.get("id") == identifier or r.get("contact_id") == identifier]
+        if not matches:
+            return None
+        matches.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+        row = matches[0]
+        updater(row, ws)
+        ws.flush_durable()
+        return dict(row)
+
+
+def has_outreach_for_company(company: str) -> bool:
+    needle = (company or "").lower().strip()
+    if not needle:
+        return False
+    ws = _ws()
+    with ws.lock:
+        return any((r.get("company") or "").lower() == needle for r in ws.tables["outreach"])
+
+
+def has_outreach_for_email_since(email: str, cutoff_iso: str) -> bool:
+    needle = (email or "").lower().strip()
+    if not needle:
+        return False
+    ws = _ws()
+    with ws.lock:
+        return any((r.get("recipient_email") or "").lower() == needle and (r.get("sent_at") or "") >= cutoff_iso for r in ws.tables["outreach"])
+
+
+def get_undigested_seen_keys(limit: int | None = None, mark_seen: bool = False) -> tuple[list[str], int]:
+    ws = _ws()
+    with ws.lock:
+        undig = {r.get("job_key") for r in ws.tables["seen_jobs"] if not r.get("digested")}
+        backlog = len(undig)
+        active = [r for r in ws.tables["search_jobs"] if r.get("is_active", 1) == 1 and r.get("job_key") in undig]
+        active.sort(key=lambda r: (r.get("opportunity_score") or 0, r.get("score") or 0), reverse=True)
+        keys = [r["job_key"] for r in (active[:limit] if limit else active)]
+        if mark_seen and keys:
+            key_set = set(keys)
+            for s in ws.tables["seen_jobs"]:
+                if s.get("job_key") in key_set:
+                    s["digested"] = 1
+            ws.flush_cache()
+        return keys, backlog
+
+
+def mark_seen_digested(keys: list[str]) -> None:
+    if not keys:
+        return
+    key_set = set(keys)
+    ws = _ws()
+    with ws.lock:
+        for s in ws.tables["seen_jobs"]:
+            if s.get("job_key") in key_set:
+                s["digested"] = 1
+        ws.flush_cache()
+
+
+def get_undigested_key_set() -> set[str]:
+    ws = _ws()
+    with ws.lock:
+        return {r["job_key"] for r in ws.tables["seen_jobs"] if not r.get("digested") and r.get("job_key")}
+
+
+def upsert_mission(mission_id: str, request: str, intents: list[str], status: str, blob: str, keep: int = 200) -> None:
+    now = now_iso()
+    ws = _ws()
+    with ws.lock:
+        tbl = ws.tables["missions"]
+        existing = next((r for r in tbl if r.get("id") == mission_id), None)
+        created_at = existing["created_at"] if existing else now
+        rec = {
+            "id": mission_id, "created_at": created_at, "updated_at": now,
+            "request": request[:1000], "intents": ",".join(intents), "status": status, "data_json": blob,
+        }
+        if existing:
+            existing.update(rec)
+        else:
+            tbl.append(rec)
+        tbl.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+        del tbl[keep:]
+        ws.flush_durable()
+
+
+def load_mission(mission_id: str) -> Optional[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        r = next((x for x in ws.tables["missions"] if x.get("id") == mission_id), None)
+        return dict(r) if r else None
+
+
+def recent_missions(limit: int = 10) -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        rows = sorted([dict(r) for r in ws.tables["missions"]], key=lambda r: r.get("created_at") or "", reverse=True)
+        return rows[:limit]
+
+
+def all_missions() -> list[dict[str, Any]]:
+    ws = _ws()
+    with ws.lock:
+        return [dict(r) for r in ws.tables["missions"]]
+
+
+def delete_missions(mission_id: str = "all") -> int:
+    ws = _ws()
+    with ws.lock:
+        before = len(ws.tables["missions"])
+        ws.tables["missions"] = [] if mission_id == "all" else [r for r in ws.tables["missions"] if r.get("id") != mission_id]
+        removed = before - len(ws.tables["missions"])
+        if removed:
+            ws.flush_durable()
+        return removed
+
+
+def find_search_jobs_by_company(needle: str, limit: int = 6) -> list[dict[str, Any]]:
+    low = (needle or "").lower()
+    ws = _ws()
+    with ws.lock:
+        rows = [r for r in ws.tables["search_jobs"] if low in (r.get("company") or "").lower()]
+        rows.sort(key=lambda r: r.get("score") or 0, reverse=True)
+        return [{"job_key": r["job_key"], "title": r.get("title", ""), "company": r.get("company", "")} for r in rows[:limit]]
+
+
+def get_top_search_scores(limit: int = 5) -> list[float]:
+    ws = _ws()
+    with ws.lock:
+        rows = sorted(ws.tables["search_jobs"], key=lambda r: r.get("score") or 0, reverse=True)
+        return [float(r["score"]) for r in rows[:limit] if r.get("score") is not None]
+
+
+def count_runtime_stats() -> dict[str, int]:
+    ws = _ws()
+    with ws.lock:
+        jobs = ws.tables["jobs"]
+        return {
+            "total_jobs": len(jobs),
+            "active_jobs": sum(1 for j in jobs if j.get("freshness_state") == "active"),
+            "dismissals_count": len(ws.tables["dismissals"]),
+            "signals_count": len(ws.tables["signals"]),
+            "has_stale_jobs": int(any(j.get("saved_by") != "ui" for j in jobs)),
+            "has_stale_signals": int(any(s.get("status") != "saved" for s in ws.tables["signals"])),
+            "has_stale_filters": int(len(ws.tables["view_filters"]) > 0),
+        }
+
+
+def rescore_all_jobs_against_profile(profile: dict[str, Any]) -> None:
+    from . import scoring
+    ws = _ws()
+    with ws.lock:
+        changed = False
+        for r in ws.tables["jobs"]:
+            try:
+                j = json.loads(r.get("job_json") or "{}")
+                scored = scoring.score_job(j, profile)
+                new_score = int(scored.get("score", 0))
+                j.update(scored)
+                r["score"] = new_score
+                r["job_json"] = json.dumps(j)
+                changed = True
+            except Exception:
+                pass
+        if changed:
+            ws.flush_cache()
+
+
+def count_store_metrics() -> dict[str, int]:
+    ws = _ws()
+    with ws.lock:
+        jobs = ws.tables["jobs"]
+        sigs = ws.tables["signals"]
+        return {
+            "total_jobs": len(jobs),
+            "active_jobs": sum(1 for j in jobs if j.get("freshness_state") == "active"),
+            "dismissals_count": len(ws.tables["dismissals"]),
+            "signals_count": len(sigs),
+            "fresh_signals": sum(1 for s in sigs if s.get("status") == "fresh"),
+            "contacts_count": len(ws.tables["contacts"]),
+            "outreach_count": len(ws.tables["outreach"]),
+        }
+
+
+def get_outreach_weekly_stats() -> dict[str, Any]:
+    ws = _ws()
+    with ws.lock:
+        out_rows = [dict(r) for r in ws.tables["outreach"]]
+        sig_by_id = {s.get("id"): s.get("source") or "other" for s in ws.tables["signals"]}
+    w_sent = w_rep = wo_sent = wo_rep = 0
+    by_source: dict[str, dict[str, Any]] = {}
+    for o in out_rows:
+        st = o.get("status")
+        if st == "draft":
+            continue
+        is_rep = 1 if st == "replied" else 0
+        if o.get("attached") == 1:
+            w_sent += 1
+            w_rep += is_rep
+        elif o.get("attached") == 0:
+            wo_sent += 1
+            wo_rep += is_rep
+        sid = o.get("signal_id")
+        if sid and sid in sig_by_id:
+            sname = sig_by_id[sid]
+            entry = by_source.setdefault(sname, {"sent": 0, "replies": 0, "rate": 0.0})
+            entry["sent"] += 1
+            entry["replies"] += is_rep
+    for entry in by_source.values():
+        entry["rate"] = round(entry["replies"] / entry["sent"], 2) if entry["sent"] else 0.0
+    return {"w_sent": w_sent, "w_rep": w_rep, "wo_sent": wo_sent, "wo_rep": wo_rep, "by_source": by_source}
+
+
+def query_jobs_by_filter(freshness_state: str = "active", limit: int = 20) -> list[str]:
+    ws = _ws()
+    with ws.lock:
+        return [r["id"] for r in ws.tables["jobs"] if r.get("freshness_state") == freshness_state][:limit]

@@ -3,7 +3,7 @@ import os
 import time
 import pytest
 
-from jh import config, db, httpd, radar
+from jh import config, db, radar
 from jh.home import get_home
 
 

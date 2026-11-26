@@ -105,7 +105,7 @@ def ensure_home_dirs() -> Path:
 
     Never called at install or import time.
     Directories created:
-      data/ (holds engine.db)
+      data/ (holds JSON state under store/)
       resumes/
       outputs/
       logs/

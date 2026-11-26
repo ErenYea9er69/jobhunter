@@ -61,9 +61,7 @@ def get_coaching_context(session_id: str = "default", profile: dict[str, Any] | 
     # Get recent top match scores from search_jobs
     top_scores: list[float] = []
     try:
-        with db.session() as c:
-            rows = c.execute("SELECT score FROM search_jobs ORDER BY score DESC LIMIT 5").fetchall()
-            top_scores = [float(r["score"]) for r in rows if r["score"] is not None]
+        top_scores = db.get_top_search_scores(limit=5)
     except Exception:
         pass
 

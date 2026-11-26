@@ -16,7 +16,7 @@ def isolated_db(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", str(test_db))
     os.makedirs(test_home / "data", exist_ok=True)
     db.init_db()
-    config.set_method("classic")
+    config.set_method("hybrid")
     return test_db
 
 
@@ -28,7 +28,7 @@ def test_jh_start_new_user_and_returning_user():
     assert res_new["next_tool"] == "jh_set_filters"
     assert "questions" in res_new["options"]
     assert len(res_new["options"]["questions"]) <= 7
-    assert res_new["options"]["recommended"]["job_style"] == "tech jobs"
+    assert res_new["options"]["recommended"]["target_role"] == "Software Engineer"
 
     # 2. Save filters to simulate a returning user
     db.save_view_filters({
@@ -154,16 +154,8 @@ def test_jh_query_and_usable_gate():
     assert res["step"] == 7
     assert res["data"]["count"] == 12
     assert res["data"]["usable_gate"]["usable"] is True
-    assert res["next_tool"] == "jh_open_ui"
-
-
-def test_jh_open_ui_and_health():
-    res = v5_tools.jh_open_ui(port=8765)
-    assert res["status"] == "ok"
-    assert res["step"] == 8
-    assert "http://" in res["data"]["url"]
-    assert res["data"]["server_ready"] is True
-    assert res["next_tool"] == "jh_status"
+    assert res["next_tool"] == "prepare_application"
+    assert len(res["data"]["jobs"]) == 12
 
 
 def test_jh_status_full_system_state():
@@ -173,7 +165,7 @@ def test_jh_status_full_system_state():
     assert "workspace_home" in res["data"]
     assert "radar_state" in res["data"]
     assert "total_jobs" in res["data"]
-    assert res["next_tool"] == "jh_search"
+    assert res["next_tool"] in ("jh_start", "jh_query")
 
 
 def test_jh_feedback_dismissals_and_tuning():

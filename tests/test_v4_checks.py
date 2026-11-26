@@ -30,7 +30,6 @@ from jh import (
     db,
     digest,
     email_drafter,
-    extension_installer,
     founder_outreach,
     gmail_tracker,
     home,
@@ -57,10 +56,13 @@ def clean_v4_state(tmp_path, monkeypatch):
     home_dir = tmp_path / "home"
     home_dir.mkdir(parents=True, exist_ok=True)
 
+    monkeypatch.setenv("JOBMCP_HOME", str(home_dir))
+    monkeypatch.setenv("JOBHUNTER_BYPASS_DELAY", "1")
     monkeypatch.setattr(config, "WORKSPACE_DIR", str(ws))
     monkeypatch.setattr(config, "DATA_DIR", str(home_dir / "data"))
-    monkeypatch.setattr(config, "DB_PATH", str(home_dir / "data" / "engine.db"))
-    monkeypatch.setenv("JOBHUNTER_BYPASS_DELAY", "1")
+    monkeypatch.setattr(config, "DB_PATH", str(home_dir / "data" / "state"))
+    home._HOME_CREATED_IN_SESSION = False
+    home._FIRST_NOTICE_GIVEN = False
 
     ticket_manager._TICKETS.clear()
     ticket_manager._SESSIONS.clear()
@@ -116,30 +118,25 @@ def test_check_01_invalid_and_non_resumes_rejected():
 
 
 def test_check_02_good_resume_one_line_summary_and_step_3_questions():
-    """Check 2: A good resume gives one-line profile and step 3 questions, with no search row, closed port, no browser call."""
-    with patch("jh.worker_launcher.open_browser") as mock_browser:
-        res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="chk2_good")
-        assert res["status"] in ("needs_target", "needs_role")
-        assert "ticket" not in res  # Ticket is NOT issued before Step 3 answers
+    """Check 2: A good resume gives one-line profile and step 3 questions without starting search prematurely."""
+    res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="chk2_good")
+    assert res["status"] in ("needs_target", "needs_role")
+    assert "ticket" not in res
 
-        msg = res["message_for_user"]
-        assert msg.startswith("STOP. Ask the user the questions below and wait for the answer. Do not call another tool.")
-        assert "Method: Modern (default) or Classic" in msg
-        assert "Target place:" in msg
+    msg = res["message_for_user"]
+    assert msg.startswith("STOP. Ask the user the questions below and wait for the answer. Do not call another tool.")
+    assert "Target place:" in msg
 
-        # One-line summary present
-        assert "one_line_summary" in res["data"]
-        summary = res["data"]["one_line_summary"]
-        assert "Name:" in summary
-        assert "Roles:" in summary
-        assert "Top Skills:" in summary
+    assert "one_line_summary" in res["data"]
+    summary = res["data"]["one_line_summary"]
+    assert "Name:" in summary
+    assert "Roles:" in summary
+    assert "Top Skills:" in summary
 
-        # Verify no premature start
-        mock_browser.assert_not_called()
-        with db.session() as c:
-            count = c.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
-            assert count == 0
-        assert worker_launcher.get_search_job_status("chk2_good")["status"] == "not_started"
+    with db.session() as c:
+        count = c.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+        assert count == 0
+    assert worker_launcher.get_search_job_status("chk2_good")["status"] == "not_started"
 
 
 def test_check_03_launch_rejects_without_ticket_and_confirm_rejects_empty_echo():
@@ -164,44 +161,31 @@ def test_check_03_launch_rejects_without_ticket_and_confirm_rejects_empty_echo()
     assert "repeats the question" in c_echo["message_for_user"].lower()
 
 
-def test_check_04_after_ticket_launch_speed_and_url_session():
-    """Check 4: After ticket, launch returns in < 3s, server starts, search runs, browser opens with session URL."""
+def test_check_04_after_ticket_launch_speed_and_headless_search():
+    """Check 4: After ticket, headless Hybrid launch returns in < 3s and starts search."""
     v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="chk4_sess")
-    c_res = v5_tools.jh_confirm(session_id="chk4_sess", user_reply="Modern method, Tunisia")
+    c_res = v5_tools.jh_confirm(session_id="chk4_sess", user_reply="Tunisia")
     assert c_res["status"] == "ready"
     ticket = c_res["ticket"]
 
-    with patch("jh.worker_launcher.start_detached_server", return_value={"status": "started", "port": 8080}), \
-         patch("jh.worker_launcher.open_browser", return_value=True) as mock_b:
-        t0 = time.time()
-        l_res = v5_tools.jh_launch(session_id="chk4_sess", ticket=ticket)
-        elapsed = time.time() - t0
+    t0 = time.time()
+    l_res = v5_tools.jh_launch(session_id="chk4_sess", ticket=ticket)
+    elapsed = time.time() - t0
 
-        assert elapsed < 3.0
-        assert l_res["status"] == "ok"
-        assert "http://127.0.0.1:8080/?session=chk4_sess" in l_res["ui_url"]
-        assert l_res["search_status"] in ("started", "already_running")
-        mock_b.assert_called_once()
+    assert elapsed < 3.0
+    assert l_res["status"] == "ok"
+    assert l_res["data"]["method"] == "hybrid"
+    assert l_res["search_status"] in ("started", "already_running")
 
 
-def test_check_05_server_and_search_keep_running_on_process_kill():
-    """Check 5: Detached worker and search jobs keep running independently of calling agent process."""
-    run_dir = worker_launcher.get_run_dir()
-    run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "server.pid").write_text("12345", encoding="utf-8")
-    (run_dir / "server.port").write_text("8080", encoding="utf-8")
-
+def test_check_05_background_search_persists_independently():
+    """Check 5: Headless background search state remains active across tool calls."""
     v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="chk5_sess")
-    c_res = v5_tools.jh_confirm(session_id="chk5_sess", user_reply="Modern, Tunisia")
+    c_res = v5_tools.jh_confirm(session_id="chk5_sess", user_reply="Tunisia")
 
     try:
-        with patch("jh.worker_launcher.is_server_healthy", return_value=True), \
-             patch("jh.worker_launcher.open_browser", return_value=True):
-            l_res = v5_tools.jh_launch(session_id="chk5_sess", ticket=c_res["ticket"])
-            assert l_res["status"] == "ok"
-
-        # Simulate caller exiting: PID file and memory state remain intact
-        assert (run_dir / "server.pid").is_file()
+        l_res = v5_tools.jh_launch(session_id="chk5_sess", ticket=c_res["ticket"])
+        assert l_res["status"] == "ok"
         assert worker_launcher.get_search_job_status("chk5_sess")["status"] in ("running", "completed")
     finally:
         worker_launcher.stop_worker("chk5_sess")
@@ -241,13 +225,10 @@ def test_check_07_guesses_never_filter_before_user_answers():
 
 
 def test_check_08_jh_answer_updates_filters_live_without_new_search():
-    """Check 8: jh_answer changes the list with no new search; hidden count matches database."""
+    """Check 8: jh_answer changes the list with no new search; hidden count matches store."""
     v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="chk8_ans")
-    c_res = v5_tools.jh_confirm(session_id="chk8_ans", user_reply="Modern, Tunisia")
-
-    with patch("jh.worker_launcher.start_detached_server", return_value={"status": "started", "port": 8080}), \
-         patch("jh.worker_launcher.open_browser", return_value=True):
-        v5_tools.jh_launch(session_id="chk8_ans", ticket=c_res["ticket"])
+    c_res = v5_tools.jh_confirm(session_id="chk8_ans", user_reply="Tunisia")
+    v5_tools.jh_launch(session_id="chk8_ans", ticket=c_res["ticket"])
 
     initial_job_id = worker_launcher.get_search_job_status("chk8_ans")["job_id"]
 
@@ -256,33 +237,22 @@ def test_check_08_jh_answer_updates_filters_live_without_new_search():
         {"title": "Onsite Backend Engineer", "company": "Local", "work_mode": "onsite", "score": 90},
     ], query="backend")
 
-    # Filter remote
     ans_res = v5_tools.jh_answer(session_id="chk8_ans", answers={"work_mode": "remote"}, user_reply="remote jobs only")
     assert ans_res["status"] == "ok"
     assert ans_res["data"]["matches_count"] >= 1
-
-    # Search job ID remains unchanged (no new search initiated)
     assert worker_launcher.get_search_job_status("chk8_ans")["job_id"] == initial_job_id
 
     st = v5_tools.jh_status(session_id="chk8_ans")
     assert st["data"]["hidden_by_filters"] >= 1
 
 
-def test_check_09_chat_holds_no_jobs_and_no_documents_before_save():
-    """Check 9: The chat holds no job list; no document exists before Save."""
+def test_check_09_no_documents_generated_before_user_selection():
+    """Check 9: Launch starts Hybrid search headlessly and generates no job documents until user picks a job."""
     v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="chk9_save")
-    c_res = v5_tools.jh_confirm(session_id="chk9_save", user_reply="Modern, Tunisia")
+    c_res = v5_tools.jh_confirm(session_id="chk9_save", user_reply="Tunisia")
+    l_res = v5_tools.jh_launch(session_id="chk9_save", ticket=c_res["ticket"])
+    assert l_res["status"] == "ok"
 
-    with patch("jh.worker_launcher.start_detached_server", return_value={"status": "started", "port": 8080}), \
-         patch("jh.worker_launcher.open_browser", return_value=True):
-        l_res = v5_tools.jh_launch(session_id="chk9_save", ticket=c_res["ticket"])
-
-    # Chat message contains no job dump
-    msg = l_res["message_for_user"]
-    assert "Do not list jobs in chat" in msg
-    assert "http://" in l_res["ui_url"]
-
-    # Verify output dir has no generated job documents before Save
     outputs_dir = home.get_home() / "outputs"
     if outputs_dir.exists():
         generated_docs = [

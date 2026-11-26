@@ -14,7 +14,7 @@ from .ceo import CEO, RELAY_RULES
 JH_TOOLS = (
     "jh_begin", "jh_confirm", "jh_answer", "jh_replace_resume", "jh_launch", "jh_stop", "jh_install_agent",
     "jh_start", "jh_load_resume", "jh_confirm_profile", "jh_set_filters",
-    "jh_search", "jh_query", "jh_refresh", "jh_open_ui", "jh_status", "jh_feedback",
+    "jh_search", "jh_query", "jh_refresh", "jh_status", "jh_feedback",
     "jh_set_method", "jh_find_contacts", "jh_build_resume", "jh_draft_email",
     "jh_ask_missing_metrics", "jh_confirm_metric"
 )
@@ -323,14 +323,9 @@ def register_team(mcp: Any, tool: Callable, registry: dict[str, Callable], store
         return v5_tools.jh_refresh(source=source, force=force)
 
     @tool
-    def jh_open_ui(port: int = 8080, host: str = "127.0.0.1") -> dict[str, Any]:
-        """Step 8: Start the web UI server if down, verify health endpoint, find next free port if occupied, and open browser."""
-        return v5_tools.jh_open_ui(port=port, host=host)
-
-    @tool
-    def jh_status(session_id: str = "default") -> dict[str, Any]:
-        """Inspect JobHunter state: session state, background search, matching jobs count, and top 5 matches only."""
-        return v5_tools.jh_status(session_id=session_id)
+    def jh_status(session_id: str = "default", include_matches: bool = True) -> dict[str, Any]:
+        """Inspect JobHunter state: session state, background search, matching jobs count, and ranked top matches."""
+        return v5_tools.jh_status(session_id=session_id, include_matches=include_matches)
 
     @tool
     def jh_feedback(job_id: str = "", action: str = "dismiss", reason: str = "",
@@ -339,8 +334,8 @@ def register_team(mcp: Any, tool: Callable, registry: dict[str, Callable], store
         return v5_tools.jh_feedback(job_id=job_id, action=action, reason=reason, exclude_company=exclude_company, exclude_keyword=exclude_keyword, session_id=session_id)
 
     @tool
-    def jh_set_method(method: str = "modern", session_id: str = "default") -> dict[str, Any]:
-        """Modern vs Classic: Choose outreach first (default) or classic job board flow."""
+    def jh_set_method(method: str = "hybrid", session_id: str = "default") -> dict[str, Any]:
+        """Confirm Hybrid job hunting mode (Signal Radar, multi-board search, tailored docs, and outreach)."""
         return v5_tools.jh_set_method(method=method, session_id=session_id)
 
     @tool

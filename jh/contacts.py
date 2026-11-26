@@ -139,23 +139,18 @@ class HunterAdapter(ContactProviderAdapter):
         return True
 
     def _get_cached_payload(self, cache_key: str) -> Optional[Dict[str, Any]]:
-        with db.session() as c:
-            row = c.execute("SELECT payload, fetched_at FROM source_cache WHERE cache_key=?", (cache_key,)).fetchone()
-            if row:
-                age = time.time() - float(row["fetched_at"])
-                if age < HUNTER_CACHE_TTL_SEC:
-                    try:
-                        return json.loads(row["payload"])
-                    except Exception:
-                        pass
+        row = db.get_source_cache(cache_key)
+        if row:
+            age = time.time() - float(row["fetched_at"])
+            if age < HUNTER_CACHE_TTL_SEC:
+                try:
+                    return json.loads(row["payload"])
+                except Exception:
+                    pass
         return None
 
     def _set_cached_payload(self, cache_key: str, payload: Dict[str, Any]) -> None:
-        with db.session() as c:
-            c.execute(
-                "INSERT OR REPLACE INTO source_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?)",
-                (cache_key, json.dumps(payload), time.time()),
-            )
+        db.set_source_cache(cache_key, json.dumps(payload), time.time())
 
     def _update_quota(self, headers: Dict[str, str], meta: Dict[str, Any]) -> None:
         rem = headers.get("X-RateLimit-Remaining") or headers.get("x-ratelimit-remaining")
@@ -565,13 +560,8 @@ def is_excluded(
     email = (contact.get("email") or "").lower().strip()
     if email:
         cutoff = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=90)).isoformat()
-        with db.session() as c:
-            row = c.execute(
-                "SELECT id FROM outreach WHERE lower(recipient_email)=lower(?) AND sent_at >= ?",
-                (email, cutoff),
-            ).fetchone()
-            if row:
-                return True, "contacted_in_past_90_days"
+        if db.has_outreach_for_email_since(email, cutoff):
+            return True, "contacted_in_past_90_days"
 
     return False, ""
 

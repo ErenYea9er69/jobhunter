@@ -207,61 +207,14 @@ def test_jh_find_contacts_tool_envelope():
             assert "contacts" in res["data"]
 
 
-def test_contacts_http_endpoints():
-    """Verify GET, POST, and DELETE /api/contacts endpoints."""
-    import io
-    import json
-    from pathlib import Path
-    from jh.httpd import JobHunterRequestHandler
-
-    class FakeServer:
-        def __init__(self):
-            self.ws_dir = Path.cwd()
-
-    def call_api(method: str, path: str, body: dict = None):
-        raw_body = json.dumps(body).encode("utf-8") if body else b""
-        rfile = io.BytesIO(raw_body)
-        wfile = io.BytesIO()
-
-        handler = JobHunterRequestHandler.__new__(JobHunterRequestHandler)
-        handler.rfile = rfile
-        handler.wfile = wfile
-        handler.server = FakeServer()
-        handler.path = path
-        handler.command = method
-        handler.headers = {
-            "Content-Length": str(len(raw_body)),
-            "Content-Type": "application/json",
-        }
-        handler.close_connection = True
-        status_code = [200]
-        handler.send_response = lambda code, msg=None: status_code.__setitem__(0, code)
-        handler.send_header = lambda k, v: None
-        handler.end_headers = lambda: None
-
-        if method == "GET":
-            handler.do_GET()
-        elif method == "POST":
-            handler.do_POST()
-        elif method == "DELETE":
-            handler.do_DELETE()
-
-        wfile.seek(0)
-        output = wfile.read()
-        return status_code[0], json.loads(output.decode("utf-8")) if output else {}
-
-    # Save a contact directly
-    c = db.save_contact({"name": "Http Contact", "company": "API Corp", "email": "http@api.com"})
+def test_contacts_crud_operations():
+    """Verify save_contact, get_contacts, and delete_contact store operations."""
+    c = db.save_contact({"name": "Store Contact", "company": "API Corp", "email": "store@api.com"})
     cid = c["id"]
 
-    # 1. GET /api/contacts
-    code, res = call_api("GET", f"/api/contacts?company=API Corp")
-    assert code == 200
-    assert res["status"] == "ok"
-    assert len(res["data"]["contacts"]) >= 1
+    contacts_list = db.get_contacts(company="API Corp")
+    assert any(x["id"] == cid for x in contacts_list)
 
-    # 2. DELETE /api/contacts?id=...
-    code, del_res = call_api("DELETE", f"/api/contacts?id={cid}")
-    assert code == 200
-    assert del_res["data"]["deleted"] is True
+    deleted = db.delete_contact(cid)
+    assert deleted is True
     assert db.get_contact(cid) is None

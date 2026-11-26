@@ -1,9 +1,8 @@
-"""Tests for Phase B2: Database schema, migrations, and lifecycle tracking."""
+"""Tests for Phase B2: JSON + in-memory persistence layer (no SQLite database) and lifecycle tracking."""
 import os
-import sqlite3
 import pytest
 
-from jh import config, db, dedup
+from jh import config, db, dedup, store
 from jh.home import get_home
 
 
@@ -20,40 +19,24 @@ def isolated_db(tmp_path, monkeypatch):
     return test_db
 
 
-def test_schema_version_and_tables(isolated_db):
-    with db.session() as c:
-        row = c.execute("PRAGMA user_version").fetchone()
-        assert row[0] >= 5
+def test_json_store_initialization_and_no_sqlite_file(isolated_db):
+    assert not isolated_db.exists(), "engine.db SQLite file must not be created"
+    ws = store.get_store()
+    assert ws.durable_path.is_file(), "durable.json must persist settings/state"
+    required = {
+        "session_state", "profile", "view_filters", "jobs", "job_sources",
+        "tombstones", "deletions_log", "radar_state", "refresh_state",
+        "dismissals", "applications", "signals", "company_briefs", "contacts", "outreach",
+    }
+    assert required.issubset(set(ws.tables.keys()))
 
-        # Check required tables exist
-        tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        required = {
-            "session_state",
-            "profile",
-            "view_filters",
-            "jobs",
-            "job_sources",
-            "tombstones",
-            "deletions_log",
-            "radar_state",
-            "refresh_state",
-            "dismissals",
-            "applications",
-            "signals",
-            "company_briefs",
-            "contacts",
-            "outreach",
-        }
-        assert required.issubset(tables)
-
-        # Check default settings
-        assert db.get_setting("cleanup_grace_hours") == "24"
-        assert db.get_setting("method") == "modern"
-        assert db.get_setting("daily_cap") == "20"
-        assert db.get_setting("follow_up_days") == "4"
-        assert db.get_setting("first_touch_attachment") == "1"
-        assert db.get_setting("send_mode") == "one_at_a_time"
-        assert db.get_setting("resume_max_kb") == "200"
+    assert db.get_setting("cleanup_grace_hours") == "24"
+    assert db.get_setting("method") == "hybrid"
+    assert db.get_setting("daily_cap") == "20"
+    assert db.get_setting("follow_up_days") == "4"
+    assert db.get_setting("first_touch_attachment") == "1"
+    assert db.get_setting("send_mode") == "one_at_a_time"
+    assert db.get_setting("resume_max_kb") == "200"
 
 
 def test_session_state_helpers():
@@ -142,8 +125,7 @@ def test_view_filters_crud():
 
 def test_jobs_lifecycle_columns_and_sources():
     with db.session() as c:
-        # Check jobs table columns
-        cols = {r["name"] for r in c.execute("PRAGMA table_info(jobs)")}
+        cols = db._columns(c, "jobs")
         assert {
             "source", "url_hash", "fingerprint", "found_at", "first_seen_at",
             "last_seen_at", "is_new", "seen_by_user", "repost_count",
@@ -151,13 +133,12 @@ def test_jobs_lifecycle_columns_and_sources():
             "closed_checked_at"
         }.issubset(cols)
 
-        # Check job_sources schema and unique constraint
+        # Check job_sources schema and unique url_hash enforcement
         c.execute("""
             INSERT INTO job_sources (job_id, source, url, url_hash, first_seen_at, last_seen_at)
             VALUES ('j1', 'LinkedIn', 'https://linkedin.com/jobs/view/12345', 'li:12345', '2026-11-12T00:00:00Z', '2026-11-12T00:00:00Z')
         """)
-        # Duplicate url_hash should fail with IntegrityError
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(ValueError):
             c.execute("""
                 INSERT INTO job_sources (job_id, source, url, url_hash, first_seen_at, last_seen_at)
                 VALUES ('j2', 'LinkedIn', 'https://linkedin.com/jobs/view/12345', 'li:12345', '2026-11-12T01:00:00Z', '2026-11-12T01:00:00Z')

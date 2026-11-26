@@ -52,11 +52,9 @@ def test_d12_jh_begin_returns_profile_line():
     assert line in res["message_for_user"]
 
 
-def test_d12_jh_launch_returns_concise_post_launch_summary(monkeypatch):
+def test_d12_jh_launch_returns_concise_launch_summary(monkeypatch):
     from jh import worker_launcher
-    monkeypatch.setattr(worker_launcher, "start_detached_server", lambda *a, **kw: {"status": "started", "port": 8888})
     monkeypatch.setattr(worker_launcher, "start_background_search", lambda *a, **kw: {"search_job_id": "s_123", "status": "started"})
-    monkeypatch.setattr(worker_launcher, "open_browser", lambda *a, **kw: True)
 
     sid = "test_d12_launch"
     ticket_manager.transition_session_state(sid, ticket_manager.SessionState.ANSWERED)
@@ -64,8 +62,5 @@ def test_d12_jh_launch_returns_concise_post_launch_summary(monkeypatch):
 
     launch_res = jh_launch(session_id=sid, ticket=tkt)
     assert launch_res["status"] == "ok"
-    assert "post_launch_summary" in launch_res
-    summary = launch_res["post_launch_summary"]
-    assert "UI" in summary
-    assert "Search status" in summary
-    assert "Questions come next" in summary
+    assert launch_res["search_status"] in ("started", "already_running")
+    assert launch_res["data"]["method"] == "hybrid"

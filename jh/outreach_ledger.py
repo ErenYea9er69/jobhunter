@@ -44,12 +44,14 @@ def record_contact(email: str, company: str = "") -> None:
     clean_email = email.strip().lower()
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     stable_outreach_id = util.stable_id(clean_email, "contact")
-    with db.session() as c:
-        c.execute(
-            """INSERT INTO outreach (id, contact_id, recipient_email, company, status, drafted_at, sent_at, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 'sent', ?, ?, ?, ?)""",
-            (f"out_{stable_outreach_id}", clean_email, clean_email, company or "Company", now, now, now, now),
-        )
+    db.log_outreach(
+        contact_id=clean_email,
+        company=company or "Company",
+        status="sent",
+        recipient_email=clean_email,
+        sent_at=now,
+        outreach_id=f"out_{stable_outreach_id}",
+    )
 
 
 def can_contact(email: str) -> bool:
@@ -71,25 +73,7 @@ def check_already_contacted(contact_id: str, email: str = "") -> Dict[str, Any]:
     db.init_db()
     cutoff_90d = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=90)).isoformat()
     clean_email = email.strip().lower()
-
-    with db.session() as c:
-        if clean_email:
-            rows = c.execute(
-                """SELECT * FROM outreach
-                   WHERE (contact_id=? OR lower(recipient_email)=lower(?))
-                     AND created_at >= ?
-                   ORDER BY created_at DESC""",
-                (contact_id, clean_email, cutoff_90d),
-            ).fetchall()
-        else:
-            rows = c.execute(
-                """SELECT * FROM outreach
-                   WHERE contact_id=? AND created_at >= ?
-                   ORDER BY created_at DESC""",
-                (contact_id, cutoff_90d),
-            ).fetchall()
-
-    history = [dict(r) for r in rows]
+    history = db.query_outreach_history(contact_id=contact_id, email=clean_email, cutoff_iso=cutoff_90d)
     if not history:
         return {
             "allowed": True,
@@ -190,8 +174,10 @@ def queue_or_allow_draft(outreach_id: str) -> Dict[str, Any]:
     """Inspect daily cap and set status to 'queued' if cap exceeded."""
     cap_info = check_daily_cap()
     if not cap_info["under_cap"]:
-        with db.session() as c:
-            c.execute("UPDATE outreach SET status='queued', updated_at=? WHERE id=?", (db.now_iso(), outreach_id))
+        db.update_outreach_record(
+            outreach_id,
+            lambda r, _ws: r.update({"status": "queued", "updated_at": db.now_iso()}),
+        )
         return {
             "status": "queued",
             "queued": True,
@@ -219,50 +205,36 @@ def mark_outreach_sent(outreach_id_or_contact_id: str, is_follow_up: bool = Fals
     fu_due = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=fu_days)).isoformat()
     cap_info = check_daily_cap() if not is_follow_up else {"under_cap": True}
 
-    with db.session() as c:
-        row = c.execute(
-            """SELECT * FROM outreach
-               WHERE id=? OR contact_id=?
-               ORDER BY created_at DESC LIMIT 1""",
-            (outreach_id_or_contact_id, outreach_id_or_contact_id),
-        ).fetchone()
-        if not row:
-            raise ToolError(f"Outreach row not found for identifier: {outreach_id_or_contact_id}")
-
-        oid = row["id"]
-        cid = row["contact_id"]
-
+    def _apply(row: Dict[str, Any], ws: Any) -> None:
+        cid = row.get("contact_id", "")
         if not is_follow_up and not cap_info.get("under_cap", True):
-            c.execute("UPDATE outreach SET status='queued', updated_at=? WHERE id=?", (now, oid))
-            return {
-                "id": oid,
-                "contact_id": cid,
-                "status": "queued",
-                "queued": True,
-                "cap_reached": True,
-                "daily_cap": cap_info.get("daily_cap", 20),
-                "sent_today_count": cap_info.get("sent_today_count", 20),
-                "remaining_cap": 0,
-                "message": f"Daily cap of {cap_info.get('daily_cap', 20)} sends reached. Queued for tomorrow.",
-            }
-
+            row.update({"status": "queued", "updated_at": now})
+            return
         if is_follow_up:
-            c.execute("""
-                UPDATE outreach
-                SET status='followup_sent', sent_at=?, follow_up_sent_at=?, updated_at=?
-                WHERE id=?
-            """, (now, now, now, oid))
+            row.update({"status": "followup_sent", "sent_at": now, "follow_up_sent_at": now, "updated_at": now})
         else:
-            c.execute("""
-                UPDATE outreach
-                SET status='sent', sent_at=?, follow_up_due=?, updated_at=?
-                WHERE id=?
-            """, (now, fu_due, now, oid))
+            row.update({"status": "sent", "sent_at": now, "follow_up_due": fu_due, "updated_at": now})
+        for ct in ws.tables["contacts"]:
+            if ct.get("id") == cid:
+                ct.update({"status": "sent", "last_contacted_at": now, "updated_at": now})
 
-        c.execute("UPDATE contacts SET status='sent', last_contacted_at=?, updated_at=? WHERE id=?", (now, now, cid))
+    updated = db.update_outreach_record(outreach_id_or_contact_id, _apply)
+    if not updated:
+        raise ToolError(f"Outreach row not found for identifier: {outreach_id_or_contact_id}")
 
-        updated = c.execute("SELECT * FROM outreach WHERE id=?", (oid,)).fetchone()
-        return dict(updated) if updated else {}
+    if not is_follow_up and not cap_info.get("under_cap", True):
+        return {
+            "id": updated["id"],
+            "contact_id": updated["contact_id"],
+            "status": "queued",
+            "queued": True,
+            "cap_reached": True,
+            "daily_cap": cap_info.get("daily_cap", 20),
+            "sent_today_count": cap_info.get("sent_today_count", 20),
+            "remaining_cap": 0,
+            "message": f"Daily cap of {cap_info.get('daily_cap', 20)} sends reached. Queued for tomorrow.",
+        }
+    return updated
 
 
 # =====================================================================
@@ -272,28 +244,28 @@ def mark_outreach_sent(outreach_id_or_contact_id: str, is_follow_up: bool = Fals
 def record_reply(outreach_id_or_contact_id: str, sentiment: str = "positive") -> Dict[str, Any]:
     """Record receipt of a reply from a lead and build structured Call Prep Pack."""
     now = db.now_iso()
-    with db.session() as c:
-        row = c.execute(
-            """SELECT * FROM outreach
-               WHERE id=? OR contact_id=?
-               ORDER BY created_at DESC LIMIT 1""",
-            (outreach_id_or_contact_id, outreach_id_or_contact_id),
-        ).fetchone()
-        if not row:
-            raise ToolError(f"Outreach not found for {outreach_id_or_contact_id}")
 
-        row_dict = dict(row)
-        oid = row_dict.get("id")
-        cid = row_dict.get("contact_id")
-        comp = row_dict.get("company", "")
-        sig_id = row_dict.get("signal_id", "")
+    def _apply(row: Dict[str, Any], ws: Any) -> None:
+        cid = row.get("contact_id", "")
+        row.update({
+            "status": "replied",
+            "replied_at": now,
+            "reply_received_at": now,
+            "reply_sentiment": sentiment,
+            "updated_at": now,
+        })
+        for ct in ws.tables["contacts"]:
+            if ct.get("id") == cid:
+                ct.update({"status": "replied", "updated_at": now})
 
-        c.execute("""
-            UPDATE outreach
-            SET status='replied', replied_at=?, reply_received_at=?, reply_sentiment=?, updated_at=?
-            WHERE id=?
-        """, (now, now, sentiment, now, oid))
-        c.execute("UPDATE contacts SET status='replied', updated_at=? WHERE id=?", (now, cid))
+    row_dict = db.update_outreach_record(outreach_id_or_contact_id, _apply)
+    if not row_dict:
+        raise ToolError(f"Outreach not found for {outreach_id_or_contact_id}")
+
+    oid = row_dict.get("id")
+    cid = row_dict.get("contact_id")
+    comp = row_dict.get("company", "")
+    sig_id = row_dict.get("signal_id", "")
 
     # Retrieve company brief & learning pack for call prep pack
     brief_data = db.get_company_brief(comp) or db.get_company_brief(sig_id) or {}
@@ -349,46 +321,19 @@ def generate_weekly_report() -> Dict[str, Any]:
     total_replied = base_report.get("total_replied", 0)
     overall_rate = base_report.get("overall_reply_rate", 0.0)
 
-    # Breakdowns
-    with db.session() as c:
-        # 1. By attachment policy
-        w_att = c.execute(
-            "SELECT count(*) as s, sum(CASE WHEN status='replied' THEN 1 ELSE 0 END) as r FROM outreach WHERE attached=1 AND status != 'draft'"
-        ).fetchone()
-        wo_att = c.execute(
-            "SELECT count(*) as s, sum(CASE WHEN status='replied' THEN 1 ELSE 0 END) as r FROM outreach WHERE attached=0 AND status != 'draft'"
-        ).fetchone()
+    ws_stats = db.get_outreach_weekly_stats()
+    w_sent, w_rep = ws_stats["w_sent"], ws_stats["w_rep"]
+    wo_sent, wo_rep = ws_stats["wo_sent"], ws_stats["wo_rep"]
+    w_rate = (w_rep / w_sent) if w_sent else 0.0
+    wo_rate = (wo_rep / wo_sent) if wo_sent else 0.0
+    by_source = ws_stats["by_source"]
 
-        w_rate = (w_att["r"] / w_att["s"]) if (w_att and w_att["s"]) else 0.0
-        wo_rate = (wo_att["r"] / wo_att["s"]) if (wo_att and wo_att["s"]) else 0.0
-
-        # 2. By source type
-        source_rows = c.execute("""
-            SELECT s.source, count(o.id) as sent, sum(CASE WHEN o.status='replied' THEN 1 ELSE 0 END) as replies
-            FROM outreach o
-            JOIN signals s ON o.signal_id = s.id
-            WHERE o.status != 'draft'
-            GROUP BY s.source
-        """).fetchall()
-
-        by_source = {}
-        for r in source_rows:
-            s_name = r["source"] or "other"
-            s_sent = r["sent"] or 0
-            s_rep = r["replies"] or 0
-            by_source[s_name] = {
-                "sent": s_sent,
-                "replies": s_rep,
-                "rate": round(s_rep / s_sent, 2) if s_sent else 0.0,
-            }
-
-    # Data-driven suggested change
-    if w_rate > wo_rate and w_att["s"] >= 3:
+    if w_rate > wo_rate and w_sent >= 3:
         suggested_change = (
             f"Emails with the 1-page resume attached achieved a {round(w_rate * 100)}% reply rate vs "
             f"{round(wo_rate * 100)}% without. Keep 'first_touch_attachment' enabled."
         )
-    elif wo_rate > w_rate and wo_att["s"] >= 3:
+    elif wo_rate > w_rate and wo_sent >= 3:
         suggested_change = (
             f"Short emails without attachments performed better ({round(wo_rate * 100)}% vs {round(w_rate * 100)}%). "
             "Consider disabling attachments for initial cold touches."
@@ -410,8 +355,8 @@ def generate_weekly_report() -> Dict[str, Any]:
         "calls_booked": total_replied,
         "overall_reply_rate": round(overall_rate, 2),
         "by_attachment": {
-            "with_attachment": {"sent": w_att["s"] if w_att else 0, "replies": w_att["r"] if w_att else 0, "rate": round(w_rate, 2)},
-            "without_attachment": {"sent": wo_att["s"] if wo_att else 0, "replies": wo_att["r"] if wo_att else 0, "rate": round(wo_rate, 2)},
+            "with_attachment": {"sent": w_sent, "replies": w_rep, "rate": round(w_rate, 2)},
+            "without_attachment": {"sent": wo_sent, "replies": wo_rep, "rate": round(wo_rate, 2)},
         },
         "by_source": by_source,
         "suggested_change": suggested_change,

@@ -121,11 +121,8 @@ def clear_ai_key(provider: str | None = None) -> dict[str, Any]:
         for p in ["gemini", "openai", "anthropic", "deepseek", "groq", "mistral", "custom"]:
             targets.append(f"{p}_api_key" if p != "custom" else "custom_ai_key")
 
-    with db.session() as c:
-        for t in targets:
-            c.execute("DELETE FROM settings WHERE key = ?", (t,))
-        c.execute("DELETE FROM settings WHERE key = 'ai_model'")
-        c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('ai_provider', 'deterministic')")
+    db.delete_settings([*targets, "ai_model"])
+    db.set_setting("ai_provider", "deterministic")
 
     return {
         "success": True,

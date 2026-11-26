@@ -29,20 +29,9 @@ def build_step_3_target_questions(
 
     questions = [
         {
-            "id": "method",
-            "question": (
-                "1. Method: Modern (default) or Classic — or Hybrid (Recommended, runs both)?\n"
-                "   - Hybrid (Recommended): runs Signal Radar + 25-board search; lets you apply via ATS extension (resume/cover letter/prep) AND email decision makers directly.\n"
-                "   - Modern (Default): catches fresh hiring signals + job-board openings and runs direct decision-maker email outreach (no ATS apply).\n"
-                "   - Classic: searches job boards and uses tailored resume, cover letter, prep, and extension ATS autofill."
-            ),
-            "choices": ["Hybrid (Recommended)", "Modern (Default)", "Classic"],
-            "recommended": "Hybrid",
-        },
-        {
             "id": "target_place",
             "question": (
-                "2. Target place (required before launch, never guessed from your resume): "
+                "1. Target place (required before search, never guessed from your resume): "
                 "Pick one or several: remote only, international or worldwide remote, or a specific place such as a country or region "
                 "(for example France, Europe, South Asia, or the USA), plus an optional city if you want one."
             ),
@@ -53,22 +42,18 @@ def build_step_3_target_questions(
     ]
 
     lines = [
-        "Please confirm these target search questions before we launch (target place is required; I never guess it from your resume):",
-        "1. Method: Modern (default) or Classic — or Hybrid (Recommended, runs both)?",
-        "   - Hybrid (Recommended): full search + ATS extension apply (resume/cover letter/prep) AND decision-maker cold emails.",
-        "   - Modern: Signal Radar + job-board discovery with direct decision-maker cold email outreach.",
-        "   - Classic: 25-board search with tailored resume, cover letter, prep, and ATS extension autofill.",
-        "2. Target place: remote only, international or worldwide remote, or a specific country/region (e.g. France, Europe, South Asia, USA)? You can pick one or several and add a city if you want one.",
+        "Please confirm these target search questions before we run Hybrid search (signals + job boards; target place is required):",
+        "1. Target place: remote only, international or worldwide remote, or a specific country/region (e.g. France, Europe, South Asia, USA)? You can pick one or several and add a city if you want one.",
     ]
 
     if ask_role:
         questions.append({
             "id": "target_role",
-            "question": f"3. Target role: What target job title or role are you aiming for?\n   (Options from skill clusters/resume: {', '.join(role_choices)}; or name your own)",
+            "question": f"2. Target role: What target job title or role are you aiming for?\n   (Options from skill clusters/resume: {', '.join(role_choices)}; or name your own)",
             "choices": role_choices,
             "recommended": top_role,
         })
-        lines.append(f"3. Target role: What target job title or role are you aiming for? (Options: {', '.join(role_choices)}; or name your own)")
+        lines.append(f"2. Target role: What target job title or role are you aiming for? (Options: {', '.join(role_choices)}; or name your own)")
 
     formatted_text = "\n".join(lines)
 
@@ -113,7 +98,7 @@ def build_round_1_role_questions(inferred_roles: list[dict[str, Any]]) -> dict[s
     }
 
 
-def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, Any], region_guess: dict[str, Any], method: str = "modern") -> dict[str, Any]:
+def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, Any], region_guess: dict[str, Any], method: str = "hybrid") -> dict[str, Any]:
     """Generates Round 2 refinement batch asked while background search is executing."""
     suggested_type = job_type_guess.get("value") or "full-time"
     suggested_region = (region_guess.get("value") or "").strip()

@@ -15,8 +15,8 @@ STATUSES = ["saved", "queued", "applied", "interview", "offer", "rejected"]  # "
 FOLLOW_UP_DAYS = {"applied": 7, "interview": 3, "offer": 2}
 
 
-def _row_to_app(c, r):
-    hist = [dict(h) for h in c.execute("SELECT status, changed_at FROM status_history WHERE app_id=? ORDER BY id", (r["id"],))]
+def _row_to_app(r):
+    hist = db.get_status_history(r["id"])
     since = days_since(hist[-1]["changed_at"]) if hist else None
     fu = r["follow_up_date"] or ""
     overdue = bool(fu and fu < datetime.date.today().isoformat() and r["status"] in ("applied", "interview"))
@@ -79,8 +79,7 @@ def _row_to_app(c, r):
 
 
 def list_applications():
-    with db.session() as c:
-        return [_row_to_app(c, r) for r in c.execute("SELECT * FROM applications ORDER BY updated_at DESC")]
+    return [_row_to_app(r) for r in db.list_applications_raw()]
 
 
 def upsert_application(data):
@@ -96,69 +95,63 @@ def upsert_application(data):
         if k in data and data[k] is not None:
             job_d[k] = data[k]
 
-    with db.session() as c:
-        old = c.execute("SELECT * FROM applications WHERE id=?", (app_id,)).fetchone()
-        follow = data.get("follow_up_date") or ""
-        if not follow and status in FOLLOW_UP_DAYS and (old is None or old["status"] != status):
-            follow = (datetime.date.today() + datetime.timedelta(days=FOLLOW_UP_DAYS[status])).isoformat()
-        elif not follow and old:
-            follow = old["follow_up_date"] or ""
+    old = db.get_application_raw(app_id)
+    follow = data.get("follow_up_date") or ""
+    if not follow and status in FOLLOW_UP_DAYS and (old is None or old["status"] != status):
+        follow = (datetime.date.today() + datetime.timedelta(days=FOLLOW_UP_DAYS[status])).isoformat()
+    elif not follow and old:
+        follow = old.get("follow_up_date") or ""
 
-        if old:
-            company = clean_text(data.get("company")) or old["company"]
-            title = clean_text(data.get("title")) or old["title"]
-            location = clean_text(data.get("location")) if "location" in data else old["location"]
-            salary = clean_text(data.get("salary")) if "salary" in data else old["salary"]
-            notes = data.get("notes") if "notes" in data else old["notes"]
-            job_id = data.get("job_id") if "job_id" in data else old["job_id"]
-            sources_json = json.dumps(data["sources"]) if "sources" in data else (old["sources_json"] or "[]")
-            cover_letter = data.get("cover_letter") if "cover_letter" in data else (old["cover_letter"] or "")
-            tailored_json = json.dumps(data["tailored_resume"]) if "tailored_resume" in data else old["tailored_resume_json"]
-            old_jd = json.loads(old["job_data_json"]) if old["job_data_json"] else {}
-            old_jd.update(job_d)
-            final_job_d = old_jd
-            created_at = old["created_at"]
-        else:
-            company = clean_text(data.get("company")) or "Unknown"
-            title = clean_text(data.get("title")) or "Untitled role"
-            location = clean_text(data.get("location", ""))
-            salary = clean_text(data.get("salary", ""))
-            notes = data.get("notes", "")
-            job_id = data.get("job_id")
-            sources_json = json.dumps(data.get("sources", []))
-            cover_letter = data.get("cover_letter", "")
-            tailored_json = json.dumps(data.get("tailored_resume"))
-            final_job_d = job_d
-            created_at = now
+    if old:
+        company = clean_text(data.get("company")) or old["company"]
+        title = clean_text(data.get("title")) or old["title"]
+        location = clean_text(data.get("location")) if "location" in data else old["location"]
+        salary = clean_text(data.get("salary")) if "salary" in data else old["salary"]
+        notes = data.get("notes") if "notes" in data else old["notes"]
+        job_id = data.get("job_id") if "job_id" in data else old["job_id"]
+        sources_json = json.dumps(data["sources"]) if "sources" in data else (old.get("sources_json") or "[]")
+        cover_letter = data.get("cover_letter") if "cover_letter" in data else (old.get("cover_letter") or "")
+        tailored_json = json.dumps(data["tailored_resume"]) if "tailored_resume" in data else old.get("tailored_resume_json")
+        old_jd = json.loads(old["job_data_json"]) if old.get("job_data_json") else {}
+        old_jd.update(job_d)
+        final_job_d = old_jd
+        created_at = old["created_at"]
+    else:
+        company = clean_text(data.get("company")) or "Unknown"
+        title = clean_text(data.get("title")) or "Untitled role"
+        location = clean_text(data.get("location", ""))
+        salary = clean_text(data.get("salary", ""))
+        notes = data.get("notes", "")
+        job_id = data.get("job_id")
+        sources_json = json.dumps(data.get("sources", []))
+        cover_letter = data.get("cover_letter", "")
+        tailored_json = json.dumps(data.get("tailored_resume"))
+        final_job_d = job_d
+        created_at = now
 
-        c.execute("""INSERT OR REPLACE INTO applications (id,job_id,company,title,location,salary,status,notes,follow_up_date,
-                     sources_json,job_data_json,tailored_resume_json,cover_letter,created_at,updated_at)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (app_id, job_id, company, title,
-                   location, salary, status, notes, follow,
-                   sources_json, json.dumps(final_job_d),
-                   tailored_json, cover_letter,
-                   created_at, now))
-        if old is None or old["status"] != status:
-            c.execute("INSERT INTO status_history (app_id,status,changed_at) VALUES (?,?,?)", (app_id, status, now))
+    db.upsert_application_raw({
+        "id": app_id, "job_id": job_id, "company": company, "title": title,
+        "location": location, "salary": salary, "status": status, "notes": notes,
+        "follow_up_date": follow, "sources_json": sources_json,
+        "job_data_json": json.dumps(final_job_d), "tailored_resume_json": tailored_json,
+        "cover_letter": cover_letter, "created_at": created_at, "updated_at": now,
+    }, add_history=(old is None or old["status"] != status))
     return app_id
 
 
 def auto_tailor_application(app_id: str, profile: dict | None = None, background: bool = True):
     """Automatically tailor a resume variant and generate a cover letter for a saved application.
 
-    If background=True, runs asynchronously on a daemon thread so the save action returns instantly (Option A).
-    Updates applications.tailored_resume_json and cover_letter in SQLite, and registers the tailored variant.
+    If background=True, runs asynchronously on a daemon thread so the save action returns instantly.
     """
     def _run():
         try:
-            with db.session() as c:
-                row = c.execute("SELECT * FROM applications WHERE id=?", (app_id,)).fetchone()
+            row = db.get_application_raw(app_id)
             if not row:
                 return
 
             # Check if tailored assets already exist
-            if row["tailored_resume_json"] and row["cover_letter"]:
+            if row.get("tailored_resume_json") and row["tailored_resume_json"] != "null" and row.get("cover_letter"):
                 return
 
             # Reconstruct job dict
@@ -201,11 +194,12 @@ def auto_tailor_application(app_id: str, profile: dict | None = None, background
             cover_letter = pitch.get("full_text") or ""
 
             now = now_iso()
-            with db.session() as c:
-                c.execute(
-                    "UPDATE applications SET tailored_resume_json=?, cover_letter=?, updated_at=? WHERE id=?",
-                    (json.dumps(tailored_resume), cover_letter, now, app_id)
-                )
+            db.update_application_fields(
+                app_id,
+                tailored_resume_json=json.dumps(tailored_resume),
+                cover_letter=cover_letter,
+                updated_at=now,
+            )
 
             # Register tailored variant into resume_profiles for UI & extension
             comp = row["company"] or "Tailored"
@@ -232,9 +226,7 @@ def auto_tailor_application(app_id: str, profile: dict | None = None, background
 
 
 def delete_application(app_id):
-    with db.session() as c:
-        c.execute("DELETE FROM applications WHERE id=?", (app_id,))
-        c.execute("DELETE FROM status_history WHERE app_id=?", (app_id,))
+    db.delete_application_raw(app_id)
 
 
 def funnel_stats():
@@ -290,8 +282,7 @@ def prepare_application(job, profile):
 
 def generate_application_follow_up(app_id, action_type="status_check_5days", notes="", profile=None, use_llm=None, llm_caller=None):
     """Generate high-leverage follow-up communications: status ping, post-interview thank you, or offer negotiation script."""
-    with db.session() as c:
-        row = c.execute("SELECT * FROM applications WHERE id=?", (app_id,)).fetchone()
+    row = db.get_application_raw(app_id)
     if not row:
         raise ValueError(f"Application {app_id} not found.")
 
@@ -594,8 +585,7 @@ def generate_one_click_bundle(job, profile=None, use_llm=None, archetype="startu
 # ---------------------------------------------------------------- watchlist
 
 def list_watchlist():
-    with db.session() as c:
-        return [dict(r) for r in c.execute("SELECT * FROM watchlist ORDER BY company_name")]
+    return db.list_watchlist_raw()
 
 
 def add_watch(company_name, slug="", board_type="", target_role=""):
@@ -623,13 +613,11 @@ def check_watchlist(profile, force=True):
             entry["top"] = [{"title": j["title"], "url": j["url"], "score": j["score"], "location": j["location"]} for j in hits[:5]]
         except Exception as e:
             entry["error"] = str(e)[:160]
-        with db.session() as c:
-            if not entry["error"]:
-                c.execute("UPDATE watchlist SET last_checked=?, active_matches_count=? WHERE id=?", (now_iso(), entry["matches"], w["id"]))
+        if not entry["error"]:
+            db.update_watchlist_checked(w["id"], now_iso(), entry["matches"])
         results.append(entry)
     return results
 
 
 def delete_watch(wl_id):
-    with db.session() as c:
-        c.execute("DELETE FROM watchlist WHERE id=?", (wl_id,))
+    db.delete_watchlist_raw(wl_id)
