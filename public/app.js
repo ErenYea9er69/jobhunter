@@ -876,6 +876,7 @@
     const url = jobUrl(j);
     const isSaved = app && app.status === "saved";
     const isModern = state.method === "modern";
+    const isHybrid = state.method === "hybrid";
 
     if (isModern) {
       const saveOrOutreach = isSaved
@@ -891,14 +892,15 @@
     if (app && app.status !== "saved") apply = `<span class="btn btn-secondary btn-sm card-state">${icon("check", "icon-sm")}${esc(STAGE_LABEL[app.status] || "Tracked")}</span>`;
     else apply = `<button class="btn btn-primary btn-sm" type="button" data-act="apply" data-key="${esc(key)}"${url ? "" : " disabled"}>Apply</button>`;
     
-    // Save button: clicking marks saved and unlocks document generation
+    // Save button: clicking marks saved and unlocks document generation (+ outreach in Hybrid)
     const save = isSaved
       ? `<button class="btn btn-quiet btn-sm" type="button" disabled>${icon("bookmark-check", "icon-sm")}<span>Saved</span></button>`
-      : `<button class="btn btn-quiet btn-sm" type="button" data-act="save" data-key="${esc(key)}">${icon("bookmark", "icon-sm")}<span>Save</span></button>`;
+      : `<button class="btn btn-quiet btn-sm" type="button" data-act="save" data-key="${esc(key)}">${icon("bookmark", "icon-sm")}<span>${isHybrid ? "Save &amp; Prepare Both" : "Save"}</span></button>`;
     
-    // Unlocked document generation actions: ONLY for saved jobs (Phase F4)
+    // Unlocked actions: ONLY for saved jobs (Phase F4)
     const docActions = isSaved
       ? `<div class="jc-doc-actions">
+           ${isHybrid ? `<button class="btn btn-primary btn-sm" type="button" data-act="modern-outreach" data-key="${esc(key)}" title="View decision makers &amp; cold email">${icon("mail", "icon-sm")}<span>Contacts &amp; Email</span></button>` : ""}
            <button class="btn btn-secondary btn-sm" type="button" data-act="tailor" data-key="${esc(key)}" title="Generate tailored resume">${icon("file-text", "icon-sm")}<span>Tailor</span></button>
            <button class="btn btn-secondary btn-sm" type="button" data-act="cover" data-key="${esc(key)}" title="Draft cover letter">${icon("mail", "icon-sm")}<span>Cover letter</span></button>
          </div>`
@@ -1069,11 +1071,12 @@
 
     const inPipeline = app && app.status !== "saved";
     const isModern = state.method === "modern";
+    const isHybrid = state.method === "hybrid";
     const saveBtn = app && app.status === "saved"
-      ? (isModern
-          ? `<button class="btn btn-primary" type="button" data-act="modern-outreach" data-key="${esc(state.selectedId)}">${icon("mail")}<span>Find Contacts &amp; Email</span></button>`
+      ? ((isModern || isHybrid)
+          ? `<button class="btn btn-secondary" type="button" data-act="modern-outreach" data-key="${esc(state.selectedId)}">${icon("mail")}<span>Find Contacts &amp; Email</span></button>`
           : `<button class="btn btn-secondary" type="button" disabled>${icon("bookmark-check")}<span>Saved</span></button>`)
-      : app ? "" : `<button class="btn ${isModern ? "btn-primary" : "btn-secondary"}" type="button" data-act="save" data-key="${esc(state.selectedId)}">${icon("bookmark")}<span>${isModern ? "Save &amp; Find Contacts" : "Save"}</span></button>`;
+      : app ? "" : `<button class="btn ${isModern ? "btn-primary" : "btn-secondary"}" type="button" data-act="save" data-key="${esc(state.selectedId)}">${icon("bookmark")}<span>${isModern ? "Save &amp; Find Contacts" : (isHybrid ? "Save (Docs + Email)" : "Save")}</span></button>`;
     const dismissBtn = `<button class="btn btn-quiet" type="button" data-act="dismiss" data-key="${esc(state.selectedId)}">${icon("x")}<span>Dismiss</span></button>`;
     const applyBtn = inPipeline
       ? `<a class="btn btn-secondary" href="#/applications">${icon("square-kanban")}<span>${esc(STAGE_LABEL[app.status] || "Tracked")} in Applications</span></a>`
@@ -1100,26 +1103,34 @@
     const isSaved = app && app.status === "saved";
     let writeSectionContent = "";
     if (isSaved) {
-      const writeRows = isModern
+      const writeRows = isHybrid
+        ? [
+            ["modern-outreach", "Company brief, contacts & cold email", "Up to 3 verified HR/team contacts, 1-page PDF, and human email draft"],
+            ["cover-letter", "Cover letter", "Built from your resume facts"],
+            ["tailor-resume", "Tailored resume", "Your resume, reordered for this posting"],
+            ["interview-prep", "Interview prep", "STAR stories from your experience"],
+            ["outreach", "Recruiter message", "LinkedIn note and a message to the hiring manager"],
+          ]
+        : isModern
         ? [
             ["modern-outreach", "Company brief, contacts & cold email", "Up to 3 verified HR/team contacts, 1-page PDF, and human email draft"],
             ["tailor-resume", "Tailored resume", "Your resume, reordered for this posting"],
             ["interview-prep", "Interview prep", "STAR stories from your experience"],
-          ].map(([k, t, d]) => k === "modern-outreach"
-            ? `<button class="write-row" type="button" data-act="modern-outreach" data-key="${esc(state.selectedId)}"><span><span class="t">${t}</span><span class="d">${d}</span></span><span class="go">${icon("chevron-right")}</span></button>`
-            : `<button class="write-row" type="button" data-doc="${k}"><span><span class="t">${t}</span><span class="d">${d}</span></span><span class="go">${icon("chevron-right")}</span></button>`).join("")
+          ]
         : [
             ["cover-letter", "Cover letter", "Built from your resume facts"],
             ["tailor-resume", "Tailored resume", "Your resume, reordered for this posting"],
             ["interview-prep", "Interview prep", "STAR stories from your experience"],
             ["outreach", "Recruiter message", "LinkedIn note and a message to the hiring manager"],
-          ].map(([k, t, d]) => `<button class="write-row" type="button" data-doc="${k}"><span><span class="t">${t}</span><span class="d">${d}</span></span><span class="go">${icon("chevron-right")}</span></button>`).join("");
-      writeSectionContent = `<div class="write-list">${writeRows}</div>`;
+          ];
+      writeSectionContent = `<div class="write-list">${writeRows.map(([k, t, d]) => k === "modern-outreach"
+        ? `<button class="write-row" type="button" data-act="modern-outreach" data-key="${esc(state.selectedId)}"><span><span class="t">${t}</span><span class="d">${d}</span></span><span class="go">${icon("chevron-right")}</span></button>`
+        : `<button class="write-row" type="button" data-doc="${k}"><span><span class="t">${t}</span><span class="d">${d}</span></span><span class="go">${icon("chevron-right")}</span></button>`).join("")}</div>`;
     } else {
       writeSectionContent = `
         <div class="write-locked-notice">
-          <p><strong>${isModern ? "Outreach is locked." : "Documents are locked."}</strong> ${isModern ? "Save this opening to investigate decision makers, build your 1-page PDF, and draft a short cold email." : "Save this job first to unlock tailored resume and cover letter generation."}</p>
-          <button class="btn btn-primary btn-sm" type="button" data-act="save" data-key="${esc(state.selectedId)}">${icon("bookmark", "icon-sm")}<span>${isModern ? "Save & Find Contacts" : "Save this job to unlock"}</span></button>
+          <p><strong>${isModern ? "Outreach is locked." : "Documents are locked."}</strong> ${isHybrid ? "Save this opening to unlock ATS docs (resume, cover letter, prep) AND decision-maker outreach." : (isModern ? "Save this opening to investigate decision makers, build your 1-page PDF, and draft a short cold email." : "Save this job first to unlock tailored resume and cover letter generation.")}</p>
+          <button class="btn btn-primary btn-sm" type="button" data-act="save" data-key="${esc(state.selectedId)}">${icon("bookmark", "icon-sm")}<span>${isModern ? "Save & Find Contacts" : (isHybrid ? "Save (Docs + Contacts)" : "Save this job to unlock")}</span></button>
         </div>`;
     }
 
@@ -1273,20 +1284,30 @@
   /* ------------------------------------------------------------ V8 Method Selection & Dual-Track */
   function initMethod() {
     const saved = lsGet("jobhunter_method");
-    if (saved === "classic" || saved === "modern") {
+    if (saved === "classic" || saved === "modern" || saved === "hybrid") {
       state.method = saved;
     } else {
-      state.method = "modern"; // Modern is default
+      state.method = "modern"; // Modern is default; Hybrid is recommended
     }
 
+    const btnHyb = byId("btn-method-hybrid");
     const btnMod = byId("btn-method-modern");
     const btnCls = byId("btn-method-classic");
+    if (btnHyb) btnHyb.addEventListener("click", () => setMethod("hybrid"));
     if (btnMod) btnMod.addEventListener("click", () => setMethod("modern"));
     if (btnCls) btnCls.addEventListener("click", () => setMethod("classic"));
 
+    const btnSelHyb = byId("btn-select-hybrid");
     const btnSelMod = byId("btn-select-modern");
     const btnSelCls = byId("btn-select-classic");
     const dlgOnboard = byId("dlg-method-onboarding");
+    if (btnSelHyb && dlgOnboard) {
+      btnSelHyb.addEventListener("click", () => {
+        lsSet("jobhunter_method_chosen", "true");
+        dlgOnboard.close();
+        setMethod("hybrid");
+      });
+    }
     if (btnSelMod && dlgOnboard) {
       btnSelMod.addEventListener("click", () => {
         lsSet("jobhunter_method_chosen", "true");
@@ -1316,29 +1337,34 @@
   }
 
   function updateMethodUI() {
+    const isHybrid = state.method === "hybrid";
     const isModern = state.method === "modern";
+    const isClassic = state.method === "classic";
+    const showModernNav = isModern || isHybrid;
+    const btnHyb = byId("btn-method-hybrid");
     const btnMod = byId("btn-method-modern");
     const btnCls = byId("btn-method-classic");
+    if (btnHyb) btnHyb.classList.toggle("active", isHybrid);
     if (btnMod) btnMod.classList.toggle("active", isModern);
-    if (btnCls) btnCls.classList.toggle("active", !isModern);
+    if (btnCls) btnCls.classList.toggle("active", isClassic);
 
-    // Nav items visibility
+    // Nav items visibility (Signals + Outreach active in Modern and Hybrid)
     const sigWrap = byId("nav-item-signals-wrap");
     const outWrap = byId("nav-item-outreach-wrap");
     const tabSig = byId("tabbar-signals");
     const tabOut = byId("tabbar-outreach");
 
-    if (sigWrap) sigWrap.style.display = isModern ? "" : "none";
-    if (outWrap) outWrap.style.display = isModern ? "" : "none";
-    if (tabSig) tabSig.style.display = isModern ? "" : "none";
-    if (tabOut) tabOut.style.display = isModern ? "" : "none";
+    if (sigWrap) sigWrap.style.display = showModernNav ? "" : "none";
+    if (outWrap) outWrap.style.display = showModernNav ? "" : "none";
+    if (tabSig) tabSig.style.display = showModernNav ? "" : "none";
+    if (tabOut) tabOut.style.display = showModernNav ? "" : "none";
 
     updateRadarHeaderUI();
     if (state.route === "jobs") refreshJobViews();
   }
 
   async function setMethod(method, saveBackend = true) {
-    if (method !== "modern" && method !== "classic") return;
+    if (method !== "modern" && method !== "classic" && method !== "hybrid") return;
     state.method = method;
     lsSet("jobhunter_method", method);
     lsSet("jobhunter_method_chosen", "true");
@@ -1354,7 +1380,9 @@
     }
 
     // Route dynamically based on method
-    if (method === "modern") {
+    if (method === "hybrid") {
+      toast("Switched to Hybrid mode (Recommended — Outreach + ATS Apply).");
+    } else if (method === "modern") {
       if (state.route === "jobs") go("signals");
       toast("Switched to Modern outreach track (Signals & Direct Contacts).");
     } else {
@@ -1370,7 +1398,7 @@
       if (!data) return;
 
       // Sync active method if returned from backend
-      if (data.method && (data.method === "modern" || data.method === "classic") && !lsGet("jobhunter_method_manual_override")) {
+      if (data.method && (data.method === "modern" || data.method === "classic" || data.method === "hybrid") && !lsGet("jobhunter_method_manual_override")) {
         if (state.method !== data.method) {
           state.method = data.method;
           updateMethodUI();
@@ -1381,7 +1409,7 @@
         running: !!data.running,
         status: data.status || "idle",
         matches: data.active_filter_matches || data.new_jobs_count || 0,
-        newSignals: data.new_signals_count || (data.new_count && data.method === "modern" ? data.new_count : 0),
+        newSignals: data.new_signals_count || (data.new_count && (data.method === "modern" || data.method === "hybrid") ? data.new_count : 0),
         newJobs: data.new_jobs_count || data.unread_jobs || 0,
         failureCount: data.failure_count || 0,
         lastPoll: data.last_poll_at,
@@ -1403,11 +1431,12 @@
     const label = byId("radar-header-label");
 
     const isModern = state.method === "modern";
-    const count = isModern ? (state.radar.newSignals || 0) : (state.radar.matches || state.radar.newJobs || 0);
+    const isHybrid = state.method === "hybrid";
+    const count = isModern ? (state.radar.newSignals || 0) : (isHybrid ? ((state.radar.newSignals || 0) + (state.radar.newJobs || 0)) : (state.radar.matches || state.radar.newJobs || 0));
 
     if (label) {
       if (count > 0) {
-        label.textContent = isModern ? `Radar found ${count} new signals` : `Radar found ${count} new jobs`;
+        label.textContent = isModern ? `Radar found ${count} new signals` : (isHybrid ? `Radar found ${count} updates` : `Radar found ${count} new jobs`);
       } else {
         label.textContent = "Radar";
       }
@@ -1624,7 +1653,14 @@
     };
 
     try {
-      toast(state.method === "modern" ? "Evaluating fit, researching HR/team contacts, and drafting email..." : "Evaluating fit and posting status...", { kind: "info" });
+      toast(
+        state.method === "hybrid"
+          ? "Evaluating fit, generating ATS docs, researching HR/team contacts, and drafting email..."
+          : (state.method === "modern"
+              ? "Evaluating fit, researching HR/team contacts, and drafting email..."
+              : "Evaluating fit and posting status..."),
+        { kind: "info" }
+      );
       const res = await apiPost("/api/jobs/save", payload);
       if (!res) return;
 
@@ -1699,7 +1735,12 @@
         const drawerDlg = byId("job-drawer");
         if (drawerDlg && drawerDlg.open) drawerDlg.close();
         openContactsPanel(res, { company: j.company, role_guess: j.title, url: jobUrl(j), is_job: true });
-        toast("Saved in Modern outreach mode! Contacts, brief, 1-page PDF & email draft ready.", { kind: "good" });
+        toast(
+          res.method === "hybrid"
+            ? "Saved in Hybrid mode! Tailored ATS docs + HR/team contacts & email draft ready."
+            : "Saved in Modern outreach mode! Contacts, brief, 1-page PDF & email draft ready.",
+          { kind: "good" }
+        );
       } else {
         toast("Saved! Tailored resume & cover letter generated in outputs/.", {
           action: { label: "View in Applications", run: () => go("applications") }

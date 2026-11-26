@@ -161,8 +161,9 @@
       </div>
       <div class="page-actions" id="page-actions">
         <div id="page-actions-custom"></div>
-        <!-- Method switch: Modern (default) vs Classic -->
+        <!-- Method switch: Hybrid (recommended), Modern (default), Classic -->
         <div class="method-toggle seg" role="radiogroup" aria-label="Method choice" id="method-toggle-header">
+          <button type="button" class="btn-seg" data-method="hybrid" id="btn-method-hybrid" title="Recommended: combines Modern direct outreach + Classic ATS apply">Hybrid</button>
           <button type="button" class="btn-seg active" data-method="modern" id="btn-method-modern">Modern</button>
           <button type="button" class="btn-seg" data-method="classic" id="btn-method-classic">Classic</button>
         </div>
@@ -1094,20 +1095,33 @@
       </div>
       <button class="btn btn-quiet btn-icon" id="btn-onboarding-close" type="button" aria-label="Close dialog"><svg class="icon"><use href="#i-x"/></svg></button>
     </div>
-    <p class="mute" style="margin-block-end:var(--s4)">JobHunter supports two distinct approaches. You can switch at any time in the header, and all data stays in place.</p>
+    <p class="mute" style="margin-block-end:var(--s4)">JobHunter offers three workflows. You can switch at any time in the header, and all data stays in place.</p>
     
     <div class="method-cards-grid">
-      <div class="method-card method-card-highlighted" id="card-choice-modern">
-        <div class="method-card-badge">Default &amp; Recommended</div>
-        <h3>Modern: Outreach First</h3>
-        <p class="method-desc">Catch fresh hiring posts and seed funding news, find decision makers, and send a short human email before the crowd applies.</p>
+      <div class="method-card method-card-highlighted" id="card-choice-hybrid">
+        <div class="method-card-badge">Recommended</div>
+        <h3>Hybrid: Both Ways</h3>
+        <p class="method-desc">Run Signal Radar and all 25 job boards together — apply through ATS forms with tailored docs AND email decision makers directly.</p>
         <ul class="method-features">
-          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Signal Radar: hiring posts &amp; funding news</li>
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Full pool: Signal Radar + 25 job boards</li>
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Tailored resume, cover letter, prep &amp; ATS extension autofill</li>
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Up to 3 verified HR/team contacts, 1-page PDF &amp; cold email</li>
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> 20/day outreach ledger + Applications tracker</li>
+        </ul>
+        <button class="btn btn-primary btn-block" id="btn-select-hybrid" type="button">Start with Hybrid</button>
+      </div>
+
+      <div class="method-card" id="card-choice-modern">
+        <div class="method-card-badge">Default</div>
+        <h3>Modern: Outreach First</h3>
+        <p class="method-desc">Catch fresh hiring posts and job-board openings, find decision makers, and send a short human email directly.</p>
+        <ul class="method-features">
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Signal Radar + 25 job boards (outreach only)</li>
           <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Decision maker finder with size-based titles &amp; MX check</li>
-          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Anti-slop 3-4 line email drafts &amp; 1-page tailored resume</li>
+          <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Anti-slop 3-4 line email drafts &amp; 1-page tailored PDF</li>
           <li><svg class="icon icon-sm text-ok"><use href="#i-check"/></svg> Outreach ledger with 20/day cap &amp; follow-up nudges</li>
         </ul>
-        <button class="btn btn-primary btn-block" id="btn-select-modern" type="button">Start with Modern</button>
+        <button class="btn btn-secondary btn-block" id="btn-select-modern" type="button">Use Modern</button>
       </div>
 
       <div class="method-card" id="card-choice-classic">

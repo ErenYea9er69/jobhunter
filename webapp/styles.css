@@ -1695,9 +1695,12 @@ dialog.status-drawer {
 }
 
 /* Method Onboarding Cards */
+#dlg-method-onboarding {
+  max-width: min(64rem, calc(100vw - 2rem));
+}
 .method-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
   gap: var(--s4);
   margin-block: var(--s4);
 }
