@@ -105,7 +105,7 @@ def check_filter_clashes(filters: dict[str, Any]) -> list[str]:
 
 @_coaching_envelope
 def jh_set_method(method: str = "modern", session_id: str = "default") -> dict[str, Any]:
-    """Step 4: Set active job hunting method: 'modern' (outreach first, default) or 'classic' (job boards & apply).
+    """Step 4: Set active job hunting method: 'hybrid' (recommended), 'modern' (default), or 'classic'.
     Preserves all existing data across switches.
     """
     clean = config.set_method(method)
@@ -113,7 +113,17 @@ def jh_set_method(method: str = "modern", session_id: str = "default") -> dict[s
     sess["method"] = clean
     db.store_answer(session_id, "method", clean, user_reply=f"method set to {clean}")
     db.set_session_state(f"method_{clean}", last_tool="jh_set_method")
-    if clean == "modern":
+    if clean == "hybrid":
+        from . import radar
+        radar.start_radar_worker()
+        msg = (
+            "Switched to Hybrid method (Recommended): combines Modern Outreach + Classic Job Boards. "
+            "Runs Signal Radar and the 25-board search; saving unlocks tailored resumes, cover letters, "
+            "interview prep, ATS extension autofill, AND decision-maker cold emails with a 20/day cap. "
+            "All existing jobs, signals, and outreach records remain intact."
+        )
+        next_tool = "jh_search"
+    elif clean == "modern":
         from . import radar
         radar.start_radar_worker()
         msg = (
@@ -137,8 +147,8 @@ def jh_set_method(method: str = "modern", session_id: str = "default") -> dict[s
         "ask_user": None,
         "options": {
             "method": clean,
-            "choices": ["modern", "classic"],
-            "recommended": "modern"
+            "choices": ["hybrid", "modern", "classic"],
+            "recommended": "hybrid"
         },
         "next_tool": next_tool,
         "data": {
@@ -181,14 +191,15 @@ def jh_start(prompt: str = "", intent: str = "", session_id: str = "default", **
     # Branch on switch_method
     if detected_intent == "switch_method":
         curr = config.get_method()
-        alt = "classic" if curr == "modern" else "modern"
+        alt = "hybrid" if curr != "hybrid" else "modern"
+        choices = [m for m in ("hybrid", "modern", "classic") if m != curr] + [curr]
         return {
             "status": "needs_input",
             "step": "method_choice",
             "message_for_user": f"Active method is '{curr.capitalize()}'. Switching methods preserves all stored jobs, signals, and outreach records.",
-            "ask_user": f"Would you like to switch to '{alt.capitalize()}' method, or stay with '{curr.capitalize()}'?",
+            "ask_user": f"Would you like to switch to '{alt.capitalize()}' (Hybrid combines Modern outreach + Classic ATS apply), or pick 'modern' / 'classic'?",
             "options": {
-                "choices": [alt, curr],
+                "choices": choices,
                 "recommended": alt,
             },
             "next_tool": "jh_set_method",
@@ -762,10 +773,13 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
     clean_reply = str(user_reply).strip().lower()
     answers = answers or {}
 
-    # 1. Parse Method (default Modern; tolerate typos like 'clasic')
-    if "classic" in clean_reply or re.search(r"\b(?:clas+s?ic|classik|job\s*boards?)\b", clean_reply) or answers.get("method") == "classic":
+    # 1. Parse Method (default Modern; support Hybrid / Classic / common typos)
+    ans_method = str(answers.get("method") or "").lower().strip()
+    if "hybrid" in clean_reply or re.search(r"\b(?:hybr?id|hibrid|both)\b", clean_reply) or ans_method == "hybrid":
+        chosen_method = "hybrid"
+    elif "classic" in clean_reply or re.search(r"\b(?:clas+s?ic|classik|job\s*boards?)\b", clean_reply) or ans_method == "classic":
         chosen_method = "classic"
-    elif "modern" in clean_reply or answers.get("method") == "modern":
+    elif "modern" in clean_reply or ans_method == "modern":
         chosen_method = "modern"
     else:
         chosen_method = "modern"
@@ -925,9 +939,9 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
     sess["worker_port"] = port
     sess["ui_url"] = ui_url
 
-    # 2. Start search engines: Modern runs Signal Radar AND Multi-Board Search; Classic runs Multi-Board Search (D5)
+    # 2. Start search engines: Modern & Hybrid run Signal Radar AND Multi-Board Search; Classic runs Multi-Board Search (D5)
     query, target_loc, search_role_focus = _resolve_launch_search_params(sess, session_id)
-    if active_method == "modern":
+    if config.method_uses_modern(active_method):
         from . import radar, signals as _signals
         radar.start_radar_worker()
         conf_role = db.get_confirmed_answer(session_id, "role")
@@ -1704,7 +1718,17 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
     else:
         top_matches = top_5
 
-    if active_method == "modern":
+    if active_method == "hybrid":
+        method_summary = (
+            f"- Method: Hybrid (Recommended — Outreach + ATS Apply)\n"
+            f"- Signals: {signals_count} stored ({fresh_signals} fresh)\n"
+            f"- Stored Jobs: {total_jobs} ({active_jobs} active) | Matches: {matches_count} ({hidden_count} hidden by filters)\n"
+            f"- Contacts Found: {contacts_count}\n"
+            f"- Outreach Today: {today_sent} / {daily_cap} sent ({remaining_cap} remaining)\n"
+            f"- Send Mode: {config.get_send_mode()} | Follow-up: {config.get_follow_up_days()}d\n"
+            f"- LinkedIn Radar: {radar.get('status')} (Interval: {radar.get('interval_seconds')}s) | Dismissals: {dismissals_count}"
+        )
+    elif active_method == "modern":
         method_summary = (
             f"- Method: Modern (Outreach First)\n"
             f"- Signals: {signals_count} stored ({fresh_signals} fresh)\n"

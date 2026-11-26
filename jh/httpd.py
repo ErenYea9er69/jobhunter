@@ -251,7 +251,12 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
                 funding_count = c.execute("SELECT COUNT(*) FROM signals WHERE is_new=1 AND type='funding'").fetchone()[0]
 
             matching_signals = db.get_new_signals_count(view_filters=filters)
-            new_count = matching_signals if active_method == "modern" else unread_jobs
+            if active_method == "hybrid":
+                new_count = matching_signals + unread_jobs
+            elif active_method == "modern":
+                new_count = matching_signals
+            else:
+                new_count = unread_jobs
 
             return self._send_json(200, envelope(status="ok", data={
                 "method": active_method,
@@ -729,11 +734,11 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             return self._send_json(200, envelope(status="ok", data={"application_id": app_id}))
 
         if path == "/api/method":
-            new_method = body.get("method", "modern").lower()
-            if new_method in ("modern", "classic"):
+            new_method = body.get("method", "modern").lower().strip()
+            if new_method in config.VALID_METHODS:
                 config.set_method(new_method)
                 return self._send_json(200, envelope(status="ok", data={"method": new_method}))
-            return self._send_json(400, envelope(status="error", error={"code": "invalid_method", "message": "Method must be 'modern' or 'classic'"}))
+            return self._send_json(400, envelope(status="error", error={"code": "invalid_method", "message": "Method must be 'hybrid', 'modern', or 'classic'"}))
 
         if path == "/api/signals/save":
             signal_id = body.get("signal_id") or body.get("id") or ""

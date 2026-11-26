@@ -523,8 +523,41 @@ def handle_save_job(
     with db.session() as c:
         c.execute("UPDATE applications SET fit_score=?, saved_by='ui' WHERE id=?", (fit_score, app_id))
 
-    # 5. Generate method-specific outputs (Modern -> Direct Outreach bundle; Classic -> Resume + Cover Letter)
+    # 5. Generate method-specific outputs (Hybrid -> Classic Docs + Modern Outreach; Modern -> Direct Outreach; Classic -> Resume + Cover Letter)
     active_method = (method or "").lower().strip()
+    if active_method == "hybrid":
+        gen_res = generate_saved_job_documents(job, profile, app_id)
+        bundle = generate_modern_outreach_bundle(
+            company=job.get("company", "Unknown Company"),
+            role=job.get("title", "Software Engineer"),
+            job_dict=job,
+            profile=profile,
+        )
+        return {
+            "status": "ok",
+            "method": "hybrid",
+            "saved": True,
+            "application_id": app_id,
+            "fit_score": fit_score,
+            "match_evaluation": match_eval,
+            "gap_report": gap_report,
+            "resume_path": gen_res["resume_path"],
+            "cover_letter_path": gen_res["cover_letter_path"],
+            "grounding": gen_res["grounding"],
+            "company": bundle["company"],
+            "role": bundle["role"],
+            "brief": bundle["brief"],
+            "learning_pack": bundle["learning_pack"],
+            "contacts": bundle["contacts"],
+            "contacts_notice": bundle.get("contacts_notice", ""),
+            "resume": bundle["resume"],
+            "email": bundle["email"],
+            "message": (
+                f"Saved in Hybrid mode (fit {fit_score}): tailored resume + cover letter for ATS apply "
+                f"AND decision-maker contacts, company brief, 1-page PDF, and cold email draft."
+            ),
+        }
+
     if active_method == "modern":
         bundle = generate_modern_outreach_bundle(
             company=job.get("company", "Unknown Company"),
