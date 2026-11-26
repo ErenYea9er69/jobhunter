@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.3
+
+### Hybrid Mode (Recommended — Modern Outreach + Classic ATS Apply)
+- **First-class `hybrid` method (`jh/config.py`, `jh/regions.py`, `jh/interview_questions.py`, `jh/v5_tools.py`, `jh/radar.py`)**: Added `hybrid` alongside `modern` and `classic`, presented as **Recommended** in Step 3 confirmation (`jh_begin` / `build_step_3_target_questions`) and `jh_set_method`, while preserving `"modern"` as the silent backwards-compatible Contract default.
+- **Combined Save execution (`jh/save_flow.py`, `jh/httpd.py`)**: Saving a job in Hybrid mode generates **both** Classic ATS deliverables (tailored resume, cover letter, interview prep) **and** Modern direct outreach (company brief, up to 3 MX-verified HR/leadership contacts, 1-page PDF, and slop-checked short cold email draft logged to the 20/day + 4-day ledger).
+- **Web UI 3-way switch & onboarding (`webapp/`, `public/`)**: Added the **Hybrid** header toggle pill, highlighted **Hybrid: Both Ways (Recommended)** onboarding card, and simultaneous `"Apply"` + `"Save & Prepare Both"` / `"Contacts & Email"` controls on `#/jobs`.
+
 ## 1.2.2
 
 ### Unified Multi-Board Discovery & Direct Outreach Execution on Modern Save

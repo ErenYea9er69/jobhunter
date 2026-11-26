@@ -207,6 +207,101 @@ def test_webapp_and_public_synced_and_modern_hides_extension_apply():
     for fname in ("app.js", "index.html", "styles.css"):
         assert Path("webapp", fname).read_bytes() == Path("public", fname).read_bytes()
     js = Path("webapp/app.js").read_text(encoding="utf-8")
+    html = Path("webapp/index.html").read_text(encoding="utf-8")
     assert "Save &amp; Find Contacts" in js
     assert "Find Contacts &amp; Email" in js
+    assert "Save &amp; Prepare Both" in js
+    assert 'id="btn-method-hybrid"' in html
+    assert 'id="card-choice-hybrid"' in html
     assert 'openContactsPanel(res, { company: j.company, role_guess: j.title, url: jobUrl(j), is_job: true })' in js
+
+
+def test_hybrid_recommended_in_step3_and_dual_launch_and_save(monkeypatch):
+    from jh import interview_questions, signals as _signals
+
+    q3 = interview_questions.build_step_3_target_questions([{"role": "Backend Engineer", "confidence": 0.8}])
+    method_q = next(q for q in q3["questions"] if q["id"] == "method")
+    assert method_q["recommended"] == "Hybrid"
+    assert "Method: Modern (default) or Classic" in q3["formatted_text"]
+
+    radar_calls = []
+    board_calls = []
+    monkeypatch.setattr(worker_launcher, "start_detached_server", lambda *a, **kw: {"status": "started", "port": 8080})
+    monkeypatch.setattr(worker_launcher, "open_browser", lambda *a, **kw: False)
+    monkeypatch.setattr(radar, "start_radar_worker", lambda: radar_calls.append(True) or True)
+    monkeypatch.setattr(_signals, "poll_modern_signals", lambda **kw: {"discovered": 1, "new_ingested": 1})
+    monkeypatch.setattr(
+        worker_launcher,
+        "start_background_search",
+        lambda **kw: board_calls.append(kw) or {"search_job_id": "search_hyb_1", "status": "started"},
+    )
+
+    v5_tools.jh_begin(resume_text=RAYEN_RESUME, session_id="default")
+    conf = v5_tools.jh_confirm(user_reply="hibrid, South Asia", session_id="default")
+    assert conf["status"] == "ready"
+    assert conf["data"]["method"] == "hybrid"
+    assert conf["data"]["target_place"] == "South Asia"
+
+    launch_res = v5_tools.jh_launch(session_id="default", ticket=conf["ticket"])
+    assert launch_res["status"] == "ok"
+    assert "#/jobs" in launch_res["ui_url"]
+    assert len(radar_calls) == 1
+    assert len(board_calls) == 1
+    assert "Daily Email Cap" in launch_res["ask_user"]
+
+    st = v5_tools.jh_status(session_id="default")
+    assert st["data"]["method"] == "hybrid"
+    assert "Hybrid (Recommended" in st["message_for_user"]
+
+    job = {
+        "id": "job_hybrid_cloud_1",
+        "title": "Cloud Software Engineering Intern",
+        "company": "HybridScale",
+        "company_url": "https://hybridscale.io",
+        "location": "Remote, India",
+        "work_mode": "Remote",
+        "url": "https://hybridscale.io/jobs/cloud-intern",
+        "description": "Python, Docker, Kubernetes, FastAPI, CI/CD cloud intern.",
+    }
+    db.ingest_job(job)
+    monkeypatch.setattr(
+        lifecycle,
+        "liveness_check",
+        lambda url, job_id=None: {"url": url, "is_live": True, "status_code": 200, "reason": "ok"},
+    )
+    monkeypatch.setattr(
+        contacts,
+        "find_contacts",
+        lambda signal_id_or_company, target_role="", company_size=None, company_url="", job_url="", company_domain="": {
+            "contacts": [db.save_contact({
+                "id": "cnt_hyb_1",
+                "company": "HybridScale",
+                "company_domain": "hybridscale.io",
+                "name": "Aarav Mehta",
+                "title": "Engineering Manager",
+                "role": "Engineering Manager",
+                "email": "aarav@hybridscale.io",
+                "confidence": "Found",
+                "email_confidence": "Found",
+                "verified_mx": True,
+                "source": "public_page",
+            })],
+            "notice": "",
+        },
+    )
+
+    code, body = _call_http("POST", "/api/jobs/save", {"job_id": job["id"], "force": False})
+    assert code == 200
+    data = body["data"]
+    assert data["method"] == "hybrid"
+    assert Path(data["resume_path"]).is_file()
+    assert Path(data["cover_letter_path"]).is_file()
+    assert data["contacts"] and data["contacts"][0]["email"] == "aarav@hybridscale.io"
+    assert Path(data["resume"]["resume_path"]).is_file()
+    assert data["email"]["success"] is True
+    assert data["email"]["recipient_email"] == "aarav@hybridscale.io"
+
+    code_m, body_m = _call_http("POST", "/api/method", {"method": "hybrid"})
+    assert code_m == 200 and body_m["data"]["method"] == "hybrid"
+    code_bad, _ = _call_http("POST", "/api/method", {"method": "invalid_xyz"})
+    assert code_bad == 400
