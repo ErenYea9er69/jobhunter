@@ -637,6 +637,7 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
                 should_reset_cache = True
     if should_reset_cache:
         db.reset_stale_search_cache(session_id=session_id)
+        db.set_setting(f"ui_seen_{session_id}", "0")
         sess["answers"] = {}
         sess.pop("search_job_id", None)
 
@@ -1714,7 +1715,11 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
     from . import extension_installer
     ext_dir = extension_installer.find_extension_dir()
     ext_status = "loaded" if Path(ext_dir).is_dir() else "manual_load_ready"
-    ui_seen = bool(sess.get("ui_seen", False))
+    ui_seen = (
+        bool(sess.get("ui_seen", False))
+        or (curr_state_str == "ui_seen")
+        or (db.get_setting(f"ui_seen_{session_id}", "") == "1")
+    )
     browser_opened = bool(sess.get("browser_opened", False))
 
     # Force D8: until round 2 is answered or skipped, every reply carries ask_user with pending questions

@@ -114,6 +114,7 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             if "page_token" not in sess:
                 sess["page_token"] = secrets.token_hex(16)
             db.set_session_state("ui_seen", session_id=sid)
+            db.set_setting(f"ui_seen_{sid}", "1")
             return self._send_json(200, envelope(status="ok", data={"ui_seen": True, "session_id": sid, "page_token": sess["page_token"]}))
 
         if path == "/api/resumes/folder-info":
