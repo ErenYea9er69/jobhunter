@@ -72,7 +72,7 @@ def check_tool_state_gate(session_id: str, tool_name: str, ticket: str = "") -> 
     elif state == SessionState.ASKED:
         if tool_name not in ("jh_confirm", "jh_begin", "get_resume", "list_resumes"):
             last_q = sess.get("last_questions") or {}
-            q_text = last_q.get("formatted_text") or sess.get("last_questions_text") or "Please answer the Round 1 target questions (Method and Target place)."
+            q_text = last_q.get("formatted_text") or sess.get("last_questions_text") or "Please answer the Round 1 target questions (Target place and Role)."
             return False, {
                 "status": "needs_input",
                 "step": 2,

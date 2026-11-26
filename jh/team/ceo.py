@@ -319,6 +319,11 @@ class CEO(ExtraIntents):
             m.say("Work mode: " + work_mode + ".")
         else:
             m.decisions.append("What work mode do you prefer? (Remote, Hybrid, Onsite, or Any)")
+        prefs_obj = d.get("preferences") or {}
+        if not prefs_obj.get("target_titles"):
+            m.decisions.append("Which target role(s) or titles do you want to prioritize? (Or confirm your resume title)")
+        if not prefs_obj.get("min_salary"):
+            m.decisions.append("What minimum salary or compensation floor do you want, if any?")
         run = (d.get("sources") or {}).get("will_run") or []
         if run:
             m.say(f"{len(run)} job sources will run for you.")

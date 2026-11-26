@@ -175,12 +175,14 @@ def generate_r3_summary(job: dict, profile: dict) -> str:
     """
     wanted_w, _ = _wanted(job)
     cand_skills = list(profile.get("skills", []))
+    excluded_low = {str(k).lower().strip() for k in (profile.get("excluded_keywords") or []) if str(k).strip()}
     cand_set = {s.lower(): s for s in cand_skills}
-    matched = [cand_set[s.lower()] for s in wanted_w if s != "__words__" and s.lower() in cand_set]
-    matched_skills = matched if matched else cand_skills[:4]
+    matched = [cand_set[s.lower()] for s in wanted_w if s != "__words__" and s.lower() in cand_set and s.lower() not in excluded_low]
+    matched_skills = matched if matched else [s for s in cand_skills if s.lower() not in excluded_low][:4] or cand_skills[:4]
 
     target_role = (
-        job.get("title")
+        (profile.get("target_title") if profile.get("_prefs_applied") and profile.get("target_title") else "")
+        or job.get("title")
         or profile.get("target_title")
         or (profile.get("experience") or [{}])[0].get("role")
         or "Software Engineer"
@@ -436,18 +438,34 @@ def generate_r7_cover_letter(job: dict, profile: dict) -> str:
 
 # ------------------------------------------------------------ deterministic engine
 
+def _preferred_role(profile: dict, fallback: str = "Software Engineer") -> str:
+    """Resolve role favoring user-confirmed/overlaid target_title before past job title."""
+    exps = profile.get("experience") or []
+    exp_role = (exps[0].get("role") or exps[0].get("title") or "") if exps and isinstance(exps[0], dict) else ""
+    target = (profile.get("target_title") or "").strip()
+    if profile.get("_prefs_applied") and target:
+        return target
+    return exp_role or target or fallback
+
+
 def refit_deterministic(job, profile):
     wanted, job_text = _wanted(job)
     cand = set(profile.get("skills", []))
+    excluded_low = {str(k).lower().strip() for k in (profile.get("excluded_keywords") or []) if str(k).strip()}
     matched = [s for s in wanted if s != "__words__" and s in cand]
+    non_excluded_matched = [s for s in matched if s.lower() not in excluded_low] or matched
     orig_skills = list(profile.get("skills", []))
-    new_skills = [s for s in orig_skills if s in matched] + [s for s in orig_skills if s not in matched]
+    new_skills = (
+        [s for s in orig_skills if s in matched and s.lower() not in excluded_low]
+        + [s for s in orig_skills if s not in matched and s.lower() not in excluded_low]
+        + [s for s in orig_skills if s.lower() in excluded_low]
+    )
 
     diffs = []
     exps = copy.deepcopy(profile.get("experience", []))
 
-    # Summary: lead with true facts (own title, years, matched skills), then keep the original text.
-    role = (exps[0].get("role") if exps else "") or profile.get("target_title", "")
+    # Summary: lead with true facts (confirmed role or own title, years, matched skills), then keep original text.
+    role = _preferred_role(profile, fallback="")
     lead_bits = [role] if role else []
     yp = _years_phrase(profile)
     lead = ""
@@ -455,8 +473,8 @@ def refit_deterministic(job, profile):
         lead = f"{role} with {yp} of experience"
     elif role:
         lead = role
-    if lead and matched:
-        lead += f" working with {', '.join(matched[:4])}"
+    if lead and non_excluded_matched:
+        lead += f" working with {', '.join(non_excluded_matched[:4])}"
     orig_sum = (profile.get("summary") or "").strip()
     new_sum = (lead + ". " if lead else "") + orig_sum
     if lead and lead.lower() in orig_sum.lower():
@@ -848,7 +866,7 @@ def generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=N
     base_tailored, diffs, _, _ = refit_deterministic(job, profile)
 
     # 1. R3 Executive Two-Line Summary (Role + strongest skills matching job; proof point from facts; zero stock phrases)
-    role = (profile.get("experience") or [{}])[0].get("role") or profile.get("target_title") or "Software Engineer"
+    role = _preferred_role(profile)
     job_title = job.get("title") or role
     company = job.get("company") or "the engineering team"
     yp = _years_phrase(profile)
@@ -873,8 +891,9 @@ def generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=N
 
     # 2. Competencies Grid & R4 Keywords
     kw_info = partition_keywords(job, profile)
-    primary_matches = kw_info["have"]
-    supporting_stack = [s for s in cand_skills if s not in primary_matches]
+    excluded_low = {str(k).lower().strip() for k in (profile.get("excluded_keywords") or []) if str(k).strip()}
+    primary_matches = [s for s in kw_info["have"] if s.lower() not in excluded_low] or kw_info["have"]
+    supporting_stack = [s for s in cand_skills if s not in primary_matches and s.lower() not in excluded_low]
     practices = [s for s in cand_skills if s in sk.DEEP or s in {"REST APIs", "Microservices", "CI/CD", "Docker", "TDD", "Agile"}]
 
     core_competencies = {
@@ -885,9 +904,15 @@ def generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=N
 
     tailored_resume = copy.deepcopy(base_tailored)
     tailored_resume["summary"] = _dehype_text(full_tailored_sum)
-    tailored_resume["target_title"] = job_title
+    tailored_resume["target_title"] = job_title if not (profile.get("_prefs_applied") and profile.get("target_title")) else (job.get("title") or profile.get("target_title"))
     tailored_resume["keyword_partition"] = kw_info
     tailored_resume["keyword_coverage"] = kw_info["coverage_text"]
+    if profile.get("preferred_locations"):
+        tailored_resume["preferred_locations"] = list(profile["preferred_locations"])
+    if profile.get("work_mode"):
+        tailored_resume["work_mode_preference"] = profile["work_mode"]
+    if profile.get("languages"):
+        tailored_resume["languages"] = list(profile["languages"])
     sw_items = _confirmed_side_work_items(profile)
     if sw_items:
         tailored_resume["confirmed_side_work"] = sw_items
@@ -918,6 +943,11 @@ def generate_custom_resume(job, profile, archetype="startup_velocity", use_llm=N
             },
             "candidate": {
                 "role": role,
+                "target_role": profile.get("target_title") or role,
+                "preferred_locations": profile.get("preferred_locations", []),
+                "work_mode": profile.get("work_mode", ""),
+                "languages": profile.get("languages", []),
+                "excluded_keywords": profile.get("excluded_keywords", []),
                 "summary": profile.get("summary"),
                 "skills": profile.get("skills"),
                 "experience": profile.get("experience", [])
@@ -1261,7 +1291,7 @@ def generate_cover_pitch(job, profile, tone="direct", angle="direct_impact", sel
     matched_top = matched[:4] if matched else cand_skills[:4]
 
     yp = _years_phrase(profile)
-    cand_role = (profile.get("experience") or [{}])[0].get("role") or profile.get("target_title") or "Software Engineer"
+    cand_role = _preferred_role(profile)
     cand_name = profile.get("name") or "Candidate"
 
     # Identify best candidate bullets for Value Pillars
@@ -1878,7 +1908,7 @@ def generate_recruiter_outreach(job, profile, message_type="all", custom_hook=""
     company = job.get("company") or "the company"
     title = job.get("title") or "Software Engineer"
     cand_name = profile.get("name") or "Candidate"
-    cand_role = (profile.get("experience") or [{}])[0].get("role") or profile.get("target_title") or "Software Engineer"
+    cand_role = _preferred_role(profile)
 
     wanted, _ = _wanted(job)
     wanted_skills = [k for k in wanted if k != "__words__"]

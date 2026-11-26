@@ -1752,7 +1752,9 @@ def query_jobs(view_filters: dict[str, Any] | None = None, session_id: str = "de
 
     if profile is None:
         try:
-            profile = get_profile()
+            from . import preferences
+            raw_prof = get_profile()
+            profile = preferences.overlay_profile(raw_prof, None) if raw_prof and not raw_prof.get("_is_empty") else (raw_prof or {})
         except Exception:
             profile = {}
 
@@ -1984,13 +1986,27 @@ def query_jobs(view_filters: dict[str, Any] | None = None, session_id: str = "de
 
     for j in matching_jobs:
         rank_score = float(j.get("opportunity_score") or j.get("score") or 0)
-        if sen_prefs and any(sp in (j.get("seniority") or "").lower() or sp in (j.get("title") or "").lower() for sp in sen_prefs):
+        j_title_low = (j.get("title") or "").lower()
+        j_wm_low = (j.get("work_mode") or "").lower()
+        if roles_filter and any(r in j_title_low or r in (j.get("category") or "").lower() for r in roles_filter):
+            rank_score += 8.0
+        if wm_filter and wm_filter not in ("any", "all") and wm_filter.replace("-", "") in j_wm_low.replace("-", ""):
+            rank_score += 5.0
+        if sen_prefs and any(sp in (j.get("seniority") or "").lower() or sp in j_title_low for sp in sen_prefs):
             rank_score += 15.0
         if size_prefs and any(sp in (j.get("company_size") or "").lower() for sp in size_prefs):
             rank_score += 10.0
         if ind_prefs and any(ip in (j.get("industry") or "").lower() for ip in ind_prefs):
             rank_score += 10.0
-        j["rank_score"] = round(rank_score, 1)
+        if confirmed_industries and any(ci in (j.get("industry") or "").lower() for ci in confirmed_industries):
+            rank_score += 8.0
+        if company_stages and any(cs in (j.get("stage") or j.get("company_size") or "").lower() for cs in company_stages):
+            rank_score += 6.0
+        if markets_served and any(ms in _job_hay(j) for ms in markets_served):
+            rank_score += 6.0
+        if languages_filter and _check_languages(j):
+            rank_score += 4.0
+        j["rank_score"] = round(min(130.0, rank_score), 1)
 
     from . import freshness, scoring, lifecycle
     for j in matching_jobs:
@@ -3323,21 +3339,36 @@ def count_runtime_stats() -> dict[str, int]:
 
 
 def rescore_all_jobs_against_profile(profile: dict[str, Any]) -> None:
-    from . import scoring
+    from . import pipeline, preferences, scoring
+    if not profile or profile.get("_is_empty"):
+        return
+    eff_profile = preferences.overlay_profile(profile, None) if not profile.get("_prefs_applied") else profile
     ws = _ws()
     with ws.lock:
         changed = False
+        rescored_by_key: dict[str, tuple[int, int, str]] = {}
         for r in ws.tables["jobs"]:
             try:
                 j = json.loads(r.get("job_json") or "{}")
-                scored = scoring.score_job(j, profile)
-                new_score = int(scored.get("score", 0))
+                scored = scoring.score_job(j, eff_profile)
                 j.update(scored)
+                pipeline._rank_opportunity(j)
+                new_score = int(j.get("score", 0))
+                new_opp = int(j.get("opportunity_score", new_score))
                 r["score"] = new_score
-                r["job_json"] = json.dumps(j)
+                r["opportunity_score"] = new_opp
+                jjson = json.dumps(j)
+                r["job_json"] = jjson
+                if r.get("job_key"):
+                    rescored_by_key[r["job_key"]] = (new_score, new_opp, jjson)
                 changed = True
             except Exception:
                 pass
+        if rescored_by_key:
+            for sr in ws.tables["search_jobs"]:
+                upd = rescored_by_key.get(sr.get("job_key"))
+                if upd:
+                    sr["score"], sr["opportunity_score"], sr["job_json"] = upd
         if changed:
             ws.flush_cache()
 

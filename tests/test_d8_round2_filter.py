@@ -25,8 +25,10 @@ def test_d8_jh_launch_and_status_carry_round2_questions(monkeypatch):
 
     launch_res = jh_launch(session_id=sid, ticket=tkt)
     assert launch_res["status"] == "ok"
+    assert "Desired Roles" in launch_res["ask_user"]
+    assert "Work Mode" in launch_res["ask_user"]
     assert "Job Type & Start Date" in launch_res["ask_user"]
-    assert "Daily Email Cap" in launch_res["ask_user"]
+    assert "Pay / Compensation" in launch_res["ask_user"]
 
     # jh_status in LAUNCHED state carries pending questions
     st_res = jh_status(session_id=sid)

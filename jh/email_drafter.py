@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import config, db, exporters, home
+from . import config, db, exporters, home, preferences
 from .mcp_helpers import Result, ToolError, envelope
 
 log = logging.getLogger("jobhunter.email_drafter")
@@ -70,7 +70,8 @@ def build_job_resume(
     Naming: Firstname_Lastname_Company_Role.pdf.
     Reused across all contacts at that company.
     """
-    profile = profile_override or db.get_profile() or {}
+    raw_profile = profile_override or db.get_profile() or {}
+    profile = preferences.overlay_profile(raw_profile, None) if (raw_profile and not profile_override and not raw_profile.get("_prefs_applied")) else raw_profile
     name_str = profile.get("name") or "Candidate"
     name_parts = name_str.strip().split()
     first_name = name_parts[0] if name_parts else "Candidate"
@@ -403,7 +404,7 @@ def draft_short_email(
     """Draft human outreach email with strict slop linting and 2-round rewrite loop."""
     contact = db.get_contact(contact_id) or {}
     signal = db.get_signal(signal_id) if signal_id else {}
-    profile = db.get_profile() or {}
+    profile = preferences.overlay_profile(db.get_profile() or {}, None)
 
     c_name = contact.get("name") or "there"
     c_parts = c_name.strip().split()
@@ -534,7 +535,7 @@ def draft_follow_up(
     Never repeats the first email.
     """
     contact = db.get_contact(contact_id) or {}
-    profile = db.get_profile() or {}
+    profile = preferences.overlay_profile(db.get_profile() or {}, None)
     p_name = profile.get("name") or "Candidate"
     p_first = p_name.strip().split()[0] if p_name.strip() else "Candidate"
     company = contact.get("company") or "the team"

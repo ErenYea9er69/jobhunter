@@ -101,6 +101,10 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             match = next((p for p in db.list_resume_profiles() if p["name"] == active), None)
             if match:
                 db.set_active_resume_profile(match["id"])
+        if ok:
+            from . import ticket_manager
+            if ticket_manager.get_session_state_name("default") == ticket_manager.SessionState.NEW and not preferences.is_default(preferences.load()):
+                ticket_manager.transition_session_state("default", ticket_manager.SessionState.ANSWERED)
         warnings = [] if found else ["No resume files found. Add a PDF, DOCX or TXT resume to the workspace root or a resumes/ folder."]
         if len(ok) > 1:
             warnings.append(f"Multiple resumes found ({len(ok)}). Active is '{active}'. Confirm with candidate which one to use.")
@@ -214,6 +218,11 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         except preferences.PreferenceError as e:
             raise ToolError(str(e), hint="Call get_preferences to see valid keys and values.")
         profile = h.resolve_profile(require=False, overlay=False)
+        if profile and not profile.get("_is_empty"):
+            from . import ticket_manager
+            db.rescore_all_jobs_against_profile(preferences.overlay_profile(profile, saved))
+            if ticket_manager.get_session_state_name("default") == ticket_manager.SessionState.NEW:
+                ticket_manager.transition_session_state("default", ticket_manager.SessionState.ANSWERED)
         saved.pop("_updated_at", None)
         targets = [regions.country_name(c) for c in regions.resolve_targets(saved, profile, "")]
         return Result({"saved": {k: saved[k] for k in updates if k in saved}, "target_countries_resolved": targets}, warnings)
@@ -362,7 +371,10 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         from . import ticket_manager
         ok, err_res = ticket_manager.check_tool_state_gate("default", "search_jobs")
         if not ok:
-            return err_res
+            raw_prof = h.resolve_profile(overlay=False, require=False)
+            if not (raw_prof and not raw_prof.get("_is_empty") and not preferences.is_default(preferences.load())):
+                return err_res
+            ticket_manager.transition_session_state("default", ticket_manager.SessionState.ANSWERED)
         profile = h.resolve_profile(overlay=False, require=False)
         if profile.get("_is_empty") and not query:
             raise ToolError("No resume and no query.", code="no_resume", hint="Pass a query, or add a resume and call scan_resumes.")

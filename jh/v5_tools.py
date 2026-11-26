@@ -9,11 +9,8 @@ import json
 import logging
 import os
 import re
-import socket
 import threading
 import time
-import urllib.request
-import webbrowser
 from pathlib import Path
 from typing import Any, Optional
 
@@ -38,19 +35,90 @@ from .mcp_helpers import Result, ToolError
 log = logging.getLogger("jobhunter.v5")
 
 
-def _is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.5)
-        return s.connect_ex((host, port)) == 0
+def _sync_answers_to_preferences(sess_answers: dict[str, Any], confirmed_roles: list[str] | None = None) -> None:
+    """Propagate confirmed intake/filter answers into preferences.json so matching, scoring & tailoring agree."""
+    try:
+        from . import preferences, regions as _reg
+        pref_updates: dict[str, Any] = {}
 
+        if "locations" in sess_answers:
+            geo_locs: list[str] = []
+            saw_worldwide = False
+            for loc_item in sess_answers["locations"] or []:
+                ls = str(loc_item or "").strip()
+                low = ls.lower()
+                if not ls or low in ("any",):
+                    continue
+                if low in ("remote", "remote only", "worldwide", "worldwide remote", "international remote"):
+                    if "worldwide" in low or "international" in low:
+                        saw_worldwide = True
+                    continue
+                if _reg.to_code(ls) or _reg.country_of_location(ls):
+                    geo_locs.append(ls)
+            if geo_locs:
+                pref_updates["cities"] = geo_locs
+                pref_updates["target_countries"] = geo_locs
+            elif any("worldwide" in str(x).lower() for x in (sess_answers.get("locations") or [])):
+                pref_updates["target_countries"] = []
+                pref_updates["cities"] = []
+            if saw_worldwide:
+                pref_updates["include_worldwide_remote"] = True
 
-def _find_free_port(start_port: int = 8765, host: str = "127.0.0.1") -> int:
-    port = start_port
-    while port < start_port + 50:
-        if not _is_port_in_use(port, host):
-            return port
-        port += 1
-    return start_port
+        if "work_mode" in sess_answers:
+            wm = str(sess_answers["work_mode"] or "").strip().lower()
+            if wm in ("any", "all", ""):
+                pref_updates["work_mode"] = ""
+            elif wm in ("on-site", "onsite"):
+                pref_updates["work_mode"] = "Onsite"
+            elif wm in ("remote", "hybrid"):
+                pref_updates["work_mode"] = wm.capitalize()
+
+        roles_val = confirmed_roles if confirmed_roles is not None else sess_answers.get("roles")
+        if "role_pivot" in sess_answers and sess_answers["role_pivot"] is None and not roles_val:
+            pref_updates["target_titles"] = []
+        elif isinstance(roles_val, list):
+            clean_roles = [str(r).strip() for r in roles_val if str(r).strip() and str(r).strip().lower() != "any"]
+            pref_updates["target_titles"] = clean_roles
+
+        if "min_salary" in sess_answers:
+            try:
+                pref_updates["min_salary"] = max(0, int(float(sess_answers["min_salary"] or 0)))
+            except (TypeError, ValueError):
+                pass
+
+        if "job_type" in sess_answers or "contract_types" in sess_answers:
+            raw_types: list[str] = []
+            if sess_answers.get("job_type"):
+                raw_types.append(str(sess_answers["job_type"]))
+            if isinstance(sess_answers.get("contract_types"), list):
+                raw_types.extend(str(x) for x in sess_answers["contract_types"])
+            type_map = {
+                "full-time": "Full-time", "fulltime": "Full-time",
+                "part-time": "Part-time", "contract": "Contract",
+                "freelance": "Contract", "internship": "Internship", "intern": "Internship",
+            }
+            if any(t.strip().lower() == "any" for t in raw_types):
+                pref_updates["job_types"] = []
+            else:
+                mapped_types = [type_map[t.strip().lower()] for t in raw_types if t.strip().lower() in type_map]
+                if mapped_types:
+                    pref_updates["job_types"] = list(dict.fromkeys(mapped_types))
+
+        if isinstance(sess_answers.get("languages"), list):
+            pref_updates["languages"] = [str(x).strip() for x in sess_answers["languages"] if str(x).strip() and str(x).strip().lower() != "any"]
+        if isinstance(sess_answers.get("excluded_keywords"), list):
+            pref_updates["excluded_keywords"] = [str(x).strip() for x in sess_answers["excluded_keywords"] if str(x).strip()]
+        if isinstance(sess_answers.get("excluded_companies"), list):
+            pref_updates["excluded_companies"] = [str(x).strip() for x in sess_answers["excluded_companies"] if str(x).strip()]
+        if isinstance(sess_answers.get("dream_companies"), list):
+            pref_updates["dream_companies"] = [str(x).strip() for x in sess_answers["dream_companies"] if str(x).strip()]
+        if "visa_need" in sess_answers and isinstance(sess_answers["visa_need"], bool):
+            pref_updates["needs_visa_sponsorship"] = sess_answers["visa_need"]
+
+        if pref_updates:
+            preferences.save(pref_updates)
+    except Exception:
+        pass
 
 
 def _coaching_envelope(fn):
@@ -166,25 +234,17 @@ def jh_start(prompt: str = "", intent: str = "", session_id: str = "default", **
         elif any(w in p_lower for w in ["tailor", "cover letter", "resume", "regenerate"]):
             detected_intent = "regenerate"
 
-    # Branch on switch_method
+    # Branch on switch_method (Hybrid-only in v2.0+)
     if detected_intent == "switch_method":
-        curr = config.get_method()
-        alt = "hybrid" if curr != "hybrid" else "modern"
-        choices = [m for m in ("hybrid", "modern", "classic") if m != curr] + [curr]
+        config.set_method("hybrid")
         return {
-            "status": "needs_input",
+            "status": "ok",
             "step": "method_choice",
-            "message_for_user": f"Active method is '{curr.capitalize()}'. Switching methods preserves all stored jobs, signals, and outreach records.",
-            "ask_user": f"Would you like to switch to '{alt.capitalize()}' (Hybrid combines Modern outreach + Classic ATS apply), or pick 'modern' / 'classic'?",
-            "options": {
-                "choices": choices,
-                "recommended": alt,
-            },
-            "next_tool": "jh_set_method",
-            "data": {
-                "current_method": curr,
-                "target_method": alt,
-            }
+            "message_for_user": "JobHunter runs in Hybrid mode (Signal Radar + Job Boards + Tailored Docs & Outreach).",
+            "ask_user": None,
+            "options": {"choices": ["jh_status", "jh_search"], "recommended": "jh_search"},
+            "next_tool": "jh_status",
+            "data": {"current_method": "hybrid", "target_method": "hybrid"},
         }
 
     # Branch on status intent
@@ -704,7 +764,7 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
             "message_for_user": ticket_manager.build_stop_message(
                 f"Invalid input: {err}\nPlease provide the user's actual answers to the target search questions."
             ),
-            "ask_user": "Please answer the target search questions (Method, Target place, and Role).",
+            "ask_user": "Please answer the target search questions (Target place and Role).",
             "next_tool": "jh_confirm",
             "data": {"error": err},
         }
@@ -747,7 +807,7 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
         role_focus = [str(answers.get("target_role") or answers.get("role")).strip()]
         role_confirmed = True
     else:
-        m = re.search(r"(?:role(?:\s*is|:)?|target(?:\s*role)?(?:\s*is|:)?|i want|aiming for)\s+([a-zA-Z\s\/\+\#]+?)(?:in|using|with|method|$|,)", user_reply, re.I)
+        m = re.search(r"(?:role(?:\s*is|:)?|target(?:\s*role)?(?:\s*is|:)?|i want|aiming for)\s+([a-zA-Z\s\/\+\#]+?)(?=\s+(?:in|using|with|method)\b|$|,)", user_reply, re.I)
         if m and len(m.group(1).strip().split()) <= 4:
             role_focus = [m.group(1).strip()]
             role_confirmed = True
@@ -771,6 +831,7 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
     sess["target_place"] = chosen_place
     sess["confirmed_places"] = places
     sess["method"] = chosen_method
+    _sync_answers_to_preferences(sess["answers"], confirmed_roles=role_focus if role_confirmed else None)
 
     resume_id = sess.get("resume_id") or "master"
     ticket = ticket_manager.generate_ticket(
@@ -799,7 +860,7 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
     )
 
     msg = (
-        f"Target search configured: Method={chosen_method.capitalize()}, Target Place={chosen_place}, Role={', '.join(role_focus)}.\n"
+        f"Target search configured: Target Place={chosen_place}, Role={', '.join(role_focus)}.\n"
         f"Ticket issued. Call jh_launch with ticket '{ticket}' to start Hybrid search."
     )
 
@@ -1111,13 +1172,32 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
                 answers["level_shift"] = -1
                 mapped_dict["level_shift"] = -1
 
-            if "forget devops" in clean_reply or "forget" in clean_reply or "clear role" in clean_reply:
+            if "forget devops" in clean_reply or "forget" in clean_reply or "clear role" in clean_reply or "any role" in clean_reply:
                 answers["role_pivot"] = None
+                answers["roles"] = []
                 mapped_dict["role_pivot"] = None
             elif "devops instead" in clean_reply or ("devops" in clean_reply and "forget" not in clean_reply):
                 answers["role_pivot"] = "DevOps"
                 answers["roles"] = ["DevOps Engineer"]
                 mapped_dict["role_pivot"] = "DevOps"
+            elif not answers.get("roles") and not answers.get("target_role"):
+                role_m = re.search(
+                    r"\b(?:target\s+roles?|desired\s+roles?|roles?|looking\s+for|aiming\s+for)\s*(?:are|is|:)?\s*([a-zA-Z0-9\s/+#&-]{3,60}?)(?=[.;\n]|$|\b(?:remote|hybrid|onsite|on-site|salary|pay|visa|full-time|internship)\b)",
+                    user_reply,
+                    re.I,
+                )
+                if role_m:
+                    raw_roles = [r.strip() for r in re.split(r"[,/]|\band\b", role_m.group(1)) if r.strip() and r.strip().lower() not in ("any", "keep", "keep resume roles")]
+                    if raw_roles:
+                        answers["roles"] = raw_roles[:5]
+                        mapped_dict["roles"] = answers["roles"]
+
+            if not mapped_dict.get("work_mode") and re.search(r"\bwork\s+mode\s*[:=]?\s*any\b", clean_reply):
+                answers["work_mode"] = "any"
+                mapped_dict["work_mode"] = "any"
+            if not mapped_dict.get("job_type") and re.search(r"\bjob\s+type\s*[:=]?\s*any\b", clean_reply):
+                answers["job_type"] = "any"
+                mapped_dict["job_type"] = "any"
 
             if "visa" in clean_reply or "sponsor" in clean_reply:
                 if any(w in clean_reply for w in ["no sponsor", "no visa", "citizen", "authorized", "don't need", "dont need", "none"]):
@@ -1178,25 +1258,18 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
 
     # Persist answers into view filters & user preferences
     db.set_setting("active_session_id", session_id)
+    if answers.get("target_role") and not sess["answers"].get("roles"):
+        tr = answers["target_role"]
+        sess["answers"]["roles"] = tr if isinstance(tr, list) else [str(tr).strip()]
     db.save_view_filters(sess["answers"], session_id=session_id)
+    _sync_answers_to_preferences(sess["answers"])
+
+    # Re-score stored jobs against updated profile + user preferences
     try:
-        from . import preferences, regions as _reg
-        pref_updates = {}
-        if "locations" in sess["answers"]:
-            geo_locs = []
-            for loc_item in sess["answers"]["locations"]:
-                ls = str(loc_item or "").strip()
-                if not ls or ls.lower() in ("any", "remote", "remote only", "worldwide", "worldwide remote", "international remote"):
-                    continue
-                if _reg.to_code(ls) or _reg.country_of_location(ls):
-                    geo_locs.append(ls)
-            if geo_locs:
-                pref_updates["cities"] = geo_locs
-                pref_updates["target_countries"] = geo_locs
-        if "work_mode" in sess["answers"] and sess["answers"]["work_mode"].lower() != "any":
-            pref_updates["work_mode"] = sess["answers"]["work_mode"].capitalize()
-        if pref_updates:
-            preferences.save(pref_updates)
+        raw_prof = sess.get("profile") or db.get_profile() or {}
+        if raw_prof and not raw_prof.get("_is_empty"):
+            eff_prof = preferences.overlay_profile(raw_prof, None)
+            db.rescore_all_jobs_against_profile(eff_prof)
     except Exception:
         pass
 
@@ -1521,7 +1594,7 @@ def jh_status(session_id: str = "default", include_matches: bool = True) -> dict
     questions_waiting = len(sess.get("pending_questions", []))
     curr_state_str = session_state.get("current_state", "") if isinstance(session_state, dict) else str(session_state)
     if questions_waiting == 0 and curr_state_str in ("round_2_pending", "round_1_done", "ready"):
-        questions_waiting = 6
+        questions_waiting = len((sess.get("round_2_questions") or {}).get("questions") or []) or 6
     if curr_state_str in ("round_2_answered", "round_2_skipped"):
         questions_waiting = 0
 
