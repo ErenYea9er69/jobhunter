@@ -32,11 +32,24 @@ _ACTIVE_SEARCH_JOBS: dict[str, dict[str, Any]] = {}
 _ACTIVE_SEARCH_LOCK = threading.Lock()
 
 
+def _is_port_open_locally(host: str, port: int, timeout: float = 0.25) -> bool:
+    """Return True if something is already accepting TCP connections on host:port."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(timeout)
+            return probe.connect_ex((host, port)) == 0
+    except OSError:
+        return False
+
+
 def find_free_port(start_port: int = 8080, max_attempts: int = 50) -> int:
-    """Find the next available TCP port starting from start_port."""
+    """Find the next genuinely unoccupied TCP port starting from start_port."""
     for port in range(start_port, start_port + max_attempts):
+        if _is_port_open_locally("127.0.0.1", port):
+            continue
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
             try:
                 s.bind(("127.0.0.1", port))
                 return port
@@ -45,33 +58,51 @@ def find_free_port(start_port: int = 8080, max_attempts: int = 50) -> int:
     return start_port
 
 
-def is_server_healthy(host: str = "127.0.0.1", port: int = 8080, timeout: float = 0.8) -> bool:
-    """Check if JobHunter HTTP daemon is answering /health."""
+def is_server_healthy(
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    timeout: float = 0.8,
+    expected_home: Optional[str] = None,
+) -> bool:
+    """Check if JobHunter HTTP daemon is answering /health for the expected home directory."""
     url = f"http://{host}:{port}/health"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "JobHunter-HealthCheck/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if resp.status == 200:
                 data = json.loads(resp.read().decode("utf-8"))
-                return data.get("status") == "ok"
+                if data.get("status") != "ok":
+                    return False
+                remote_home = data.get("home_dir")
+                if remote_home and expected_home:
+                    if Path(str(remote_home)).resolve() != Path(str(expected_home)).resolve():
+                        return False
+                return True
     except Exception:
         pass
     return False
 
 
 def get_running_server_info(host: str = "127.0.0.1") -> Optional[dict[str, Any]]:
-    """Check if an active server is recorded in jobmcp/run and answering /health."""
+    """Check if an active server for THIS JobHunter home is recorded in jobmcp/run and answering /health."""
     run_dir = get_run_dir()
     pid_file = run_dir / "server.pid"
     port_file = run_dir / "server.port"
+    expected_home = str(home.get_home().resolve())
     if pid_file.is_file() and port_file.is_file():
         try:
             pid = int(pid_file.read_text(encoding="utf-8").strip())
             port = int(port_file.read_text(encoding="utf-8").strip())
-            if is_server_healthy(host=host, port=port):
-                return {"pid": pid, "port": port, "healthy": True}
+            if is_server_healthy(host=host, port=port, expected_home=expected_home):
+                return {"pid": pid, "port": port, "healthy": True, "home_dir": expected_home}
         except Exception:
             pass
+        # Stale PID/port pointing to dead or foreign server: clean lock files before launching fresh
+        for f in (pid_file, port_file, run_dir / "server.lock"):
+            try:
+                f.unlink(missing_ok=True)
+            except Exception:
+                pass
     return None
 
 
@@ -290,6 +321,9 @@ def get_search_job_status(session_id: str) -> dict[str, Any]:
 
 def open_browser(url: str) -> bool:
     """Launch Chromium browser with ATS extension and dedicated profile."""
+    if os.environ.get("JOBHUNTER_NO_BROWSER") == "1":
+        log.info("Skipping browser auto-launch (JOBHUNTER_NO_BROWSER=1): %s", url)
+        return False
     log.info("JobHunter Web UI available at: %s", url)
     try:
         from . import extension_installer

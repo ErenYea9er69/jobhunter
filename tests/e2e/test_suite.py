@@ -104,11 +104,34 @@ def e2e_env(tmp_path, monkeypatch):
     import urllib.request
     monkeypatch.setattr(urllib.request.OpenerDirector, "open", _fail_net)
 
-    return {
-        "repo": empty_repo,
-        "home": temp_home,
-        "fixtures": FIXTURES_DIR,
-    }
+    try:
+        yield {
+            "repo": empty_repo,
+            "home": temp_home,
+            "fixtures": FIXTURES_DIR,
+        }
+    finally:
+        try:
+            radar.stop_radar_worker()
+        except Exception:
+            pass
+        try:
+            worker_launcher.stop_worker()
+        except Exception:
+            pass
+        # Guarantee zero leaked server.py or browser_profile Chrome processes tied to tmp_path
+        if os.name == "nt":
+            try:
+                import subprocess
+                th = str(tmp_path).replace("'", "''")
+                ps = (
+                    f"Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and "
+                    f"$_.CommandLine -like '*{th}*' }} | ForEach-Object {{ "
+                    f"Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+                )
+                subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=10)
+            except Exception:
+                pass
 
 
 # =====================================================================

@@ -72,3 +72,40 @@ def test_d6_lock_file_and_pid_file(monkeypatch):
     assert info["status"] == "started"
     assert (run_dir / "server.pid").is_file()
     assert (run_dir / "server.lock").is_file()
+
+
+def test_find_free_port_skips_active_listener_and_rejects_foreign_health():
+    import json
+    import socket
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    import threading
+    from jh import worker_launcher
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        busy_port = srv.getsockname()[1]
+        picked = worker_launcher.find_free_port(start_port=busy_port, max_attempts=10)
+        assert picked != busy_port
+
+    class _ForeignHealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            payload = json.dumps({"status": "ok", "home_dir": "C:/some/other/home"}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *args):
+            pass
+
+    httpd_srv = HTTPServer(("127.0.0.1", 0), _ForeignHealthHandler)
+    hport = httpd_srv.server_port
+    t = threading.Thread(target=httpd_srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        assert worker_launcher.is_server_healthy("127.0.0.1", hport, expected_home="C:/expected/home") is False
+    finally:
+        httpd_srv.shutdown()
+        httpd_srv.server_close()

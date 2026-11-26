@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import ai_manager, bigtech_directory, config, db, email_finder, exporters, extension_installer, founder_outreach, gmail_tracker, pipeline, preferences, refit, regions, resume_registry, save_flow, screening, tracker, workspace
+from . import ai_manager, bigtech_directory, config, db, email_finder, exporters, extension_installer, founder_outreach, gmail_tracker, home, pipeline, preferences, refit, regions, resume_registry, save_flow, screening, tracker, workspace
 from . import mcp_helpers as h
 from .mcp_helpers import envelope
 from .team import qa
@@ -94,7 +94,13 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
 
         # 1. API routes
         if path == "/health":
-            return self._send_json(200, {"status": "ok", "time": db.now_iso()})
+            return self._send_json(200, {
+                "status": "ok",
+                "pid": os.getpid(),
+                "home_dir": str(home.get_home().resolve()),
+                "db_path": str(Path(config.DB_PATH).resolve()),
+                "time": db.now_iso(),
+            })
         if path == "/api/ai/status":
             st = ai_manager.get_ai_status()
             return self._send_json(200, envelope(status="ok", data=st))
@@ -1100,10 +1106,15 @@ class JobHunterRequestHandler(BaseHTTPRequestHandler):
             self._send_json(500, envelope(status="error", error={"code": "server_error", "message": str(e)}))
 
 
+class _ExclusiveThreadingHTTPServer(ThreadingHTTPServer):
+    """Prevent Windows SO_REUSEADDR silent port hijacking across multiple instances."""
+    allow_reuse_address = os.name != "nt"
+
+
 def start_server(host: str = "127.0.0.1", port: int = 8765, ws_dir: str | Path = ".") -> ThreadingHTTPServer:
     """Starts the ThreadingHTTPServer on a daemon thread and returns the server instance."""
     _ensure_db()
-    server = ThreadingHTTPServer((host, port), JobHunterRequestHandler)
+    server = _ExclusiveThreadingHTTPServer((host, port), JobHunterRequestHandler)
     server.daemon_threads = True
     server.ws_dir = Path(ws_dir).resolve()
     thread = threading.Thread(target=server.serve_forever, daemon=True)

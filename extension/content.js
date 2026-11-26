@@ -13,7 +13,12 @@
   const CSS = window.__JH_CSS || "";
   const ICONS = window.__JH_ICONS || {};
   const LOGO = window.__JH_LOGO || "";
-  const DASHBOARD = "http://127.0.0.1:8765";
+  let DASHBOARD = "http://127.0.0.1:8080";
+  try {
+    chrome.runtime.sendMessage({ type: "jh-dashboard-url" }, (res) => {
+      if (res && res.url) DASHBOARD = res.url;
+    });
+  } catch (e) { /* fallback default */ }
 
   /* ---------------------------------------------------------------- helpers */
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
