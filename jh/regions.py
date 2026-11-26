@@ -254,7 +254,7 @@ def resolve_targets(
 
 
 _METHOD_FILLER_RE = re.compile(
-    r"\b(?:modern|modrn|classic|clasic|classik|method|outreach|boards|please|thanks|thank you|switch|change|prefer|only\s+in|jobs\s+in|look\s+in|search\s+in|city)\b",
+    r"\b(?:modern|modrn|classic|clasic|classik|hybrid|hibrid|hybride|both|method|outreach|boards|please|thanks|thank you|switch|change|prefer|only\s+in|jobs\s+in|look\s+in|search\s+in|city)\b",
     re.I,
 )
 

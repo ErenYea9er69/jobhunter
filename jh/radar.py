@@ -154,7 +154,7 @@ class RadarWorker:
             active_method = config.get_method()
             sig_discovered = 0
             sig_new_ingested = 0
-            if active_method == "modern":
+            if config.method_uses_modern(active_method):
                 from . import signals
                 sig_res = signals.poll_modern_signals()
                 sig_discovered = sig_res.get("discovered", 0)

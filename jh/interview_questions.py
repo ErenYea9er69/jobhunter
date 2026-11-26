@@ -30,9 +30,14 @@ def build_step_3_target_questions(
     questions = [
         {
             "id": "method",
-            "question": "1. Method: Modern (default) or Classic?\n   - Modern: catches early funding signals and hiring posts and drafts human outreach to decision-maker emails under a daily cap.\n   - Classic: searches many job boards and has the Apply button.",
-            "choices": ["Modern", "Classic"],
-            "recommended": "Modern",
+            "question": (
+                "1. Method: Modern (default) or Classic — or Hybrid (Recommended, runs both)?\n"
+                "   - Hybrid (Recommended): runs Signal Radar + 25-board search; lets you apply via ATS extension (resume/cover letter/prep) AND email decision makers directly.\n"
+                "   - Modern (Default): catches fresh hiring signals + job-board openings and runs direct decision-maker email outreach (no ATS apply).\n"
+                "   - Classic: searches job boards and uses tailored resume, cover letter, prep, and extension ATS autofill."
+            ),
+            "choices": ["Hybrid (Recommended)", "Modern (Default)", "Classic"],
+            "recommended": "Hybrid",
         },
         {
             "id": "target_place",
@@ -49,9 +54,10 @@ def build_step_3_target_questions(
 
     lines = [
         "Please confirm these target search questions before we launch (target place is required; I never guess it from your resume):",
-        "1. Method: Modern (default) or Classic?",
-        "   - Modern catches early funding signals and hiring posts and drafts human outreach to decision-maker emails under a daily cap.",
-        "   - Classic searches many job boards and has the Apply button.",
+        "1. Method: Modern (default) or Classic — or Hybrid (Recommended, runs both)?",
+        "   - Hybrid (Recommended): full search + ATS extension apply (resume/cover letter/prep) AND decision-maker cold emails.",
+        "   - Modern: Signal Radar + job-board discovery with direct decision-maker cold email outreach.",
+        "   - Classic: 25-board search with tailored resume, cover letter, prep, and ATS extension autofill.",
         "2. Target place: remote only, international or worldwide remote, or a specific country/region (e.g. France, Europe, South Asia, USA)? You can pick one or several and add a city if you want one.",
     ]
 
@@ -178,7 +184,7 @@ def build_round_2_questions(profile: dict[str, Any], job_type_guess: dict[str, A
         "   [Suggested default: any company type]",
     ]
 
-    if str(method).lower() == "modern":
+    if str(method).lower() in ("modern", "hybrid"):
         questions.append({
             "id": "daily_email_cap",
             "number": 6,

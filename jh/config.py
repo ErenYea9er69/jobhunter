@@ -134,22 +134,26 @@ def configure_mcp_environment(workspace_path: str = ""):
     return JOBHUNTER_DIR
 
 
+VALID_METHODS = ("modern", "classic", "hybrid")
+
+
 def get_method() -> str:
-    """Return active search & application method: 'modern' (default) or 'classic'."""
+    """Return active search & application method: 'modern' (default), 'classic', or 'hybrid'."""
     try:
         from . import db
         val = db.get_setting("method")
-        if val and val.lower().strip() in ("modern", "classic"):
+        if val and val.lower().strip() in VALID_METHODS:
             return val.lower().strip()
     except Exception:
         pass
-    return os.environ.get("JH_METHOD", "modern").lower().strip()
+    env_m = os.environ.get("JH_METHOD", "modern").lower().strip()
+    return env_m if env_m in VALID_METHODS else "modern"
 
 
 def set_method(method: str) -> str:
-    """Set active search & application method: 'modern' or 'classic'."""
+    """Set active search & application method: 'modern', 'classic', or 'hybrid'."""
     clean = (method or "modern").lower().strip()
-    if clean not in ("modern", "classic"):
+    if clean not in VALID_METHODS:
         clean = "modern"
     try:
         from . import db
@@ -158,6 +162,18 @@ def set_method(method: str) -> str:
         pass
     os.environ["JH_METHOD"] = clean
     return clean
+
+
+def method_uses_modern(method: str | None = None) -> bool:
+    """Return True if the active or given method includes Modern outreach & signals."""
+    m = (method if method is not None else get_method()).lower().strip()
+    return m in ("modern", "hybrid")
+
+
+def method_uses_classic(method: str | None = None) -> bool:
+    """Return True if the active or given method includes Classic job-board ATS apply."""
+    m = (method if method is not None else get_method()).lower().strip()
+    return m in ("classic", "hybrid")
 
 
 def get_daily_cap() -> int:
