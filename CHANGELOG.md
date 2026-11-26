@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.1
+
+### Session Isolation, Signal Freshness & Grounded Project Matching
+- **Exclusive TCP port & `/health` home ownership**: Closed split-brain port `8080` hijacking caused by Windows `SO_REUSEADDR` and foreign daemon reuse (`jh/worker_launcher.py`, `jh/httpd.py`), ensuring `jh_launch` binds only to an unoccupied port matching the active `JOBMCP_HOME`.
+- **Extension multi-port discovery**: Closed extension disconnect on port `8080` (`extension/background.js`, `extension/content.js`, `extension/popup.js`) by probing active ports (`8080–8082`, `8765`) automatically.
+- **Automatic stale unsaved-cache reset**: Closed leftover prior-candidate jobs, signals, filters, and radar timers polluting new searches (`jh/db.py`, `jh/v5_tools.py`, `jh/radar.py`), clearing unsaved search cache on resume switch while preserving user applications, outreach, and saved jobs.
+- **Modern signal immediate catch-up & filtering**: Closed silent 20-minute radar cooldown skips on fresh `jh_launch` and loose signal filtering (`jh/v5_tools.py`, `jh/db.py`), kicking off a non-blocking Modern signal poll immediately and filtering signals by confirmed places, Step 5 languages, industries, and stages.
+- **Grounded `relevant_projects` matching**: Closed missing project proof mapping on Save (`jh/scoring.py`, `jh/save_flow.py`, `webapp/`, `public/`), surfacing matching master-resume projects and concrete experience bullets without fabrication.
+- **E2E test teardown hygiene**: Closed leaked detached `server.py` and test `chrome.exe` processes after pytest (`tests/e2e/test_suite.py`, `jh/worker_launcher.py`) via `JOBHUNTER_NO_BROWSER` enforcement and fixture teardown.
+
 ## 1.2.0
 
 ### Contract Place Rules (Steps 2–3)

@@ -216,24 +216,27 @@ def test_acceptance_07_launch_idempotency(clean_v3_state):
 
 def test_acceptance_08_worker_process_independence(clean_v3_state):
     """Test 8: Worker survives simulated termination of calling subagent process."""
-    # Write mock pid file in run dir
-    run_dir = Path(config.BASE_DIR) / "jobmcp" / "run"
+    # Write mock pid file in active isolated run dir
+    run_dir = worker_launcher.get_run_dir()
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "server.pid").write_text("99999", encoding="utf-8")
     (run_dir / "server.port").write_text("8080", encoding="utf-8")
 
-    # Launch search
-    b_res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="survive_sess")
-    c_res = v5_tools.jh_confirm(session_id="survive_sess", user_reply="Modern, Tunisia")
-    with patch("jh.worker_launcher.is_server_healthy", return_value=True), \
-         patch("jh.worker_launcher.open_browser", return_value=True):
-        res = v5_tools.jh_launch(session_id="survive_sess", ticket=c_res["ticket"])
-        assert res["status"] == "ok"
+    try:
+        # Launch search
+        b_res = v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="survive_sess")
+        c_res = v5_tools.jh_confirm(session_id="survive_sess", user_reply="Modern, Tunisia")
+        with patch("jh.worker_launcher.is_server_healthy", return_value=True), \
+             patch("jh.worker_launcher.open_browser", return_value=True):
+            res = v5_tools.jh_launch(session_id="survive_sess", ticket=c_res["ticket"])
+            assert res["status"] == "ok"
 
-    # Simulate subagent process exiting: worker PID file and search state remain in memory/disk
-    assert (run_dir / "server.pid").is_file()
-    job_status = worker_launcher.get_search_job_status("survive_sess")
-    assert job_status["status"] in ("running", "completed")
+        # Simulate subagent process exiting: worker PID file and search state remain in memory/disk
+        assert (run_dir / "server.pid").is_file()
+        job_status = worker_launcher.get_search_job_status("survive_sess")
+        assert job_status["status"] in ("running", "completed")
+    finally:
+        worker_launcher.stop_worker("survive_sess")
 
 
 def test_acceptance_09_answer_updates_filters_live_without_restart(clean_v3_state):

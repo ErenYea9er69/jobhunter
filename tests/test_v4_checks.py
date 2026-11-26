@@ -186,7 +186,7 @@ def test_check_04_after_ticket_launch_speed_and_url_session():
 
 def test_check_05_server_and_search_keep_running_on_process_kill():
     """Check 5: Detached worker and search jobs keep running independently of calling agent process."""
-    run_dir = Path(config.BASE_DIR) / "jobmcp" / "run"
+    run_dir = worker_launcher.get_run_dir()
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "server.pid").write_text("12345", encoding="utf-8")
     (run_dir / "server.port").write_text("8080", encoding="utf-8")
@@ -194,14 +194,17 @@ def test_check_05_server_and_search_keep_running_on_process_kill():
     v5_tools.jh_begin(resume_text=SAMPLE_RESUME, session_id="chk5_sess")
     c_res = v5_tools.jh_confirm(session_id="chk5_sess", user_reply="Modern, Tunisia")
 
-    with patch("jh.worker_launcher.is_server_healthy", return_value=True), \
-         patch("jh.worker_launcher.open_browser", return_value=True):
-        l_res = v5_tools.jh_launch(session_id="chk5_sess", ticket=c_res["ticket"])
-        assert l_res["status"] == "ok"
+    try:
+        with patch("jh.worker_launcher.is_server_healthy", return_value=True), \
+             patch("jh.worker_launcher.open_browser", return_value=True):
+            l_res = v5_tools.jh_launch(session_id="chk5_sess", ticket=c_res["ticket"])
+            assert l_res["status"] == "ok"
 
-    # Simulate caller exiting: PID file and memory state remain intact
-    assert (run_dir / "server.pid").is_file()
-    assert worker_launcher.get_search_job_status("chk5_sess")["status"] in ("running", "completed")
+        # Simulate caller exiting: PID file and memory state remain intact
+        assert (run_dir / "server.pid").is_file()
+        assert worker_launcher.get_search_job_status("chk5_sess")["status"] in ("running", "completed")
+    finally:
+        worker_launcher.stop_worker("chk5_sess")
 
 
 def test_check_06_tunisia_queries_zero_global_remote_feeds():

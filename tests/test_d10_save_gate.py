@@ -8,11 +8,17 @@ from jh import mcp_tools
 
 @pytest.fixture(autouse=True)
 def setup_db(tmp_path, monkeypatch):
+    from jh import worker_launcher
     test_db = tmp_path / "test_engine.db"
     monkeypatch.setattr(config, "DB_PATH", str(test_db))
     db.init_db()
     ticket_manager._SESSIONS.clear()
     ticket_manager._TICKETS.clear()
+    yield
+    try:
+        worker_launcher.stop_worker()
+    except Exception:
+        pass
 
 
 def test_d10_tools_reject_unsaved_jobs(tmp_path, monkeypatch):

@@ -151,3 +151,20 @@ class ToolClient:
 @pytest.fixture
 def tools(server):
     return ToolClient(server)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Terminate any detached server.py or browser_profile processes spawned under pytest tmp paths."""
+    import os
+    import subprocess
+    if os.name == "nt":
+        try:
+            ps = (
+                "Get-CimInstance Win32_Process | "
+                "Where-Object { $_.ProcessId -ne $PID -and (($_.Name -eq 'python.exe' -and $_.CommandLine -like '*server.py*' -and $_.CommandLine -like '*pytest-*') "
+                "-or ($_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*pytest-*' -and $_.CommandLine -like '*browser_profile*')) } | "
+                "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+            )
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=10)
+        except Exception:
+            pass
