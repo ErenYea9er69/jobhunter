@@ -642,15 +642,48 @@ def verify_and_label(contact: Dict[str, Any]) -> Dict[str, Any]:
 # 7. Orchestrated Finder & Ranking
 # =====================================================================
 
+_NON_COMPANY_HOSTS = frozenset({
+    "linkedin.com", "greenhouse.io", "boards.greenhouse.io", "job-boards.greenhouse.io",
+    "lever.co", "jobs.lever.co", "ashbyhq.com", "jobs.ashbyhq.com",
+    "workable.com", "apply.workable.com", "smartrecruiters.com", "jobs.smartrecruiters.com",
+    "breezy.hr", "recruitee.com", "teamtailor.com", "personio.de", "personio.com",
+    "bamboohr.com", "indeed.com", "ziprecruiter.com", "naukri.com", "hellowork.com",
+    "bayt.com", "ycombinator.com", "workatastartup.com", "remoteok.com", "remotive.com",
+    "jobicy.com", "himalayas.app", "weworkremotely.com", "arbeitnow.com", "themuse.com",
+    "news.ycombinator.com", "reddit.com", "glassdoor.com", "example.com",
+})
+
+
+def _domain_from_urls(*urls: str) -> str:
+    """Extract a corporate domain from direct company/job URLs, skipping ATS or board hosts."""
+    for raw in urls:
+        s = (raw or "").strip()
+        if not s:
+            continue
+        if "://" not in s and "." in s and "/" not in s:
+            host = s.lower().lstrip("www.")
+        else:
+            host = (urllib.parse.urlparse(s).hostname or "").lower().lstrip("www.")
+        if not host or "." not in host:
+            continue
+        if host in _NON_COMPANY_HOSTS or any(host.endswith(f".{h}") for h in _NON_COMPANY_HOSTS):
+            continue
+        return host
+    return ""
+
+
 def find_contacts(
     signal_id_or_company: str,
     target_role: str = "",
     company_size: Optional[int] = None,
+    company_url: str = "",
+    job_url: str = "",
+    company_domain: str = "",
 ) -> Dict[str, Any]:
     """Find, verify, rank, and store up to 3 decision makers for a signal or company."""
     signal_data: Optional[Dict[str, Any]] = None
     company_name = ""
-    domain = ""
+    domain = (company_domain or "").strip().lower()
     stage = ""
     signal_id = ""
     signal_poster_name = ""
@@ -662,7 +695,7 @@ def find_contacts(
         signal_data = db.get_signal(signal_id)
         if signal_data:
             company_name = signal_data.get("company", "")
-            domain = signal_data.get("company_domain", "")
+            domain = domain or signal_data.get("company_domain", "")
             stage = signal_data.get("stage", "")
             signal_poster_name = signal_data.get("author_name", "")
             signal_poster_url = signal_data.get("author_url", "")
@@ -674,7 +707,9 @@ def find_contacts(
     if not company_name:
         raise ToolError("Must provide a valid company name or signal_id.")
 
-    # Resolve domain if missing
+    # Resolve domain from direct URL hints first, then fallback heuristics
+    if not domain:
+        domain = _domain_from_urls(company_url, job_url)
     if not domain:
         domain = email_finder.resolve_company_domain(company_name)
 

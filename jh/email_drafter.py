@@ -398,6 +398,7 @@ def draft_short_email(
     signal_id: str = "",
     resume_path: str = "",
     specific_detail: str = "",
+    company_override: str = "",
 ) -> Dict[str, Any]:
     """Draft human outreach email with strict slop linting and 2-round rewrite loop."""
     contact = db.get_contact(contact_id) or {}
@@ -407,7 +408,7 @@ def draft_short_email(
     c_name = contact.get("name") or "there"
     c_parts = c_name.strip().split()
     recipient_first = c_parts[0] if c_parts else "there"
-    company = contact.get("company") or (signal.get("company") if signal else "the team")
+    company = contact.get("company") or (signal.get("company") if signal else "") or company_override or "the team"
 
     p_name = profile.get("name") or "Candidate"
     p_first = p_name.strip().split()[0] if p_name.strip() else "Candidate"

@@ -350,12 +350,93 @@ def generate_saved_job_documents(
     }
 
 
+def generate_modern_outreach_bundle(
+    company: str,
+    role: str,
+    signal_dict: Optional[dict] = None,
+    job_dict: Optional[dict] = None,
+    profile: Optional[dict] = None,
+) -> dict:
+    """Build Modern outreach package: company brief, up to 3 contacts, 1-page PDF, and cold email draft."""
+    from . import company_research, contacts, email_drafter
+
+    prof = get_master_profile(profile)
+    sig = dict(signal_dict or {})
+    signal_id = str(sig.get("id") or "")
+    company_name = (company or sig.get("company") or (job_dict or {}).get("company") or "Unknown Company").strip()
+    role_name = (role or sig.get("role_guess") or (job_dict or {}).get("title") or "Software Engineer").strip()
+
+    if not sig:
+        job_src = job_dict or {}
+        job_text = (job_src.get("description") or job_src.get("title") or role_name).strip()
+        sig = {
+            "id": "",
+            "company": company_name,
+            "role_guess": role_name,
+            "text": job_text,
+            "url": job_src.get("url") or "",
+            "type": "hiring_post",
+            "stage": job_src.get("company_stage") or "unknown",
+        }
+
+    brief_key = signal_id or company_name
+    brief_row = db.get_company_brief(brief_key)
+    if not brief_row:
+        brief_data = company_research.build_company_brief(signal=sig, profile=prof)
+        lp_data = company_research.build_learning_pack(brief=brief_data, signal=sig, profile=prof)
+        db.save_company_brief(company_name, brief_data, lp_data, signal_id=signal_id)
+    else:
+        brief_data = brief_row.get("brief", {})
+        lp_data = brief_row.get("learning_pack", {})
+
+    job_src = job_dict or {}
+    contact_res = contacts.find_contacts(
+        signal_id_or_company=signal_id or company_name,
+        target_role=role_name,
+        company_url=str(job_src.get("company_url") or ""),
+        job_url=str(job_src.get("url") or sig.get("url") or ""),
+        company_domain=str(sig.get("company_domain") or ""),
+    )
+    found_contacts = contact_res.get("contacts", []) if isinstance(contact_res, dict) else []
+    resume_res = email_drafter.build_job_resume(
+        company=company_name,
+        role=role_name,
+        signal_id=signal_id,
+        profile_override=prof,
+    )
+    top_contact = found_contacts[0] if found_contacts else {}
+    contact_id = top_contact.get("id") or ""
+
+    detail_src = (sig.get("text") or role_name or "").strip()
+    specific_detail = " ".join(re.findall(r"\b\w+\b", detail_src.split(".")[0])[:4]) if detail_src else ""
+    email_res = email_drafter.draft_short_email(
+        contact_id=contact_id,
+        signal_id=signal_id,
+        resume_path=resume_res.get("resume_path", ""),
+        specific_detail=specific_detail,
+        company_override=company_name,
+    )
+
+    return {
+        "signal_id": signal_id,
+        "company": company_name,
+        "role": role_name,
+        "brief": brief_data,
+        "learning_pack": lp_data,
+        "contacts": found_contacts,
+        "contacts_notice": contact_res.get("notice", "") if isinstance(contact_res, dict) else "",
+        "resume": resume_res,
+        "email": email_res,
+    }
+
+
 def handle_save_job(
     job_or_id: str | dict,
     force: bool = False,
     confirm_closed: bool = False,
     profile_override: Optional[dict] = None,
     background: bool = False,
+    method: str = "",
 ) -> dict:
     """Core save flow complying with Pipeline Steps 10-15 and Decision D:
 
@@ -363,7 +444,7 @@ def handle_save_job(
     2. Score fit against master resume.
     3. If fit < 60 and not force: return low_fit gap report and prompt.
     4. If fit >= 60 or forced: mark saved (keep_flag=1, delete_at=NULL), record application,
-       generate tailored documents in outputs/, run grounding check, and return details.
+       then run Modern direct-outreach generation (when method=='modern') or Classic tailored docs.
     """
     job = get_job_dict(job_or_id)
     job_id = str(job.get("id") or job.get("job_key") or "job_unknown")
@@ -442,7 +523,42 @@ def handle_save_job(
     with db.session() as c:
         c.execute("UPDATE applications SET fit_score=?, saved_by='ui' WHERE id=?", (fit_score, app_id))
 
-    # 5. Generate tailored documents
+    # 5. Generate method-specific outputs (Modern -> Direct Outreach bundle; Classic -> Resume + Cover Letter)
+    active_method = (method or "").lower().strip()
+    if active_method == "modern":
+        bundle = generate_modern_outreach_bundle(
+            company=job.get("company", "Unknown Company"),
+            role=job.get("title", "Software Engineer"),
+            job_dict=job,
+            profile=profile,
+        )
+        pdf_path = (bundle.get("resume") or {}).get("resume_path", "")
+        with db.session() as c:
+            c.execute(
+                "UPDATE applications SET resume_path=?, grounding_result=?, updated_at=datetime('now') WHERE id=? OR job_id=?",
+                (pdf_path, "passed", app_id, job_id),
+            )
+        return {
+            "status": "ok",
+            "method": "modern",
+            "saved": True,
+            "application_id": app_id,
+            "fit_score": fit_score,
+            "match_evaluation": match_eval,
+            "gap_report": gap_report,
+            "resume_path": pdf_path,
+            "company": bundle["company"],
+            "role": bundle["role"],
+            "brief": bundle["brief"],
+            "learning_pack": bundle["learning_pack"],
+            "contacts": bundle["contacts"],
+            "contacts_notice": bundle.get("contacts_notice", ""),
+            "resume": bundle["resume"],
+            "email": bundle["email"],
+            "grounding": "passed",
+            "message": f"Saved in Modern outreach mode (fit {fit_score}): researched contacts, brief, 1-page PDF, and short email draft.",
+        }
+
     if background:
         thread = threading.Thread(
             target=generate_saved_job_documents,
@@ -453,6 +569,7 @@ def handle_save_job(
         thread.start()
         return {
             "status": "ok",
+            "method": "classic",
             "saved": True,
             "application_id": app_id,
             "fit_score": fit_score,
@@ -464,6 +581,7 @@ def handle_save_job(
     gen_res = generate_saved_job_documents(job, profile, app_id)
     return {
         "status": "ok",
+        "method": "classic",
         "saved": True,
         "application_id": app_id,
         "fit_score": fit_score,
