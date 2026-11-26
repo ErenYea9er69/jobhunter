@@ -875,6 +875,18 @@
     const app = findApp(j);
     const url = jobUrl(j);
     const isSaved = app && app.status === "saved";
+    const isModern = state.method === "modern";
+
+    if (isModern) {
+      const saveOrOutreach = isSaved
+        ? `<button class="btn btn-primary btn-sm" type="button" data-act="modern-outreach" data-key="${esc(key)}">${icon("mail", "icon-sm")}<span>Find Contacts &amp; Email</span></button>`
+        : `<button class="btn btn-primary btn-sm" type="button" data-act="save" data-key="${esc(key)}">${icon("bookmark", "icon-sm")}<span>Save &amp; Find Contacts</span></button>`;
+      const savedBadge = isSaved ? `<span class="btn btn-quiet btn-sm card-state">${icon("bookmark-check", "icon-sm")}<span>Saved</span></span>` : "";
+      const copy = url ? `<button class="btn btn-quiet btn-sm btn-icon" type="button" data-act="copy-link" data-key="${esc(key)}" aria-label="Copy posting link">${icon("link", "icon-sm")}</button>` : "";
+      const dismiss = `<button class="btn btn-quiet btn-sm btn-icon" type="button" data-act="dismiss" data-key="${esc(key)}" aria-label="Dismiss job" title="Dismiss">${icon("x", "icon-sm")}</button>`;
+      return `${saveOrOutreach}${savedBadge}${copy}${dismiss}<button class="btn btn-quiet btn-sm go" type="button" data-act="details" data-key="${esc(key)}">Details${icon("chevron-right", "icon-sm")}</button>`;
+    }
+
     let apply;
     if (app && app.status !== "saved") apply = `<span class="btn btn-secondary btn-sm card-state">${icon("check", "icon-sm")}${esc(STAGE_LABEL[app.status] || "Tracked")}</span>`;
     else apply = `<button class="btn btn-primary btn-sm" type="button" data-act="apply" data-key="${esc(key)}"${url ? "" : " disabled"}>Apply</button>`;
@@ -1056,13 +1068,16 @@
     ].filter(Boolean).join("");
 
     const inPipeline = app && app.status !== "saved";
+    const isModern = state.method === "modern";
     const saveBtn = app && app.status === "saved"
-      ? `<button class="btn btn-secondary" type="button" disabled>${icon("bookmark-check")}<span>Saved</span></button>`
-      : app ? "" : `<button class="btn btn-secondary" type="button" data-act="save" data-key="${esc(state.selectedId)}">${icon("bookmark")}<span>Save</span></button>`;
+      ? (isModern
+          ? `<button class="btn btn-primary" type="button" data-act="modern-outreach" data-key="${esc(state.selectedId)}">${icon("mail")}<span>Find Contacts &amp; Email</span></button>`
+          : `<button class="btn btn-secondary" type="button" disabled>${icon("bookmark-check")}<span>Saved</span></button>`)
+      : app ? "" : `<button class="btn ${isModern ? "btn-primary" : "btn-secondary"}" type="button" data-act="save" data-key="${esc(state.selectedId)}">${icon("bookmark")}<span>${isModern ? "Save &amp; Find Contacts" : "Save"}</span></button>`;
     const dismissBtn = `<button class="btn btn-quiet" type="button" data-act="dismiss" data-key="${esc(state.selectedId)}">${icon("x")}<span>Dismiss</span></button>`;
     const applyBtn = inPipeline
       ? `<a class="btn btn-secondary" href="#/applications">${icon("square-kanban")}<span>${esc(STAGE_LABEL[app.status] || "Tracked")} in Applications</span></a>`
-      : `<button class="btn btn-primary" type="button" data-act="apply" data-key="${esc(state.selectedId)}"${url ? "" : " disabled"}>${icon("send")}<span>Apply with extension</span></button>`;
+      : (isModern ? "" : `<button class="btn btn-primary" type="button" data-act="apply" data-key="${esc(state.selectedId)}"${url ? "" : " disabled"}>${icon("send")}<span>Apply with extension</span></button>`);
 
     const matched = j.matched_skills || [];
     const terms = matched.concat(profileTerms());
@@ -1085,18 +1100,26 @@
     const isSaved = app && app.status === "saved";
     let writeSectionContent = "";
     if (isSaved) {
-      const writeRows = [
-        ["cover-letter", "Cover letter", "Built from your resume facts"],
-        ["tailor-resume", "Tailored resume", "Your resume, reordered for this posting"],
-        ["interview-prep", "Interview prep", "STAR stories from your experience"],
-        ["outreach", "Recruiter message", "LinkedIn note and a message to the hiring manager"],
-      ].map(([k, t, d]) => `<button class="write-row" type="button" data-doc="${k}"><span><span class="t">${t}</span><span class="d">${d}</span></span><span class="go">${icon("chevron-right")}</span></button>`).join("");
+      const writeRows = isModern
+        ? [
+            ["modern-outreach", "Company brief, contacts & cold email", "Up to 3 verified HR/team contacts, 1-page PDF, and human email draft"],
+            ["tailor-resume", "Tailored resume", "Your resume, reordered for this posting"],
+            ["interview-prep", "Interview prep", "STAR stories from your experience"],
+          ].map(([k, t, d]) => k === "modern-outreach"
+            ? `<button class="write-row" type="button" data-act="modern-outreach" data-key="${esc(state.selectedId)}"><span><span class="t">${t}</span><span class="d">${d}</span></span><span class="go">${icon("chevron-right")}</span></button>`
+            : `<button class="write-row" type="button" data-doc="${k}"><span><span class="t">${t}</span><span class="d">${d}</span></span><span class="go">${icon("chevron-right")}</span></button>`).join("")
+        : [
+            ["cover-letter", "Cover letter", "Built from your resume facts"],
+            ["tailor-resume", "Tailored resume", "Your resume, reordered for this posting"],
+            ["interview-prep", "Interview prep", "STAR stories from your experience"],
+            ["outreach", "Recruiter message", "LinkedIn note and a message to the hiring manager"],
+          ].map(([k, t, d]) => `<button class="write-row" type="button" data-doc="${k}"><span><span class="t">${t}</span><span class="d">${d}</span></span><span class="go">${icon("chevron-right")}</span></button>`).join("");
       writeSectionContent = `<div class="write-list">${writeRows}</div>`;
     } else {
       writeSectionContent = `
         <div class="write-locked-notice">
-          <p><strong>Documents are locked.</strong> Save this job first to unlock tailored resume and cover letter generation.</p>
-          <button class="btn btn-primary btn-sm" type="button" data-act="save" data-key="${esc(state.selectedId)}">${icon("bookmark", "icon-sm")}<span>Save this job to unlock</span></button>
+          <p><strong>${isModern ? "Outreach is locked." : "Documents are locked."}</strong> ${isModern ? "Save this opening to investigate decision makers, build your 1-page PDF, and draft a short cold email." : "Save this job first to unlock tailored resume and cover letter generation."}</p>
+          <button class="btn btn-primary btn-sm" type="button" data-act="save" data-key="${esc(state.selectedId)}">${icon("bookmark", "icon-sm")}<span>${isModern ? "Save & Find Contacts" : "Save this job to unlock"}</span></button>
         </div>`;
     }
 
@@ -1311,6 +1334,7 @@
     if (tabOut) tabOut.style.display = isModern ? "" : "none";
 
     updateRadarHeaderUI();
+    if (state.route === "jobs") refreshJobViews();
   }
 
   async function setMethod(method, saveBackend = true) {
@@ -1593,13 +1617,14 @@
       url: jobUrl(j),
       session_id: state.sessionId || state.session_id || "default",
       page_token: state.page_token || "",
+      method: state.method || "modern",
       force: !!opts.force,
       confirm_closed: !!opts.confirm_closed,
       job_data: j
     };
 
     try {
-      toast("Evaluating fit and posting status...", { kind: "info" });
+      toast(state.method === "modern" ? "Evaluating fit, researching HR/team contacts, and drafting email..." : "Evaluating fit and posting status...", { kind: "info" });
       const res = await apiPost("/api/jobs/save", payload);
       if (!res) return;
 
@@ -1667,9 +1692,19 @@
       pendingSaveJob = null;
       await reloadApps();
       refreshJobViews();
-      toast("Saved! Tailored resume & cover letter generated in outputs/.", {
-        action: { label: "View in Applications", run: () => go("applications") }
-      });
+      if (res.method === "modern" || res.contacts || res.email) {
+        state.activeBrief = res;
+        state.activeContacts = res.contacts || [];
+        state.activeOutreachDraft = res.email || {};
+        const drawerDlg = byId("job-drawer");
+        if (drawerDlg && drawerDlg.open) drawerDlg.close();
+        openContactsPanel(res, { company: j.company, role_guess: j.title, url: jobUrl(j), is_job: true });
+        toast("Saved in Modern outreach mode! Contacts, brief, 1-page PDF & email draft ready.", { kind: "good" });
+      } else {
+        toast("Saved! Tailored resume & cover letter generated in outputs/.", {
+          action: { label: "View in Applications", run: () => go("applications") }
+        });
+      }
     } catch (e) {
       toast("Could not save job: " + e.message, { kind: "bad" });
     }
@@ -1812,6 +1847,7 @@
       if (act) {
         const key = act.dataset.key;
         if (act.dataset.act === "save") onSave(key);
+        else if (act.dataset.act === "modern-outreach") onSave(key, { force: true, confirm_closed: true });
         else if (act.dataset.act === "tailor") {
           const j = jobByKey(key);
           if (j) {
@@ -1862,6 +1898,7 @@
       const a = e.target.closest("[data-act]");
       if (a) {
         if (a.dataset.act === "save") onSave(a.dataset.key);
+        else if (a.dataset.act === "modern-outreach") onSave(a.dataset.key, { force: true, confirm_closed: true });
         else if (a.dataset.act === "dismiss") { dlg.close(); openDismissDialog(a.dataset.key); }
         else if (a.dataset.act === "apply") onApply(a.dataset.key);
         return;
@@ -3015,7 +3052,8 @@
     if (!dlg) return;
 
     byId("contacts-company-badge").textContent = data.company || (sig && sig.company) || "Company";
-    byId("contacts-context-text").textContent = `Signal: ${data.role || (sig && sig.role_guess) || "Role"} at ${data.company || (sig && sig.company)}`;
+    const ctxPrefix = sig && sig.is_job ? "Opening" : "Signal";
+    byId("contacts-context-text").textContent = `${ctxPrefix}: ${data.role || (sig && sig.role_guess) || "Role"} at ${data.company || (sig && sig.company)}`;
     const link = byId("contacts-context-link");
     if (link && sig && sig.url) {
       link.href = sig.url;
@@ -3059,13 +3097,15 @@
     byId("outreach-email-body").value = emailData.body || "";
 
     const resumeData = data.resume || {};
-    byId("job-resume-filename").textContent = resumeData.pdf_filename || `${data.company}_Resume.pdf`;
-    byId("job-resume-meta").textContent = `Size: ${Math.round((resumeData.pdf_size_bytes || 85000) / 1024)} KB. 1-page PDF grounded in your master resume facts.`;
+    byId("job-resume-filename").textContent = resumeData.filename || resumeData.pdf_filename || `${data.company}_Resume.pdf`;
+    const resumeKb = resumeData.size_kb != null ? Math.round(resumeData.size_kb) : Math.round((resumeData.pdf_size_bytes || 85000) / 1024);
+    byId("job-resume-meta").textContent = `Size: ${resumeKb} KB. 1-page PDF grounded in your master resume facts.`;
     const btnResumePdf = byId("btn-open-resume-pdf");
     if (btnResumePdf) {
       btnResumePdf.onclick = () => {
-        if (resumeData.pdf_path) {
-          toast(`Resume saved at: ${resumeData.pdf_path}`);
+        const pdfLoc = resumeData.resume_path || resumeData.pdf_path;
+        if (pdfLoc) {
+          toast(`Resume saved at: ${pdfLoc}`);
         } else {
           toast("Job resume generated in outputs/ folder.");
         }
@@ -3191,16 +3231,16 @@
     byId("brief-dialog-title").textContent = data.company || brief.company || "Company Research";
     byId("brief-company-sub").textContent = `Factual background & call preparation package`;
 
-    byId("brief-what-they-do").textContent = brief.what_they_do || "No public data found.";
-    renderCitationLink("brief-src-what", (brief.sources || [])[0]);
+    byId("brief-what-they-do").textContent = brief.what_they_do || (brief.product_summary && brief.product_summary.claim) || "No public data found.";
+    renderCitationLink("brief-src-what", (brief.sources || [])[0] || (brief.product_summary && brief.product_summary.source_url));
 
-    byId("brief-business-model").textContent = brief.business_model || "Not specified in public sources.";
+    byId("brief-business-model").textContent = brief.business_model || brief.candidate_impact || "Not specified in public sources.";
     renderCitationLink("brief-src-biz", (brief.sources || [])[1] || (brief.sources || [])[0]);
 
-    byId("brief-tech-stack").textContent = brief.tech_stack || "No public tech stack disclosed.";
+    byId("brief-tech-stack").textContent = brief.tech_stack || (brief.stage && brief.stage.claim && brief.stage.claim !== "unknown" ? `Stage: ${brief.stage.claim}` : "No public tech stack disclosed.");
     renderCitationLink("brief-src-tech", (brief.sources || [])[0]);
 
-    byId("brief-recent-news").textContent = brief.recent_news || "No recent funding or expansion news found.";
+    byId("brief-recent-news").textContent = brief.recent_news && typeof brief.recent_news === "object" ? (brief.recent_news.claim || "No recent funding or expansion news found.") : (brief.recent_news || "No recent funding or expansion news found.");
     renderCitationLink("brief-src-news", (brief.sources || [])[0]);
 
     const qList = byId("pack-questions");
@@ -5013,7 +5053,7 @@
       else if (k === "j") moveSelection(1);
       else if (k === "k") moveSelection(-1);
       else if (k === "s" && currentJob()) onSave();
-      else if (k === "a" && currentJob()) onApply();
+      else if (k === "a" && currentJob() && state.method !== "modern") onApply();
     });
   }
 
