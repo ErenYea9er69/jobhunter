@@ -1229,6 +1229,60 @@ def evaluate_honest_match(
 
     fit_level = "strong" if fit_score >= 75 else ("moderate" if fit_score >= 60 else "weak")
     gap_names = [g["requirement"] for g in gaps[:3]]
+
+    # Match candidate's real projects and concrete experience bullets strictly from master profile (never invented)
+    req_tokens = {
+        tok for tok in re.findall(r"[a-z0-9][a-z0-9+#./-]{1,}", low_text)
+        if tok not in {"with", "and", "the", "for", "you", "your", "are", "this", "that", "from", "will", "have", "experience", "years", "work", "role", "team"}
+    }
+    relevant_projects: list[dict] = []
+    seen_proj_ev: set[str] = set()
+    for p_item in (profile.get("projects") or []):
+        if isinstance(p_item, dict):
+            p_title = str(p_item.get("name") or p_item.get("title") or "").strip()
+            p_desc = str(p_item.get("description") or " ".join(p_item.get("bullets") or [])).strip()
+            p_tech = " ".join(str(x) for x in (p_item.get("tech") or p_item.get("skills") or []))
+            raw_ev = f"{p_title}: {p_desc}".strip(": ")
+            hay_p = f"{p_title} {p_desc} {p_tech}".lower()
+        else:
+            p_title = str(p_item).strip()
+            raw_ev = p_title
+            hay_p = p_title.lower()
+        if not raw_ev or raw_ev in seen_proj_ev:
+            continue
+        p_tokens = set(re.findall(r"[a-z0-9][a-z0-9+#./-]{1,}", hay_p))
+        overlap_terms = sorted(req_tokens & p_tokens)
+        if overlap_terms:
+            seen_proj_ev.add(raw_ev)
+            relevant_projects.append({
+                "title": p_title or "Resume Project",
+                "evidence": raw_ev[:220],
+                "matched_terms": overlap_terms[:6],
+                "score": len(overlap_terms),
+            })
+    for exp in exp_list:
+        if not isinstance(exp, dict):
+            continue
+        exp_label = f"{exp.get('role') or exp.get('title') or ''} at {exp.get('company') or ''}".strip(" at")
+        for b in (exp.get("bullets") or []):
+            bs = str(b).strip()
+            if not bs or bs in seen_proj_ev:
+                continue
+            b_tokens = set(re.findall(r"[a-z0-9][a-z0-9+#./-]{1,}", bs.lower()))
+            overlap_terms = sorted(req_tokens & b_tokens)
+            if len(overlap_terms) >= 2:
+                seen_proj_ev.add(bs)
+                relevant_projects.append({
+                    "title": exp_label or "Relevant Experience",
+                    "evidence": bs[:220],
+                    "matched_terms": overlap_terms[:6],
+                    "score": len(overlap_terms),
+                })
+    relevant_projects.sort(key=lambda x: x["score"], reverse=True)
+    relevant_projects = [{k: v for k, v in item.items() if k != "score"} for item in relevant_projects[:3]]
+    if relevant_projects:
+        strengths.append("Relevant built work: " + "; ".join(f"{rp['title']} ({', '.join(rp['matched_terms'][:3])})" for rp in relevant_projects[:2]) + ".")
+
     if hard_gaps:
         rec = "Hard requirement flagged; verify eligibility before investing time, or Save anyway to proceed."
     elif fit_level == "weak":
@@ -1250,6 +1304,7 @@ def evaluate_honest_match(
         "fit_level": fit_level,
         "plain_summary": plain_summary.strip(),
         "strengths": strengths,
+        "relevant_projects": relevant_projects,
         "gaps": gaps,
         "soft_gaps": soft_gaps,
         "hard_gaps": hard_gaps,

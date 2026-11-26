@@ -250,8 +250,10 @@ class RadarWorker:
         r_state = db.get_radar_state()
         last_poll = r_state.get("last_poll_at")
         should_catch_up = True
-
-        if last_poll:
+        if db.get_setting("radar_force_refresh", "") == "1":
+            db.set_setting("radar_force_refresh", "0")
+            should_catch_up = True
+        elif last_poll:
             try:
                 last_dt = datetime.datetime.fromisoformat(last_poll.replace("Z", "+00:00"))
                 diff_m = (datetime.datetime.now(datetime.timezone.utc) - last_dt).total_seconds() / 60.0

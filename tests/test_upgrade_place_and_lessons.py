@@ -972,3 +972,90 @@ def test_lesson_e_jh_status_preserves_fields_and_adds_calm_factual_pacing_note(m
     assert len(pacing_note.splitlines()) <= 2
     for hype in ("awesome", "amazing", "great job", "you got this", "keep going", "crushing", "fantastic", "congrats"):
         assert hype not in pacing_note.lower()
+
+
+def test_new_resume_clears_stale_unsaved_cache_preserves_crm_and_forces_radar_refresh():
+    from jh import tracker
+    b1 = v5_tools.jh_begin(resume_text=LYON_RESUME_TEXT, session_id="s_reset")
+    assert b1["status"] == "needs_target"
+    db.store_jobs(
+        [
+            {"id": "unsaved_old_tn", "title": "Legacy Tunisia Dev", "company": "OldCo", "location": "Tunis, Tunisia", "work_mode": "Onsite"},
+            {"id": "saved_crm_job", "title": "Saved Backend Role", "company": "KeepCo", "location": "Remote", "work_mode": "Remote"},
+        ],
+        query="Legacy",
+    )
+    db.mark_job_saved_by_ui("saved_crm_job")
+    tracker.upsert_application({"job_id": "saved_crm_job", "company": "KeepCo", "title": "Saved Backend Role", "status": "applied"})
+    db.ingest_signal({"id": "sig_old_unsaved", "company": "StaleStartup", "text": "Old HN comment", "source": "HackerNews", "status": "fresh"})
+    db.save_view_filters({"min_salary": 120000, "seniority": ["senior"], "locations": ["Tunisia"]}, session_id="s_reset")
+    db.set_setting("li_radar_last_run", "2026-11-26T10:00:00+00:00")
+
+    b2 = v5_tools.jh_begin(resume_text=AUSTIN_RESUME_TEXT, session_id="s_reset")
+    assert b2["status"] == "needs_target"
+    assert db.get_job("unsaved_old_tn") is None
+    assert db.get_job("saved_crm_job") is not None
+    assert len(tracker.list_applications()) >= 1
+    assert db.get_signal("sig_old_unsaved") is None
+    vf = db.get_view_filters("s_reset")
+    assert vf["min_salary"] == 0.0 and vf["locations"] == []
+    assert db.get_setting("radar_force_refresh") == "1"
+
+
+def test_modern_launch_kicks_signal_poll_and_db_get_signals_filters_place_and_language(monkeypatch):
+    from jh import signals as _signals, radar as _radar
+
+    v5_tools.jh_begin(resume_text=AUSTIN_RESUME_TEXT, session_id="s_mod_sig")
+    conf = v5_tools.jh_confirm(user_reply="modern, South Asia", session_id="s_mod_sig")
+    assert conf["ticket"]
+
+    polled_calls = []
+    monkeypatch.setattr(worker_launcher, "start_detached_server", lambda *a, **kw: {"status": "started", "port": 8089})
+    monkeypatch.setattr(worker_launcher, "open_browser", lambda *a, **kw: False)
+    monkeypatch.setattr(_radar, "start_radar_worker", lambda: True)
+    monkeypatch.setattr(_signals, "poll_modern_signals", lambda target_role="", target_region="", **kw: polled_calls.append((target_role, target_region)) or {"discovered": 0, "new_ingested": 0})
+
+    res = v5_tools.jh_launch(session_id="s_mod_sig", ticket=conf["ticket"])
+    assert res["status"] == "ok"
+    import time
+    for _ in range(20):
+        if polled_calls:
+            break
+        time.sleep(0.05)
+    assert polled_calls and polled_calls[0][1] == "South Asia"
+
+    db.ingest_signal({"id": "sig_sa_en", "company": "IndiCloud", "text": "Hiring Python cloud intern remote India English", "region": "India", "role_guess": "Backend Engineer", "status": "fresh"})
+    db.ingest_signal({"id": "sig_us_only", "company": "USGovCo", "text": "US only onsite role", "region": "United States", "role_guess": "Backend Engineer", "status": "fresh"})
+    db.ingest_signal({"id": "sig_fr_only", "company": "ParisShop", "text": "French only role in Paris", "region": "France", "role_guess": "Backend Engineer", "status": "fresh"})
+
+    sigs = db.get_signals(view_filters={"locations": ["South Asia"], "languages": ["English"]})
+    sig_ids = {s["id"] for s in sigs}
+    assert "sig_sa_en" in sig_ids
+    assert "sig_us_only" not in sig_ids
+    assert "sig_fr_only" not in sig_ids
+
+
+def test_honest_match_surfaces_grounded_relevant_projects_without_invention():
+    prof = {
+        "name": "Rayen Ben Aissa",
+        "years_of_experience": 1,
+        "skills": ["Python", "Docker", "Kubernetes", "CI/CD", "FastAPI"],
+        "projects": [
+            {"name": "CloudPipeline", "description": "Built a Docker and Kubernetes CI/CD deployment pipeline for Python microservices."},
+            {"name": "CanvasGame", "description": "2D browser puzzle game in vanilla JavaScript."},
+        ],
+        "experience": [
+            {"company": "MyNet", "role": "Cloud Intern", "bullets": ["Automated Terraform and Docker container builds in GitHub Actions."]},
+        ],
+    }
+    job = {
+        "title": "Cloud Software Engineering Intern",
+        "company": "ScaleInfra",
+        "description": "Looking for Python, Docker, Kubernetes, CI/CD, and Terraform deployment experience.",
+    }
+    ev = scoring.evaluate_honest_match(prof, job)
+    rps = ev.get("relevant_projects") or []
+    assert rps, "Expected grounded relevant_projects to surface matching built work"
+    titles = " ".join(rp["title"] for rp in rps)
+    assert "CloudPipeline" in titles or "MyNet" in titles
+    assert "InventedProject" not in titles

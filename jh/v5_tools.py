@@ -622,15 +622,35 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
         return reply
 
     prof = check_res["profile"]
+    new_resume_id = util.stable_id(prof.get("name") or "candidate", check_res.get("text_chars", 0))
+    prev_resume_id = db.get_setting("active_resume_id", "")
+    # Clear stale unsaved cache when switching to a different candidate OR upgrading a dirty legacy DB
+    should_reset_cache = False
+    if prev_resume_id and prev_resume_id != new_resume_id:
+        should_reset_cache = True
+    elif not prev_resume_id:
+        with db.session() as c:
+            has_stale_jobs = c.execute("SELECT COUNT(*) FROM jobs WHERE COALESCE(saved_by, '') != 'ui'").fetchone()[0] > 0
+            has_stale_sigs = c.execute("SELECT COUNT(*) FROM signals WHERE COALESCE(status, '') != 'saved'").fetchone()[0] > 0
+            has_stale_filters = c.execute("SELECT COUNT(*) FROM view_filters").fetchone()[0] > 0
+            if (has_stale_jobs or has_stale_sigs) and has_stale_filters:
+                should_reset_cache = True
+    if should_reset_cache:
+        db.reset_stale_search_cache(session_id=session_id)
+        sess["answers"] = {}
+        sess.pop("search_job_id", None)
+
     db.save_profile(prof, profile_id="master")
     db.set_active_resume_profile("master")
     db.set_setting("active_session_id", session_id)
+    db.set_setting("active_resume_id", new_resume_id)
+    db.set_setting("radar_force_refresh", "1")
 
     filename = Path(resume_path).name if resume_path else "pasted_resume.txt"
     inf = role_inference.infer_roles(prof, filename)
     sess["profile"] = prof
     sess["inference_result"] = inf
-    sess["resume_id"] = util.stable_id(prof.get("name") or "candidate", check_res.get("text_chars", 0))
+    sess["resume_id"] = new_resume_id
 
     # D3: Store inferences into guesses table (never filters search/view). Never store resume-guessed locations.
     for r in inf.get("roles", []):
@@ -880,10 +900,22 @@ def jh_launch(session_id: str = "default", ticket: str = "") -> dict[str, Any]:
     sess["worker_port"] = port
     sess["ui_url"] = ui_url
 
-    # 2. Start method-specific engine: Modern -> Signal Radar; Classic -> Multi-board search (D5)
+    # 2. Start method-specific engine: Modern -> Signal Radar + immediate async poll; Classic -> Multi-board search (D5)
     if active_method == "modern":
-        from . import radar
+        from . import radar, signals as _signals
         radar.start_radar_worker()
+        conf_role = db.get_confirmed_answer(session_id, "role")
+        sig_role = conf_role or ((sess.get("role_focus") or ["Software Engineer"])[0])
+        sig_loc = db.get_confirmed_answer(session_id, "target_place") or sess.get("target_place") or "any"
+
+        def _kick_modern_signals():
+            try:
+                _signals.poll_modern_signals(target_role=sig_role, target_region=sig_loc)
+            except Exception:
+                pass
+
+        import threading as _th
+        _th.Thread(target=_kick_modern_signals, daemon=True, name=f"jh-modern-sig-{session_id}").start()
         search_status = "started"
         search_job_id = sess.get("search_job_id") or "radar_worker"
         sess["search_job_id"] = search_job_id
@@ -1664,6 +1696,7 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
         method_summary = (
             f"- Method: Modern (Outreach First)\n"
             f"- Signals: {signals_count} stored ({fresh_signals} fresh)\n"
+            f"- Classic Job Boards: not run in Modern mode (switch via jh_set_method('classic') for multi-board job search)\n"
             f"- Contacts Found: {contacts_count}\n"
             f"- Outreach Today: {today_sent} / {daily_cap} sent ({remaining_cap} remaining)\n"
             f"- Send Mode: {config.get_send_mode()} | Follow-up: {config.get_follow_up_days()}d"

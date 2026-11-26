@@ -1621,8 +1621,11 @@
 
           const strEl = byId("low-fit-strengths");
           const strengths = (res.match_evaluation && res.match_evaluation.strengths) || (res.gap_report && res.gap_report.strengths) || [];
+          const relProjects = (res.match_evaluation && res.match_evaluation.relevant_projects) || (res.gap_report && res.gap_report.relevant_projects) || [];
           if (strEl) {
-            strEl.innerHTML = strengths.length ? strengths.map((s) => `<li>${esc(s)}</li>`).join("") : "<li>Review direct skills overlap in the posting.</li>";
+            const items = strengths.map((s) => `<li>${esc(s)}</li>`);
+            relProjects.forEach((rp) => items.push(`<li><strong>Built project:</strong> ${esc(rp.title || "")} - ${esc(rp.evidence || "")}</li>`));
+            strEl.innerHTML = items.length ? items.join("") : "<li>Review direct skills overlap in the posting.</li>";
           }
 
           const gapsEl = byId("low-fit-gaps");

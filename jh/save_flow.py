@@ -408,6 +408,7 @@ def handle_save_job(
                 "add_this_if_true": add_if_true,
                 "talking_track": talking_track,
                 "strengths": match_eval.get("strengths", []),
+                "relevant_projects": match_eval.get("relevant_projects", []),
                 "soft_gaps": match_eval.get("soft_gaps", []),
                 "hard_gaps": match_eval.get("hard_gaps", []),
                 "plain_summary": match_eval.get("plain_summary", ""),

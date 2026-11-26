@@ -2898,21 +2898,39 @@ def get_signals(limit: int = 100, status: str | None = None, view_filters: dict 
     if view_filters:
         raw_role = view_filters.get("job_style") or view_filters.get("role") or view_filters.get("roles") or ""
         if isinstance(raw_role, (list, tuple, set)):
-            target_role = " ".join(str(x) for x in raw_role).lower()
+            target_role = " ".join(str(x) for x in raw_role if str(x).strip()).lower()
         else:
-            target_role = str(raw_role).lower()
+            target_role = str(raw_role).lower().strip()
 
-        raw_region = view_filters.get("region") or view_filters.get("locations") or ""
-        if isinstance(raw_region, (list, tuple, set)):
-            target_region = " ".join(str(x) for x in raw_region).lower()
-        else:
-            target_region = str(raw_region).lower()
+        raw_locs = view_filters.get("locations") or view_filters.get("region") or []
+        locs_list = _normalize_str_list(raw_locs)
+        wm_filter = str(view_filters.get("work_mode") or "").lower().strip()
+        conf_inds = [i.lower() for i in _normalize_str_list(view_filters.get("confirmed_industries")) if i.lower() not in ("any", "all")]
+        conf_stages = [st.lower() for st in _normalize_str_list(view_filters.get("company_stages")) if st.lower() not in ("any", "all")]
+        conf_langs = [lg.lower() for lg in _normalize_str_list(view_filters.get("languages")) if lg.lower() not in ("any", "all")]
 
+        from . import regions
         filtered = []
         for s in results:
-            if target_role and s.get("role_guess") and target_role not in s["role_guess"].lower() and s["role_guess"].lower() not in target_role:
+            sig_text = f"{s.get('company', '')} {s.get('text', '')} {s.get('role_guess', '')} {s.get('stage', '')} {s.get('region', '')}".lower()
+            if target_role and s.get("role_guess"):
+                rg = s["role_guess"].lower()
+                if target_role not in rg and rg not in target_role and not any(t in sig_text for t in target_role.split() if len(t) > 2):
+                    continue
+            if locs_list:
+                sig_region = str(s.get("region") or "").strip()
+                if sig_region and sig_region.lower() not in ("any", ""):
+                    pseudo_job = {
+                        "location": sig_region,
+                        "work_mode": "remote" if "remote" in sig_text or "remote" in sig_region.lower() else "",
+                    }
+                    if not regions.job_matches_confirmed_places(pseudo_job, locs_list, wm_filter):
+                        continue
+            if conf_inds and not any(re.search(rf"\b{re.escape(ind)}\b", sig_text) for ind in conf_inds):
                 continue
-            if target_region and s.get("region") and s["region"] != "any" and s["region"].lower() not in target_region:
+            if conf_stages and s.get("stage", "any").lower() not in ("any", "") and not any(st in str(s.get("stage", "")).lower() or st in sig_text for st in conf_stages):
+                continue
+            if conf_langs and not any(re.search(rf"\b{re.escape(lg)}\b", sig_text) or lg in ("english",) and not re.search(r"\b(?:french|german|spanish|arabic)\s+only\b", sig_text) for lg in conf_langs):
                 continue
             filtered.append(s)
         return filtered
@@ -3622,6 +3640,59 @@ def mark_job_saved_by_ui(job_id_or_key: str) -> None:
             "UPDATE applications SET saved_by='ui' WHERE id=? OR job_id=?",
             (job_id_or_key, job_id_or_key)
         )
+
+
+def reset_stale_search_cache(session_id: str = "default") -> dict[str, int]:
+    """Clear unsaved search cache, old unsaved signals, and stale filters across candidate switches.
+
+    Preserves saved jobs, applications, outreach ledger, and saved signals.
+    """
+    init_db()
+    _SESSION_VIEW_FILTERS.pop(session_id, None)
+    counts = {"jobs_cleared": 0, "signals_cleared": 0, "pending_cleared": 0}
+    with session() as c:
+        c.execute(
+            """DELETE FROM jobs
+               WHERE COALESCE(saved_by, '') != 'ui'
+                 AND COALESCE(keep_flag, 0) = 0
+                 AND id NOT IN (SELECT COALESCE(job_id, '') FROM applications WHERE job_id IS NOT NULL)"""
+        )
+        counts["jobs_cleared"] = c.execute("SELECT changes()").fetchone()[0]
+
+        try:
+            c.execute(
+                """DELETE FROM search_jobs
+                   WHERE job_key NOT IN (SELECT id FROM jobs)
+                     AND job_key NOT IN (SELECT COALESCE(job_key, '') FROM jobs)"""
+            )
+        except Exception:
+            pass
+
+        try:
+            c.execute("DELETE FROM job_sources WHERE job_id NOT IN (SELECT id FROM jobs)")
+        except Exception:
+            pass
+
+        c.execute(
+            """DELETE FROM signals
+               WHERE COALESCE(status, '') != 'saved'
+                 AND id NOT IN (SELECT COALESCE(signal_id, '') FROM outreach WHERE signal_id IS NOT NULL)"""
+        )
+        counts["signals_cleared"] = c.execute("SELECT changes()").fetchone()[0]
+
+        try:
+            c.execute("DELETE FROM pending_search_jobs")
+            counts["pending_cleared"] = c.execute("SELECT changes()").fetchone()[0]
+        except Exception:
+            pass
+
+        c.execute("DELETE FROM view_filters WHERE session_id=?", (session_id,))
+        c.execute("DELETE FROM settings WHERE key IN ('li_radar_last_run', 'li_radar_last_query', 'li_radar_last_action', 'li_radar_new_last')")
+        try:
+            c.execute("UPDATE radar_state SET last_poll_at=NULL WHERE id=1")
+        except Exception:
+            pass
+    return counts
 
 
 
