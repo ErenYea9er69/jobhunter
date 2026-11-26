@@ -20,6 +20,7 @@
 
 ### Bug Fixes Found During Verification
 - Fixed `jh/role_inference.py` reading `job.get("title")` only (ignoring parsed `job.get("role")`), `jh/v5_tools.py` `years_experience` key mismatch in `profile_line`, `jh/save_flow.py` passing `job` dict instead of `job_id` string to `lifecycle.liveness_check`, `jh/httpd.py` `/api/jobs/query` not persisting UI filter updates directly, and `jh/v5_tools.py` negation regex false positives on `excluded_keywords` / `level_shift`.
+- Fixed human-chat findings in `v1.2.0`: `jh_begin({})` now prompts the user to pick when multiple resumes exist in workspace/resumes (`jh/v5_tools.py`); `parse_confirmed_places` preserves cities alongside USA and tolerates common place/method typos (`jh/regions.py`, `jh/v5_tools.py`); `jh_answer` parses `"min salary N"` accurately and avoids false `internship` matches on `"company stage"`; `outreach_ledger` and `email_drafter` enforce the 20/day cap across both `jh_draft_email` and `mark_outreach_sent`; `jh_build_resume` invalidates stale cached PDFs when confirmed `side_work` changes; `ceo_delegate` reviews single-job `get_job_details`; `claims.check` detects dropped-pronoun claims; `db.store_jobs` avoids `job_key` collisions; and `screening` never outputs generic boilerplate on PII/fact questions (`email`, `SSN`, `clearance`).
 
 ### Standards & Verification Sources
 - Verified Python MCP stdio/stderr isolation and schema conventions against [Model Context Protocol Docs](https://modelcontextprotocol.io/docs/develop/build-server).

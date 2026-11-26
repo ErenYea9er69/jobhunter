@@ -166,6 +166,10 @@ def _levels(text: str) -> set[str]:
 # ------------------------------------------------------------------ sentence helpers
 
 _FIRST = re.compile(r"\b(?:i|i'm|i've|i'd|i’m|i’ve|my|me|myself|mine)\b", re.I)
+_DROP_PRONOUN_CLAIM = re.compile(
+    r"^\s*(?:(?:dear|hi|hello)\b[^,\n]{0,50},\s*)?(?:[*•\-–]\s*)?(?:led|built|managed|architected|engineered|designed|developed|scaled|launched|created|directed|oversaw|reduced|improved|mentored|operated|shipped|wrote)\b",
+    re.I,
+)
 _BULLET = re.compile(r"^\s*(?:[*•\-–]|\d+[.)])\s+")
 _APPLYING = re.compile(r"\b(?:appl(?:y|ying|ication)|interested in|writing to|position of|the .{0,40} role|opening|vacancy|opportunity|your posting|you ask|job description)\b", re.I)
 _LEARNING = re.compile(r"\b(?:learn\w*|pick(?:ing)? up|eager|keen|ready to|interested in|excited (?:to|by|about)|looking forward|haven['’]t|have not|has not|do not have|don['’]t have|did not|never (?:used|worked|had)|no experience|not yet|without|lack|new to|curious|grow\w*|would like to|hope to|want to)\b", re.I)
@@ -241,7 +245,7 @@ _STOP = {"the", "and", "for", "with", "that", "this", "your", "you", "our", "its
 def _claim_sentence(s: str, resume_like: bool) -> bool:
     if resume_like and _BULLET.match(s):
         return True
-    return bool(_FIRST.search(s))
+    return bool(_FIRST.search(s) or _DROP_PRONOUN_CLAIM.match(s))
 
 
 def _check_employer(s: str, fb: FactBase, out: list[Claim]) -> None:

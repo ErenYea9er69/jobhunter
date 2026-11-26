@@ -212,11 +212,12 @@ def queue_or_allow_draft(outreach_id: str) -> Dict[str, Any]:
 def mark_outreach_sent(outreach_id_or_contact_id: str, is_follow_up: bool = False) -> Dict[str, Any]:
     """Record that the user pressed send in their email app.
 
-    Sets sent_at = now, follow_up_due = now + 4 days.
+    Sets sent_at = now, follow_up_due = now + 4 days. Enforces daily cap for initial sends.
     """
     now = db.now_iso()
     fu_days = int(db.get_setting("follow_up_days", "4"))
     fu_due = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=fu_days)).isoformat()
+    cap_info = check_daily_cap() if not is_follow_up else {"under_cap": True}
 
     with db.session() as c:
         row = c.execute(
@@ -230,6 +231,20 @@ def mark_outreach_sent(outreach_id_or_contact_id: str, is_follow_up: bool = Fals
 
         oid = row["id"]
         cid = row["contact_id"]
+
+        if not is_follow_up and not cap_info.get("under_cap", True):
+            c.execute("UPDATE outreach SET status='queued', updated_at=? WHERE id=?", (now, oid))
+            return {
+                "id": oid,
+                "contact_id": cid,
+                "status": "queued",
+                "queued": True,
+                "cap_reached": True,
+                "daily_cap": cap_info.get("daily_cap", 20),
+                "sent_today_count": cap_info.get("sent_today_count", 20),
+                "remaining_cap": 0,
+                "message": f"Daily cap of {cap_info.get('daily_cap', 20)} sends reached. Queued for tomorrow.",
+            }
 
         if is_follow_up:
             c.execute("""

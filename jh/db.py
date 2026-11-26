@@ -2302,10 +2302,13 @@ def ingest_job(j, conn=None):
 
         # 4. Insert new job
         new_id = str(j.get("id") or uuid.uuid4())
-        job_key = j.get("job_key") or j.get("id") or (dedup.job_key(j) if hasattr(dedup, "job_key") else new_id[:16])
-        existing_by_key = c.execute("SELECT id FROM jobs WHERE job_key=?", (job_key,)).fetchone()
-        if existing_by_key and existing_by_key["id"] != new_id:
-            job_key = f"{job_key}_{new_id[:6]}"
+        if c.execute("SELECT 1 FROM jobs WHERE id=?", (new_id,)).fetchone():
+            new_id = str(uuid.uuid4())
+        job_key = j.get("job_key") or new_id or (dedup.job_key(j) if hasattr(dedup, "job_key") else new_id[:16])
+        if c.execute("SELECT 1 FROM jobs WHERE job_key=?", (job_key,)).fetchone():
+            job_key = f"{job_key}_{new_id[:8]}"
+            while c.execute("SELECT 1 FROM jobs WHERE job_key=?", (job_key,)).fetchone():
+                job_key = f"{job_key}_{str(uuid.uuid4())[:6]}"
         j_created = j.get("created_at") or j.get("date_posted") or iso_now
         j_first_seen = j.get("first_seen_at") or j_created
         j_last_seen = j.get("last_seen_at") or iso_now

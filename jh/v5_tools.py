@@ -501,7 +501,7 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
     """Phase B1: Entry point for any job request. Runs resume check and job-name inference, saves profile, creates session, and replies with needs_resume, needs_role, or ready with ticket."""
     sess = ticket_manager.get_or_create_session(session_id)
 
-    # Multi-resume check: attached together (e.g. separated by semicolon, newline, or ' and ')
+    # Multi-resume check: attached together OR multiple resume files sitting in workspace/resumes/
     resume_str = str(resume_path) if resume_path else ""
     if resume_str and any(sep in resume_str for sep in [";", "\n", " and "]):
         parts = [p.strip() for p in re.split(r"[;\n]| and ", resume_str) if p.strip()]
@@ -526,6 +526,59 @@ def jh_begin(resume_path: str = "", resume_text: str = "", session_id: str = "de
             sess["last_status"] = "multiple_resumes"
             sess["last_reply"] = reply
             return reply
+
+    if not resume_str.strip() and not str(resume_text or "").strip():
+        ws_root = Path(config.WORKSPACE_DIR) if config.WORKSPACE_DIR else None
+        if ws_root and ws_root.is_dir():
+            _NON_RESUME_NAMES = {
+                "readme.md", "readme.txt", "changelog.md", "agents.md", "license", "license.txt",
+                "license.md", "product.md", "design.md", "structure_map.md", "ui-changes.md",
+                "put_your_resume_here.txt", "requirements.txt", "requirements-dev.txt",
+            }
+            scan_dirs = [ws_root]
+            if (ws_root / "resumes").is_dir():
+                scan_dirs.append(ws_root / "resumes")
+            candidates: list[Path] = []
+            seen_resolved: set[str] = set()
+            for d in scan_dirs:
+                try:
+                    for item in sorted(d.iterdir()):
+                        if not item.is_file():
+                            continue
+                        if item.suffix.lower() not in (".pdf", ".docx", ".txt", ".md"):
+                            continue
+                        if item.name.lower() in _NON_RESUME_NAMES or item.name.startswith("."):
+                            continue
+                        if item.stat().st_size < 100:
+                            continue
+                        rp = str(item.resolve())
+                        if rp not in seen_resolved:
+                            seen_resolved.add(rp)
+                            candidates.append(item)
+                except OSError:
+                    continue
+            if len(candidates) >= 2:
+                cand_paths = [str(c) for c in candidates]
+                names = [c.name for c in candidates]
+                reply = {
+                    "status": "multiple_resumes",
+                    "session_id": session_id,
+                    "step": 1,
+                    "message_for_user": (
+                        f"I found {len(names)} resumes in your workspace ({', '.join(names)}). "
+                        f"Which resume would you like to use ({' or '.join(names)})?"
+                    ),
+                    "ask_user": f"Which resume should I use ({', '.join(names)})?",
+                    "options": {
+                        "choices": names,
+                        "recommended": names[0],
+                    },
+                    "next_tool": "jh_begin",
+                    "data": {"resume_candidates": cand_paths},
+                }
+                sess["last_status"] = "multiple_resumes"
+                sess["last_reply"] = reply
+                return reply
 
     # Central home directory setup & first reply notice
     home.ensure_home_dirs()
@@ -688,8 +741,8 @@ def jh_confirm(session_id: str = "default", answers: Optional[dict[str, Any]] = 
     clean_reply = str(user_reply).strip().lower()
     answers = answers or {}
 
-    # 1. Parse Method (default Modern)
-    if "classic" in clean_reply or answers.get("method") == "classic":
+    # 1. Parse Method (default Modern; tolerate typos like 'clasic')
+    if "classic" in clean_reply or re.search(r"\b(?:clas+s?ic|classik|job\s*boards?)\b", clean_reply) or answers.get("method") == "classic":
         chosen_method = "classic"
     elif "modern" in clean_reply or answers.get("method") == "modern":
         chosen_method = "modern"
@@ -990,14 +1043,16 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
             sess["user_reply_log"] = sess.get("user_reply_log", []) + [user_reply]
             clean_reply = user_reply.lower().strip()
 
-            if "intern" in clean_reply or "pfe" in clean_reply or "stage" in clean_reply:
+            if re.search(r"\b(?:intern|internship|pfe)\b", clean_reply) or (
+                re.search(r"\bstage\b", clean_reply) and not re.search(r"\b(?:company|compny)\s+stage\b", clean_reply)
+            ):
                 answers["job_type"] = "internship"
                 mapped_dict["job_type"] = "internship"
-            elif "full" in clean_reply or "junior" in clean_reply:
+            elif re.search(r"\b(?:full[-\s]?time|full|junior)\b", clean_reply):
                 answers["job_type"] = "full-time"
                 mapped_dict["job_type"] = "full-time"
 
-            if "remote" in clean_reply:
+            if re.search(r"\b(?:remote|remtoe)\b", clean_reply):
                 answers["work_mode"] = "remote"
                 mapped_dict["work_mode"] = "remote"
             elif "hybrid" in clean_reply:
@@ -1007,9 +1062,14 @@ def jh_answer(session_id: str = "default", answers: Optional[dict[str, Any]] = N
                 answers["work_mode"] = "on-site"
                 mapped_dict["work_mode"] = "on-site"
 
-            sal_match = re.search(r"(?:at\s+least|min|minimum|above)\s*(\d[\d,]*)", clean_reply)
+            sal_match = re.search(
+                r"\b(?:at\s+least|min(?:imum)?(?:\s+(?:salary|salry|pay|comp(?:ensation)?))?|above|salary(?:\s+(?:at\s+least|min|minimum|above|of))?)\s*[:$]?\s*(\d[\d,]*(?:\.\d+)?)\s*(k)?\b",
+                clean_reply,
+            )
             if sal_match:
                 val = float(sal_match.group(1).replace(",", ""))
+                if sal_match.group(2):
+                    val *= 1000.0
                 answers["min_salary"] = val
                 mapped_dict["min_salary"] = val
 

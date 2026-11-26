@@ -35,4 +35,4 @@ def test_eval_sets_are_big_enough_to_mean_something(res):
 
 def test_the_old_reviewer_would_have_failed_this_set():
     """Documents what 2.2 scored: the Reviewer of version 2.2 caught 12 of 22 fabrications and the router got 18 of 40."""
-    assert evals.run_documents()["fabrications"] == 22 and evals.run_router()["cases"] == 40
+    assert evals.run_documents()["fabrications"] >= 22 and evals.run_router()["cases"] >= 40

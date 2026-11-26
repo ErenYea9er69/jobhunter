@@ -53,6 +53,7 @@ DOCUMENTS: list[tuple[str, str, str, str, str]] = [
      "I build REST APIs in Python and FastAPI at Vermeg.\nAt Amazon I managed a 12 million dollar budget and 300 staff.\nI reduced PostgreSQL query latency by 45% using Redis.", "block"),
     ("F21", "invented skill", "cover_letter", "I am an experienced Kubernetes administrator and I have run production clusters for years.", "block"),
     ("F22", "invented tool experience", "other", "I built our data warehouse on Snowflake and dbt.", "block"),
+    ("F23", "dropped-pronoun invented claim", "cover_letter", "Led 40 engineers at NASA building nuclear telemetry in 2018. Built FastAPI microservices.", "block"),
     ("G01", "genuine", "other", "I reduced PostgreSQL query latency by 45% by redesigning indexes at Vermeg.", "pass"),
     ("G02", "genuine paraphrase", "other", "At Vermeg I built a payments reconciliation service in Python and FastAPI that handles 2 million transactions every day.", "pass"),
     ("G03", "genuine skills", "other", "My main tools are Python, FastAPI, PostgreSQL, Redis and Docker.", "pass"),
@@ -74,6 +75,7 @@ DOCUMENTS: list[tuple[str, str, str, str, str]] = [
      "Dear Adyen hiring team,\n\nI am applying for the Backend Engineer role. At Vermeg I built a payments reconciliation service in Python and FastAPI processing 2 million transactions per day. I also reduced PostgreSQL query latency by 45% with Redis caching. "
      "I would like to bring that work to your payments platform. Thank you for your time.\n\nBest regards,\nAhmed Ben Salah", "pass"),
     ("G18", "learning intent", "cover_letter", "I have not used Terraform yet. I am keen to pick it up quickly.", "pass"),
+    ("G19", "dropped-pronoun genuine", "cover_letter", "Built payments reconciliation services in Python and FastAPI at Vermeg.", "pass"),
 ]
 
 # (id, category, job fields, expect)

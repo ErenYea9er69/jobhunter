@@ -254,8 +254,17 @@ def resolve_targets(
 
 
 _METHOD_FILLER_RE = re.compile(
-    r"\b(?:modern|classic|method|outreach|boards|please|thanks|thank you|switch|change|prefer|only\s+in|jobs\s+in|look\s+in|search\s+in)\b",
+    r"\b(?:modern|modrn|classic|clasic|classik|method|outreach|boards|please|thanks|thank you|switch|change|prefer|only\s+in|jobs\s+in|look\s+in|search\s+in|city)\b",
     re.I,
+)
+
+_PLACE_TYPO_RE = (
+    (re.compile(r"\b(?:remtoe|remte|rmote|remot)\b", re.I), "remote"),
+    (re.compile(r"\b(?:worldwde|worlwide|worldwid|wroldwide)\b", re.I), "worldwide"),
+    (re.compile(r"\b(?:internatonal|internationl|interantional)\b", re.I), "international"),
+    (re.compile(r"\b(?:franec|frnace|franc)\b", re.I), "france"),
+    (re.compile(r"\b(?:europ|erope|eurpoe)\b", re.I), "europe"),
+    (re.compile(r"\b(?:germny|gremany|geramny)\b", re.I), "germany"),
 )
 
 
@@ -271,6 +280,8 @@ def parse_confirmed_places(reply: str, answers: Optional[dict] = None) -> dict[s
             raw_items.append(val.strip())
 
     src_text = ", ".join(raw_items) if raw_items else (reply or "").strip()
+    for rx, canonical in _PLACE_TYPO_RE:
+        src_text = rx.sub(canonical, src_text)
     low = src_text.lower()
 
     places: list[str] = []
@@ -293,7 +304,7 @@ def parse_confirmed_places(reply: str, answers: Optional[dict] = None) -> dict[s
         add_place("Worldwide")
         worldwide = True
 
-    # Split text cleanly into place segments while keeping "City, Country" intact
+    # Split text cleanly into place segments while keeping "City, Country" or "Country, city X" intact
     cleaned = _METHOD_FILLER_RE.sub(" ", src_text)
     segments = [s.strip(" .!?:;") for s in re.split(r"[\n;/]|\band\b|\bor\b|\+", cleaned, flags=re.I) if s.strip(" .!?:;")]
     expanded_segs: list[str] = []
@@ -305,9 +316,13 @@ def parse_confirmed_places(reply: str, answers: Optional[dict] = None) -> dict[s
             nxt = comma_parts[i + 1] if i + 1 < len(comma_parts) else ""
             c_cur = to_code(cur) or country_of_location(cur)
             c_nxt = to_code(nxt) or country_of_location(nxt)
-            # Combine "City, Country" if first is a city/alias of the second country and not a distinct country itself
-            if nxt and c_nxt and cur.lower() not in {n[0].lower() for n in _COUNTRIES.values()} and (not c_cur or c_cur == c_nxt):
+            # Combine "City, Country" OR "Country, City" cleanly without dropping the city
+            _country_word_set = {n[0].lower() for n in _COUNTRIES.values()} | {"usa", "us", "uk", "united states", "united kingdom"}
+            if nxt and c_nxt and cur.lower() not in _country_word_set and (not c_cur or c_cur == c_nxt):
                 expanded_segs.append(f"{cur}, {country_name(c_nxt)}")
+                i += 2
+            elif nxt and c_cur and cur.lower() in _country_word_set and nxt.lower() not in _country_word_set and (not c_nxt or c_nxt == c_cur) and len(nxt.split()) <= 3:
+                expanded_segs.append(f"{nxt}, {country_name(c_cur)}")
                 i += 2
             else:
                 expanded_segs.append(cur)

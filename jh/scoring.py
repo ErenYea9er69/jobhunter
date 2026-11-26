@@ -1155,9 +1155,16 @@ def evaluate_honest_match(
     # 1. Years of experience comparison: modest shortfall (e.g. 3 vs 4 yrs) -> soft_gap (apply anyway)
     cand_years = float(
         profile.get("years_of_experience")
-        if profile.get("years_of_experience") is not None
-        else (profile.get("years_experience") or 0.0)
+        or profile.get("years_experience")
+        or profile.get("total_experience_years")
+        or 0.0
     )
+    if cand_years <= 0 and exp_list:
+        try:
+            from . import screening as _scr
+            cand_years = float(_scr.calculate_experience_years(exp_list) or 0.0)
+        except Exception:
+            cand_years = 0.0
     req_years = 0.0
     yr_matches = [float(m) for m in re.findall(r"\b(\d+(?:\.\d+)?)\s*\+?\s*(?:-\s*\d+\s*)?years?\b", low_text)]
     if yr_matches:

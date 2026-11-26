@@ -15,6 +15,7 @@ Rules:
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -84,9 +85,33 @@ def build_job_resume(
     outputs_dir = home.get_home() / "outputs"
     os.makedirs(outputs_dir, exist_ok=True)
     pdf_path = outputs_dir / filename
+    meta_path = outputs_dir / f"{filename}.meta.json"
 
-    # Check if already generated for this company & role (reuse cache)
-    if pdf_path.is_file() and pdf_path.stat().st_size > 0:
+    # Compute factual signature so confirmed facts (e.g. side_work) invalidate stale PDF cache
+    import hashlib
+    eff_profile = dict(profile)
+    sw_items: list[str] = []
+    try:
+        from . import refit
+        sw_items = refit._confirmed_side_work_items(eff_profile)
+        if sw_items:
+            eff_profile["confirmed_side_work"] = sw_items
+        if eff_profile.get("summary"):
+            eff_profile["summary"] = refit._dehype_text(eff_profile["summary"])
+    except Exception:
+        pass
+    facts_sig = hashlib.sha256(
+        json.dumps({"side_work": sw_items, "summary": eff_profile.get("summary", ""), "skills": eff_profile.get("skills", [])}, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:16]
+
+    # Reuse cache ONLY when confirmed facts / profile signature match
+    cached_sig = ""
+    if meta_path.is_file():
+        try:
+            cached_sig = json.loads(meta_path.read_text(encoding="utf-8")).get("facts_sig", "")
+        except Exception:
+            cached_sig = ""
+    if pdf_path.is_file() and pdf_path.stat().st_size > 0 and cached_sig == facts_sig:
         size_kb = pdf_path.stat().st_size / 1024.0
         if size_kb <= 200:
             log.info("Reusing existing resume PDF: %s (%.1f KB)", filename, size_kb)
@@ -98,18 +123,6 @@ def build_job_resume(
                 "reused": True,
             }
 
-    # Include user-confirmed side/freelance/contract work ONLY when confirmed
-    eff_profile = dict(profile)
-    try:
-        from . import refit
-        sw_items = refit._confirmed_side_work_items(eff_profile)
-        if sw_items:
-            eff_profile["confirmed_side_work"] = sw_items
-        if eff_profile.get("summary"):
-            eff_profile["summary"] = refit._dehype_text(eff_profile["summary"])
-    except Exception:
-        pass
-
     # Generate 1-page PDF using exporters
     pdf_bytes = exporters.to_pdf(eff_profile)
     size_bytes = len(pdf_bytes)
@@ -118,7 +131,7 @@ def build_job_resume(
     if size_kb > 200:
         log.warning("Generated PDF is %.1f KB, exceeding 200 KB cap. Pruning sections.", size_kb)
         # Pruning redundant profile text to strictly fit 200 KB
-        pruned_prof = dict(profile)
+        pruned_prof = dict(eff_profile)
         if "experience" in pruned_prof and isinstance(pruned_prof["experience"], list):
             pruned_prof["experience"] = pruned_prof["experience"][:3]
         pdf_bytes = exporters.to_pdf(pruned_prof)
@@ -126,6 +139,10 @@ def build_job_resume(
 
     with open(pdf_path, "wb") as f:
         f.write(pdf_bytes)
+    try:
+        meta_path.write_text(json.dumps({"facts_sig": facts_sig}), encoding="utf-8")
+    except Exception:
+        pass
 
     log.info("Generated new job resume: %s (%.1f KB)", filename, size_kb)
     return {
@@ -441,12 +458,17 @@ def draft_short_email(
             break
         log.debug("Slop check failed on attempt %d: %s. Rewriting.", attempt, flags)
 
+    # Enforce daily send cap (20/day default): queue new outreach if cap reached
+    from . import outreach_ledger
+    cap_info = outreach_ledger.check_daily_cap()
+    init_status = "draft" if cap_info.get("under_cap", True) else "queued"
+
     # Log draft in outreach ledger
     outreach_row = db.log_outreach(
         contact_id=contact_id,
         signal_id=signal_id,
         company=company,
-        status="draft",
+        status=init_status,
         recipient_name=c_name,
         recipient_email=contact.get("email", ""),
         recipient_title=contact.get("title") or contact.get("role", ""),
@@ -456,8 +478,33 @@ def draft_short_email(
         attached=1 if attachment_flag else 0,
     )
 
+    if init_status == "queued":
+        return {
+            "success": False,
+            "status": "queued",
+            "queued": True,
+            "cap_reached": True,
+            "under_cap": False,
+            "daily_cap": cap_info.get("daily_cap", 20),
+            "sent_today_count": cap_info.get("sent_today_count", 20),
+            "remaining_cap": 0,
+            "outreach_id": outreach_row.get("id"),
+            "contact_id": contact_id,
+            "company": company,
+            "recipient_name": c_name,
+            "recipient_email": contact.get("email", ""),
+            "message": f"Daily cap of {cap_info.get('daily_cap', 20)} sends reached. Draft queued for tomorrow.",
+        }
+
     return {
         "success": True,
+        "status": "draft",
+        "queued": False,
+        "cap_reached": False,
+        "under_cap": True,
+        "daily_cap": cap_info.get("daily_cap", 20),
+        "sent_today_count": cap_info.get("sent_today_count", 0),
+        "remaining_cap": cap_info.get("remaining_cap", 20),
         "outreach_id": outreach_row.get("id"),
         "contact_id": contact_id,
         "company": company,

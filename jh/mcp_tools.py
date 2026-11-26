@@ -444,13 +444,21 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         desc, cut = h.clip(job.get("description", ""), 60000 if full_description else 6000)
         apply_url, w = sanitize_apply_url(job.get("direct_apply_url") or job.get("url", ""))
         warnings += w
+        from .team import qa as _qa
+        _det_rev = _qa.review_job({**job, "url": job.get("url") or "https://example.com/posting"})
+        _block_msgs = [f["message"] for f in _det_rev.findings if f["severity"] == _qa.BLOCK]
+        for msg in _block_msgs:
+            if msg not in warnings:
+                warnings.append(msg)
+        apply_cost = "" if _det_rev.blocked else job.get("apply_cost_note", "")
         data = {**h.card(job, detail=True), "apply_url": apply_url, "description": desc, "description_truncated": cut,
                 "responsibilities": (job.get("responsibilities") or [])[:12], "qualifications": (job.get("qualifications") or [])[:12],
                 "preferred_qualifications": (job.get("preferred_qualifications") or [])[:10],
                 "how_to_apply": job.get("how_to_apply", ""), "contact_email": job.get("contact_email", ""),
                 "contact_website": job.get("contact_website", ""), "required_skills": job.get("required_skills", {}),
                 "rationale": job.get("rationale", []), "company_url": job.get("company_url", ""),
-                "apply_cost_note": job.get("apply_cost_note", ""), "possible_ghost_posting": bool(job.get("is_ghost_risk"))}
+                "apply_cost_note": apply_cost, "possible_ghost_posting": bool(job.get("is_ghost_risk")),
+                "review": _det_rev.as_dict()}
         return Result(data, warnings)
 
     @tool
@@ -607,6 +615,12 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         if not arch:
             raise ToolError(f"Unknown archetype '{archetype}'.", hint=f"Use one of: {', '.join(sorted(set(ARCHETYPE_ALIASES.values())))}")
         job, profile = job_and_profile(job_id, job_title, company, description, resume_name)
+        from .team import qa as _qa
+        _safety_codes = {"upfront_fee", "deposit", "pay_to_start", "cheque", "untraceable_payment", "data_harvest", "scam_pattern", "prompt_injection"}
+        _safety_rev = _qa.review_job({**job, "url": job.get("url") or "https://example.com/posting"})
+        _safety_blocks = [f["message"] for f in _safety_rev.findings if f["severity"] == _qa.BLOCK and f["code"] in _safety_codes]
+        if _safety_blocks:
+            raise ToolError(f"Blocked by Reviewer: {'; '.join(_safety_blocks)}", code="reviewer_blocked")
         before = ats.compute_ats_audit(profile, job).get("ats_score", 0)
         result = refit.generate_custom_resume(job, profile, archetype=arch)
         tailored = result.get("tailored_resume") or {}
@@ -725,6 +739,12 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         """
         arch = ARCHETYPE_ALIASES.get(archetype.strip().lower(), "technical_depth")
         job, profile = job_and_profile(job_id, job_title, company, description, resume_name)
+        from .team import qa as _qa
+        _safety_codes = {"upfront_fee", "deposit", "pay_to_start", "cheque", "untraceable_payment", "data_harvest", "scam_pattern", "prompt_injection"}
+        _safety_rev = _qa.review_job({**job, "url": job.get("url") or "https://example.com/posting"})
+        _safety_blocks = [f["message"] for f in _safety_rev.findings if f["severity"] == _qa.BLOCK and f["code"] in _safety_codes]
+        if _safety_blocks:
+            raise ToolError(f"Blocked by Reviewer: {'; '.join(_safety_blocks)}", code="reviewer_blocked")
         bundle = tracker.generate_one_click_bundle(job, profile, archetype=arch)
         base = f"{_slug(job.get('company', ''))}-{_slug(job.get('title', ''))}"
         letter = bundle.get("cover_letter") or ""

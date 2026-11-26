@@ -122,6 +122,26 @@ def solve_screening_question(question, profile, job=None, question_type="auto", 
     spons = cfg_legal.get("require_sponsorship_now") or profile.get("visa_sponsorship") or "No"
     spons_val = "Yes" if "yes" in str(spons).lower() or "require" in str(spons).lower() else "No"
 
+    # 0. Strict fact / PII lookup questions must never receive narrative boilerplate
+    _FACT_SENSITIVE_KEYWORDS = (
+        "email", "e-mail", "phone", "telephone", "linkedin", "github",
+        "social security", "ssn", "passport", "national id", "driver", "clearance",
+        "citizenship", "bank account", "iban",
+    )
+    if any(k in q_low for k in _FACT_SENSITIVE_KEYWORDS):
+        direct = answer_screening_question(question, profile)
+        return {
+            "question": question,
+            "answer": direct.get("answer", ""),
+            "question_type": direct.get("category") or "fact_lookup",
+            "provider": "profile_facts",
+            "model": "strict_facts",
+            "grounded": bool(direct.get("answered")),
+            "flagged": bool(direct.get("flagged", not direct.get("answered"))),
+            "reason": direct.get("reason", ""),
+            "word_count": len(str(direct.get("answer") or "").split()),
+        }
+
     # 1. Direct Boolean / Radio Question Handling
     if resolved_type == "boolean":
         if any(k in q_low for k in ["require sponsorship", "require visa", "visa sponsorship", "need sponsorship"]):
@@ -304,10 +324,28 @@ def answer_screening_question(question: str, profile: dict[str, Any]) -> dict[st
             "category": "eeo",
         }
 
+    # 1b. Known profile contact/identity facts (strictly verified from profile)
+    if any(k in q_low for k in ["email", "e-mail"]):
+        em = profile.get("email") or ""
+        if em:
+            return {"question": question, "answer": str(em), "answered": True, "flagged": False, "category": "email"}
+    if any(k in q_low for k in ["phone", "telephone", "mobile"]):
+        ph = profile.get("phone") or ""
+        if ph:
+            return {"question": question, "answer": str(ph), "answered": True, "flagged": False, "category": "phone"}
+    if "linkedin" in q_low:
+        li = profile.get("linkedin") or ""
+        if li:
+            return {"question": question, "answer": str(li), "answered": True, "flagged": False, "category": "linkedin"}
+    if "github" in q_low:
+        gh = profile.get("github") or ""
+        if gh:
+            return {"question": question, "answer": str(gh), "answered": True, "flagged": False, "category": "github"}
+
     # 2. Known profile facts: Years of experience
     if any(k in q_low for k in ["how many years", "years of experience", "years of hands-on", "total years"]):
-        yoe = profile.get("years_of_experience") or profile.get("years_experience")
-        if yoe is None:
+        yoe = profile.get("years_of_experience") or profile.get("years_experience") or profile.get("total_experience_years")
+        if not yoe:
             exps = profile.get("experience") or []
             yoe = calculate_experience_years(exps)
         return {

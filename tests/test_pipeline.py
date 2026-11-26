@@ -100,7 +100,7 @@ def test_custom_feed_and_career_page_jobs_appear(profile, net):
     net.fixture("careers.example.com/jobs", "careerpage_jsonld.html")
     preferences.save({"custom_feeds": [{"name": "TN", "url": "https://jobs.example.tn/feed/"}],
                       "career_pages": [{"name": "InstaDeep", "url": "https://careers.example.com/jobs"}],
-                      "target_countries": ["Tunisia"]})
+                      "target_countries": ["Tunisia"], "max_age_days": 3650})
     res = pipeline.search(query="developer", profile=profile, force_refresh=True)
     companies = {j["company"] for j in res["jobs"]}
     assert "Proxym Group" in companies or "Sofrecom Tunisie" in companies
