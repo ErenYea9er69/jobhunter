@@ -164,7 +164,10 @@ SECTION_ALIASES = {
     "education": ["education", "academic background", "education and training", "academics"],
     "skills": ["skills", "technical skills", "core competencies", "competencies", "technologies", "tech stack",
                "key skills", "skills and tools", "core skills"],
-    "projects": ["projects", "selected projects", "personal projects"],
+    "projects": [
+        "projects", "selected projects", "personal projects",
+        "technical projects", "academic projects", "key projects", "engineering projects", "side projects",
+    ],
     "certifications": ["certifications", "certificates", "licenses", "licenses and certifications"],
     "other": ["languages", "awards", "publications", "interests", "volunteering", "references", "activities"],
 }
@@ -344,6 +347,58 @@ def parse_education(lines):
     return out
 
 
+def parse_projects(lines):
+    """Parse structured projects (name, description, bullets, tech) from resume project sections."""
+    out = []
+    cur = None
+
+    def flush():
+        if cur and (cur["name"] or cur["bullets"] or cur["description"]):
+            if not cur["description"] and cur["bullets"]:
+                cur["description"] = " ".join(cur["bullets"])[:400]
+            tech = sk.extract(f"{cur['name']} {cur['description']} {' '.join(cur['bullets'])}")
+            cur["tech"] = tech
+            out.append(cur)
+
+    for raw in lines or []:
+        s = raw.strip()
+        if not s:
+            continue
+        is_b = bool(BULLET_RE.match(s))
+        if is_b:
+            clean_b = BULLET_RE.sub("", s).strip()
+            if cur is None:
+                if ":" in clean_b and len(clean_b.split(":", 1)[0]) <= 60:
+                    p_name, p_desc = clean_b.split(":", 1)
+                    out.append({
+                        "name": p_name.strip(),
+                        "description": p_desc.strip()[:400],
+                        "bullets": [clean_b],
+                        "tech": sk.extract(clean_b),
+                    })
+                else:
+                    cur = {"name": clean_b[:60], "description": clean_b[:400], "bullets": [clean_b], "tech": []}
+            else:
+                cur["bullets"].append(clean_b)
+        else:
+            # New project header line (e.g. "CloudPipeline | Docker, Kubernetes" or "CloudPipeline: ...")
+            if ":" in s and len(s.split(":", 1)[0]) <= 60:
+                flush()
+                p_name, p_desc = s.split(":", 1)
+                cur = {"name": p_name.strip(), "description": p_desc.strip()[:400], "bullets": [], "tech": []}
+            elif "|" in s or " - " in s or len(s.split()) <= 8 or cur is None:
+                flush()
+                name_part = re.split(r"\s+\|\s+|\s+[–—-]\s+", s, maxsplit=1)[0].strip()
+                cur = {"name": name_part or s[:60], "description": s[:400], "bullets": [], "tech": []}
+            else:
+                if cur["description"]:
+                    cur["description"] = f"{cur['description']} {s}"[:400]
+                else:
+                    cur["description"] = s[:400]
+    flush()
+    return out
+
+
 def parse_resume(text):
     """Return (profile, report). report lists which fields were found and which need the user's review."""
     text = (text or "").replace("\r", "")
@@ -396,6 +451,7 @@ def parse_resume(text):
 
     exp, ranges = parse_experience(sections.get("experience", []))
     edu = parse_education(sections.get("education", []))
+    projects = parse_projects(sections.get("projects", []))
     years = years_from_ranges(ranges)
 
     summary = " ".join(l.strip() for l in sections.get("summary", []) if l.strip())[:900]
@@ -435,7 +491,7 @@ def parse_resume(text):
         "preferred_locations": [location] if location else [], "min_salary": 0, "excluded_keywords": [],
         "preferred_job_types": [], "dream_companies": [], "dream_role": "",
         "summary": summary, "skills": skill_list, "skills_by_category": by_cat,
-        "experience": exp, "education": edu,
+        "experience": exp, "projects": projects, "education": edu,
     }
     checks = {
         "name": bool(name), "email": bool(email), "phone": bool(phone), "location": bool(location),

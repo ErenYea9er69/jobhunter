@@ -1059,3 +1059,33 @@ def test_honest_match_surfaces_grounded_relevant_projects_without_invention():
     titles = " ".join(rp["title"] for rp in rps)
     assert "CloudPipeline" in titles or "MyNet" in titles
     assert "InventedProject" not in titles
+
+
+def test_resume_parser_extracts_projects_section_for_relevant_project_matching():
+    resume_txt = """Rayen Ben Aissa
+rayen@example.com | Paris, France
+
+SUMMARY
+Cloud Software Engineering student with Python and containerization experience.
+
+SKILLS
+Python, Docker, Kubernetes, CI/CD, GitHub Actions, FastAPI
+
+TECHNICAL PROJECTS
+CloudPipeline | Docker, Kubernetes, Python
+- Built automated Docker and Kubernetes CI/CD microservices pipeline in Python.
+MyNet | FastAPI, Docker
+- Built an API gateway container stack for internal routing.
+
+EDUCATION
+Engineering Degree in Computer Science | INSAT | 2027
+"""
+    prof, _ = resume_parser.parse_resume(resume_txt)
+    projs = prof.get("projects") or []
+    assert len(projs) >= 2
+    assert any("CloudPipeline" in p["name"] for p in projs)
+    ev = scoring.evaluate_honest_match(
+        prof,
+        {"title": "Cloud Software Engineering Intern", "company": "InfraCo", "description": "Python, Docker, Kubernetes, CI/CD pipelines."},
+    )
+    assert any("CloudPipeline" in rp["title"] for rp in ev.get("relevant_projects", []))
