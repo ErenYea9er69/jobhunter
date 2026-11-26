@@ -1706,7 +1706,7 @@ def jh_status(session_id: str = "default", include_matches: bool = False) -> dic
 
     if active_method == "modern":
         method_summary = (
-            f"- Method: Modern (Direct Outreach)\n"
+            f"- Method: Modern (Outreach First)\n"
             f"- Signals: {signals_count} stored ({fresh_signals} fresh)\n"
             f"- Stored Jobs: {total_jobs} ({active_jobs} active) | Matches: {matches_count} ({hidden_count} hidden by filters)\n"
             f"- Contacts Found: {contacts_count}\n"

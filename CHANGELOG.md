@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.2
+
+### Unified Multi-Board Discovery & Direct Outreach Execution on Modern Save
+- **Full multi-board discovery in Modern mode**: Closed Modern mode missing hundreds of active job-board roles (`jh/v5_tools.py`), running both the Signal Radar and the 25-board background search on `jh_launch` (keeping `#/signals` as the landing tab while populating `#/jobs` too) and reporting both signal and job totals in `jh_status`.
+- **Direct HR/leadership outreach on Modern job Save**: Closed Modern job saves stopping at ATS documents (`jh/save_flow.py`, `jh/httpd.py`, `jh/contacts.py`, `jh/email_drafter.py`), routing `POST /api/jobs/save` in Modern mode to `generate_modern_outreach_bundle` for a company brief, up to 3 MX-verified HR/founder/hiring-manager contacts (using non-ATS company URL domains when available), a 1-page tailored PDF, and a slop-checked short cold email draft logged to the 20/day + 4-day follow-up ledger.
+- **Web UI direct-outreach controls on `#/jobs`**: Closed Modern mode showing `"Apply with extension"` on `#/jobs` (`webapp/app.js`, `public/app.js`), suppressing extension-apply actions in Modern mode and opening the contacts & email outreach panel directly on Save.
+
 ## 1.2.1
 
 ### Session Isolation, Signal Freshness & Grounded Project Matching
