@@ -36,7 +36,7 @@ from jh.observability import record_startup  # noqa: E402
 from jh.resume_registry import ResumeRegistry  # noqa: E402
 from jh.team.surface import TeamMCP, resolve as resolve_surface  # noqa: E402
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 INSTRUCTIONS = """JobHunter is a Hybrid job search copilot for Claude Desktop combining multi-board discovery, fresh hiring signals, tailored application materials, and decision-maker outreach.
 

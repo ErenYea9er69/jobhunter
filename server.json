@@ -3,7 +3,7 @@
   "name": "io.github.ErenYea9er69/jobhunter",
   "title": "JobHunter MCP",
   "description": "Hybrid Claude Desktop MCP server: multi-board job search, hiring signals, resume-grounded scoring, truthful tailoring, outreach drafts, and application tracking without a separate UI or database.",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "repository": {
     "url": "https://github.com/ErenYea9er69/jobhunter",
     "source": "github"
@@ -12,7 +12,7 @@
     {
       "registryType": "pypi",
       "identifier": "jobhunter-mcp",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "transport": {
         "type": "stdio"
       }
