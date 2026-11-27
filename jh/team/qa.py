@@ -31,6 +31,9 @@ from ..util import html_to_text, http_get_text, parse_date
 BLOCK, WARN, INFO = "block", "warn", "info"
 
 
+_MISSING_DATA_CODES = {"no_title", "no_url", "empty", "no_date"}
+
+
 @dataclass
 class Review:
     findings: list[dict] = field(default_factory=list)
@@ -48,10 +51,29 @@ class Review:
     def blocked(self) -> bool:
         return self.verdict == "block"
 
+    @property
+    def status(self) -> str:
+        """Verdict status aligned with reviewer.md: approved, blocked_fixable, or blocked_missing_data."""
+        if not self.blocked:
+            return "approved"
+        block_codes = {f["code"] for f in self.findings if f["severity"] == BLOCK}
+        if block_codes <= _MISSING_DATA_CODES:
+            return "blocked_missing_data"
+        return "blocked_fixable"
+
     def as_dict(self) -> dict[str, Any]:
-        out: dict[str, Any] = {"verdict": self.verdict,
-                               "findings": [f for f in self.findings if f["severity"] != INFO] or [],
-                               "notes": [f["message"] for f in self.findings if f["severity"] == INFO]}
+        blockers = [{"code": f["code"], "message": f["message"]} for f in self.findings if f["severity"] == BLOCK]
+        warnings = [{"code": f["code"], "message": f["message"]} for f in self.findings if f["severity"] == WARN]
+        unchecked = [f["message"] for f in self.findings if f["severity"] == INFO or f["code"] == "review_error"]
+        out: dict[str, Any] = {
+            "verdict": self.verdict,
+            "status": self.status,
+            "findings": [f for f in self.findings if f["severity"] != INFO] or [],
+            "blockers": blockers,
+            "warnings": warnings,
+            "unchecked": unchecked,
+            "notes": [f["message"] for f in self.findings if f["severity"] == INFO],
+        }
         if self.adjusted:
             out["adjusted"] = self.adjusted
         return out

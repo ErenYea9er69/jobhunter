@@ -628,7 +628,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
         text = exporters.to_txt(tailored)
         out = {"job": {"title": job.get("title"), "company": job.get("company")}, "archetype": arch, "ats_before": before, "ats_after": after,
                "grounding": grounding(text, profile, job), "tailored_resume": tailored,
-               **{k: v for k, v in result.items() if k in ("changes", "summary", "executive_hook", "keywords_added", "notes")}}
+               **{k: v for k, v in result.items() if k in ("changes", "summary", "executive_hook", "honest_gaps", "missing_inputs", "keywords_added", "notes")}}
         if save:
             base = f"{_slug(job.get('company', ''))}-{_slug(job.get('title', ''))}"
             out["saved_to"] = {"json": store.save_output("tailored", f"{base}.json", tailored), "text": store.save_output("tailored", f"{base}.txt", text)}
@@ -661,7 +661,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             job_title: Title for pasted text.
             company: Company for pasted text.
             description: Posting text.
-            tone: direct, warm or formal.
+            tone: direct, conversational or systems.
             angle: direct_impact, startup_velocity, technical_architect or executive_brief.
             resume_name: Resume variant. Empty means the active resume.
             format: txt, docx or pdf.
@@ -680,7 +680,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             paths["docx"] = store.save_bytes("cover-letters", f"{base}.docx", exporters.cover_letter_to_docx(letter, profile, job))
         elif fmt == "pdf":
             paths["pdf"] = store.save_bytes("cover-letters", f"{base}.pdf", exporters.cover_letter_to_pdf(letter, profile, job))
-        return {"letter": letter, "word_count": len(letter.split()), "hook": pitch.get("hook", ""), "grounding": grounding(letter, profile, job), "saved_to": paths}
+        return {"letter": letter, "word_count": len(letter.split()), "hook": pitch.get("pitch_hook", ""), "missing_inputs": pitch.get("missing_inputs", []), "grounding": grounding(letter, profile, job), "saved_to": paths}
 
     @tool
     def solve_screening_questions(questions: list[str] | str, job_id: str = "", job_title: str = "", company: str = "",
@@ -1093,7 +1093,7 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
 
         Args:
             app_id: Application id from list_applications.
-            action_type: status_check_5days, thank_you or offer_response.
+            action_type: status_check_5days, post_interview_thank_you or offer_negotiation.
             notes: Optional extra context to include.
             resume_name: Resume variant. Empty means the active resume.
         """
@@ -1274,7 +1274,19 @@ def register_tools_and_resources(mcp: Any, store: OutputStore, workspace_path: s
             app = next((a for a in tracker.list_applications() if str(a["id"]) == app_id), None)
             if not app:
                 raise ToolError(f"Application '{app_id}' not found.", code="not_found")
-            context["application"] = {k: app[k] for k in ("id", "company", "title", "status", "notes", "follow_up_date", "days_in_stage")}
+            context["application"] = {
+                "id": app["id"],
+                "company": app["company"],
+                "title": app["title"],
+                "role": app["title"],
+                "status": app["status"],
+                "stage": app["status"],
+                "applied_date": (app.get("created_at") or "")[:10],
+                "notes": app["notes"],
+                "offered_salary": app.get("salary", ""),
+                "follow_up_date": app["follow_up_date"],
+                "days_in_stage": app["days_in_stage"],
+            }
         return {"task": task, "instructions": playbook_text(task), "context": context,
                 "rules": ["Use only facts in context.candidate. Never invent employers, dates, metrics or skills.",
                           "Say plainly when the candidate lacks a requirement.",

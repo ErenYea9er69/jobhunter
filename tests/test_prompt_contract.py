@@ -98,3 +98,159 @@ def test_replies_shaped_by_the_old_prompts_were_dropped_which_is_why_the_keys_ch
            "career_skill_roadmap": {"priority_gaps": [{"skill": "Go"}], "project_specification": {"project_title": MARK}}}
     for name, reply in old.items():
         assert MARK not in json.dumps(runners(world)[name](caller(reply)), default=str), name
+
+
+def test_missing_inputs_propagates_across_playbooks(world):
+    q = "What target figure do you want?"
+    for playbook in ("cover_letter", "resume_tailor", "interview_prep", "recruiter_outreach",
+                     "career_skill_roadmap", "screening_question_solver", "application_follow_up"):
+        reply = schema_reply(playbook)
+        reply["missing_inputs"] = [q]
+        out = runners(world)[playbook](caller(reply))
+        assert out.get("missing_inputs") == [q], playbook
+
+
+def test_recruiter_outreach_enforces_200_char_limit_without_midword_truncation(world):
+    j, p = world["job"], world["profile"]
+    long_note = (
+        "I applied for the Backend Engineer role at Adyen. "
+        "At Vermeg I cut PostgreSQL latency by 45% with Redis caching across 2 million daily transactions. "
+        "I would enjoy hearing how your team builds backend services and handles scaling across regions."
+    )
+    reply = schema_reply("recruiter_outreach")
+    reply["linkedin_connection_note"] = long_note
+    c = caller(reply)
+    out = refit.generate_recruiter_outreach(j, p, use_llm=True, llm_caller=c)
+    assert out["linkedin_connection_validated"] is True
+    assert out["linkedin_connection_repaired"] is True
+    assert len(out["linkedin_connection_note"]) <= 200
+    assert not out["linkedin_connection_note"].endswith("...")
+    sent_payload = json.loads(c.seen["user"])
+    assert "standout_bullet" in sent_payload and "standout_bullet" not in sent_payload["candidate_source"]
+
+    det = refit.generate_recruiter_outreach(j, p, use_llm=False)
+    assert len(det["linkedin_connection_note"]) <= 200
+    assert "referral" not in det["peer_referral_request"]["body"].lower()
+
+
+def test_skill_roadmap_truthful_bridge_and_zero_gap_preservation(world):
+    p = world["profile"]
+    det = refit.generate_skill_roadmap(p, market_skills=["Go"], use_llm=False)
+    assert "recently implemented an end-to-end prototype" not in det["interview_bridge_script"]
+    assert "Now:" in det["interview_bridge_script"] and "After the project:" in det["interview_bridge_script"]
+    assert det["top_missing_skills"][0]["market_demand_level"] == "high"
+
+    none_needed = refit.generate_skill_roadmap(p, market_skills=["Python", "PostgreSQL"], use_llm=False)
+    assert none_needed["top_missing_skills"] == []
+    assert none_needed["recommended_learning_resources"] == []
+    assert none_needed["fast_track_project"]["project_title"] == "No additional project needed"
+    assert none_needed["fast_track_project"]["time_to_complete_days"] == 0
+
+    llm_zero = {
+        "target_title": "Backend Engineer",
+        "top_missing_skills": [],
+        "fast_track_project": {
+            "project_title": "No additional project needed",
+            "architecture_summary": "Current evidence covers all listed requirements.",
+            "deliverables": [],
+            "time_to_complete_days": 0,
+        },
+        "interview_bridge_script": "Now: My current experience covers Python and PostgreSQL. After the project: No additional project is needed.",
+        "recommended_learning_resources": [],
+        "missing_inputs": [],
+    }
+    out = refit.generate_skill_roadmap(p, market_skills=["Go"], use_llm=True, llm_caller=caller(llm_zero))
+    assert out["top_missing_skills"] == [] and out["recommended_learning_resources"] == []
+    assert out["fast_track_project"]["time_to_complete_days"] == 0
+
+
+def test_follow_up_respects_rejected_stage_and_missing_facts(world):
+    from jh import tracker as tr
+    p = world["profile"]
+    app_id = world["app_id"]
+    tr.upsert_application({"id": app_id, "company": "Adyen", "title": "Backend Engineer", "status": "rejected", "notes": ""})
+    rej = tr.generate_application_follow_up(app_id, action_type="status_check_5days", profile=p, use_llm=False)
+    assert "rejected" in rej["strategy_notes"].lower()
+    assert "is there an update" not in rej["body"].lower()
+
+    ty = tr.generate_application_follow_up(app_id, action_type="post_interview_thank_you", profile=p, use_llm=False)
+    assert "What did you discuss?" in ty["missing_inputs"]
+
+    neg = tr.generate_application_follow_up(app_id, action_type="offer_negotiation", profile={**p, "min_salary": 0}, use_llm=False)
+    assert "What figure or terms do you want to request?" in neg["missing_inputs"]
+    assert "market rate" not in neg["body"].lower()
+
+    c = caller(schema_reply("application_follow_up"))
+    tr.generate_application_follow_up(app_id, action_type="status_check_5days", profile=p, use_llm=True, llm_caller=c)
+    sent = json.loads(c.seen["user"])
+    assert "experience" in sent["candidate_source"]
+
+
+def test_screening_solver_never_guesses_missing_facts_and_preserves_csharp(world):
+    p = dict(world["profile"])
+    p.pop("notice_period", None)
+    p["min_salary"] = 0
+    sal = screening.solve_screening_question("What are your salary expectations?", p, world["sjob"], use_llm=False)
+    assert "What salary range do you want to state?" in sal["missing_inputs"]
+    assert "market rates" not in sal["answer"].lower()
+
+    notice = screening.solve_screening_question("What is your notice period?", p, world["sjob"], use_llm=False)
+    assert notice["missing_inputs"] and "2 weeks" not in notice["answer"]
+
+    auth = screening.solve_screening_question("Are you legally authorized to work here?", p, world["sjob"], use_llm=False)
+    assert auth["answer"] == "" and auth["missing_inputs"]
+
+    csharp_res = screening.solve_screening_question(
+        "Which languages do you use?",
+        {**p, "skills": ["Python", "C#"]},
+        world["sjob"],
+        use_llm=True,
+        llm_caller=caller({"answer": "I use Python and C#.", "missing_inputs": []}),
+    )
+    assert "C#" in csharp_res["answer"]
+
+
+def test_mock_interview_evaluator_allows_empty_lists_and_no_metric_red_flag(world):
+    p, j = world["profile"], world["job"]
+    det = refit.evaluate_mock_interview_answer("Describe a design tradeoff.", "I chose a simpler queue because the team could maintain it.", j, p, use_llm=False)
+    assert det["red_flags"] == []
+
+    llm_empty = {
+        "overall_score": 40,
+        "verdict": "Needs Refinement",
+        "rubric_scores": {"ownership": 40, "technical_depth": 40, "quantified_impact": 40, "structure": 40},
+        "strengths": [],
+        "areas_for_improvement": ["Explain your own decision."],
+        "red_flags": [],
+        "refined_answer_suggestion": "I chose a simpler queue.",
+    }
+    out = refit.evaluate_mock_interview_answer("Q?", "We did it.", j, p, use_llm=True, llm_caller=caller(llm_empty))
+    assert out["strengths"] == [] and out["red_flags"] == []
+
+
+def test_reviewer_structured_verdict_and_ceo_rewrite_cap(tools, world):
+    from jh.team import qa
+    rev_missing = qa.review_document("Too short", kind="other", profile=world["profile"])
+    d = rev_missing.as_dict()
+    assert d["verdict"] == "block" and d["status"] == "blocked_missing_data" and d["blockers"]
+
+    rev_fix = qa.review_document("At Google I led 40 engineers and cut latency by 93%.", kind="other", profile=world["profile"])
+    d_fix = rev_fix.as_dict()
+    assert d_fix["status"] == "blocked_fixable" and d_fix["blockers"]
+
+    jid = world["job"]["id"]
+    mission = tools.call("ceo_run", request=f"write a cover letter for {jid}", hints={"job_id": jid, "polish": True})["data"]
+    bad = "At Google I led 40 engineers and cut latency by 93%.\nAt Amazon I managed a 12 million dollar budget and 300 staff."
+    r1 = tools.call("ceo_submit_work", mission_id=mission["mission_id"], task="cover_letter", text=bad, job_id=jid, kind="other")["data"]
+    assert r1["rewrite_attempts"] == 1 and r1["rewrite_limit_reached"] is False
+    r2 = tools.call("ceo_submit_work", mission_id=mission["mission_id"], task="cover_letter", text=bad, job_id=jid, kind="other")["data"]
+    assert r2["rewrite_attempts"] == 2 and r2["rewrite_limit_reached"] is True
+
+
+def test_mcp_tools_cover_letter_hook_and_follow_up_playbook(tools, world):
+    jid = world["job"]["id"]
+    cl = tools.call("cover_letter", job_id=jid)["data"]
+    assert cl["hook"] and "missing_inputs" in cl
+    pb = tools.call("get_playbook", task="application_follow_up", app_id=world["app_id"])["data"]
+    app_ctx = pb["context"]["application"]
+    assert {"role", "stage", "applied_date", "offered_salary"} <= set(app_ctx)

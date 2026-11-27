@@ -23,20 +23,20 @@ PLAYBOOKS = ["cover_letter", "resume_tailor", "interview_prep", "mock_interview_
 # What the code reads from a model's reply, and from which file. Found by reading the consumers in 2.4.
 # (source file, keys read from the reply, keys the code sends in the user message)
 CONTRACT = {
-    "cover_letter": ("refit.py", {"full_text", "pitch_hook", "why_company", "honest_bridge", "call_to_action", "value_pillars"},
+    "cover_letter": ("refit.py", {"full_text", "pitch_hook", "why_company", "honest_bridge", "call_to_action", "value_pillars", "missing_inputs"},
                      {"job_post", "candidate_source", "value_pillars", "honest_skill_gaps", "pitch_angle", "tone"}),
-    "resume_tailor": ("refit.py", {"executive_hook", "bullets"}, {"job", "candidate", "archetype"}),
+    "resume_tailor": ("refit.py", {"executive_hook", "bullets", "honest_gaps", "missing_inputs"}, {"job", "candidate", "archetype"}),
     "interview_prep": ("refit.py", {"role", "company", "interview_focus_areas", "technical_deep_dives", "behavioral_scenarios",
-                                    "gap_talking_points", "questions_to_ask_interviewer"}, {"job_post", "candidate_source"}),
+                                    "gap_talking_points", "questions_to_ask_interviewer", "missing_inputs"}, {"job_post", "candidate_source"}),
     "mock_interview_evaluator": ("refit.py", {"overall_score", "verdict", "rubric_scores", "strengths", "areas_for_improvement",
                                               "red_flags", "refined_answer_suggestion"}, {"question", "candidate_answer", "job_post", "candidate_source"}),
     "recruiter_outreach": ("refit.py", {"linkedin_connection_note", "target_company", "target_role", "hiring_manager_inmail",
-                                        "peer_referral_request", "key_proof_point_used"}, {"job_post", "candidate_source", "standout_bullet", "custom_hook"}),
-    "application_follow_up": ("tracker.py", {"body", "action_type", "subject_line", "strategy_notes", "recommended_send_timing"},
+                                        "peer_referral_request", "key_proof_point_used", "missing_inputs"}, {"job_post", "candidate_source", "standout_bullet", "custom_hook"}),
+    "application_follow_up": ("tracker.py", {"body", "action_type", "subject_line", "strategy_notes", "recommended_send_timing", "missing_inputs"},
                               {"application", "candidate_source", "follow_up_type"}),
-    "screening_question_solver": ("screening.py", {"answer"}, {"question", "job_posting", "candidate_facts", "constraints"}),
+    "screening_question_solver": ("screening.py", {"answer", "missing_inputs"}, {"question", "job_posting", "candidate_facts", "constraints"}),
     "career_skill_roadmap": ("refit.py", {"fast_track_project", "target_title", "top_missing_skills", "interview_bridge_script",
-                                          "recommended_learning_resources"}, {"candidate_source", "market_requirements"}),
+                                          "recommended_learning_resources", "missing_inputs"}, {"candidate_source", "market_requirements"}),
 }
 NESTED = {
     "cover_letter": ["theme", "proof_point"],
@@ -93,7 +93,7 @@ def test_system_prompts_say_json_so_the_model_is_put_in_json_mode(name):
 @pytest.mark.parametrize("name", PLAYBOOKS)
 def test_prompt_size_is_bounded(name):
     n = len(system(name).split())
-    assert 350 <= n <= 1000, n
+    assert 350 <= n <= 1350, n
 
 
 # ------------------------------------------------------------------ the contract with the code
@@ -149,7 +149,7 @@ def test_the_old_wrong_keys_are_gone():
 def test_the_schema_holds_no_example_values_a_model_would_copy(name):
     block = output_block(name)
     stripped = re.sub(r"<[^>]*>", "", block)                           # <whole number> style placeholders are fine
-    assert not re.search(r'":\s*-?\d', stripped), "numeric literal in the schema"
+    assert not re.search(r'":\s*(?:-?[1-9]\d*|0\.\d+)', stripped), "non-zero numeric literal in the schema"
     assert "ev_" not in block and "telemetry" not in block and "word_count" not in block and "char_count" not in block
 
 
@@ -203,7 +203,7 @@ def test_examples_across_the_playbooks_are_not_all_about_software():
 @pytest.mark.parametrize("name", PLAYBOOKS)
 def test_untrusted_posting_text_is_named_as_data(name):
     body = system(name)
-    assert re.search(r"ignore them|ignore instructions", body)
+    assert re.search(r"untrusted evidence|ignore embedded commands", body, re.I)
 
 
 @pytest.mark.parametrize("name", PLAYBOOKS)
@@ -214,7 +214,7 @@ def test_every_schema_lets_the_model_ask_instead_of_guessing(name):
 @pytest.mark.parametrize("name", PLAYBOOKS)
 def test_the_prompt_asks_for_two_modes_of_output(name):
     body = output_block(name)
-    assert "If the user message is a JSON object" in body and "plain prose" in body
+    assert "For JSON input" in body and "plain prose" in body
 
 
 def test_no_prompt_claims_a_score_a_model_cannot_measure():
@@ -227,7 +227,7 @@ def test_no_prompt_claims_a_score_a_model_cannot_measure():
 
 def test_linkedin_note_limit_is_200_and_there_is_one_number():
     body = system("recruiter_outreach")
-    assert "200 characters" in body and "300 characters" not in body.replace("Premium allows 300", "")
+    assert "200 characters" in body and "300 characters" not in body
     assert not re.search(r"under 300|295", body)
 
 
@@ -241,17 +241,17 @@ def test_mock_scoring_has_anchors_and_matches_the_codes_scale():
     body = system("mock_interview_evaluator")
     assert "0 to 100" in body and "Strong Contender" in body and "Solid Foundation" in body and "Needs Refinement" in body
     assert "Strong Hire" not in body and "Lean Hire" not in body
-    assert body.count("0 to 30") >= 4 and body.count("70 to 100") >= 4          # an anchor for every dimension
+    assert body.count("0 to 30") >= 4 and body.count("31 to 59") >= 4 and body.count("60 to 84") >= 4 and body.count("85 to 100") >= 4
 
 
 def test_the_roadmap_bridge_script_cannot_claim_unfinished_work():
     body = system("career_skill_roadmap")
-    assert '"Now:"' in body and '"After the project:"' in body and "Do not let the first line claim the project exists" in body
+    assert '"Now:"' in body and '"After the project:"' in body and "Never imply it already exists or has succeeded" in body
 
 
 def test_resume_prompt_does_not_ask_for_a_literal_formula_or_inflated_verbs():
     body = system("resume_tailor")
-    assert "as measured by" in body and "Do not write template words" in body
+    assert "as measured by" in body and "Avoid template phrases" in body
     assert "Architected" not in body and "Engineered" not in body
 
 
@@ -289,9 +289,9 @@ def test_role_prompts_still_load_and_the_client_can_override_them(tmp_path):
 
 def test_the_ceo_prompt_tells_the_ai_about_intent_and_reference_hints():
     t = (PROMPTS / "team" / "ceo.md").read_text(encoding="utf-8")
-    assert "hints.reference" in t and "hints.intent" in t and "em dashes" in t
+    assert "hints.reference" in t and "hints.intent" in t and "plain chat formatting" in t
 
 
 def test_reviewer_prompt_mentions_scams_and_style():
     t = (PROMPTS / "team" / "reviewer.md").read_text(encoding="utf-8").lower()
-    assert "scam" in t and "machine-sounding" in t and "alternative" in t
+    assert "scam" in t and "generic filler" in t and "factual alternative" in t

@@ -156,9 +156,22 @@ def validate(updates: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         elif key in LIST_FIELDS:
             vals = _clean_list(key, value)
             if key == "job_types":
-                vals = [v for v in (_title_case_type(x) for x in vals) if v]
+                kept = []
+                for x in vals:
+                    mapped = _title_case_type(x)
+                    if mapped:
+                        kept.append(mapped)
+                    else:
+                        warnings.append(f"Ignored invalid job_type '{x}'. Accepted: {', '.join(JOB_TYPES)}.")
+                vals = kept
             if key == "seniority":
-                vals = [v.lower() for v in vals if v.lower() in SENIORITY]
+                kept = []
+                for v in vals:
+                    if v.lower() in SENIORITY:
+                        kept.append(v.lower())
+                    else:
+                        warnings.append(f"Ignored invalid seniority '{v}'. Accepted: {', '.join(SENIORITY)}.")
+                vals = kept
             clean[key] = vals
         elif key in ("work_authorized", "notice_period", "submission_mode"):
             clean[key] = str(value or "").strip()[:_MAX_LEN]

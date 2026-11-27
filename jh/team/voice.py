@@ -57,7 +57,7 @@ RULES: list[tuple[str, re.Pattern, str]] = [
                             r"a wealth of (?:experience|knowledge|expertise)", r"seasoned (?:professional|engineer|leader|expert)", r"well[- ]positioned", r"add(?:ing)? (?:real |significant |immediate )?value",
                             r"track record (?:of|in)", r"committed to excellence", r"dedicated(?! (?:server|team|line|hardware|account|channel))", r"enthusiastic", r"driven professional"),
      "Show it with what the candidate did. Cut the adjective."),
-    ("power_verb", _rx(r"leverag(?:e|es|ed|ing)(?! ratios?| buyout| effect| point| calculations?| cap| limit| multiple| position)", r"spearhead\w*", r"utili[sz]\w+", r"facilitat\w+", r"orchestrat\w+", r"synerg\w+", r"harness\w*", r"foster\w*",
+    ("power_verb", _rx(r"(?<!\binvent )(?<!\bhave )(?<!\bhas )(?<!\bhad )(?<!\bwithout )(?<!\bgain )(?<!\bbuild )(?<!\bcreate )(?<!\bmore )(?<!\bno )(?<!\bany )(?<!\bfinancial )(?<!\boperating )(?<!\bnegotiating )(?<!\bbargaining )leverag(?:e|es|ed|ing)(?! ratios?| buyout| effect| point| calculations?| cap| limit| multiple| position)", r"spearhead\w*", r"utili[sz]\w+", r"facilitat\w+", r"orchestrat\w+", r"synerg\w+", r"harness\w*", r"foster\w*",
                        r"elevat\w+", r"empower\w*", r"delv\w+", r"underscor\w+", r"showcas\w+", r"embark\w*", r"unlock\w*", r"navigat(?:e|es|ed|ing) (?:the )?(?:complex|challenges|landscape)"),
      "Use a plain verb: built, ran, cut, wrote, fixed, taught, moved, sold."),
     ("grand_framing", _rx(r"in today['’]s (?:\w+[- ]){0,3}(?:world|landscape|market|environment|era)", r"ever[- ](?:evolving|changing)", r"rapidly (?:evolving|changing)", r"testament to", r"pivotal",

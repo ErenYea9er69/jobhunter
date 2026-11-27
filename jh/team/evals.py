@@ -344,6 +344,7 @@ STYLE_ROUND2: list[tuple[str, str, str, str, str]] = [
     ("BC08", "leverage calculations", "prose", "The role involves leverage calculations for a lending desk.", "clean"),
     ("BC09", "plain", "prose", "I can start on 1 March. My notice period is one month.", "clean"),
     ("BC10", "plain", "prose", "Our monthly close used to take seven days. It now takes four.", "clean"),
+    ("BC11", "negotiation leverage noun", "prose", "Do not invent leverage, competing offers, or deadlines.", "clean"),
 ]
 
 

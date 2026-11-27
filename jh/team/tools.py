@@ -171,8 +171,30 @@ def register_team(mcp: Any, tool: Callable, registry: dict[str, Callable], store
         if rev.blocked:
             final, rev, removed = qa.salvage(text, rev, kind=kind, profile=profile, job=job or {})
         if rev.blocked:
-            return {"approved": False, "verdict": "block", "review": rev.as_dict(), "removed_lines": removed,
-                    "what_to_do": "Rewrite the flagged lines using only facts from the resume evidence, then submit again. Do not show this draft to the client."}
+            attempt_key = f"{task}:{job_id or 'default'}"
+            passes = 1
+            if m:
+                attempts = dict(m["data"].get("rewrite_attempts") or {})
+                passes = int(attempts.get(attempt_key, 0)) + 1
+                attempts[attempt_key] = passes
+                missions.update_data(mission_id, {"rewrite_attempts": attempts})
+            rev_dict = rev.as_dict()
+            limit_reached = passes >= 2
+            what = (
+                "Internal rewrite limit (2 passes) reached and the draft is still blocked. Report the blocker to the candidate instead of rewriting again."
+                if limit_reached
+                else "Rewrite the flagged lines using only facts from the resume evidence, then submit again. Do not show this draft to the client."
+            )
+            return {
+                "approved": False,
+                "verdict": "block",
+                "status": rev_dict["status"],
+                "review": rev_dict,
+                "removed_lines": removed,
+                "rewrite_attempts": passes,
+                "rewrite_limit_reached": limit_reached,
+                "what_to_do": what,
+            }
         path = ""
         try:
             path = store.save_output("approved", f"{job_id or 'draft'}-{task}-{kind}.txt", final)

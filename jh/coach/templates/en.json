@@ -13,14 +13,14 @@
   "D": {
     "title": "Search Resilience & Shift Navigation",
     "acknowledgment": "Job hunting can feel exhausting, and anxiety about market shifts or AI is completely understandable.",
-    "insight": "Rejections are market data rather than a personal verdict; technological shifts reward those who experiment with tools rather than panic.",
+    "insight": "Rejections are market data rather than a personal verdict; separate what the job evidence shows from what remains uncertain and test one practical step.",
     "options": [
       "Focus on one small 15-minute win today: send one warm message or polish one key project bullet.",
       "Treat AI as a practical drafting assistant while you retain final judgment and oversight.",
       "Separate market noise from verifiable employer requirements in current postings."
     ],
-    "choice": "Would you like to explore small, high-leverage steps, or just proceed with the search?",
-    "template": "Job hunting can feel exhausting, and anxiety about market shifts or AI is completely understandable. Rejections are market data rather than a personal verdict; technological shifts reward those who experiment with tools rather than panic.\n\nHere are practical options:\n- Focus on one small 15-minute win today: message one contact or polish one specific bullet.\n- Treat modern AI as a helpful assistant while keeping full control of the final outcome.\n- Set a daily stopping time so the hunt does not consume your evenings.\n\nWould you like to explore small, high-leverage steps, or just proceed with your search?"
+    "choice": "Would you like to explore small, practical steps, or just proceed with the search?",
+    "template": "Job hunting can feel exhausting, and uncertainty about market shifts or AI is understandable. Rejections are market data rather than a personal verdict. Separate what job postings actually require from what remains uncertain, and try one small 15-minute step today such as messaging one contact or refining one project bullet."
   },
   "A": {
     "title": "Strategic Advice",
@@ -48,15 +48,15 @@
   },
   "C": {
     "title": "Business Foundation & Validation",
-    "acknowledgment": "You're exploring starting a business or independent revenue stream.",
-    "insight": "Sustainable businesses grow from existing skills that solve painful, expensive problems for real people—not generic idea lists.",
+    "acknowledgment": "You are exploring starting a business or independent revenue stream.",
+    "insight": "Sustainable businesses grow from existing skills that solve real problems for paying buyers, not generic idea lists.",
     "options": [
-      "Inventory the specific skills or favors colleagues and clients already pay or ask you for.",
-      "Pre-validate demand: talk to 10 potential customers and secure commitments before writing code or buying inventory.",
+      "Inventory the specific skills or services colleagues and clients already ask or pay you for.",
+      "Validate demand with real prospective buyers (for example, around 10 conversations) before meaningful spending.",
       "Watch for scheme red flags: upfront fees, guaranteed returns, urgency pressure, or income tied to recruiting others."
     ],
     "choice": "Would you like to map your skills into a low-risk test, or just proceed with jobs?",
-    "template": "You're exploring starting a business or independent revenue stream. Sustainable businesses grow from existing skills that solve painful, expensive problems for real people—not generic idea lists.\n\nPractical principles:\n- Build from a skill you already possess; if none yet, build that skill first while keeping your expenses low.\n- Sell and validate with ~10 potential buyers before investing significant time or money.\n- Beware of scheme red flags: guaranteed returns, pay-to-join models, or pressure to recruit.\n\nWould you like to map your skills into a low-risk test, or just proceed with jobs?"
+    "template": "You are exploring starting a business or independent revenue stream. Sustainable businesses grow from existing skills that solve real problems for buyers, not generic idea lists.\n\nPractical principles:\n- Build from a skill you already possess; if none yet, build that skill first while keeping expenses low.\n- Validate demand with real prospective buyers (for example, around 10 conversations) before spending heavily.\n- Watch for scheme red flags: guaranteed returns, recruitment fees, or pressure to pay upfront.\n\nWould you like to map your skills into a low-risk test, or just proceed with jobs?"
   },
   "E": {
     "title": "Career Direction & Strengths",

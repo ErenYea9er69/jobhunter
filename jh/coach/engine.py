@@ -80,10 +80,7 @@ def get_coaching_context(session_id: str = "default", profile: dict[str, Any] | 
 
 
 def get_coaching_content(trigger_id: str, language: str = "en", locale: str = "US") -> dict[str, Any]:
-    """Return vetted coaching text and options for a given trigger ID.
-
-    Guaranteed to be <= 120 words and strictly adhere to the 4-part structure.
-    """
+    """Return vetted coaching text and options for a given trigger ID (<= 120 words)."""
     tid = (trigger_id or "").strip().upper()
     lang = language or config.get_coach_lang() or "en"
     templates = load_templates(lang)
@@ -145,7 +142,7 @@ def _call_provider_coaching(user_text: str, trigger_id: str, lang: str = "en") -
     try:
         from ..ai_manager import get_ai_manager
         ai = get_ai_manager()
-        prompt = f"User request: {user_text}\nTrigger: {trigger_id}\nProvide <= 120 words advice following the 4-part structure."
+        prompt = f"User request: {user_text}\nTrigger: {trigger_id}\nProvide a brief practical coaching note of <= 120 words grounded in the user's request and evidence."
         return ai.generate_text(prompt)
     except Exception as e:
         log.warning("Provider coaching failed or timed out: %s", e)
