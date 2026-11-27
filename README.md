@@ -10,7 +10,7 @@ JobHunter gives an AI assistant (Claude Desktop, Cursor, Antigravity, VS Code) t
 
 JobHunter works like a small company. You talk to one AI, and that AI is the CEO. It briefs a team of specialists (Scout, Analyst, Writer, Coach, Chief of Staff). A Reviewer checks every job and document before you see it. See `docs/team.md`.
 
-By default the AI sees seven CEO tools. The 39 specialist tools sit behind them. `--surface full` shows all 46. There are no MCP prompts. The old prompt contracts are the `get_playbook` tool.
+By default the AI sees seven CEO tools. The 39 specialist tools sit behind them. `--surface full` shows all 46. There are no MCP prompts. The prompt playbooks are served through `get_playbook` and loaded directly by the drafting tools (`prompts/*.md`).
 
 ## Quick start
 
@@ -232,7 +232,7 @@ Honest limits of this reach: the catalog names real local boards, but nobody has
 
 The full list with arguments is in `docs/tool-contracts.md`. The CEO tools (`ceo_run` and six more) are described in `docs/team.md`. Specialist groups: resumes (5), preferences and sources (7), finding jobs (4), analysis (5), documents (7), interview and outreach (5, including `practice_interview`), playbooks (1), tracking (5), coaching (4), server (1).
 
-Key 1.2.0 flow guarantees:
+Key `2.0.1` flow guarantees:
 - **Explicit target place**: Resumes never supply location, remote mode, or filters. `jh_confirm` always asks you to confirm `remote only`, `worldwide remote`, or specific countries/regions (plus optional city) before issuing a session ticket.
 - **Title families & live filtering**: Inferred role title families widen search queries only (never filters). Preferences confirmed during the live search filter the SQL view immediately without restarting the background worker.
 - **Honest match check on Save**: Saving shows strengths alongside `soft_gaps` (e.g., 3 vs 4 years requested — marked apply anyway) and `hard_gaps` (work authorization, clearance, required license) without hiding postings.
@@ -298,11 +298,12 @@ JobHunter runs as an official stdio MCP server via `mcp_server.py`:
 
 ## Truthful by design
 
-- The Reviewer does not trust the employee who made the work. It checks every job (fields, link, date, country, duplicates, matched skills, scams, text aimed at your AI), reads live posting pages, and checks every document sentence against your resume. Invented employers, titles, degrees, certifications, skills, numbers and awards are removed or rejected. Details in `docs/team.md`.
+- The Reviewer does not trust the employee who made the work. It checks every job (fields, link, date, country, duplicates, matched skills, scams, text aimed at your AI), reads live posting pages, and checks every document sentence against your resume. Invented employers, titles, degrees, certifications, skills, numbers and awards are removed or rejected, returning structured `status` (`approved`, `blocked_fixable`, `blocked_missing_data`), `blockers`, `warnings`, and `unchecked` fields, with a 2-pass internal rewrite cap in `ceo_submit_work`. Details in `docs/team.md`.
 - The Reviewer is measured. `python -m jh.team.evals` scores it on fixed cases, and `docs/evals.md` reports the numbers and how far to trust them. The honest estimate on text it has never seen is lower than the scores on the cases it was built with.
 - The CEO's report comes from tool results only, and every job and document names the call that produced it.
-- The prompts follow their own rules. A linter checks every prompt for dashes, capital-letter shouting, persona boasting and invented statistics, and a test checks that each playbook asks the model for the keys the code reads. Drafts are scanned for machine-sounding phrases, and the Reviewer warns about them. See `docs/prompts.md`.
+- The prompts follow their own rules. A linter (`python -m jh.team.voice`) checks all 17 prompt files (`prompts/*.md`, `prompts/team/*.md`, `prompts/coach/coach_guidelines.md`) for dashes, capital-letter shouting, persona boasting and invented statistics, and `tests/test_prompt_contract.py` / `tests/test_prompts.py` verify that each playbook's schema keys (`missing_inputs`, `honest_gaps`, `pitch_hook`, `linkedin_connection_validated`, etc.) match the code. Drafts are scanned for machine-sounding phrases, and the Reviewer warns about them. See `docs/prompts.md`.
 - When a search finds nothing, the CEO widens it in steps and then says so. It does not fill the gap.
+- Playbooks and deterministic fallbacks never invent missing candidate facts (such as salary targets, notice periods, work authorization, visa sponsorship, relocation, or interview discussion topics); instead, they return `missing_inputs` questions for the user. LinkedIn connection notes are validated to stay within 200 characters without mid-word truncation.
 - Generated text uses only facts the resume supports. `get_evidence` lists them.
 - `verify_draft` checks any text against that evidence and flags unsupported claims. `tailor_resume`, `cover_letter` and `prepare_application` run the same check and return the result.
 - Tools never accept or return API keys. Optional LLM keys come from environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` and others). Without a key the deterministic engine writes the documents.
@@ -334,7 +335,7 @@ The suite runs offline. A fake network serves fixtures that pin each vendor's re
 - Salary comparison does not convert currencies.
 - The CEO's request router is rule-based. It reads English and French, and a few Arabic words. On phrasings it had never seen, it was right about two times in three. An unclear request makes the CEO ask. The AI should pass `hints.intent` and `hints.reference` so nothing is guessed.
 - The Reviewer is also rules, not a model. It was built to catch what language models tend to invent. A new kind of fabrication can get through. Facts about the employer beyond the posting cannot be checked at all, so they are flagged.
-- When no model writes the text, the code's own templates do, and some still contain stock phrases (the outreach, follow-up and screening templates). The Reviewer flags them. They are listed in `docs/prompts.md`.
+- When no model writes the text, the code's deterministic fallback templates do; they follow the updated prompt rules and emit `missing_inputs` when key facts are absent. (Legacy `jh/interview.py` scoring and localized `jh/coach/templates/es.json` / `fr.json` templates retain older formatting.)
 - Only the top five jobs of a search get a live link check. Ask the CEO to recheck one before you apply.
 - Several scrapers return an empty list instead of an error when blocked, so `source_health` shows them as ok with zero results.
 - Reading some boards (LinkedIn, Indeed, ZipRecruiter and others) uses browser-like requests. See `docs/data-policy.md` and use `disabled_sources` if you do not want that.
